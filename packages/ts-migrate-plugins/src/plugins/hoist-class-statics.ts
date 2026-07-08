@@ -180,14 +180,23 @@ function hoistStaticClassProperties(
 
         updates.push({ kind: 'replace', index, length, text });
       } else {
+        const firstMember = classDeclaration.members[0];
+        const memberStart = firstMember.getStart(sourceFile);
+        const lineStart =
+          memberStart - sourceFile.getLineAndCharacterOfPosition(memberStart).character;
+        const indent = sourceText.slice(lineStart, memberStart);
+
         const text =
           ts.sys.newLine +
           properties
             .map((property) => printer.printNode(ts.EmitHint.Unspecified, property, sourceFile))
-            .join(ts.sys.newLine + ts.sys.newLine) +
+            .join(ts.sys.newLine + ts.sys.newLine)
+            .split(ts.sys.newLine)
+            .map((line) => (line.length > 0 ? indent + line : line))
+            .join(ts.sys.newLine) +
           ts.sys.newLine;
 
-        updates.push({ kind: 'insert', index: classDeclaration.members[0].pos, text });
+        updates.push({ kind: 'insert', index: firstMember.pos, text });
       }
     }
   });
