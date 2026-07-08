@@ -1,6 +1,6 @@
 # @obiemunoz/ts-migrate
 
-> **A maintained fork of [airbnb/ts-migrate](https://github.com/airbnb/ts-migrate), updated for TypeScript 5+.**
+> **A maintained fork of [airbnb/ts-migrate](https://github.com/airbnb/ts-migrate), updated for TypeScript 5 and 6.**
 > Maintained by [Obie Munoz](https://github.com/ObieMunoz). Original work © 2020 Airbnb (MIT) — see [Credits](#credits).
 
 *ts-migrate* is a tool for helping migrate code to TypeScript.
@@ -24,7 +24,7 @@ Check out Airbnb's original [blog post](https://medium.com/airbnb-engineering/ts
 
 # What's different in this fork
 
-* TypeScript 5.x support (upstream tops out at TypeScript 4)
+* TypeScript 5.x and 6.x support (upstream tops out at TypeScript 4)
 * Plugin internals migrated to the TypeScript 5 node factory API
 * ESLint 9 flat config support (with legacy fallback)
 * Updated toolchain (Jest 29, modern dependencies)

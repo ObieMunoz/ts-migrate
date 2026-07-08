@@ -11,8 +11,8 @@
       "dom",
       "esnext"
     ],
-    "module": "commonjs",
-    "moduleResolution": "node",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "resolveJsonModule": true,
@@ -23,12 +23,12 @@
     "importHelpers": false,
     "preserveSymlinks": true,
     "outDir": "build",
+    "types": [
+      "node",
+      "jest"
+    ]
   },
   "exclude": [
     "node_modules",
-  ],
-  "types": [
-    "node",
-    "jest"
   ]
 }
