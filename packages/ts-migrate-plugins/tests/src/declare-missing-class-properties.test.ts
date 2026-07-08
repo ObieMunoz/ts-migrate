@@ -66,4 +66,24 @@ class Class2 {
 }`);
     },
   );
+
+  it('returns the original text when parsing throws', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    // Duplicate parameter names are a strict-mode SyntaxError for the parser.
+    const text = `function f(a, a) {
+  return a;
+}`;
+
+    const result = await declareMissingClassPropertiesPlugin.run(
+      mockPluginParams({
+        options: { anyAlias: '$TSFixMe' },
+        text,
+        semanticDiagnostics: [mockDiagnostic(text, 'return', { code: 2339 })],
+      }),
+    );
+
+    expect(result).toBe(text);
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
 });

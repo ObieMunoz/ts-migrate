@@ -136,4 +136,21 @@ function f4(this: any) { this.a = 1; this.b = 2; }
 
     expect(result).toBe(`const fn = (b: any) => ({});`);
   });
+
+  it('returns the original text when parsing throws', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    // Duplicate parameter names are a strict-mode SyntaxError for the parser.
+    const text = `function f(a, a) { return a; }`;
+
+    const result = await explicitAnyPlugin.run(
+      mockPluginParams({
+        text,
+        semanticDiagnostics: [mockDiagnostic(text, 'a, a', { code: 7006 })],
+      }),
+    );
+
+    expect(result).toBe(text);
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
 });

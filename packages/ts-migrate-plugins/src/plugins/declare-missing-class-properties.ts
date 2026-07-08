@@ -16,7 +16,16 @@ const declareMissingClassPropertiesPlugin: Plugin<Options> = {
       .filter(isDiagnosticWithLinePosition)
       .filter((diagnostic) => diagnostic.code === 2339 || diagnostic.code === 2551);
 
-    const root = j(text);
+    let root;
+    try {
+      root = j(text);
+    } catch (e) {
+      if (e instanceof Error) {
+        // eslint-disable-next-line no-console
+        console.error('Error occurred in declare-missing-class-properties plugin: ', e.message);
+      }
+      return text;
+    }
 
     const toAdd: { classBody: ASTPath<ClassBody>; propertyNames: Set<string> }[] = [];
 

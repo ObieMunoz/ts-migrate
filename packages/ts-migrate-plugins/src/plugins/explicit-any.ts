@@ -36,7 +36,16 @@ function withExplicitAny(
   anyAlias?: string,
   lintConfig?: any,
 ): string {
-  const root = j(text, lintConfig);
+  let root;
+  try {
+    root = j(text, lintConfig);
+  } catch (e) {
+    if (e instanceof Error) {
+      // eslint-disable-next-line no-console
+      console.error('Error occurred in explicit-any plugin: ', e.message);
+    }
+    return text;
+  }
 
   const anyType = anyAlias != null ? j.tsTypeReference(j.identifier(anyAlias)) : j.tsAnyKeyword();
   const typeAnnotation = j.tsTypeAnnotation(anyType);
