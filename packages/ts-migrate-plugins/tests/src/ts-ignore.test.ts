@@ -1,5 +1,6 @@
+import ts from 'typescript';
 import tsIgnorePlugin from '../../src/plugins/ts-ignore';
-import { mockPluginParams, mockDiagnostic } from '../test-utils';
+import { mockPluginParams, mockDiagnostic, realPluginParams } from '../test-utils';
 
 describe('ts-ignore plugin', () => {
   it('adds ignore comment', async () => {
@@ -430,5 +431,36 @@ export default Foo;
 </div>
 "
 `);
+  });
+
+  // A bare comment line inside JSX children is a text node, not a comment.
+  it('brace-wraps ignore comments for real diagnostics inside JSX children', async () => {
+    const text = `export const view = (
+  <div>
+    <DoesNotExist />
+  </div>
+);
+`;
+
+    const result = await tsIgnorePlugin.run(
+      await realPluginParams({
+        fileName: 'view.tsx',
+        text,
+        compilerOptions: { jsx: ts.JsxEmit.React },
+      }),
+    );
+
+    const lines = (result as string).split('\n');
+    const targetIndex = lines.findIndex((line) => line.includes('<DoesNotExist />'));
+    expect(targetIndex).toBeGreaterThan(0);
+    expect(lines[targetIndex - 1]).toMatch(/^\s*\{\/\* @ts-expect-error TS\(\d+\)/);
+
+    const childrenLines = lines.slice(
+      lines.findIndex((line) => line.includes('<div>')) + 1,
+      lines.findIndex((line) => line.includes('</div>')),
+    );
+    childrenLines.forEach((line) => {
+      expect(line).not.toMatch(/^\s*\/\/ @ts-expect-error/);
+    });
   });
 });

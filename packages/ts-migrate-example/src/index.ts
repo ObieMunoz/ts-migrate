@@ -14,7 +14,7 @@ async function runMigration() {
     .addPlugin(examplePluginTs, { shouldReplaceText: true })
     .addPlugin(examplePluginText, {});
 
-  const exitCode = await migrate({ rootDir: inputDir, config });
+  const { exitCode } = await migrate({ rootDir: inputDir, config });
 
   process.exit(exitCode);
 }

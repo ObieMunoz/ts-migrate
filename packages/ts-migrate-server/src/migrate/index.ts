@@ -1,8 +1,9 @@
-import { createProject, Project } from '@ts-morph/bootstrap';
 import ts from 'typescript';
+import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 import MigrateConfig from './MigrateConfig';
+import MigrationProject from './MigrationProject';
 import PerfTimer from '../utils/PerfTimer';
 import { PluginParams, LintConfig } from '../../types';
 
@@ -34,16 +35,15 @@ export default async function migrate({
   }
 
   const tsConfigFilePath = path.join(tsConfigDir, 'tsconfig.json');
-  const project = await createProject({
+  const project = new MigrationProject({
     tsConfigFilePath,
     skipAddingFilesFromTsConfig: sources !== undefined,
-    skipFileDependencyResolution: true,
   });
 
   // If we passed in our own sources, let's add them to the project.
   // If not, let's just get all the sources in the project.
   if (sources) {
-    await project.addSourceFilesByPaths(sources);
+    project.addSourceFilesByPaths(sources);
   }
 
   log.info(`Initialized tsserver project in ${serverInitTimer.elapsedStr()}.`);
@@ -109,7 +109,7 @@ export default async function migrate({
   // eslint-disable-next-line no-restricted-syntax
   for (const fileName of updatedSourceFiles) {
     const sourceFile = project.getSourceFileOrThrow(fileName);
-    writes.push(project.fileSystem.writeFile(sourceFile.fileName, sourceFile.text));
+    writes.push(fs.promises.writeFile(sourceFile.fileName, sourceFile.text));
   }
   await Promise.all(writes);
 
@@ -118,7 +118,7 @@ export default async function migrate({
   return { updatedSourceFiles, exitCode };
 }
 
-function getSourceFilesToMigrate(project: Project) {
+function getSourceFilesToMigrate(project: MigrationProject) {
   return project
     .getSourceFiles()
     .filter(({ fileName }) => !/(\.d\.ts|\.json)$|node_modules/.test(fileName));

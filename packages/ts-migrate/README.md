@@ -1,7 +1,7 @@
 # @obiemunoz/ts-migrate
 
 *ts-migrate is a tool for migrating frontend application to TypeScript.*
-Run `npx -p @obiemunoz/ts-migrate ts-migrate <folder>` to convert your frontend application to TypeScript.
+Run `npx -p @obiemunoz/ts-migrate ts-migrate-full <folder>` to convert your frontend application to TypeScript.
 
 > **This is a maintained fork of [airbnb/ts-migrate](https://github.com/airbnb/ts-migrate), updated for TypeScript 5+.** Original work © 2020 Airbnb (MIT).
 
@@ -18,14 +18,20 @@ Or [yarn](https://yarnpkg.com):
 
 `yarn add --dev @obiemunoz/ts-migrate`
 
-The CLI commands are still named `ts-migrate` and `ts-migrate-full`.
+The CLI commands are still named `ts-migrate` and `ts-migrate-full`. Because the
+package is scoped, one-off `npx` runs need the `-p @obiemunoz/ts-migrate` flag to
+tell npx which package provides those commands — a bare `npx ts-migrate-full ...`
+would download the unmaintained upstream `ts-migrate` package instead. If you've
+installed `@obiemunoz/ts-migrate` as a devDependency of your project, the commands
+are already in `node_modules/.bin`, so plain `npx ts-migrate-full <folder>` (or an
+npm script) resolves to this fork.
 
 # Usage
 
 Migrate an entire project like this:
 
 ```sh
-npx -p @obiemunoz/ts-migrate -c "ts-migrate-full <folder>"
+npx -p @obiemunoz/ts-migrate ts-migrate-full <folder>
 ```
 The `ts-migrate-full` command will perform a `git add` and `git commit` after each major step (_[details here]( https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate/bin/ts-migrate-full.sh )_).
 
@@ -33,45 +39,45 @@ Please note that it may take a long time to do a full migration.
 You can also migrate individual parts of a project by specifying a subset of sources:
 
 ```sh
-npx ts-migrate-full <folder> /                # specify the project root, and
-  --sources="relative/path/to/subset/**/*" /  # list the subset to migrate,
-  --sources="node_modules/**/*.d.ts"          # including any global types that the
-                                              # migrator may need to know about.
+# Specify the project root, list the subset to migrate, and include any global
+# types that the migrator may need to know about.
+npx -p @obiemunoz/ts-migrate ts-migrate-full <folder> \
+  --sources="relative/path/to/subset/**/*" \
+  --sources="node_modules/**/*.d.ts"
 ```
 
 Or, you can run individual CLI commands:
 
 ```
-$ npx ts-migrate -- --help
+$ npx -p @obiemunoz/ts-migrate ts-migrate --help
 
-npm run ts-migrate -- <command> [options]
+Usage: npm run ts-migrate -- <command> [options]
 
 Commands:
-  npm run ts-migrate -- init <folder>       Initialize tsconfig.json file in <folder>
-  npm run ts-migrate -- rename <folder>     *Rename files in folder from JS/JSX to TS/TSX
-  npm run ts-migrate -- migrate <folder>    *Fix TypeScript errors, using codemods
-  npm run ts-migrate -- reignore <folder>   Re-run ts-ignore on a project
-
-* These commands can be passed a --sources (or -s) flag. This flag accepts a relative
-path to a subset of your project as a string (glob patterns are allowed). When this flag
-is used, ts-migrate ignores your project's default source files in favor of the ones
-you've listed. It is effectively the same as replacing your tsconfig.json's `include`
-property with the provided sources. The flag can be passed multiple times.
-
+  npm run ts-migrate -- init <folder>               Initialize tsconfig.json file in <folder>
+  npm run ts-migrate -- init:extended <folder>      Initialize tsconfig.json file in <folder>
+  npm run ts-migrate -- rename [options] <folder>   Rename files in folder from JS/JSX to TS/TSX
+  npm run ts-migrate -- migrate [options] <folder>  Fix TypeScript errors, using codemods
+  npm run ts-migrate -- reignore <folder>           Re-run ts-ignore on a project
 
 Options:
-  -h,  -- help      Show help
-  -i,  -- init      Initialize TypeScript (tsconfig.json) in <folder>
-  -m,  -- migrate   Fix TypeScript errors, using codemods
-  -rn, -- rename    Rename files in <folder> from JS/JSX to TS/TSX
-  -ri, -- reignore  Re-run ts-ignore on a project
+  -h, --help  Show help  [boolean]
 
 Examples:
-  npm run ts-migrate -- --help                Show help
-  npm run ts-migrate -- init frontend/foo     Create tsconfig.json file at frontend/foo/tsconfig.json
-  npm run ts-migrate -- rename frontend/foo   Rename files in frontend/foo from JS/JSX to TS/TSX
-
+  npm run ts-migrate -- --help                             Show help
+  npm run ts-migrate -- migrate --help                     Show help for the migrate command
+  npm run ts-migrate -- init frontend/foo                  Create tsconfig.json file at frontend/foo/tsconfig.json
+  npm run ts-migrate -- init:extended frontend/foo         Create extended from the base tsconfig.json file at frontend/foo/tsconfig.json
+  npm run ts-migrate -- rename frontend/foo                Rename files in frontend/foo from JS/JSX to TS/TSX
+  npm run ts-migrate -- rename frontend/foo --s "bar/baz"  Rename files in frontend/foo/bar/baz from JS/JSX to TS/TSX
 ```
+
+The `rename` and `migrate` commands accept a `--sources` (or `-s`) flag. This flag
+accepts a relative path to a subset of your project as a string (glob patterns are
+allowed). When this flag is used, ts-migrate ignores your project's default source
+files in favor of the ones you've listed. It is effectively the same as replacing
+your tsconfig.json's `include` property with the provided sources. The flag can be
+passed multiple times.
 
 # Reignore
 
@@ -82,7 +88,7 @@ If you are in a situation where you made some big project-wide changes, update o
 
 For the second option we created a re-ignore script, which will fully automate this step. It will add `any` or `@ts-expect-error` (`@ts-ignores`) comments for all problematic places and will make your project compilable.
 
-Usage: `npx ts-migrate -- reignore`.
+Usage: `npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>`.
 
 # Using `--sources` for partial migrations
 
@@ -90,16 +96,16 @@ There are times in which migrating an entire project is too large a change. The 
 
 ```sh
 # Run everything on a sub-directory
-npx ts-migrate-full /path/to/your/project --sources "some/components/**/*"
+npx -p @obiemunoz/ts-migrate ts-migrate-full /path/to/your/project --sources "some/components/**/*"
 
 # Or run just one sub-command
-npx ts-migrate -- rename /path/to/your/project -s "some/components/**/*"
+npx -p @obiemunoz/ts-migrate ts-migrate rename /path/to/your/project -s "some/components/**/*"
 ```
 
 Because your project's default sources are ignored when `--sources` is used, it's a good idea to specify any ambient type files your project uses as well. Otherwise, `ts-migrate` might mark unidentifiable globals as type errors, even when they aren't. For example, re-including ambient types from your node_modules folder looks like this:
 
 ```sh
-npx ts-migrate-full /path/to/your/project \
+npx -p @obiemunoz/ts-migrate ts-migrate-full /path/to/your/project \
   --sources "some/components/**/*" \
   --sources "node_modules/**/*.d.ts"
 ```

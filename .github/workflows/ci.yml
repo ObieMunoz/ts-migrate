@@ -13,6 +13,8 @@ jobs:
     strategy:
       matrix:
         node-version: ['20', '22']
+        # SyntaxKind numbering differs between TypeScript 5.8 and 5.9; test both.
+        typescript-version: ['5.7.3', '5.9.3']
 
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +27,9 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --frozen-lockfile
+
+      - name: Use TypeScript ${{ matrix.typescript-version }}
+        run: yarn add -W -D -E typescript@${{ matrix.typescript-version }}
 
       - name: Lint
         run: npx lerna run lint --ignore @obiemunoz/ts-migrate-plugins

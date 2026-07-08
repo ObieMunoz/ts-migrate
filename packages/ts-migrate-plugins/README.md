@@ -35,7 +35,7 @@ const inputDir = path.resolve(__dirname, 'input');
 const config = new MigrateConfig().addPlugin(tsIgnorePlugin, {});
 
 // run migration
-const exitCode = await migrate({ rootDir: inputDir, config });
+const { exitCode } = await migrate({ rootDir: inputDir, config });
 
 process.exit(exitCode);
 ```
