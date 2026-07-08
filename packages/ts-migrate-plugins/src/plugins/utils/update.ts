@@ -62,11 +62,14 @@ class UpdateTracker {
 
   public replaceNode(oldNode: ts.Node | undefined, newNode: ts.Node | undefined): void {
     if (oldNode && newNode && oldNode !== newNode) {
-      const printedNextNode = this.printer.printNode(
+      let printedNextNode = this.printer.printNode(
         ts.EmitHint.Unspecified,
         newNode,
         this.sourceFile,
       );
+      if (this.needsLeadingSemicolon(oldNode, printedNextNode)) {
+        printedNextNode = `;${printedNextNode}`;
+      }
       const text = oldNode
         .getFullText(this.sourceFile)
         .replace(/^(\s*)[^]*?(\s*)$/, (_match, p1, p2) => `${p1}${printedNextNode}${p2}`);
@@ -77,6 +80,43 @@ class UpdateTracker {
         text,
       });
     }
+  }
+
+  /**
+   * In semicolon-free code, a printed replacement that begins with `(`, `[`, or
+   * a template literal can merge into the previous statement
+   * (e.g. `const x = {}` + `(a as any).b = 1` parses as a call).
+   */
+  private needsLeadingSemicolon(oldNode: ts.Node, printed: string): boolean {
+    if (!ts.isExpressionStatement(oldNode) || !/^[([`]/.test(printed)) {
+      return false;
+    }
+    const { parent } = oldNode;
+    let statements: ts.NodeArray<ts.Statement>;
+    if (parent && (ts.isSourceFile(parent) || ts.isBlock(parent) || ts.isModuleBlock(parent))) {
+      statements = parent.statements;
+    } else if (parent && (ts.isCaseClause(parent) || ts.isDefaultClause(parent))) {
+      statements = parent.statements;
+    } else {
+      // Unbraced if/else bodies etc.: a leading semicolon would detach the statement.
+      return false;
+    }
+    const index = statements.indexOf(oldNode);
+    if (index <= 0) {
+      return false;
+    }
+    const lastToken = statements[index - 1].getLastToken(this.sourceFile);
+    if (!lastToken || lastToken.kind === ts.SyntaxKind.SemicolonToken) {
+      return false;
+    }
+    // A closing brace only merges when it ends an expression (object literal).
+    if (
+      lastToken.kind === ts.SyntaxKind.CloseBraceToken &&
+      !ts.isObjectLiteralExpression(lastToken.parent)
+    ) {
+      return false;
+    }
+    return true;
   }
 
   public replaceNodes<T extends ts.Node>(

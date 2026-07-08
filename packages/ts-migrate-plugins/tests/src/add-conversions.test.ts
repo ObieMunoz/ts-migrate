@@ -75,6 +75,29 @@ console.log((a as $TSFixMe).c);
 `);
   });
 
+  it('guards replacements against ASI merging in semicolon-free code', async () => {
+    const text = `\
+const cache = {}
+const result = { value: 1 }
+cache.lastFetched = result
+
+if (result) {
+}
+cache.other = 2
+`;
+    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`\
+const cache = {}
+const result = { value: 1 }
+;(cache as any).lastFetched = result;
+
+if (result) {
+}
+(cache as any).other = 2;
+`);
+  });
+
   it('adds conversions to unknown types', async () => {
     const text = `\
 function f(u: unknown) {
