@@ -4,8 +4,26 @@ set -e
 
 frontend_folder=$1
 folder_name=`basename $1`
-CLI_DIR=$(dirname "$0")
-cli="./node_modules/@obiemunoz/ts-migrate/build/cli.js"
+
+# Resolve this script's real location (following the symlinks npm/npx create
+# in .bin) so the bundled CLI is found no matter where the script is run
+# from — not in the calling project's node_modules.
+script_source=${BASH_SOURCE[0]:-$0}
+while [ -L "$script_source" ]; do
+  script_dir=$(cd -P "$(dirname "$script_source")" >/dev/null 2>&1 && pwd)
+  script_source=$(readlink "$script_source")
+  case $script_source in
+    /*) ;;
+    *) script_source=$script_dir/$script_source ;;
+  esac
+done
+script_dir=$(cd -P "$(dirname "$script_source")" >/dev/null 2>&1 && pwd)
+cli_js="$script_dir/../build/cli.js"
+
+cli() {
+  node "$cli_js" "$@"
+}
+
 step_i=1
 step_count=4
 tsc_path="./node_modules/.bin/tsc"
@@ -64,7 +82,7 @@ echo "
 "
 
 if [ ! -f "$frontend_folder/tsconfig.json" ]; then
-  $cli init $frontend_folder
+  cli init $frontend_folder
 fi
 
 if ! stat -t $frontend_folder/.eslintrc.* >/dev/null 2>&1; then
@@ -77,14 +95,14 @@ maybe_commit -m "[ts-migrate][$folder_name] Init tsconfig.json file" -m 'Co-auth
 echo "
 [Step $((step_i++)) of ${step_count}] Renaming files from JS/JSX to TS/TSX and updating project.json\...
 "
-$cli rename $frontend_folder $additional_args
+cli rename $frontend_folder $additional_args
 
 maybe_commit -m "[ts-migrate][$folder_name] Rename files from JS/JSX to TS/TSX" -m 'Co-authored-by: ts-migrate <>'
 
 echo "
 [Step $((step_i++)) of ${step_count}] Fixing TypeScript errors...
 "
-$cli migrate $frontend_folder $additional_args
+cli migrate $frontend_folder $additional_args
 
 if [ "$should_remove_eslintrc" = "true" ]; then
   rm -f $frontend_folder/.eslintrc
