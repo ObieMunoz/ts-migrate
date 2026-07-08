@@ -10,6 +10,7 @@ concurrency:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -25,7 +26,9 @@ jobs:
         with:
           node-version: '22'
           cache: yarn
-          registry-url: https://registry.npmjs.org
+
+      - name: Update npm for trusted publishing
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: yarn install --frozen-lockfile
@@ -48,5 +51,3 @@ jobs:
 
       - name: Publish to npm
         run: npx lerna publish from-package --yes
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
