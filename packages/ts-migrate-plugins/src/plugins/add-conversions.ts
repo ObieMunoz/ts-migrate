@@ -45,7 +45,7 @@ const addConversionsTransformerFactory =
       : factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
 
     let nodesToConvert: Set<ts.Node>;
-    const ancestorReplaceMap = new Map<ts.Node, boolean>();
+    let replaceRegions: ReplaceRegion[];
     return (file: ts.SourceFile) => {
       nodesToConvert = new Set(
         diags
@@ -69,19 +69,12 @@ const addConversionsTransformerFactory =
           })
           .filter((node): node is ts.Expression => node !== null),
       );
+      replaceRegions = computeReplaceRegions(nodesToConvert);
       visit(file);
       return file;
     };
 
     function visit(origNode: ts.Node): ts.Node | undefined {
-      const ancestorShouldBeReplaced = ancestorReplaceMap.get(origNode.parent);
-      ancestorReplaceMap.set(
-        origNode,
-        ancestorShouldBeReplaced === undefined
-          ? origNode.kind === ts.SyntaxKind.ExpressionStatement
-          : origNode.kind === ts.SyntaxKind.ExpressionStatement || ancestorShouldBeReplaced,
-      );
-
       const needsConversion = nodesToConvert.has(origNode);
       let node = ts.visitEachChild(origNode, visit, context);
       if (node === origNode && !needsConversion) {
@@ -92,12 +85,20 @@ const addConversionsTransformerFactory =
         node = factory.createAsExpression(node as ts.Expression, anyType);
       }
 
-      if (shouldReplace(node) && !ancestorShouldBeReplaced) {
+      if (shouldReplace(node) && !inReplaceRegion(origNode)) {
         replaceNode(origNode, node);
         return origNode;
       }
 
       return node;
+    }
+
+    // A node inside a range owned by another node defers to that owner:
+    // recording its own update would nest inside the owner's replacement.
+    function inReplaceRegion(node: ts.Node): boolean {
+      return replaceRegions.some(
+        (region) => region.owner !== node && region.pos <= node.pos && node.end <= region.end,
+      );
     }
 
     // Nodes that have one expression child called "expression".
@@ -160,6 +161,62 @@ const addConversionsTransformerFactory =
       }
     }
   };
+
+type ReplaceRegion = { owner: ts.Node; pos: number; end: number };
+
+/**
+ * Computes the source ranges that will be rewritten for the given conversions,
+ * keeping only the outermost ones. Statements within such a range must not
+ * record their own replacement — nested text updates duplicate parts of the
+ * enclosing range — so their changes bubble up into the owner's replacement.
+ */
+function computeReplaceRegions(conversions: Set<ts.Node>): ReplaceRegion[] {
+  const regions: ReplaceRegion[] = [];
+  conversions.forEach((conversion) => {
+    const region = findReplaceRegion(conversion);
+    if (
+      region &&
+      !regions.some((r) => r.owner === region.owner && r.pos === region.pos && r.end === region.end)
+    ) {
+      regions.push(region);
+    }
+  });
+  return regions.filter(
+    (region) =>
+      !regions.some(
+        (other) =>
+          other.pos <= region.pos &&
+          region.end <= other.end &&
+          (other.pos < region.pos || region.end < other.end),
+      ),
+  );
+}
+
+function findReplaceRegion(conversion: ts.Node): ReplaceRegion | null {
+  let child = conversion;
+  while (child.parent && !shouldReplace(child.parent)) {
+    child = child.parent;
+  }
+  const { parent } = child;
+  if (!parent || ts.isSourceFile(parent)) {
+    return null;
+  }
+  switch (parent.kind) {
+    // replaceNode rewrites only the direct expression children of these
+    // statements, i.e. the child the conversion bubbled up through.
+    case ts.SyntaxKind.DoStatement:
+    case ts.SyntaxKind.IfStatement:
+    case ts.SyntaxKind.SwitchStatement:
+    case ts.SyntaxKind.WithStatement:
+    case ts.SyntaxKind.WhileStatement:
+    case ts.SyntaxKind.ForStatement:
+    case ts.SyntaxKind.ForInStatement:
+    case ts.SyntaxKind.ForOfStatement:
+      return { owner: parent, pos: child.pos, end: child.end };
+    default:
+      return { owner: parent, pos: parent.pos, end: parent.end };
+  }
+}
 
 /**
  * Determines whether a node is eligible to be replaced.
