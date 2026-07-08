@@ -68,7 +68,6 @@
   },
   "gitHead": "7acf6067f15c9bb367cda9c47fcfb4203dcc54f3",
   "devDependencies": {
-    "@ts-morph/bootstrap": "^0.26.0",
     "@types/json-schema": "^7.0.7",
     "cross-env": "^7.0.3",
     "jest": "^29.7.0"

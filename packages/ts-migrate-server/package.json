@@ -60,7 +60,6 @@
   "homepage": "https://github.com/ObieMunoz/ts-migrate#readme",
   "license": "MIT",
   "dependencies": {
-    "@ts-morph/bootstrap": "^0.26.0",
     "pretty-ms": "^7.0.1",
     "updatable-log": "^0.2.0"
   },

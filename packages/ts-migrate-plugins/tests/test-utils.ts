@@ -1,4 +1,3 @@
-import { createProject } from '@ts-morph/bootstrap';
 import ts from 'typescript';
 import { PluginParams } from '@obiemunoz/ts-migrate-server';
 
@@ -72,25 +71,44 @@ export async function realPluginParams<TOptions = unknown>(params: {
   fileName?: string;
   text?: string;
   options?: TOptions;
+  compilerOptions?: ts.CompilerOptions;
 }): Promise<PluginParams<TOptions>> {
-  const { fileName = 'file.ts', text = '', options = {} } = params;
+  const { fileName = 'file.ts', text = '', options = {}, compilerOptions } = params;
 
-  const project = await createProject({
-    compilerOptions: {
-      strict: true,
+  // A minimal in-memory language service backed by the same `typescript`
+  // instance the plugins import. Only the test file lives in memory; default
+  // libs resolve from the real typescript package on disk.
+  const resolvedOptions: ts.CompilerOptions = { strict: true, ...compilerOptions };
+  const rootFileName = `/${fileName}`;
+  const files = new Map([[rootFileName, text]]);
+
+  const serviceHost: ts.LanguageServiceHost = {
+    getCompilationSettings: () => resolvedOptions,
+    getScriptFileNames: () => Array.from(files.keys()),
+    getScriptVersion: () => '0',
+    getScriptSnapshot: (name) => {
+      const contents = files.get(name) ?? ts.sys.readFile(name);
+      return contents !== undefined ? ts.ScriptSnapshot.fromString(contents) : undefined;
     },
-    useInMemoryFileSystem: true,
-  });
-  const sourceFile = project.createSourceFile(fileName, text);
+    getCurrentDirectory: () => '/',
+    getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
+    fileExists: (name) => files.has(name) || ts.sys.fileExists(name),
+    readFile: (name) => files.get(name) ?? ts.sys.readFile(name),
+  };
 
-  const getLanguageService = () => project.getLanguageService();
+  const languageService = ts.createLanguageService(serviceHost);
+  const program = languageService.getProgram();
+  const sourceFile = program && program.getSourceFile(rootFileName);
+  if (!sourceFile) {
+    throw new Error(`Failed to create source file: ${fileName}`);
+  }
 
   return {
     options: options as unknown as TOptions,
-    fileName,
+    fileName: rootFileName,
     rootDir: __dirname,
     text,
     sourceFile,
-    getLanguageService,
+    getLanguageService: () => languageService,
   };
 }
