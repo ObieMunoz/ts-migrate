@@ -5,7 +5,7 @@ set -e
 frontend_folder=$1
 folder_name=`basename $1`
 CLI_DIR=$(dirname "$0")
-cli="./node_modules/ts-migrate/build/cli.js"
+cli="./node_modules/@obiemunoz/ts-migrate/build/cli.js"
 step_i=1
 step_count=4
 tsc_path="./node_modules/.bin/tsc"
@@ -33,7 +33,7 @@ It is recommended that you take the following steps before continuing...
 4. Make sure you have the latest npm modules installed.
    \`npm install\` or \`yarn install\`
 
-If you need help or have feedback, please file an issue on Github!
+If you need help or have feedback, please file an issue at https://github.com/ObieMunoz/ts-migrate/issues
 "
 
 read -p "Continue? (y/N) " should_fetch_and_reset
