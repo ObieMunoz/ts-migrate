@@ -128,7 +128,10 @@ class UpdateTracker {
       const listFormat = addParens ? ts.ListFormat.Parenthesis : ts.ListFormat.CommaListElements;
       const printedNextNode = this.printer.printList(listFormat, newNodes, this.sourceFile);
       const prevText = this.sourceFile.text.substring(oldNodes.pos, oldNodes.end);
-      const text = prevText.replace(/^(\s*)[^]*?(\s*)$/, `$1${printedNextNode}$2`);
+      const text = prevText.replace(
+        /^(\s*)[^]*?(\s*)$/,
+        (_match, p1, p2) => `${p1}${printedNextNode}${p2}`,
+      );
       this.replace(oldNodes.pos, oldNodes.end - oldNodes.pos, text);
     }
   }
