@@ -60,6 +60,11 @@ function withExplicitAny(
     diagnostics.filter((diagnostic) => diagnostic.code === 7031),
     typeAnnotation,
   );
+  replaceDestructuringTS2339(
+    root,
+    diagnostics.filter((diagnostic) => diagnostic.code === 2339),
+    typeAnnotation,
+  );
   replaceTS7034(
     root,
     diagnostics.filter((diagnostic) => diagnostic.code === 7034),
@@ -228,6 +233,64 @@ function replaceTS7031(
           if (objectPattern.node.typeAnnotation == null) {
             objectPattern.get('typeAnnotation').replace(typeAnnotation);
           }
+        }
+      }
+    });
+  });
+}
+
+// TS2339: "Property '{0}' does not exist on type '{1}'."
+// On TS5, destructuring a missing property from a known type (e.g. `= {}`) is
+// reported as TS2339 instead of TS7031. Only property keys are matched, so
+// member-access errors (e.g. `a.b`) are ignored.
+function replaceDestructuringTS2339(
+  root: Collection<any>,
+  diagnostics: ts.DiagnosticWithLocation[],
+  typeAnnotation: TSTypeAnnotation,
+) {
+  // Climb to the outermost enclosing object pattern, skipping the
+  // AssignmentPattern wrapper of a nested pattern with a default (`= {}`).
+  const getParentObjectPattern = (path: any) => {
+    const skipAssignmentPattern = (p: any) => {
+      let cur = p;
+      while (cur && j.AssignmentPattern.check(cur.value)) {
+        cur = cur.parent;
+      }
+      return cur;
+    };
+
+    let res = path;
+    let parent = skipAssignmentPattern(res.parent);
+    while (
+      parent &&
+      j.ObjectProperty.check(parent.value) &&
+      parent.parent &&
+      j.ObjectPattern.check(parent.parent.value)
+    ) {
+      res = parent.parent;
+      parent = skipAssignmentPattern(res.parent);
+    }
+    return res;
+  };
+
+  diagnostics.forEach((diagnostic) => {
+    root.find(j.ObjectPattern).forEach((path) => {
+      if (path.node.typeAnnotation != null) {
+        return;
+      }
+      const matchesKey = path.node.properties.some((property: any) => {
+        if (!j.ObjectProperty.check(property) || property.key == null) {
+          return false;
+        }
+        const key = property.key as any;
+        return (
+          key.start === diagnostic.start && key.end === diagnostic.start + diagnostic.length
+        );
+      });
+      if (matchesKey) {
+        const objectPattern = getParentObjectPattern(path);
+        if (objectPattern.node.typeAnnotation == null) {
+          objectPattern.get('typeAnnotation').replace(typeAnnotation);
         }
       }
     });
