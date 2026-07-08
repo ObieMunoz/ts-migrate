@@ -100,4 +100,4 @@ Upstream airbnb/ts-migrate has been unmaintained since 2022; this fork exists to
 
 # License
 
-MIT, see [LICENSE](./LICENSE) for details. Original work copyright © 2020 Airbnb; modifications copyright © 2026 Obie Munoz and contributors.
+MIT, see [LICENSE](./LICENSE) for details. Original work copyright © 2020 Airbnb; modifications copyright © 2026 Obie Munoz.
