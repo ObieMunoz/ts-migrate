@@ -12,6 +12,8 @@ const supportedDiagnostics = new Set([
   2339,
   // TS2571: Object is of type 'unknown'.
   2571,
+  // TS18046: '{0}' is of type 'unknown'. (TS 4.4+ successor to TS2571.)
+  18046,
 ]);
 
 const addConversionsPlugin: Plugin<Options> = {
@@ -57,6 +59,7 @@ const addConversionsTransformerFactory =
                 return token.parent.expression;
 
               case 2571:
+              case 18046:
                 return token;
 
               default:
