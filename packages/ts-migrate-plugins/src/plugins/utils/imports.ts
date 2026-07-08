@@ -182,11 +182,10 @@ export function updateImports(
       if (numImports > 0) {
         const upImpDec = ts.factory.updateImportDeclaration(
           importDeclaration,
-          importDeclaration.decorators,
           importDeclaration.modifiers,
           importClause,
           importDeclaration.moduleSpecifier,
-          importDeclaration.assertClause,
+          importDeclaration.attributes,
         );
         const text = getTextPreservingWhitespace(importDeclaration, upImpDec, sourceFile);
         updates.push({
@@ -240,7 +239,6 @@ export function updateImports(
         nodes.push(
           ts.factory.createImportDeclaration(
             undefined,
-            undefined,
             ts.factory.createImportClause(
               false,
               nameToAdd.length === 1
@@ -255,7 +253,6 @@ export function updateImports(
         nodes.push(
           ts.factory.createImportDeclaration(
             undefined,
-            undefined,
             ts.factory.createImportClause(false, undefined, namedImports),
             ts.factory.createStringLiteral(moduleSpecifier),
           ),
@@ -263,7 +260,6 @@ export function updateImports(
         nameToAdd.forEach((cur) => {
           nodes.push(
             ts.factory.createImportDeclaration(
-              undefined,
               undefined,
               ts.factory.createImportClause(
                 false,

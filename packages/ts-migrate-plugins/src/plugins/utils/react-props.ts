@@ -173,7 +173,6 @@ function getTypeFromPropTypeExpression(
           [
             ts.factory.createParameterDeclaration(
               undefined,
-              undefined,
               ts.factory.createToken(ts.SyntaxKind.DotDotDotToken),
               'args',
               undefined,
@@ -190,7 +189,6 @@ function getTypeFromPropTypeExpression(
           undefined,
           [
             ts.factory.createParameterDeclaration(
-              undefined,
               undefined,
               ts.factory.createToken(ts.SyntaxKind.DotDotDotToken),
               'args',
@@ -255,10 +253,8 @@ function getTypeFromPropTypeExpression(
         result = ts.factory.createTypeLiteralNode([
           ts.factory.createIndexSignature(
             undefined,
-            undefined,
             [
               ts.factory.createParameterDeclaration(
-                undefined,
                 undefined,
                 undefined,
                 'key',
