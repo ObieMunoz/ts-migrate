@@ -21,8 +21,8 @@ import {
   stripTSIgnorePlugin,
   tsIgnorePlugin,
   Plugin,
-} from 'ts-migrate-plugins';
-import { migrate, MigrateConfig } from 'ts-migrate-server';
+} from '@obiemunoz/ts-migrate-plugins';
+import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
 import init from './commands/init';
 import rename from './commands/rename';
 

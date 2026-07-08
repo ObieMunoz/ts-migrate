@@ -30,7 +30,7 @@ Run the following to setup your local dev environment:
 brew install yarn
 
 # Clone or fork `ts-migrate`
-git clone git@github.com:airbnb/ts-migrate.git # or your fork
+git clone git@github.com:ObieMunoz/ts-migrate.git # or your fork
 cd ts-migrate
 
 # install dependencies
