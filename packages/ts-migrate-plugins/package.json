@@ -32,8 +32,8 @@
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config jest-config.json",
     "lint": "eslint . --ext=.js,.jsx,.ts,.tsx --ignore-path ../../.eslintignore",
     "build": "tsc -p tsconfig.json",
-    "prepublish": "yarn build",
-    "clean": "rm -rf build"
+    "clean": "rm -rf build",
+    "prepack": "yarn build"
   },
   "contributors": [
     {
@@ -75,5 +75,11 @@
   },
   "peerDependencies": {
     "typescript": ">=5.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18.18.0"
   }
 }

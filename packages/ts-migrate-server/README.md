@@ -4,6 +4,8 @@
 
 > **This is a maintained fork of [airbnb/ts-migrate](https://github.com/airbnb/ts-migrate), updated for TypeScript 5+.** Original work © 2020 Airbnb (MIT).
 
+> Most users should start with [`@obiemunoz/ts-migrate`](https://www.npmjs.com/package/@obiemunoz/ts-migrate), the CLI that drives this package. Install this package directly only if you're composing a custom migration pipeline.
+
 `ts-migrate-server` was originally designed around Airbnb projects. Use at your own risk.
 
 # Install

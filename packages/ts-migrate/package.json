@@ -35,8 +35,8 @@
     "test": "jest --config jest-config.json",
     "lint": "eslint . --ext=.js,.jsx,.ts,.tsx --ignore-path ../../.eslintignore",
     "build": "tsc -p tsconfig.json",
-    "prepublish": "yarn build",
-    "clean": "rm -rf build"
+    "clean": "rm -rf build",
+    "prepack": "yarn build"
   },
   "contributors": [
     {
@@ -80,5 +80,11 @@
   "gitHead": "7acf6067f15c9bb367cda9c47fcfb4203dcc54f3",
   "peerDependencies": {
     "typescript": ">=5.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18.18.0"
   }
 }

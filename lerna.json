@@ -1,9 +1,18 @@
 {
+  "$schema": "node_modules/lerna/schemas/lerna-schema.json",
+  "version": "0.2.0",
+  "npmClient": "yarn",
   "packages": [
     "packages/*"
   ],
-  "version": "0.2.0",
-  "npmClient": "yarn",
-  "useWorkspaces": true,
-  "stream": true
+  "command": {
+    "run": {
+      "stream": true
+    },
+    "version": {
+      "conventionalCommits": true,
+      "createRelease": "github",
+      "message": "chore(release): publish v%v [skip ci]"
+    }
+  }
 }
