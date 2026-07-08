@@ -1,6 +1,6 @@
 {
   "name": "@obiemunoz/ts-migrate-plugins",
-  "version": "0.1.35",
+  "version": "0.2.0",
   "description": "Set of codemods, which are doing transformation of js/jsx to ts/tsx. Maintained fork of airbnb/ts-migrate, updated for TypeScript 5+.",
   "main": "build/src/index.js",
   "directories": {
@@ -60,7 +60,7 @@
   "homepage": "https://github.com/ObieMunoz/ts-migrate#readme",
   "license": "MIT",
   "dependencies": {
-    "@obiemunoz/ts-migrate-server": "^0.1.33",
+    "@obiemunoz/ts-migrate-server": "^0.2.0",
     "eslint": "^9.18.0",
     "jiti": "^2.4.2",
     "jscodeshift": "^0.13.0",
@@ -74,6 +74,6 @@
     "jest": "^29.7.0"
   },
   "peerDependencies": {
-    "typescript": ">4.0"
+    "typescript": ">=5.0"
   }
 }
