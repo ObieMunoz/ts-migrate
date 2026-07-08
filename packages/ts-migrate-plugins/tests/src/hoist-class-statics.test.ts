@@ -37,23 +37,23 @@ Bar.defaultProps = {
 import PropTypes from 'prop-types';
 
 class Foo extends React.Component {
-static propTypes = {
-    foo: PropTypes.string.isRequired,
-};
+  static propTypes = {
+      foo: PropTypes.string.isRequired,
+  };
 
-static fragments = \`some graphql fragment\`;
+  static fragments = \`some graphql fragment\`;
 
   render() {}
 }
 
 class Bar extends React.Component {
-static propTypes = {
-    bar: PropTypes.string,
-};
+  static propTypes = {
+      bar: PropTypes.string,
+  };
 
-static defaultProps = {
-    bar: 'bar value',
-};
+  static defaultProps = {
+      bar: 'bar value',
+  };
 
   render() {}
 }
@@ -83,7 +83,7 @@ Foo.loggingId = LOGGING_ID;
     expect(result).toBe(`import React from 'react';
 
 class Foo extends React.Component {
-static loggingId: $TSFixMe;
+  static loggingId: $TSFixMe;
 
   render() {}
 }
@@ -121,11 +121,11 @@ Foo.propTypes = {
 import { buttonProps } from './private';
 
 class Foo extends React.Component {
-static propTypes = {
-    date: new Date(),
-    max: Number.MAX_SAFE_INTEGER,
-    buttonProps: Object.assign({}, buttonProps)
-};
+  static propTypes = {
+      date: new Date(),
+      max: Number.MAX_SAFE_INTEGER,
+      buttonProps: Object.assign({}, buttonProps)
+  };
 
   render() {}
 }
@@ -189,9 +189,9 @@ const defaultProps = {
 };
 
 class DuplicateListing extends React.Component {
-static propTypes = propTypes;
+  static propTypes = propTypes;
 
-static defaultProps = defaultProps;
+  static defaultProps = defaultProps;
 
   render() {
 
@@ -225,17 +225,47 @@ AsyncComponent.defaultProps = {
     expect(result).toBe(`import React from 'react';
 
 class AsyncComponent extends React.Component {
-static defaultProps = {
-    onComponentFinishLoading() { },
-    placeholderHeight: null,
-    renderPlaceholder: null,
-    /**
-     * Some comment
-     */
-    loadReady: true,
-};
+  static defaultProps = {
+      onComponentFinishLoading() { },
+      placeholderHeight: null,
+      renderPlaceholder: null,
+      /**
+       * Some comment
+       */
+      loadReady: true,
+  };
 
   render() {}
+}
+`);
+  });
+
+  it('indents hoisted statics to match existing members', async () => {
+    const text = `import React from 'react';
+import PropTypes from 'prop-types';
+
+class Foo extends React.Component {
+    render() {}
+}
+
+Foo.propTypes = {
+  foo: PropTypes.string,
+};
+`;
+
+    const result = await hoistClassStaticsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx' }),
+    );
+
+    expect(result).toBe(`import React from 'react';
+import PropTypes from 'prop-types';
+
+class Foo extends React.Component {
+    static propTypes = {
+        foo: PropTypes.string,
+    };
+
+    render() {}
 }
 `);
   });
@@ -261,7 +291,7 @@ Foo.defaultProps = {
     expect(firstResult).toBe(`import React from 'react';
 
 class Foo extends React.Component {
-static defaultProps: $TSFixMe;
+  static defaultProps: $TSFixMe;
 
   render() {}
 }
@@ -464,7 +494,7 @@ function onDeserialize(data: $TSFixMe) {
  * comment
  */
 class Store {
-static config: $TSFixMe;
+  static config: $TSFixMe;
 
   bindActions: $TSFixMe;
 
