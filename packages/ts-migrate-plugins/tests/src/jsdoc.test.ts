@@ -540,4 +540,18 @@ function() {
 }
 `);
   });
+
+  it('preserves $-prefixed parameter names', () => {
+    const text = `\
+/** @param $1 {number} */
+function A($1) {}
+`;
+
+    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
+
+    expect(result).toBe(`\
+/** @param $1 {number} */
+function A($1: number) {}
+`);
+  });
 });
