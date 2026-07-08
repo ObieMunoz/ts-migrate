@@ -217,7 +217,6 @@ function updatePropTypes(
             ts.EmitHint.Unspecified,
             ts.factory.updateParameterDeclaration(
               propsParam,
-              propsParam.decorators,
               propsParam.modifiers,
               propsParam.dotDotDotToken,
               propsParam.name,
@@ -316,7 +315,6 @@ function updateObjectLiteral(
     propTypeIdentifiers,
   });
   let propsTypeAlias = ts.factory.createTypeAliasDeclaration(
-    undefined,
     undefined,
     propsTypeName,
     undefined,

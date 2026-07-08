@@ -60,7 +60,6 @@ const reactShapePlugin: Plugin<Options> = {
 
       const newExport = ts.factory.createExportDeclaration(
         undefined,
-        undefined,
         false,
         ts.factory.createNamedExports([
           ts.factory.createExportSpecifier(
@@ -215,7 +214,6 @@ const reactShapePlugin: Plugin<Options> = {
           ts.factory.createExportAssignment(
             undefined,
             undefined,
-            undefined,
             ts.factory.createIdentifier(shapeName),
           ),
           sourceFile,
@@ -255,7 +253,6 @@ function getTypeForTheShape(
   );
   const propsTypeAlias = ts.factory.createTypeAliasDeclaration(
     undefined,
-    undefined,
     shapeName,
     undefined,
     isArrayShapeType ? ts.factory.createArrayTypeNode(shapeTypeVariable) : shapeTypeVariable,
@@ -277,7 +274,6 @@ function isPropTypesArrayOfShapes(node: ts.CallExpression) {
 
 function getPropTypesImportNode() {
   return ts.factory.createImportDeclaration(
-    undefined,
     undefined,
     ts.factory.createImportClause(false, ts.factory.createIdentifier('PropTypes'), undefined),
     ts.factory.createStringLiteral('prop-types'),
