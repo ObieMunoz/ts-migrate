@@ -49,13 +49,19 @@ const reactShapePlugin: Plugin<Options> = {
     };
     // types are not exported in case if we direct export a variable, like export const Var = ...
     // we need to split export to the separate named export and remove modifier from the variable declaration
-    const splitVariableExport = (node: ts.VariableStatement, shapeName: string) => {
-      const EXPORT_KEYWOARD = 'export';
-      const posOfExportKeyword = node.getFullText().indexOf(EXPORT_KEYWOARD);
+    const splitVariableExport = (
+      node: ts.VariableStatement,
+      shapeName: string,
+      exportModifier: ts.Modifier,
+    ) => {
+      // delete the `export ` keyword using its AST position, not a substring search:
+      // getFullText() includes leading comments, so a preceding comment containing
+      // "export" (e.g. prefer-default-export) would match ahead of the real keyword.
+      const start = exportModifier.getStart(sourceFile);
       updates.push({
         kind: 'delete',
-        index: node.pos + posOfExportKeyword,
-        length: EXPORT_KEYWOARD.length + 1,
+        index: start,
+        length: exportModifier.end - start + 1,
       });
 
       const newExport = ts.factory.createExportDeclaration(
@@ -134,7 +140,7 @@ const reactShapePlugin: Plugin<Options> = {
             updates.push({ kind: 'replace', index, length, text });
 
             if (exportModifier) {
-              splitVariableExport(node, shapeName);
+              splitVariableExport(node, shapeName, exportModifier);
             }
           }
 
@@ -158,7 +164,7 @@ const reactShapePlugin: Plugin<Options> = {
             });
 
             if (exportModifier) {
-              splitVariableExport(node, shapeName);
+              splitVariableExport(node, shapeName, exportModifier);
             }
           }
         }
