@@ -1,6 +1,6 @@
 /* eslint-disable no-bitwise */
 import ts from 'typescript';
-import { Plugin, PluginOptionsError } from 'ts-migrate-server';
+import { Plugin, PluginOptionsError } from '@obiemunoz/ts-migrate-server';
 
 import { Properties, validateOptions } from '../utils/validateOptions';
 

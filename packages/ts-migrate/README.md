@@ -1,29 +1,33 @@
-# ts-migrate
+# @obiemunoz/ts-migrate
 
 *ts-migrate is a tool for migrating frontend application to TypeScript.*
-Run `npx ts-migrate <folder>` to convert your frontend application to TypeScript.
+Run `npx -p @obiemunoz/ts-migrate ts-migrate <folder>` to convert your frontend application to TypeScript.
 
-*ts-migrate* is designed around Airbnb projects. Use at your own risk.
+> **This is a maintained fork of [airbnb/ts-migrate](https://github.com/airbnb/ts-migrate), updated for TypeScript 5+.** Original work © 2020 Airbnb (MIT).
+
+*ts-migrate* was originally designed around Airbnb projects. Use at your own risk.
 
 
 # Install
 
-Install [*ts-migrate*](https://www.npmjs.com/package/ts-migrate) using [npm](https://www.npmjs.com):
+Install [*@obiemunoz/ts-migrate*](https://www.npmjs.com/package/@obiemunoz/ts-migrate) using [npm](https://www.npmjs.com):
 
-`npm install --save-dev ts-migrate`
+`npm install --save-dev @obiemunoz/ts-migrate`
 
 Or [yarn](https://yarnpkg.com):
 
-`yarn add --dev ts-migrate`
+`yarn add --dev @obiemunoz/ts-migrate`
+
+The CLI commands are still named `ts-migrate` and `ts-migrate-full`.
 
 # Usage
 
 Migrate an entire project like this:
 
 ```sh
-npx -p ts-migrate -c "ts-migrate-full <folder>"
+npx -p @obiemunoz/ts-migrate -c "ts-migrate-full <folder>"
 ```
-The `ts-migrate-full` command will perform a `git add` and `git commit` after each major step (_[details here]( https://github.com/airbnb/ts-migrate/blob/master/packages/ts-migrate/bin/ts-migrate-full.sh )_).
+The `ts-migrate-full` command will perform a `git add` and `git commit` after each major step (_[details here]( https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate/bin/ts-migrate-full.sh )_).
 
 Please note that it may take a long time to do a full migration.
 You can also migrate individual parts of a project by specifying a subset of sources:
@@ -114,7 +118,7 @@ The ts-migrate codemods are only so smart. So, follow up is required to refine t
 
 > Um... ts-migrate broke my code! D:
 
-Please file the [issue here](https://github.com/airbnb/ts-migrate/issues/new).
+Please file the [issue here](https://github.com/ObieMunoz/ts-migrate/issues/new).
 
 
 > What is `$TSFixMe`?
@@ -135,4 +139,4 @@ By itself, ts-migrate is not related to any framework. We created a set of plugi
 
 # Contributing
 
-See the [Contributors Guide](https://github.com/airbnb/ts-migrate/blob/master/CONTRIBUTING.md).
+See the [Contributors Guide](https://github.com/ObieMunoz/ts-migrate/blob/master/CONTRIBUTING.md).

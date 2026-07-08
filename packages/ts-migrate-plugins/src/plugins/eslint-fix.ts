@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { loadESLint } from 'eslint';
-import { Plugin } from 'ts-migrate-server';
+import { Plugin } from '@obiemunoz/ts-migrate-server';
 
 // Either the flat-config or legacy engine; both expose the `lintText` API.
 type AnyESLint = InstanceType<Awaited<ReturnType<typeof loadESLint>>>;

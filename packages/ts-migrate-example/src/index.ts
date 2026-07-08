@@ -1,5 +1,5 @@
 import path from 'path';
-import { migrate, MigrateConfig } from 'ts-migrate-server';
+import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
 
 import examplePluginTs from './example-plugin-ts';
 import examplePluginText from './example-plugin-text';

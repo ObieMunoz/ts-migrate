@@ -1,7 +1,7 @@
 import path from 'path';
 // eslint-disable-next-line import/no-extraneous-dependencies
-import { tsIgnorePlugin, eslintFixPlugin, explicitAnyPlugin } from 'ts-migrate-plugins';
-import { migrate, MigrateConfig } from 'ts-migrate-server';
+import { tsIgnorePlugin, eslintFixPlugin, explicitAnyPlugin } from '@obiemunoz/ts-migrate-plugins';
+import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
 import { createDir, copyDir, deleteDir, getDirData } from '../../test-utils';
 
 jest.mock('updatable-log', () => {

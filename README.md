@@ -1,4 +1,7 @@
-# ts-migrate
+# @obiemunoz/ts-migrate
+
+> **A maintained fork of [airbnb/ts-migrate](https://github.com/airbnb/ts-migrate), updated for TypeScript 5+.**
+> Maintained by [Obie Munoz](https://github.com/ObieMunoz). Original work © 2020 Airbnb (MIT) — see [Credits](#credits).
 
 *ts-migrate* is a tool for helping migrate code to TypeScript.
 It takes a JavaScript, or a partial TypeScript, project in and gives a compiling TypeScript project out.
@@ -14,18 +17,28 @@ Plugins are combined into migration configs. We currently have two main migratio
 
 These configs can be moved out of the default script, and people can add custom configs with a different set of plugins for their needs.
 
-You can find instructions on how to install and run ts-migrate in the [main package](./packages/ts-migrate/). If you find any [issues](https://github.com/airbnb/ts-migrate/issues) or have ideas for improvements, we welcome your [contributions](https://github.com/airbnb/ts-migrate/blob/master/CONTRIBUTING.md)!
+You can find instructions on how to install and run ts-migrate in the [main package](./packages/ts-migrate/). If you find any [issues](https://github.com/ObieMunoz/ts-migrate/issues) or have ideas for improvements, we welcome your [contributions](https://github.com/ObieMunoz/ts-migrate/blob/master/CONTRIBUTING.md)!
 
-Check out the [blog post](https://medium.com/airbnb-engineering/ts-migrate-a-tool-for-migrating-to-typescript-at-scale-cd23bfeb5cc) about ts-migrate!
+Check out Airbnb's original [blog post](https://medium.com/airbnb-engineering/ts-migrate-a-tool-for-migrating-to-typescript-at-scale-cd23bfeb5cc) about ts-migrate!
+
+
+# What's different in this fork
+
+* TypeScript 5.x support (upstream tops out at TypeScript 4)
+* Plugin internals migrated to the TypeScript 5 node factory API
+* ESLint 9 flat config support (with legacy fallback)
+* Updated toolchain (Jest 29, modern dependencies)
+
+Upstream airbnb/ts-migrate has been unmaintained since 2022; this fork exists to keep the tool working on current TypeScript.
 
 
 # Published Packages
 
-| Folder | Version | Package |
-| ------ | ------- | ------- |
-| [packages/ts-migrate](./packages/ts-migrate/) | [![npm version](https://badge.fury.io/js/ts-migrate.svg)](https://badge.fury.io/js/ts-migrate) | [ts-migrate](https://www.npmjs.com/package/ts-migrate) |
-| [packages/ts-migrate-plugins](./packages/ts-migrate-plugins/) | [![npm version](https://badge.fury.io/js/ts-migrate-plugins.svg)](https://badge.fury.io/js/ts-migrate-plugins) | [ts-migrate-plugins](https://www.npmjs.com/package/ts-migrate-plugins) |
-| [packages/ts-migrate-server](./packages/ts-migrate-server/) | [![npm version](https://badge.fury.io/js/ts-migrate-server.svg)](https://badge.fury.io/js/ts-migrate-server) | [ts-migrate-server](https://www.npmjs.com/package/ts-migrate-server) |
+| Folder | Package |
+| ------ | ------- |
+| [packages/ts-migrate](./packages/ts-migrate/) | [@obiemunoz/ts-migrate](https://www.npmjs.com/package/@obiemunoz/ts-migrate) |
+| [packages/ts-migrate-plugins](./packages/ts-migrate-plugins/) | [@obiemunoz/ts-migrate-plugins](https://www.npmjs.com/package/@obiemunoz/ts-migrate-plugins) |
+| [packages/ts-migrate-server](./packages/ts-migrate-server/) | [@obiemunoz/ts-migrate-server](https://www.npmjs.com/package/@obiemunoz/ts-migrate-server) |
 
 # Unpublished Packages
 
@@ -34,7 +47,24 @@ Check out the [blog post](https://medium.com/airbnb-engineering/ts-migrate-a-too
 | [packages/ts-migrate-example](./packages/ts-migrate-example/) | basic example of usage of the ts-migrate-server with a writing a custom simple plugin |
 
 
-# Authors
+# Maintainer
+
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top">
+        <img width="100" height="100" src="https://github.com/ObieMunoz.png?s=150">
+        <br>
+        <a href="https://github.com/ObieMunoz">Obie Munoz</a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+
+# Credits
+
+*ts-migrate* was created at [Airbnb](https://github.com/airbnb) and released under the MIT license. This fork builds on the work of the original authors:
 
 <table>
   <tbody>
@@ -70,4 +100,4 @@ Check out the [blog post](https://medium.com/airbnb-engineering/ts-migrate-a-too
 
 # License
 
-MIT, see [LICENSE](https://github.com/airbnb/ts-migrate/blob/master/LICENCE) for details.
+MIT, see [LICENSE](./LICENSE) for details. Original work copyright © 2020 Airbnb; modifications copyright © 2026 Obie Munoz and contributors.

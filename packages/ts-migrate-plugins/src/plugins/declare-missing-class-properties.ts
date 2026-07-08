@@ -1,5 +1,5 @@
 import jscodeshift, { ASTPath, ClassBody } from 'jscodeshift';
-import { Plugin } from 'ts-migrate-server';
+import { Plugin } from '@obiemunoz/ts-migrate-server';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 

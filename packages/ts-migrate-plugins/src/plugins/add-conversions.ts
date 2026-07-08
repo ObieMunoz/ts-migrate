@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import { Plugin } from 'ts-migrate-server';
+import { Plugin } from '@obiemunoz/ts-migrate-server';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
 import getTokenAtPosition from './utils/token-pos';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';

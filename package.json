@@ -3,14 +3,14 @@
   "version": "0.0.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/airbnb/ts-migrate.git",
-    "directory": "packages/ts-migrate-server"
+    "url": "https://github.com/ObieMunoz/ts-migrate.git"
   },
   "bugs": {
-    "url": "https://github.com/airbnb/ts-migrate/issues"
+    "url": "https://github.com/ObieMunoz/ts-migrate/issues"
   },
   "private": true,
-  "description": "ts-migrate monorepo",
+  "description": "ts-migrate monorepo — maintained fork of airbnb/ts-migrate, updated for TypeScript 5+",
+  "author": "Obie Munoz <obiemunozjr@gmail.com>",
   "scripts": {
     "bootstrap": "lerna bootstrap",
     "build": "lerna run build",
