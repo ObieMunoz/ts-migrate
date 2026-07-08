@@ -65,6 +65,28 @@ export { BestShape };
 `);
   });
 
+  it('exports declaration preceded by a comment containing "export"', async () => {
+    const text = `import PropTypes from 'prop-types';
+// eslint-disable-next-line import/prefer-default-export
+export const BestShape = PropTypes.shape({
+  test: PropTypes.string,
+});
+`;
+
+    const result = await reactShapePlugin.run(mockPluginParams({ text, fileName: 'BestShape.js' }));
+    expect(result).toBe(`import PropTypes from 'prop-types';
+
+type BestShape = {
+    test?: string;
+};
+// eslint-disable-next-line import/prefer-default-export
+const BestShape: PropTypes.Requireable<BestShape> = PropTypes.shape({
+    test: PropTypes.string,
+});
+export { BestShape };
+`);
+  });
+
   it('extract default import from react-validators Shape', async () => {
     const text = `import { Shape, Types } from 'react-validators';
 
