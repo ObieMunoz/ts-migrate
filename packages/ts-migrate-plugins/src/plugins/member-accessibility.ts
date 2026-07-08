@@ -88,7 +88,7 @@ const memberAccessibilityTransformerFactory =
       // Nothing to do. Don't bother traversing the AST.
       return (file: ts.SourceFile) => file;
     }
-    return (file: ts.SourceFile) => ts.visitNode(file, visit);
+    return (file: ts.SourceFile) => ts.visitNode(file, visit, ts.isSourceFile);
 
     function visit(origNode: ts.Node): ts.Node {
       const node = ts.visitEachChild(origNode, visit, context);
@@ -114,15 +114,18 @@ const memberAccessibilityTransformerFactory =
           accessibilityFlag = ts.ModifierFlags.Public;
         }
 
-        const modifiers = factory.createNodeArray(
-          factory.createModifiersFromModifierFlags(modifierFlags | accessibilityFlag),
-        );
+        // In TS5 decorators live in `modifiers`; prepend existing decorators to
+        // the regenerated keyword modifiers, in source order.
+        const decorators = ts.canHaveDecorators(node) ? ts.getDecorators(node) ?? [] : [];
+        const modifiers = factory.createNodeArray<ts.ModifierLike>([
+          ...decorators,
+          ...(factory.createModifiersFromModifierFlags(modifierFlags | accessibilityFlag) ?? []),
+        ]);
         switch (node.kind) {
           case ts.SyntaxKind.PropertyDeclaration: {
             const propertyNode = node as ts.PropertyDeclaration;
             return factory.updatePropertyDeclaration(
               propertyNode,
-              propertyNode.decorators,
               modifiers,
               propertyNode.name,
               propertyNode.questionToken,
@@ -134,7 +137,6 @@ const memberAccessibilityTransformerFactory =
             const methodNode = node as ts.MethodDeclaration;
             return factory.updateMethodDeclaration(
               methodNode,
-              methodNode.decorators,
               modifiers,
               methodNode.asteriskToken,
               methodNode.name,
@@ -149,7 +151,6 @@ const memberAccessibilityTransformerFactory =
             const accessorNode = node as ts.GetAccessorDeclaration;
             return factory.updateGetAccessorDeclaration(
               accessorNode,
-              accessorNode.decorators,
               modifiers,
               accessorNode.name,
               accessorNode.parameters,
@@ -161,7 +162,6 @@ const memberAccessibilityTransformerFactory =
             const accessorNode = node as ts.SetAccessorDeclaration;
             return factory.updateSetAccessorDeclaration(
               accessorNode,
-              accessorNode.decorators,
               modifiers,
               accessorNode.name,
               accessorNode.parameters,

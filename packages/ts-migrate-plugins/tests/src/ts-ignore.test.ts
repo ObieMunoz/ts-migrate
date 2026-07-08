@@ -207,7 +207,7 @@ export default Foo;
     expect(result).toMatchInlineSnapshot(`
       "const getComponent = normalizeLoader(() =>
         import(
-          /* webpackChunkName: \\"Component_async\\" */
+          /* webpackChunkName: "Component_async" */
           './this_module_does_not_exist'
         ),
       );
@@ -376,7 +376,7 @@ export default Foo;
         return someBoolean ? (
           <ComponentA
             // @ts-expect-error TS(123) FIXME: diagnostic message
-            doesNotExist=\\"fail\\"
+            doesNotExist="fail"
           />
         ) : (
           <ComponentB />

@@ -99,14 +99,17 @@ const jsDocTransformerFactory =
     }
 
     function visitFunctionLike(node: ts.SignatureDeclaration, insideClass: boolean): void {
+      // `modifiers` is not on every SignatureDeclaration member in TS5;
+      // `canHaveModifiers` narrows while preserving the array's identity.
+      const nodeModifiers = ts.canHaveModifiers(node) ? node.modifiers : undefined;
       const modifiers =
         ts.isMethodDeclaration(node) && insideClass
           ? modifiersFromJSDoc(node, factory)
-          : node.modifiers;
+          : nodeModifiers;
       const parameters = visitParameters(node);
       const returnType = annotateReturns ? visitReturnType(node) : node.type;
       if (
-        modifiers === node.modifiers &&
+        modifiers === nodeModifiers &&
         parameters === node.parameters &&
         returnType === node.type
       ) {
@@ -115,8 +118,8 @@ const jsDocTransformerFactory =
 
       const newModifiers = modifiers ? factory.createNodeArray(modifiers) : undefined;
       if (newModifiers) {
-        if (node.modifiers) {
-          updates.replaceNodes(node.modifiers, newModifiers);
+        if (nodeModifiers) {
+          updates.replaceNodes(nodeModifiers, newModifiers);
         } else {
           const pos = node.name!.getStart();
           updates.insertNodes(pos, newModifiers);
@@ -163,7 +166,6 @@ const jsDocTransformerFactory =
             : param.questionToken;
 
         const newParam = factory.createParameterDeclaration(
-          param.decorators,
           param.modifiers,
           param.dotDotDotToken,
           param.name,
@@ -233,20 +235,22 @@ const jsDocTransformerFactory =
 
     function visitJSDocOptionalType(node: ts.JSDocOptionalType) {
       return factory.createUnionTypeNode([
-        ts.visitNode(node.type, visitJSDocType),
+        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode) as ts.TypeNode,
         factory.createKeywordTypeNode(ts.SyntaxKind.UndefinedKeyword),
       ]);
     }
 
     function visitJSDocNullableType(node: ts.JSDocNullableType) {
       return factory.createUnionTypeNode([
-        ts.visitNode(node.type, visitJSDocType),
+        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode) as ts.TypeNode,
         factory.createLiteralTypeNode(factory.createToken(ts.SyntaxKind.NullKeyword)),
       ]);
     }
 
     function visitJSDocVariadicType(node: ts.JSDocVariadicType) {
-      return factory.createArrayTypeNode(ts.visitNode(node.type, visitJSDocType));
+      return factory.createArrayTypeNode(
+        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode) as ts.TypeNode,
+      );
     }
 
     function visitJSDocFunctionType(node: ts.JSDocFunctionType) {
@@ -303,12 +307,11 @@ const jsDocTransformerFactory =
         ? factory.createToken(ts.SyntaxKind.DotDotDotToken)
         : node.dotDotDotToken;
       return factory.createParameterDeclaration(
-        node.decorators,
         node.modifiers,
         dotdotdot,
         name,
         node.questionToken,
-        ts.visitNode(node.type, visitJSDocType),
+        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode) as ts.TypeNode,
         node.initializer,
       );
     }
@@ -338,7 +341,7 @@ const jsDocTransformerFactory =
         if ((text === 'Array' || text === 'Promise') && !node.typeArguments) {
           args = factory.createNodeArray([anyType]);
         } else if (acceptsTypeParameters) {
-          args = ts.visitNodes(node.typeArguments, visitJSDocType);
+          args = ts.visitNodes(node.typeArguments, visitJSDocType, ts.isTypeNode);
         }
         if (!acceptsTypeParameters) {
           args = undefined;
@@ -350,7 +353,6 @@ const jsDocTransformerFactory =
     function visitJSDocIndexSignature(node: ts.TypeReferenceNode) {
       const typeArguments = node.typeArguments!;
       const index = factory.createParameterDeclaration(
-        /* decorators */ undefined,
         /* modifiers */ undefined,
         /* dotDotDotToken */ undefined,
         typeArguments[0].kind === ts.SyntaxKind.NumberKeyword ? 'n' : 's',
@@ -363,7 +365,6 @@ const jsDocTransformerFactory =
       );
       const indexSignature = factory.createTypeLiteralNode([
         factory.createIndexSignature(
-          /* decorators */ undefined,
           /* modifiers */ undefined,
           [index],
           typeArguments[1],
@@ -380,7 +381,7 @@ const accessibilityMask =
 function modifiersFromJSDoc(
   methodDeclaration: ts.MethodDeclaration,
   factory: ts.NodeFactory,
-): ReadonlyArray<ts.Modifier> | undefined {
+): ReadonlyArray<ts.ModifierLike> | undefined {
   let modifierFlags = ts.getCombinedModifierFlags(methodDeclaration);
   if ((modifierFlags & accessibilityMask) !== 0) {
     // Don't overwrite existing accessibility modifier.
