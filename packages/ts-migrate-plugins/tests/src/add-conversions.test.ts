@@ -155,12 +155,43 @@ class PublishEvent {
     );
   });
 
+  it('replaces nested conversions once when the outer statement is not an expression statement', async () => {
+    const text = `\
+const registry = {};
+const entry = { id: 1 };
+function buildList(allowed) {
+  return registry.sortOrder.reduce((acc, id) => {
+    if (entry.id === id) {
+      entry.hidden = !allowed.includes(id);
+      acc.push(entry);
+    }
+    return acc;
+  }, []);
+}
+`;
+    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`\
+const registry = {};
+const entry = { id: 1 };
+function buildList(allowed) {
+  return (registry as any).sortOrder.reduce((acc, id) => {
+    if (entry.id === id) {
+        (entry as any).hidden = !allowed.includes(id);
+        acc.push(entry);
+    }
+    return acc;
+}, []);
+}
+`);
+  });
+
   it('handles dollar amounts', async () => {
     const text = `\
 import customUtils from "custom-utils";
 
 it("tests", () => {
-  thing.fn("arg");
+  thing.fn("$1");
 
   const thing = {
     value: "$1"
@@ -173,10 +204,11 @@ it("tests", () => {
 import customUtils from "custom-utils";
 
 it("tests", () => {
-    (thing as any).fn("arg");
-    const thing = {
-        value: "$1"
-    };
+  (thing as any).fn("$1");
+
+  const thing = {
+    value: "$1"
+  };
 });
 `);
   });
