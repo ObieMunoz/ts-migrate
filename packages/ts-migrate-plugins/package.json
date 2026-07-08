@@ -73,7 +73,7 @@
     "jest": "^29.7.0"
   },
   "peerDependencies": {
-    "typescript": ">=5.0 <6"
+    "typescript": ">=5.0 <7"
   },
   "publishConfig": {
     "access": "public"

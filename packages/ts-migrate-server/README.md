@@ -2,7 +2,7 @@
 
 `ts-migrate-server` is a package that contains the main migration runner.
 
-> **This is a maintained fork of [airbnb/ts-migrate](https://github.com/airbnb/ts-migrate), updated for TypeScript 5+.** Original work © 2020 Airbnb (MIT).
+> **This is a maintained fork of [airbnb/ts-migrate](https://github.com/airbnb/ts-migrate), updated for TypeScript 5 and 6.** Original work © 2020 Airbnb (MIT).
 
 > Most users should start with [`@obiemunoz/ts-migrate`](https://www.npmjs.com/package/@obiemunoz/ts-migrate), the CLI that drives this package. Install this package directly only if you're composing a custom migration pipeline.
 

@@ -13,8 +13,9 @@ jobs:
     strategy:
       matrix:
         node-version: ['20', '22']
-        # SyntaxKind numbering differs between TypeScript 5.8 and 5.9; test both.
-        typescript-version: ['5.7.3', '5.9.3']
+        # SyntaxKind numbering differs between TypeScript 5.8 and 5.9; 6.0 deprecates
+        # legacy module resolution and ships a new lib. Test the 5.x floor, 5.9, and 6.x.
+        typescript-version: ['5.7.3', '5.9.3', '6.0.3']
 
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +35,9 @@ jobs:
       - name: Lint
         run: npx lerna run lint --ignore @obiemunoz/ts-migrate-plugins
 
+      # The matrix swaps only the typescript version, which Nx doesn't hash. Never
+      # give this step a persisted Nx cache (e.g. actions/cache on .nx): a warm cache
+      # reports "Successfully ran" over a failing tsc, hiding real build breakage.
       - name: Build
         run: yarn build
 
