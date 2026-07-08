@@ -10,13 +10,9 @@ jest.mock('updatable-log', () => {
 });
 
 /**
- * Regression test: the server used to hand plugins ASTs parsed by ts-morph's
- * bundled TypeScript compiler instead of the host `typescript` package the
- * plugins import. SyntaxKind numbering shifts between compiler versions
- * (e.g. 5.8 -> 5.9), so every kind check in every plugin misfired against
- * those ASTs: ts.transform() threw "Debug Failure.", isVariableStatement
- * matched expression statements, and JSX was never detected, causing
- * @ts-expect-error comments to be inserted as rendered JSX text nodes.
+ * Plugins inspect source files with their own `typescript` import, so the
+ * server must hand them ASTs produced by that same instance — SyntaxKind
+ * numbering differs across TypeScript versions.
  */
 describe('AST / TypeScript instance consistency', () => {
   let rootDir: string;
@@ -41,7 +37,7 @@ describe('AST / TypeScript instance consistency', () => {
             throw new Error('sourceFile was not produced by the host typescript instance');
           }
 
-          // What add-conversions does; threw "Debug Failure." on mismatched ASTs.
+          // Exercise visitEachChild dispatch, as add-conversions does.
           ts.transform(sourceFile, [
             (context) => {
               const visit = (node: ts.Node): ts.Node => ts.visitEachChild(node, visit, context);
@@ -50,8 +46,7 @@ describe('AST / TypeScript instance consistency', () => {
           ]);
 
           if (fileName.endsWith('.tsx')) {
-            // What ts-ignore's JSX detection does; silently found no JSX on
-            // mismatched ASTs.
+            // Exercise JSX detection, as ts-ignore does.
             let sawJsx = false;
             const walk = (node: ts.Node): void => {
               if (ts.isJsxElement(node)) sawJsx = true;
@@ -63,7 +58,6 @@ describe('AST / TypeScript instance consistency', () => {
             }
           }
 
-          // Diagnostics must come from the same instance without throwing.
           getLanguageService().getSemanticDiagnostics(fileName);
 
           visitedFiles.push(path.basename(fileName));

@@ -18,13 +18,12 @@ const SCRIPT_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs',
 const normalizeSlashes = (fileName: string): string => fileName.split(path.sep).join('/');
 
 /**
- * A minimal project abstraction backed by the host `typescript` package's
- * LanguageService. Every AST handed to plugins is produced by the same
- * TypeScript instance the plugins import, so SyntaxKind numbering can never
- * diverge (numbering shifts between compiler versions, e.g. in 5.9).
+ * A minimal project abstraction backed by the `typescript` package's
+ * LanguageService, so plugins receive ASTs from the same TypeScript instance
+ * they import (SyntaxKind numbering differs across compiler versions).
  *
  * File contents live in an in-memory overlay on top of the real filesystem;
- * `updateSourceFile` only touches the overlay, and callers decide when to
+ * updateSourceFile only touches the overlay, and callers decide when to
  * persist to disk.
  */
 export default class MigrationProject {
@@ -92,8 +91,7 @@ export default class MigrationProject {
 
   /**
    * Add files to the project by exact path or glob pattern (tsconfig-style
-   * globs: `*`, `?`, `**`). Patterns that match nothing are skipped silently,
-   * matching the behavior of the previous ts-morph implementation.
+   * globs: `*`, `?`, `**`). Patterns that match nothing are skipped silently.
    */
   addSourceFilesByPaths(filePathsOrGlobs: string[]): void {
     filePathsOrGlobs.forEach((pattern) => {

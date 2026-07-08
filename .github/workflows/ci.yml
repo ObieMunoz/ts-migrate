@@ -13,8 +13,7 @@ jobs:
     strategy:
       matrix:
         node-version: ['20', '22']
-        # SyntaxKind numbering differs between 5.7/5.8 and 5.9+; test both
-        # regimes so an AST/instance mismatch can never land silently again.
+        # SyntaxKind numbering differs between TypeScript 5.8 and 5.9; test both.
         typescript-version: ['5.7.3', '5.9.3']
 
     steps:

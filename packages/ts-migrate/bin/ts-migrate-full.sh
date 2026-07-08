@@ -6,8 +6,7 @@ frontend_folder=$1
 folder_name=`basename $1`
 
 # Resolve this script's real location (following the symlinks npm/npx create
-# in .bin) so the bundled CLI is found no matter where the script is run
-# from — not in the calling project's node_modules.
+# in .bin) so the bundled CLI is found regardless of the working directory.
 script_source=${BASH_SOURCE[0]:-$0}
 while [ -L "$script_source" ]; do
   script_dir=$(cd -P "$(dirname "$script_source")" >/dev/null 2>&1 && pwd)

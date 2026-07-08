@@ -433,10 +433,7 @@ export default Foo;
 `);
   });
 
-  // Regression test for real-language-service diagnostics inside JSX children.
-  // Inside JSX children a bare \`// @ts-expect-error\` line is a JSX text node:
-  // it renders as text, suppresses nothing, and violates
-  // react/jsx-no-comment-textnodes. It must be wrapped as {/* ... */}.
+  // A bare comment line inside JSX children is a text node, not a comment.
   it('brace-wraps ignore comments for real diagnostics inside JSX children', async () => {
     const text = `export const view = (
   <div>

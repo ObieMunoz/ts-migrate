@@ -75,9 +75,8 @@ export async function realPluginParams<TOptions = unknown>(params: {
 }): Promise<PluginParams<TOptions>> {
   const { fileName = 'file.ts', text = '', options = {}, compilerOptions } = params;
 
-  // A minimal in-memory language service backed by the same `typescript`
-  // instance the plugins import. Only the test file lives in memory; default
-  // libs resolve from the real typescript package on disk.
+  // In-memory language service: only the test file lives in memory; default
+  // libs and anything else resolve from disk.
   const resolvedOptions: ts.CompilerOptions = { strict: true, ...compilerOptions };
   const rootFileName = `/${fileName}`;
   const files = new Map([[rootFileName, text]]);
