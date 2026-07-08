@@ -1,6 +1,6 @@
 {
-  "name": "ts-migrate-example",
-  "version": "0.1.35",
+  "name": "@obiemunoz/ts-migrate-example",
+  "version": "0.2.0",
   "private": "true",
   "description": "Basic example of usage of the ts-migrate-server with writing a custom plugin",
   "license": "MIT",
@@ -8,12 +8,12 @@
     "example": "ts-node -T -O '{ \"esModuleInterop\": true }' --skip-project src/index.ts"
   },
   "dependencies": {
+    "@obiemunoz/ts-migrate-plugins": "^0.2.0",
+    "@obiemunoz/ts-migrate-server": "^0.2.0",
     "jscodeshift": "^0.12.0",
-    "ts-migrate-plugins": "^0.1.35",
-    "ts-migrate-server": "^0.1.33",
     "ts-node": "^8.3.0"
   },
   "peerDependencies": {
-    "typescript": ">4.0"
+    "typescript": ">=5.0"
   }
 }

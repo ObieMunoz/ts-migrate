@@ -1,7 +1,7 @@
 {
-  "name": "ts-migrate-plugins",
-  "version": "0.1.35",
-  "description": "Set of codemods, which are doing transformation of js/jsx to ts/tsx",
+  "name": "@obiemunoz/ts-migrate-plugins",
+  "version": "0.2.0",
+  "description": "Set of codemods, which are doing transformation of js/jsx to ts/tsx. Maintained fork of airbnb/ts-migrate, updated for TypeScript 5+.",
   "main": "build/src/index.js",
   "directories": {
     "test": "tests"
@@ -17,16 +17,17 @@
     "build",
     "package.json",
     "README.md",
-    "LICENCE"
+    "LICENSE"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/airbnb/ts-migrate.git",
+    "url": "https://github.com/ObieMunoz/ts-migrate.git",
     "directory": "packages/ts-migrate-plugins"
   },
   "bugs": {
-    "url": "https://github.com/airbnb/ts-migrate/issues"
+    "url": "https://github.com/ObieMunoz/ts-migrate/issues"
   },
+  "author": "Obie Munoz <obiemunozjr@gmail.com>",
   "scripts": {
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config jest-config.json",
     "lint": "eslint . --ext=.js,.jsx,.ts,.tsx --ignore-path ../../.eslintignore",
@@ -56,14 +57,14 @@
       "url": "https://github.com/lencioni"
     }
   ],
-  "homepage": "https://github.com/airbnb/ts-migrate#readme",
+  "homepage": "https://github.com/ObieMunoz/ts-migrate#readme",
   "license": "MIT",
   "dependencies": {
+    "@obiemunoz/ts-migrate-server": "^0.2.0",
     "eslint": "^9.18.0",
     "jiti": "^2.4.2",
     "jscodeshift": "^0.13.0",
-    "json-schema": "^0.4.0",
-    "ts-migrate-server": "^0.1.33"
+    "json-schema": "^0.4.0"
   },
   "gitHead": "7acf6067f15c9bb367cda9c47fcfb4203dcc54f3",
   "devDependencies": {
@@ -73,6 +74,6 @@
     "jest": "^29.7.0"
   },
   "peerDependencies": {
-    "typescript": ">4.0"
+    "typescript": ">=5.0"
   }
 }

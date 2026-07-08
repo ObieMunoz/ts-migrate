@@ -1,4 +1,4 @@
-import { Plugin as PluginType } from 'ts-migrate-server';
+import { Plugin as PluginType } from '@obiemunoz/ts-migrate-server';
 import addConversionsPlugin from './plugins/add-conversions';
 import declareMissingClassPropertiesPlugin from './plugins/declare-missing-class-properties';
 import eslintFixPlugin from './plugins/eslint-fix';

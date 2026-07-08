@@ -1,5 +1,5 @@
 import { JSONSchema7, validate } from 'json-schema';
-import { PluginOptionsError } from 'ts-migrate-server';
+import { PluginOptionsError } from '@obiemunoz/ts-migrate-server';
 
 export type Properties = JSONSchema7['properties'];
 

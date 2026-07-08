@@ -1,7 +1,7 @@
 {
-  "name": "ts-migrate-server",
-  "version": "0.1.33",
-  "description": "A package that contains the main migration runner and spawns a TSServer process",
+  "name": "@obiemunoz/ts-migrate-server",
+  "version": "0.2.0",
+  "description": "A package that contains the main migration runner and spawns a TSServer process. Maintained fork of airbnb/ts-migrate, updated for TypeScript 5+.",
   "main": "build/src/index.js",
   "directories": {
     "test": "tests"
@@ -17,16 +17,17 @@
     "build",
     "package.json",
     "README.md",
-    "LICENCE"
+    "LICENSE"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/airbnb/ts-migrate.git",
+    "url": "https://github.com/ObieMunoz/ts-migrate.git",
     "directory": "packages/ts-migrate-server"
   },
   "bugs": {
-    "url": "https://github.com/airbnb/ts-migrate/issues"
+    "url": "https://github.com/ObieMunoz/ts-migrate/issues"
   },
+  "author": "Obie Munoz <obiemunozjr@gmail.com>",
   "scripts": {
     "test": "jest --config jest-config.json",
     "lint": "eslint . --ext=.js,.jsx,.ts,.tsx --ignore-path ../../.eslintignore",
@@ -56,7 +57,7 @@
       "url": "https://github.com/lencioni"
     }
   ],
-  "homepage": "https://github.com/airbnb/ts-migrate#readme",
+  "homepage": "https://github.com/ObieMunoz/ts-migrate#readme",
   "license": "MIT",
   "dependencies": {
     "@ts-morph/bootstrap": "^0.26.0",
@@ -65,6 +66,6 @@
   },
   "gitHead": "7acf6067f15c9bb367cda9c47fcfb4203dcc54f3",
   "peerDependencies": {
-    "typescript": ">4.0"
+    "typescript": ">=5.0"
   }
 }
