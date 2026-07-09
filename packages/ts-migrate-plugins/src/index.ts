@@ -3,6 +3,7 @@ import addConversionsPlugin from './plugins/add-conversions';
 import declareMissingClassPropertiesPlugin from './plugins/declare-missing-class-properties';
 import eslintFixPlugin from './plugins/eslint-fix';
 import explicitAnyPlugin from './plugins/explicit-any';
+import hoistArrowFunctionsPlugin from './plugins/hoist-arrow-functions';
 import hoistClassStaticsPlugin from './plugins/hoist-class-statics';
 import jsDocPlugin from './plugins/jsdoc';
 import memberAccessibilityPlugin from './plugins/member-accessibility';
@@ -25,6 +26,7 @@ export {
   declareMissingClassPropertiesPlugin,
   eslintFixPlugin,
   explicitAnyPlugin,
+  hoistArrowFunctionsPlugin,
   hoistClassStaticsPlugin,
   jsDocPlugin,
   memberAccessibilityPlugin,
