@@ -63,25 +63,25 @@ process.exit(exitCode);
 
 ## What infer-types annotations mean
 
-Inferred types describe *observed* usage — evidence from the function body
-(operations on a parameter) combined with evidence from every call site the
-program can see — not author intent. Keep in mind when reviewing a migration
-diff:
+The function body is the source of truth for its contract. Call-site evidence
+is used only where it contradicts nothing; it never overrides what the body
+does:
 
-- A signature can be narrower than what the function handles at runtime.
-  `add(a, b) { return a + b; }` called only with numbers infers `number`; a
-  future string caller has to widen it.
-- Conflicting evidence is not silently unioned away. When call sites disagree
-  with each other, the dominant type wins and outlier call sites keep their
-  type errors (`logId(42)` plus `logId({ … })` infers `number`, and ts-ignore
-  flags the object call). When call sites conflict with what the body can
-  support, the union wins and the error surfaces inside the body (`add(1, 2)`
-  plus `add(1, '2')` infers `string | number` and ts-ignore flags the mixed
-  `+`). Treat suppression comments in and around freshly annotated functions
-  as review signals — they mark real looseness that a plain `any` would hide.
-- Usage that is consistently wrong is indistinguishable from intent, and
-  callers the program cannot see (e.g. consumers of a published library)
-  contribute no evidence, so exported APIs narrow to in-repo usage.
+- Body evidence wins conflicts. `greet(name) { return name.toUpperCase(); }`
+  is annotated `name: string` no matter what callers pass; an improper
+  `greet(42)` becomes a type error that ts-ignore flags at the call site.
+- Harmless call-site evidence is kept. `logId(id) { console.log(id); }` called
+  only with numbers infers `id: number`; a setter infers its parameter from
+  consistent assignments.
+- Contradictory or missing evidence falls back to `any` (`$TSFixMe`). Call
+  sites that disagree with each other on an unconstrained body, or a body
+  TypeScript cannot express a type for (`a + b` with mixed callers), get no
+  annotation rather than an arbitrary or suppression-generating one. The
+  plugin never introduces suppressions inside a function body.
+- A signature can still be narrower than everything the function could handle
+  at runtime (`half(n) { return n / 2; }` infers `number` even though a
+  numeric string would not crash), and callers the program cannot see
+  (consumers of a published library) contribute no evidence.
 
 
 # Type of plugins

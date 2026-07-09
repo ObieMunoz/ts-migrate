@@ -122,7 +122,58 @@ add(1, 2);
 `);
   });
 
-  it('resolves conflicting call sites to the dominant type instead of a union', async () => {
+  it('keeps consistent call-site inference', async () => {
+    const text = `function logId(id) {
+  console.log(id);
+}
+logId(42);
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`function logId(id: number) {
+  console.log(id);
+}
+logId(42);
+`);
+  });
+
+  it('does not let an improper caller widen a body-derived type', async () => {
+    const text = `function greet(name) {
+  return name.toUpperCase();
+}
+greet('bob');
+greet(42);
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    // The improper call site becomes a type error for ts-ignore to flag.
+    expect(result).toBe(`function greet(name: string) {
+  return name.toUpperCase();
+}
+greet('bob');
+greet(42);
+`);
+  });
+
+  it('does not let an improper caller override a structural body demand', async () => {
+    const text = `function fire(h) {
+  h.onReady();
+}
+fire(42);
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`function fire(h: { onReady: () => void; }) {
+  h.onReady();
+}
+fire(42);
+`);
+  });
+
+  it('drops inference when callers conflict and the body decides nothing', async () => {
     const text = `function logId(id) {
   console.log(id);
 }
@@ -132,32 +183,20 @@ logId({ name: 'outlier' });
 
     const result = await inferTypesPlugin.run(await realPluginParams({ text }));
 
-    // The outlier call site stays a type error for ts-ignore to flag, rather
-    // than widening the signature.
-    expect(result).toBe(`function logId(id: number) {
-  console.log(id);
-}
-logId(42);
-logId({ name: 'outlier' });
-`);
+    expect(result).toBeUndefined();
   });
 
-  it('unions call-site types the body supports', async () => {
+  it('drops inference the body cannot express instead of suppressing inside it', async () => {
     const text = `function add(a, b) {
   return a + b;
 }
 add(1, 2);
-add('x', 'y');
+add(1, '2');
 `;
 
     const result = await inferTypesPlugin.run(await realPluginParams({ text }));
 
-    expect(result).toBe(`function add(a: string | number, b: string | number) {
-  return a + b;
-}
-add(1, 2);
-add('x', 'y');
-`);
+    expect(result).toBeUndefined();
   });
 
   it('leaves un-inferable locations to the explicit-any plugin', async () => {
