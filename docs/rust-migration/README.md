@@ -8,8 +8,11 @@ Rust. It covers the current architecture, the one hard constraint that shapes
 the whole design, the proposed target architecture, a phased roadmap with exit
 criteria, testing strategy, risks, and open questions.
 
-A per-plugin porting classification lives in
-[plugin-inventory.md](./plugin-inventory.md).
+Companion documents:
+
+- [plugin-inventory.md](./plugin-inventory.md) — per-plugin porting classification
+- [ecosystem-survey.md](./ecosystem-survey.md) — survey of existing Rust/native
+  TS tooling we reuse instead of rebuilding (parsers, checker, lint, codemod infra)
 
 ---
 
@@ -64,7 +67,7 @@ Options considered:
 
 | Option | Verdict |
 | --- | --- |
-| **A. `tsgo` (typescript-go, the native TS 7 compiler) as a sidecar process** | **Preferred.** Native binary, no Node runtime, same checker semantics as tsc going forward, actively developed by Microsoft. Drive it over its LSP interface (`textDocument/publishDiagnostics` with in-memory overlays) or its API server mode. |
+| **A. TypeScript 7 native compiler (typescript-go/`tsgo`) as a sidecar process** | **Preferred.** Native binary, no Node runtime, same checker semantics as tsc (RC since June 2026, GA imminent; see [ecosystem-survey.md](./ecosystem-survey.md)). Drive it over its **LSP** interface with in-memory document overlays — the programmatic API isn't stable until at least TS 7.1, so LSP is the integration point. Precedent: oxlint already uses tsgo for its type-aware rules. |
 | B. Node sidecar running `tsserver` (or a ~100-line helper script that loads `typescript` and emits diagnostics as JSON) | Fallback / compatibility mode. Keeps exact parity with whatever TS version the user has installed, at the cost of requiring Node. Cheap to build; useful during parity testing to diff A against B. |
 | C. Reimplement the needed checks in Rust | Rejected. The diagnostic codes these plugins consume (2571, 7005, 7006, 2339, …) come from full type inference. This is a multi-year project on its own. |
 | D. Wait for a Rust type checker | Rejected. Nothing production-ready exists or is on a credible timeline. |
