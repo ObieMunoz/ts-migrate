@@ -589,4 +589,53 @@ export default alt.createStore(Store, 'Store');
 
     expect(secondResult).toBe(firstResult);
   });
+
+  it('does not hoist a value past an intervening reassignment of its binding', async () => {
+    const text = `let version = 1;
+class App {}
+version = 2;
+App.version = version;
+`;
+
+    const result = (await hoistClassStaticsPlugin.run(
+      mockPluginParams({ fileName: 'file.ts', text }),
+    )) as string;
+
+    // Hoisting the initializer would capture 1 instead of 2.
+    expect(result).not.toContain('static version = version');
+    expect(result).toContain('App.version = version;');
+    expect(result).toContain('static version');
+  });
+
+  it('does not hoist a call expression past intervening statements', async () => {
+    const text = `const track = (name: any) => name;
+class Widget {}
+track('setup');
+Widget.label = track('label');
+`;
+
+    const result = (await hoistClassStaticsPlugin.run(
+      mockPluginParams({ fileName: 'file.ts', text }),
+    )) as string;
+
+    // Hoisting would run track('label') before track('setup').
+    expect(result).not.toContain("static label = track('label')");
+    expect(result).toContain("Widget.label = track('label');");
+    expect(result).toContain('static label');
+  });
+
+  it('does not declare duplicate members for repeated assignments to one static', async () => {
+    const text = `class Config {}
+Config.mode = 'dev';
+Config.mode = 'prod';
+`;
+
+    const result = (await hoistClassStaticsPlugin.run(
+      mockPluginParams({ fileName: 'file.ts', text }),
+    )) as string;
+
+    expect(result.match(/static mode/g)).toHaveLength(1);
+    expect(result).toContain("static mode = 'dev';");
+    expect(result).toContain("Config.mode = 'prod';");
+  });
 });

@@ -215,34 +215,60 @@ function replaceTS7031(
   diagnostics: ts.DiagnosticWithLocation[],
   typeAnnotation: TSTypeAnnotation,
 ) {
-  const getParentObjectPattern = (path: any) => {
+  const matchesDiagnostic = (node: any, diagnostic: ts.DiagnosticWithLocation) =>
+    node != null &&
+    node.start === diagnostic.start &&
+    node.end === diagnostic.start + diagnostic.length;
+
+  // Climb to the outermost enclosing binding pattern, crossing object
+  // properties, nested patterns, rest elements, and defaults (`= {}`).
+  // Annotations are only valid on the outermost pattern, not on nested
+  // binding elements.
+  const getOutermostPattern = (path: any) => {
     let res = path;
-    while (
-      res.parent &&
-      j.ObjectProperty.check(res.parent.value) &&
-      res.parent.parent &&
-      j.ObjectPattern.check(res.parent.parent.value)
-    ) {
-      res = res.parent.parent;
+    let cur = path.parent;
+    while (cur) {
+      if (j.ObjectPattern.check(cur.value) || j.ArrayPattern.check(cur.value)) {
+        res = cur;
+      } else if (
+        !j.ObjectProperty.check(cur.value) &&
+        !j.AssignmentPattern.check(cur.value) &&
+        !j.RestElement.check(cur.value)
+      ) {
+        break;
+      }
+      cur = cur.parent;
     }
     return res;
   };
 
   diagnostics.forEach((diagnostic) => {
+    const annotateOutermostPattern = (path: any) => {
+      const pattern = getOutermostPattern(path);
+      if (pattern.node.typeAnnotation == null) {
+        pattern.get('typeAnnotation').replace(typeAnnotation);
+      }
+    };
+
     root.find(j.ObjectPattern).forEach((path) => {
-      if (path.node.typeAnnotation == null) {
-        const propertyIndex = path.node.properties.findIndex(
-          (property: any) =>
-            property.start === diagnostic.start &&
-            property.end === diagnostic.start + diagnostic.length &&
-            j.ObjectProperty.check(property),
-        );
-        if (propertyIndex !== -1) {
-          const objectPattern = getParentObjectPattern(path);
-          if (objectPattern.node.typeAnnotation == null) {
-            objectPattern.get('typeAnnotation').replace(typeAnnotation);
-          }
-        }
+      const matched = path.node.properties.some(
+        (property: any) => j.ObjectProperty.check(property) && matchesDiagnostic(property, diagnostic),
+      );
+      if (matched) {
+        annotateOutermostPattern(path);
+      }
+    });
+
+    root.find(j.ArrayPattern).forEach((path) => {
+      const matched = path.node.elements.some(
+        (element: any) =>
+          element != null &&
+          (matchesDiagnostic(element, diagnostic) ||
+            matchesDiagnostic(element.argument, diagnostic) ||
+            matchesDiagnostic(element.left, diagnostic)),
+      );
+      if (matched) {
+        annotateOutermostPattern(path);
       }
     });
   });
