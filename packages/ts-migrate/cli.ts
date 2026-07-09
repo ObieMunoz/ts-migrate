@@ -10,6 +10,7 @@ import {
   declareMissingClassPropertiesPlugin,
   eslintFixPlugin,
   explicitAnyPlugin,
+  hoistArrowFunctionsPlugin,
   hoistClassStaticsPlugin,
   jsDocPlugin,
   memberAccessibilityPlugin,
@@ -31,6 +32,7 @@ const availablePlugins = [
   declareMissingClassPropertiesPlugin,
   eslintFixPlugin,
   explicitAnyPlugin,
+  hoistArrowFunctionsPlugin,
   hoistClassStaticsPlugin,
   jsDocPlugin,
   memberAccessibilityPlugin,
@@ -155,6 +157,7 @@ yargs
         config = new MigrateConfig()
           .addPlugin(stripTSIgnorePlugin, {})
           .addPlugin(hoistClassStaticsPlugin, { anyAlias })
+          .addPlugin(hoistArrowFunctionsPlugin, {})
           .addPlugin(reactPropsPlugin, {
             anyAlias,
             anyFunctionAlias,
