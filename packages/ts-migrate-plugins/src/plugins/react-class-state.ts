@@ -83,7 +83,9 @@ const reactClassStatePlugin: Plugin<Options> = {
           text: ` ${printer.printNode(
             ts.EmitHint.Unspecified,
             ts.factory.updateExpressionWithTypeArguments(heritageType, heritageType.expression, [
-              propsType || ts.factory.createTypeLiteralNode([]),
+              // `object` rather than `{}` (no-empty-object-type) or `Record<string, never>`,
+              // whose index signature types unknown prop accesses as `never` instead of erroring.
+              propsType || ts.factory.createKeywordTypeNode(ts.SyntaxKind.ObjectKeyword),
               ts.factory.createTypeReferenceNode(stateTypeName, undefined),
             ]),
             sourceFile,

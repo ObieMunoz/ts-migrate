@@ -22,7 +22,7 @@ export default Foo;
 
 type State = $TSFixMe;
 
-class Foo extends React.Component<{}, State> {
+class Foo extends React.Component<object, State> {
   render() {
     return this.state.loading ? <div>Loading...</div> : <div />;
   }
@@ -105,7 +105,7 @@ export default Foo;
 
 type BarState = $TSFixMe;
 
-class Bar extends React.Component<{}, BarState> {
+class Bar extends React.Component<object, BarState> {
   render() {
     return this.state.loading ? <div>Loading...</div> : <div>Bar</div>;
   }
@@ -113,7 +113,7 @@ class Bar extends React.Component<{}, BarState> {
 
 type FooState = $TSFixMe;
 
-class Foo extends React.Component<{}, FooState> {
+class Foo extends React.Component<object, FooState> {
   render() {
     return this.state.loading ? <div>Loading...</div> : <div>Foo</div>;
   }

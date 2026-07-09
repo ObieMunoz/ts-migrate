@@ -139,9 +139,7 @@ const spreadReplacements: SpreadReplacement[] = [
       defaultImport: 'withRouterPropTypes',
       moduleSpecifier: ':routing/shapes/RR4PropTypes',
     },
-    typeRef: ts.factory.createTypeReferenceNode('RouteConfigComponentProps', [
-      ts.factory.createTypeLiteralNode([]),
-    ]),
+    typeRef: ts.factory.createTypeReferenceNode('RouteConfigComponentProps', undefined),
     typeImport: {
       namedImport: 'RouteConfigComponentProps',
       moduleSpecifier: 'react-router-config',
@@ -255,7 +253,7 @@ function updatePropTypes(
     const heritageTypeArgs = heritageType.typeArguments || [];
     const propsType = heritageTypeArgs[0];
     const stateType = heritageTypeArgs[1];
-    if (!propsType || isEmptyTypeLiteral(propsType)) {
+    if (!propsType || isEmptyPropsType(propsType)) {
       const propTypesNode = findClassPropTypesNode(node, sourceFile);
       const objectLiteral = propTypesNode && findPropTypesObjectLiteral(propTypesNode, sourceFile);
       if (objectLiteral) {
@@ -290,8 +288,24 @@ function updatePropTypes(
   return updates;
 }
 
-function isEmptyTypeLiteral(node: ts.Node) {
-  return ts.isTypeLiteralNode(node) && node.members.length === 0;
+// Matches the placeholders used for prop-less components: `object`, `{}`,
+// and `Record<string, never>`.
+function isEmptyPropsType(node: ts.Node) {
+  if (node.kind === ts.SyntaxKind.ObjectKeyword) {
+    return true;
+  }
+  if (ts.isTypeLiteralNode(node) && node.members.length === 0) {
+    return true;
+  }
+  return (
+    ts.isTypeReferenceNode(node) &&
+    ts.isIdentifier(node.typeName) &&
+    node.typeName.text === 'Record' &&
+    node.typeArguments != null &&
+    node.typeArguments.length === 2 &&
+    node.typeArguments[0].kind === ts.SyntaxKind.StringKeyword &&
+    node.typeArguments[1].kind === ts.SyntaxKind.NeverKeyword
+  );
 }
 
 function updateObjectLiteral(

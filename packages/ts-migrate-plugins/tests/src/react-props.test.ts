@@ -659,6 +659,48 @@ export default Foo;
 `);
   });
 
+  it.each(['object', 'Record<string, never>'])(
+    'replaces %s props placeholder',
+    async (placeholder) => {
+      const text = `import React from 'react';
+import PropTypes from 'prop-types';
+
+type FooState = {
+  fooState: string;
+};
+
+class Foo extends React.Component<${placeholder}, FooState> {
+  render() {}
+}
+
+Foo.propTypes = {
+  message: PropTypes.string.isRequired,
+};
+
+export default Foo;
+`;
+
+      const result = await reactPropsPlugin.run(mockPluginParams({ text, fileName: 'Foo.tsx' }));
+
+      expect(result).toBe(`import React from 'react';
+
+type FooState = {
+  fooState: string;
+};
+
+type Props = {
+    message: string;
+};
+
+class Foo extends React.Component<Props, FooState> {
+  render() {}
+}
+
+export default Foo;
+`);
+    },
+  );
+
   it('does not modify class without props', async () => {
     const text = `import React from 'react';
 
@@ -992,7 +1034,7 @@ import { RouteConfigComponentProps } from "react-router-config";
 */
 type Props = {
     foo?: string;
-} & WithStylesProps & WithBreakpointProps & RouteConfigComponentProps<{}>;
+} & WithStylesProps & WithBreakpointProps & RouteConfigComponentProps;
 
 function Foo({}: Props) {
   return <div />;
@@ -1049,7 +1091,7 @@ import { RouteConfigComponentProps } from "react-router-config";
 */
 type Props = {
     foo?: string;
-} & WithStylesProps & WithBreakpointProps & RouteConfigComponentProps<{}>;
+} & WithStylesProps & WithBreakpointProps & RouteConfigComponentProps;
 
 function Foo({}: Props) {
   return <div />;
