@@ -1,3 +1,4 @@
+/* eslint-disable no-await-in-loop, no-restricted-syntax */
 import ts from 'typescript';
 import fs from 'fs';
 import path from 'path';
@@ -55,49 +56,82 @@ export default async function migrate({
     getSourceFilesToMigrate(project).map((file) => file.fileName),
   );
 
-  for (let i = 0; i < config.plugins.length; i += 1) {
-    const { plugin, options: pluginOptions } = config.plugins[i];
-
-    const pluginLogPrefix = `[${plugin.name}]`;
-    const pluginTimer = new PerfTimer();
-    log.info(`${pluginLogPrefix} Plugin ${i + 1} of ${config.plugins.length}. Start...`);
-
-    const sourceFiles = getSourceFilesToMigrate(project).filter(({ fileName }) =>
-      originalSourceFilesToMigrate.has(fileName),
-    );
-
-    // eslint-disable-next-line no-restricted-syntax
-    for (const sourceFile of sourceFiles) {
-      const { fileName } = sourceFile;
-      // const fileTimer = new PerfTimer();
-      const relFile = path.relative(rootDir, sourceFile.fileName);
-      const fileLogPrefix = `${pluginLogPrefix}[${relFile}]`;
-
-      const getLanguageService = () => project.getLanguageService();
-
-      const params: PluginParams<unknown> = {
-        fileName,
-        rootDir,
-        sourceFile,
-        text: sourceFile.text,
-        options: pluginOptions,
-        getLanguageService,
-      };
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        const newText = await plugin.run(params, lintConfig);
-        if (typeof newText === 'string' && newText !== sourceFile.text) {
-          project.updateSourceFile(fileName, newText);
-          updatedSourceFiles.add(sourceFile.fileName);
-        }
-      } catch (pluginErr) {
-        log.error(`${fileLogPrefix} Error:\n`, pluginErr);
-        exitCode = -1;
-      }
-      // log.info(`${fileLogPrefix} Finished in ${fileTimer.elapsedStr()}.`);
+  // Consecutive repeatUntilStable plugins form one group; other plugins are
+  // groups of one that run a single pass.
+  const pluginGroups: { pluginIndexes: number[]; repeatUntilStable: boolean }[] = [];
+  config.plugins.forEach(({ repeatUntilStable }, index) => {
+    const lastGroup = pluginGroups[pluginGroups.length - 1];
+    if (repeatUntilStable && lastGroup && lastGroup.repeatUntilStable) {
+      lastGroup.pluginIndexes.push(index);
+    } else {
+      pluginGroups.push({ pluginIndexes: [index], repeatUntilStable: !!repeatUntilStable });
     }
+  });
 
-    log.info(`${pluginLogPrefix} Finished in ${pluginTimer.elapsedStr()}.`);
+  const maxStablePasses = 5;
+
+  for (const pluginGroup of pluginGroups) {
+    for (let pass = 0; ; pass += 1) {
+      let changedInPass = false;
+
+      for (const i of pluginGroup.pluginIndexes) {
+        const { plugin, options: pluginOptions } = config.plugins[i];
+
+        const pluginLogPrefix = `[${plugin.name}]`;
+        const pluginTimer = new PerfTimer();
+        const passSuffix = pass > 0 ? ` (pass ${pass + 1})` : '';
+        log.info(
+          `${pluginLogPrefix} Plugin ${i + 1} of ${config.plugins.length}${passSuffix}. Start...`,
+        );
+
+        const sourceFiles = getSourceFilesToMigrate(project).filter(({ fileName }) =>
+          originalSourceFilesToMigrate.has(fileName),
+        );
+
+        for (const sourceFile of sourceFiles) {
+          const { fileName } = sourceFile;
+          // const fileTimer = new PerfTimer();
+          const relFile = path.relative(rootDir, sourceFile.fileName);
+          const fileLogPrefix = `${pluginLogPrefix}[${relFile}]`;
+
+          const getLanguageService = () => project.getLanguageService();
+
+          const params: PluginParams<unknown> = {
+            fileName,
+            rootDir,
+            sourceFile,
+            text: sourceFile.text,
+            options: pluginOptions,
+            getLanguageService,
+          };
+          try {
+            const newText = await plugin.run(params, lintConfig);
+            if (typeof newText === 'string' && newText !== sourceFile.text) {
+              project.updateSourceFile(fileName, newText);
+              updatedSourceFiles.add(sourceFile.fileName);
+              changedInPass = true;
+            }
+          } catch (pluginErr) {
+            log.error(`${fileLogPrefix} Error:\n`, pluginErr);
+            exitCode = -1;
+          }
+          // log.info(`${fileLogPrefix} Finished in ${fileTimer.elapsedStr()}.`);
+        }
+
+        log.info(`${pluginLogPrefix} Finished in ${pluginTimer.elapsedStr()}.`);
+      }
+
+      if (!pluginGroup.repeatUntilStable || !changedInPass) {
+        break;
+      }
+      if (pass + 1 >= maxStablePasses) {
+        const names = pluginGroup.pluginIndexes
+          .map((i) => config.plugins[i].plugin.name)
+          .join(', ');
+        log.warn(`Plugin group [${names}] still changing files after ${maxStablePasses} passes.`);
+        break;
+      }
+    }
   }
 
   log.info(`Finished in ${pluginsTimer.elapsedStr()}, for ${config.plugins.length} plugin(s).`);
