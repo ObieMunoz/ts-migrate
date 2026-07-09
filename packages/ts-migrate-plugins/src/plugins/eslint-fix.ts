@@ -75,9 +75,7 @@ const eslintFixPlugin: Plugin = {
       }
       return newText;
     } catch (e) {
-      if (e instanceof Error) {
-        console.error('Error occurred in eslint-fix plugin: ', e.message);
-      }
+      console.error('Error occurred in eslint-fix plugin: ', e instanceof Error ? e.message : e);
       return text;
     }
   },
