@@ -122,6 +122,44 @@ add(1, 2);
 `);
   });
 
+  it('resolves conflicting call sites to the dominant type instead of a union', async () => {
+    const text = `function logId(id) {
+  console.log(id);
+}
+logId(42);
+logId({ name: 'outlier' });
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    // The outlier call site stays a type error for ts-ignore to flag, rather
+    // than widening the signature.
+    expect(result).toBe(`function logId(id: number) {
+  console.log(id);
+}
+logId(42);
+logId({ name: 'outlier' });
+`);
+  });
+
+  it('unions call-site types the body supports', async () => {
+    const text = `function add(a, b) {
+  return a + b;
+}
+add(1, 2);
+add('x', 'y');
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`function add(a: string | number, b: string | number) {
+  return a + b;
+}
+add(1, 2);
+add('x', 'y');
+`);
+  });
+
   it('leaves un-inferable locations to the explicit-any plugin', async () => {
     const text = `function track(count, mystery) {
   count.toFixed(2);

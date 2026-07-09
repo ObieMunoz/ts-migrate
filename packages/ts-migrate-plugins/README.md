@@ -61,6 +61,28 @@ process.exit(exitCode);
 | [strip-ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/strip-ts-ignore.ts) | Strip `// @ts-ignore`. comments |
 | [ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/ts-ignore.ts) | Add `// @ts-ignore` comments for the remaining errors. |
 
+## What infer-types annotations mean
+
+Inferred types describe *observed* usage — evidence from the function body
+(operations on a parameter) combined with evidence from every call site the
+program can see — not author intent. Keep in mind when reviewing a migration
+diff:
+
+- A signature can be narrower than what the function handles at runtime.
+  `add(a, b) { return a + b; }` called only with numbers infers `number`; a
+  future string caller has to widen it.
+- Conflicting evidence is not silently unioned away. When call sites disagree
+  with each other, the dominant type wins and outlier call sites keep their
+  type errors (`logId(42)` plus `logId({ … })` infers `number`, and ts-ignore
+  flags the object call). When call sites conflict with what the body can
+  support, the union wins and the error surfaces inside the body (`add(1, 2)`
+  plus `add(1, '2')` infers `string | number` and ts-ignore flags the mixed
+  `+`). Treat suppression comments in and around freshly annotated functions
+  as review signals — they mark real looseness that a plain `any` would hide.
+- Usage that is consistently wrong is indistinguishable from intent, and
+  callers the program cannot see (e.g. consumers of a published library)
+  contribute no evidence, so exported APIs narrow to in-repo usage.
+
 
 # Type of plugins
 
