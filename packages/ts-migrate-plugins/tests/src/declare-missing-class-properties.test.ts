@@ -109,9 +109,41 @@ class Class2 {
     expect(result).toBe(text);
   });
 
-  it('returns the original text when parsing throws', async () => {
-    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
-    // Duplicate parameter names are a strict-mode SyntaxError for the parser.
+  it('declares properties in classes with static blocks', async () => {
+    const text = `class Store {
+  static registry;
+
+  static {
+    Store.registry = new Map();
+  }
+
+  init() {
+    this.items = [];
+  }
+}`;
+
+    const result = await declareMissingClassPropertiesPlugin.run(
+      mockPluginParams({
+        text,
+        semanticDiagnostics: [mockDiagnostic(text, 'items', { code: 2339 })],
+      }),
+    );
+
+    expect(result).toBe(`class Store {
+  static registry;
+  items: any;
+
+  static {
+    Store.registry = new Map();
+  }
+
+  init() {
+    this.items = [];
+  }
+}`);
+  });
+
+  it('ignores diagnostics that do not map to a property access on this', async () => {
     const text = `function f(a, a) {
   return a;
 }`;
@@ -125,7 +157,5 @@ class Class2 {
     );
 
     expect(result).toBe(text);
-    expect(consoleError).toHaveBeenCalled();
-    consoleError.mockRestore();
   });
 });

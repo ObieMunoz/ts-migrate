@@ -6,16 +6,50 @@ on:
   pull_request:
     branches: [master]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Lint
+        run: yarn lint
+
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     strategy:
+      fail-fast: false
       matrix:
-        node-version: ['20', '22']
         # SyntaxKind numbering differs between TypeScript 5.8 and 5.9; 6.0 deprecates
-        # legacy module resolution and ships a new lib. Test the 5.x floor, 5.9, and 6.x.
+        # legacy module resolution and ships a new lib. Test the 5.x floor, 5.9, and
+        # 6.x on one Node line, plus each other supported Node line on the default
+        # TypeScript — the axes are independent, so skip the full cross product.
+        node-version: ['22']
         typescript-version: ['5.7.3', '5.9.3', '6.0.3']
+        include:
+          - node-version: '20'
+            typescript-version: '5.9.3'
+          - node-version: '24'
+            typescript-version: '5.9.3'
 
     steps:
       - uses: actions/checkout@v4
@@ -30,10 +64,10 @@ jobs:
         run: yarn install --frozen-lockfile
 
       - name: Use TypeScript ${{ matrix.typescript-version }}
-        run: yarn add -W -D -E typescript@${{ matrix.typescript-version }}
-
-      - name: Lint
-        run: npx lerna run lint
+        run: |
+          if [ "$(node -p "require('typescript').version")" != "${{ matrix.typescript-version }}" ]; then
+            yarn add -W -D -E typescript@${{ matrix.typescript-version }}
+          fi
 
       # The matrix swaps only the typescript version, which Nx doesn't hash. Never
       # give this step a persisted Nx cache (e.g. actions/cache on .nx): a warm cache

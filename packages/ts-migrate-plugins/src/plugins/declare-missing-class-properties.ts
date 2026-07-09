@@ -1,96 +1,82 @@
-import jscodeshift, { ASTPath, ClassBody } from 'jscodeshift';
+import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
+import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 
 type Options = AnyAliasOptions;
 
-const j = jscodeshift.withParser('tsx');
-
 const declareMissingClassPropertiesPlugin: Plugin<Options> = {
   name: 'declare-missing-class-properties',
 
-  async run({ text, fileName, getLanguageService, options }) {
+  run({ fileName, sourceFile, getLanguageService, options }) {
     const diagnostics = getLanguageService()
       .getSemanticDiagnostics(fileName)
       .filter(isDiagnosticWithLinePosition)
       .filter((diagnostic) => diagnostic.code === 2339 || diagnostic.code === 2551);
 
-    let root;
-    try {
-      root = j(text);
-    } catch (e) {
-      if (e instanceof Error) {
-        console.error('Error occurred in declare-missing-class-properties plugin: ', e.message);
-      }
-      return text;
-    }
-
-    const toAdd: { classBody: ASTPath<ClassBody>; propertyNames: Set<string> }[] = [];
+    const anyType = options.anyAlias ?? 'any';
+    const toAdd = new Map<ts.ClassLikeDeclaration, Set<string>>();
 
     diagnostics.forEach((diagnostic) => {
-      root
-        .find(j.Identifier)
-        .filter(
-          (path) =>
-            (path.node as any).start === diagnostic.start &&
-            (path.node as any).end === diagnostic.start + diagnostic.length &&
-            path.parentPath.node.type === 'MemberExpression' &&
-            path.parentPath.node.object.type === 'ThisExpression',
-        )
-        .forEach((path) => {
-          const classBody = findParentClassBody(path);
-          if (classBody) {
-            let item = toAdd.find((cur) => cur.classBody === classBody);
-            if (!item) {
-              item = { classBody, propertyNames: new Set() };
-              toAdd.push(item);
-            }
+      const node = findNodeAtSpan(sourceFile, diagnostic);
+      if (!node || !ts.isIdentifier(node)) return;
+      const access = node.parent;
+      if (
+        !ts.isPropertyAccessExpression(access) ||
+        access.name !== node ||
+        access.expression.kind !== ts.SyntaxKind.ThisKeyword
+      ) {
+        return;
+      }
 
-            item.propertyNames.add(path.node.name);
-          }
-        });
+      const classDeclaration = findEnclosingClass(access);
+      if (classDeclaration) {
+        let propertyNames = toAdd.get(classDeclaration);
+        if (!propertyNames) {
+          propertyNames = new Set();
+          toAdd.set(classDeclaration, propertyNames);
+        }
+        propertyNames.add(node.text);
+      }
     });
 
-    toAdd.forEach(({ classBody, propertyNames: propertyNameSet }) => {
+    const updates: SourceTextUpdate[] = [];
+    toAdd.forEach((propertyNameSet, classDeclaration) => {
       const propertyNames = Array.from(propertyNameSet)
         .filter((propertyName) => {
-          const existingProperty = classBody.node.body.find(
-            (n) =>
-              n.type === 'ClassProperty' &&
-              n.key.type === 'Identifier' &&
-              n.key.name === propertyName,
+          const existingProperty = classDeclaration.members.find(
+            (member) =>
+              ts.isPropertyDeclaration(member) &&
+              ts.isIdentifier(member.name) &&
+              member.name.text === propertyName,
           );
           return existingProperty == null;
         })
         .sort();
+      if (propertyNames.length === 0) return;
 
-      let index = -1;
-      for (let i = 0; i < classBody.node.body.length; i += 1) {
-        const node = classBody.node.body[i];
-        if (node.type === 'ClassProperty' && node.static) {
-          index = i;
+      // Declarations go after the last static property, so instance properties
+      // don't separate the statics from each other.
+      let anchor: ts.ClassElement | undefined;
+      classDeclaration.members.forEach((member) => {
+        if (
+          ts.isPropertyDeclaration(member) &&
+          member.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword)
+        ) {
+          anchor = member;
         }
-      }
+      });
 
-      classBody.node.body.splice(
-        index + 1,
-        0,
-        ...propertyNames.map((propertyName) =>
-          j.classProperty(
-            j.identifier(propertyName),
-            null,
-            j.tsTypeAnnotation(
-              options.anyAlias == null
-                ? j.tsAnyKeyword()
-                : j.tsTypeReference(j.identifier(options.anyAlias)),
-            ),
-          ),
-        ),
-      );
+      const index = anchor != null ? anchor.end : getOpenBraceEnd(classDeclaration, sourceFile);
+      const indent = getMemberIndentation(classDeclaration, anchor, sourceFile);
+      const text = propertyNames
+        .map((propertyName) => `\n${indent}${propertyName}: ${anyType};`)
+        .join('');
+      updates.push({ kind: 'insert', index, text });
     });
 
-    return root.toSource();
+    return updateSourceText(sourceFile.text, updates);
   },
 
   validate: validateAnyAliasOptions,
@@ -98,25 +84,75 @@ const declareMissingClassPropertiesPlugin: Plugin<Options> = {
 
 export default declareMissingClassPropertiesPlugin;
 
-function findParentClassBody(path: ASTPath): ASTPath<ClassBody> | undefined {
-  let cur: ASTPath = path;
-  while (cur.node.type !== 'Program') {
-    if (cur.node.type === 'ClassBody') {
-      return cur as ASTPath<ClassBody>;
+/** The innermost node whose span matches the diagnostic exactly. */
+function findNodeAtSpan(
+  sourceFile: ts.SourceFile,
+  diagnostic: ts.DiagnosticWithLocation,
+): ts.Node | undefined {
+  const end = diagnostic.start + diagnostic.length;
+  let result: ts.Node | undefined;
+  const visit = (node: ts.Node): void => {
+    if (node.getStart(sourceFile) > diagnostic.start || node.end < end) return;
+    if (node.getStart(sourceFile) === diagnostic.start && node.end === end) {
+      result = node;
+    }
+    node.forEachChild(visit);
+  };
+  visit(sourceFile);
+  return result;
+}
+
+function findEnclosingClass(node: ts.Node): ts.ClassLikeDeclaration | undefined {
+  let cur: ts.Node | undefined = node;
+  while (cur && !ts.isSourceFile(cur)) {
+    if (ts.isClassLike(cur)) {
+      return cur;
     }
 
     // These rebind `this`, so the member expression does not refer to the
     // enclosing class instance.
+    if (ts.isFunctionDeclaration(cur) || ts.isFunctionExpression(cur)) {
+      return undefined;
+    }
     if (
-      cur.node.type === 'FunctionDeclaration' ||
-      cur.node.type === 'FunctionExpression' ||
-      cur.node.type === 'ObjectMethod'
+      (ts.isMethodDeclaration(cur) || ts.isAccessor(cur)) &&
+      ts.isObjectLiteralExpression(cur.parent)
     ) {
       return undefined;
     }
 
-    cur = cur.parentPath;
+    cur = cur.parent;
   }
 
   return undefined;
+}
+
+function getOpenBraceEnd(
+  classDeclaration: ts.ClassLikeDeclaration,
+  sourceFile: ts.SourceFile,
+): number {
+  const openBrace = classDeclaration
+    .getChildren(sourceFile)
+    .find((child) => child.kind === ts.SyntaxKind.OpenBraceToken);
+  return openBrace != null ? openBrace.end : classDeclaration.members.pos;
+}
+
+function getMemberIndentation(
+  classDeclaration: ts.ClassLikeDeclaration,
+  anchor: ts.ClassElement | undefined,
+  sourceFile: ts.SourceFile,
+): string {
+  const reference = anchor ?? classDeclaration.members[0];
+  if (reference != null) {
+    return getLineIndentation(reference, sourceFile);
+  }
+  return `${getLineIndentation(classDeclaration, sourceFile)}  `;
+}
+
+function getLineIndentation(node: ts.Node, sourceFile: ts.SourceFile): string {
+  const start = node.getStart(sourceFile);
+  const { line } = sourceFile.getLineAndCharacterOfPosition(start);
+  const lineStart = sourceFile.getPositionOfLineAndCharacter(line, 0);
+  const match = /^[ \t]*/.exec(sourceFile.text.slice(lineStart, start));
+  return match ? match[0] : '';
 }
