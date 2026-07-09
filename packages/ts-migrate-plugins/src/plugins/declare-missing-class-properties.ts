@@ -21,7 +21,6 @@ const declareMissingClassPropertiesPlugin: Plugin<Options> = {
       root = j(text);
     } catch (e) {
       if (e instanceof Error) {
-        // eslint-disable-next-line no-console
         console.error('Error occurred in declare-missing-class-properties plugin: ', e.message);
       }
       return text;

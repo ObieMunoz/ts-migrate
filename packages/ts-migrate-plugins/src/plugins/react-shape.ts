@@ -1,4 +1,3 @@
-/* eslint-disable no-restricted-syntax, no-use-before-define, @typescript-eslint/no-use-before-define */
 import ts from 'typescript';
 import path from 'path';
 import { Plugin } from '@obiemunoz/ts-migrate-server';

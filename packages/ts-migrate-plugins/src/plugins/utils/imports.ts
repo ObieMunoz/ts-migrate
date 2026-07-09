@@ -1,4 +1,3 @@
-/* eslint-disable no-use-before-define, no-restricted-syntax */
 import ts from 'typescript';
 import { SourceTextUpdate } from '../../utils/updateSourceText';
 import { getTextPreservingWhitespace } from './text';

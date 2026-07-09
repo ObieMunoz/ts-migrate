@@ -1,4 +1,3 @@
-/* eslint-disable no-bitwise */
 import ts from 'typescript';
 import { Plugin, PluginOptionsError } from '@obiemunoz/ts-migrate-server';
 

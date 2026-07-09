@@ -24,7 +24,6 @@ async function runInDir(dir: string, text: string): Promise<string | undefined> 
   process.chdir(dir);
   jest.resetModules();
   try {
-    // eslint-disable-next-line global-require, @typescript-eslint/no-var-requires
     const plugin = require('../../src/plugins/eslint-fix').default;
     return await plugin.run(mockPluginParams({ text, fileName: 'Foo.tsx' }));
   } finally {
