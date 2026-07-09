@@ -102,6 +102,20 @@ export default async function migrate({
 
   log.info(`Finished in ${pluginsTimer.elapsedStr()}, for ${config.plugins.length} plugin(s).`);
 
+  // Files that still fail to parse cannot be fixed by suppression comments;
+  // surface them instead of reporting success.
+  const filesWithSyntaxErrors = getSourceFilesToMigrate(project)
+    .filter(({ fileName }) => originalSourceFilesToMigrate.has(fileName))
+    .filter(
+      ({ fileName }) => project.getLanguageService().getSyntacticDiagnostics(fileName).length > 0,
+    );
+  if (filesWithSyntaxErrors.length > 0) {
+    filesWithSyntaxErrors.forEach(({ fileName }) => {
+      log.error(`${path.relative(rootDir, fileName)} still has syntax errors after migration.`);
+    });
+    exitCode = -1;
+  }
+
   const writeTimer = new PerfTimer();
 
   log.info(`Writing ${updatedSourceFiles.size} updated file(s)...`);

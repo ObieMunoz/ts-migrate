@@ -188,7 +188,7 @@ export default Foo;
     `);
   });
 
-  it('does not add ignore comment for webpackChunkName', async () => {
+  it('adds ignore comment below webpackChunkName magic comments without disturbing them', async () => {
     const text = `const getComponent = normalizeLoader(() =>
   import(
     /* webpackChunkName: "Component_async" */
@@ -205,15 +205,14 @@ export default Foo;
       }),
     );
 
-    expect(result).toMatchInlineSnapshot(`
-      "const getComponent = normalizeLoader(() =>
-        import(
-          /* webpackChunkName: "Component_async" */
-          './this_module_does_not_exist'
-        ),
-      );
-      "
-    `);
+    expect(result).toBe(`const getComponent = normalizeLoader(() =>
+  import(
+    /* webpackChunkName: "Component_async" */
+    // @ts-expect-error TS(123) FIXME: diagnostic message
+    './this_module_does_not_exist'
+  ),
+);
+`);
   });
 
   it('handles error within ternary when true', async () => {
@@ -462,5 +461,136 @@ export default Foo;
     childrenLines.forEach((line) => {
       expect(line).not.toMatch(/^\s*\/\/ @ts-expect-error/);
     });
+  });
+});
+
+describe('ts-ignore plugin multiline string/comment contexts', () => {
+  // Re-checks plugin output with a fresh language service so assertions run
+  // against the diagnostics tsc would actually report post-migration.
+  async function residualDiagnosticCodes(
+    fileName: string,
+    text: string,
+    compilerOptions?: ts.CompilerOptions,
+  ): Promise<number[]> {
+    const params = await realPluginParams({ fileName, text, compilerOptions });
+    const languageService = params.getLanguageService();
+    return [
+      ...languageService.getSyntacticDiagnostics(params.fileName),
+      ...languageService.getSemanticDiagnostics(params.fileName),
+    ].map((diagnostic) => diagnostic.code);
+  }
+
+  it('does not corrupt a backslash-continued string literal', async () => {
+    const text = `const id = (a: number) => a;
+const banner = 'Hello \\
+World'; id(1, 2);
+console.log(banner);
+`;
+
+    const result = (await tsIgnorePlugin.run(await realPluginParams({ text }))) as string;
+
+    expect(result).toContain(`'Hello \\
+World'`);
+    const residual = await residualDiagnosticCodes('file.ts', result);
+    expect(residual).not.toContain(1002); // Unterminated string literal
+    expect(residual).not.toContain(2554);
+  });
+
+  it('does not insert into a multiline no-substitution template literal', async () => {
+    const text = `const id = (a: number) => a;
+const sql = \`SELECT *
+  FROM widgets\`; id(1, 2);
+console.log(sql);
+`;
+
+    const result = (await tsIgnorePlugin.run(await realPluginParams({ text }))) as string;
+
+    expect(result).toContain(`\`SELECT *
+  FROM widgets\``);
+    expect(await residualDiagnosticCodes('file.ts', result)).not.toContain(2554);
+  });
+
+  it('does not insert into a multiline block comment', async () => {
+    const text = `const id = (a: number) => a;
+const x = 1; /* note that
+   continues */ id(1, 2);
+console.log(x);
+`;
+
+    const result = (await tsIgnorePlugin.run(await realPluginParams({ text }))) as string;
+
+    expect(result).toContain(`/* note that
+   continues */`);
+    expect(await residualDiagnosticCodes('file.ts', result)).not.toContain(2554);
+  });
+
+  it('does not insert into a multiline JSX attribute string', async () => {
+    const text = `const fire = (a: number) => a;
+function Note() {
+  return (
+    <div title="alpha
+beta" data-x={fire(1, 2)}>hello</div>
+  );
+}
+`;
+    const compilerOptions = { jsx: ts.JsxEmit.React };
+
+    const result = (await tsIgnorePlugin.run(
+      await realPluginParams({ fileName: 'file.tsx', text, compilerOptions }),
+    )) as string;
+
+    expect(result).toContain(`title="alpha
+beta"`);
+    const residual = await residualDiagnosticCodes('file.tsx', result, compilerOptions);
+    expect(residual).not.toContain(2554);
+    expect(residual).not.toContain(7026);
+    expect(residual.filter((code) => code >= 1000 && code < 2000)).toEqual([]); // no parse errors
+    // A bare `//` line between JSX children is rendered text, not a comment.
+    expect(result).not.toMatch(/^\s*\/\/ @ts-expect-error.*\n\s*<\//m);
+  });
+
+  it('brace-wraps fallback inserts that land in JSX children', async () => {
+    // The closing tag's error line starts inside the attribute string, and the
+    // insertion point (after 'hello') is in JSX children, where a bare `//`
+    // line would become rendered text.
+    const text = `function Note() {
+  return (
+    <div title="alpha
+beta" data-x={1}>hello</div>
+  );
+}
+`;
+    const compilerOptions = { jsx: ts.JsxEmit.React };
+
+    const result = (await tsIgnorePlugin.run(
+      await realPluginParams({ fileName: 'file.tsx', text, compilerOptions }),
+    )) as string;
+
+    expect(result).toContain(`title="alpha
+beta"`);
+    expect(result).not.toMatch(/^\s*\/\/ @ts-expect-error.*\n\s*<\//m);
+    const residual = await residualDiagnosticCodes('file.tsx', result, compilerOptions);
+    expect(residual).not.toContain(7026);
+    expect(residual.filter((code) => code >= 1000 && code < 2000)).toEqual([]); // no parse errors
+  });
+
+  it('suppresses module errors on imports with webpackChunkName magic comments', async () => {
+    const text = `export const load = () =>
+  import(
+    /* webpackChunkName: "lazy-mod" */
+    './does-not-exist'
+  );
+`;
+    const compilerOptions = {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020,
+    };
+
+    const result = (await tsIgnorePlugin.run(
+      await realPluginParams({ text, compilerOptions }),
+    )) as string;
+
+    expect(result).toContain('/* webpackChunkName: "lazy-mod" */');
+    expect(await residualDiagnosticCodes('file.ts', result, compilerOptions)).not.toContain(2307);
   });
 });

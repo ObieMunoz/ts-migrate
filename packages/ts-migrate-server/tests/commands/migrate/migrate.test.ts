@@ -112,6 +112,27 @@ describe('migrate command', () => {
     });
   });
 
+  it('exits non-zero when a file still has syntax errors after all plugins', async () => {
+    const configDir = path.resolve(__dirname, 'config');
+    copyDir(configDir, rootDir);
+    // Valid sloppy-mode JS (octal escape) that TypeScript cannot parse; no
+    // plugin can repair it, so migrate must not report success.
+    fs.writeFileSync(path.resolve(rootDir, 'index.ts'), "const legal = 'Copyright \\251 ACME';\n");
+
+    const config = new MigrateConfig().addPlugin(
+      {
+        name: 'noop-plugin',
+        run({ text }) {
+          return text;
+        },
+      },
+      {},
+    );
+
+    const { exitCode } = await migrate({ rootDir, config });
+    expect(exitCode).not.toBe(0);
+  });
+
   it('Migrates project with two plugins', async () => {
     const inputDir = path.resolve(__dirname, 'input');
     const outputDir = path.resolve(__dirname, 'output_two');

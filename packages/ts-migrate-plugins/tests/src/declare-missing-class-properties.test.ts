@@ -67,6 +67,48 @@ class Class2 {
     },
   );
 
+  it('does not declare properties for this inside object-literal methods', async () => {
+    const text = `class Store {
+  init() {
+    const handler = {
+      count: 0,
+      bump() { this.total = (this.total || 0) + 1; return this.total; },
+    };
+    return handler.bump();
+  }
+}`;
+
+    const result = await declareMissingClassPropertiesPlugin.run(
+      mockPluginParams({
+        text,
+        // `this` here is the object literal, not the Store instance.
+        semanticDiagnostics: [mockDiagnostic(text, 'total', { code: 2339 })],
+      }),
+    );
+
+    expect(result).toBe(text);
+  });
+
+  it('does not declare properties for this inside function expressions', async () => {
+    const text = `class Registry {
+  install() {
+    const plugin = function plugin() {
+      this.hooks = [];
+    };
+    return plugin;
+  }
+}`;
+
+    const result = await declareMissingClassPropertiesPlugin.run(
+      mockPluginParams({
+        text,
+        semanticDiagnostics: [mockDiagnostic(text, 'hooks', { code: 2339 })],
+      }),
+    );
+
+    expect(result).toBe(text);
+  });
+
   it('returns the original text when parsing throws', async () => {
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
     // Duplicate parameter names are a strict-mode SyntaxError for the parser.
