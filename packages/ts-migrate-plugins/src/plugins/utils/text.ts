@@ -7,5 +7,7 @@ export function getTextPreservingWhitespace(
 ): string {
   const printer = ts.createPrinter();
   const printedNextNode = printer.printNode(ts.EmitHint.Unspecified, nextNode, sourceFile);
-  return prevNode.getFullText(sourceFile).replace(/^(\s*)[^]*?(\s*)$/, `$1${printedNextNode}$2`);
+  return prevNode
+    .getFullText(sourceFile)
+    .replace(/^(\s*)[^]*?(\s*)$/, (_match, p1, p2) => `${p1}${printedNextNode}${p2}`);
 }
