@@ -63,9 +63,7 @@ const eslintFixPlugin: Plugin = {
     try {
       const cli = await getESLint();
       let newText = text;
-      // eslint-disable-next-line no-constant-condition
       while (true) {
-        // eslint-disable-next-line no-await-in-loop
         const [report] = await cli.lintText(newText, {
           filePath: fileName,
         });
@@ -78,7 +76,6 @@ const eslintFixPlugin: Plugin = {
       return newText;
     } catch (e) {
       if (e instanceof Error) {
-        // eslint-disable-next-line no-console
         console.error('Error occurred in eslint-fix plugin: ', e.message);
       }
       return text;

@@ -33,7 +33,7 @@ jobs:
         run: yarn add -W -D -E typescript@${{ matrix.typescript-version }}
 
       - name: Lint
-        run: npx lerna run lint --ignore @obiemunoz/ts-migrate-plugins
+        run: npx lerna run lint
 
       # The matrix swaps only the typescript version, which Nx doesn't hash. Never
       # give this step a persisted Nx cache (e.g. actions/cache on .nx): a warm cache

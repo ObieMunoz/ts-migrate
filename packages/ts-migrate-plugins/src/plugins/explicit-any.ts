@@ -41,7 +41,6 @@ function withExplicitAny(
     root = j(text, lintConfig);
   } catch (e) {
     if (e instanceof Error) {
-      // eslint-disable-next-line no-console
       console.error('Error occurred in explicit-any plugin: ', e.message);
     }
     return text;

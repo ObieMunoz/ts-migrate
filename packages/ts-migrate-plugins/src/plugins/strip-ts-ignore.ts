@@ -1,4 +1,3 @@
-/* eslint-disable no-use-before-define, @typescript-eslint/no-use-before-define */
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
@@ -23,7 +22,6 @@ function getTextWithoutIgnores(sourceFile: ts.SourceFile): string {
   const { text } = sourceFile;
   const regExp = /(\/\/|\/\*) *@ts-(?:ignore|expect-error)\b/g;
   let result: RegExpExecArray | null;
-  // eslint-disable-next-line no-cond-assign
   while ((result = regExp.exec(text)) != null) {
     const matchPos = result.index;
 
