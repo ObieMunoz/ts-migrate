@@ -1,58 +1,96 @@
+import { execFileSync } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
-import { mockPluginParams } from '../test-utils';
+import ts from 'typescript';
 
-const FLAT_CONFIG_RE = /^eslint\.config\.[mc]?[jt]s$/;
+const packageRoot = path.join(__dirname, '..', '..');
 
-// Run the plugin inside a fixture directory so it discovers that fixture's
-// config. The plugin caches ESLint at module scope, so reset modules each run.
-// Engine selection must depend only on the fixture: clear any ambient
-// ESLINT_USE_FLAT_CONFIG, and hide eslint.config.* files outside the fixture
-// so a config in a directory above the repo can't flip the detection.
-async function runInDir(dir: string, text: string): Promise<string | undefined> {
-  const originalCwd = process.cwd();
-  const originalFlatConfigEnv = process.env.ESLINT_USE_FLAT_CONFIG;
-  delete process.env.ESLINT_USE_FLAT_CONFIG;
-  const realExistsSync = fs.existsSync;
-  const existsSyncSpy = jest.spyOn(fs, 'existsSync').mockImplementation((target) => {
-    const resolved = path.resolve(String(target));
-    if (FLAT_CONFIG_RE.test(path.basename(resolved)) && !resolved.startsWith(dir + path.sep)) {
-      return false;
-    }
-    return realExistsSync(target);
-  });
-  process.chdir(dir);
-  jest.resetModules();
+// ESLint 9 loads flat configs (`eslint.config.*`) with a dynamic `import()`,
+// which jest's module sandbox only supports when node runs with
+// --experimental-vm-modules. Run the plugin in a plain node child process so
+// the test doesn't depend on how jest was invoked, and inside a temp copy of
+// the fixture so configs above it (this package's own eslint.config.js, or
+// anything ambient on the machine) can't leak into engine detection or
+// ESLint's config search.
+
+let compiledPlugin: string | undefined;
+
+function getCompiledPlugin(): string {
+  if (!compiledPlugin) {
+    const source = fs.readFileSync(
+      path.join(packageRoot, 'src', 'plugins', 'eslint-fix.ts'),
+      'utf8',
+    );
+    compiledPlugin = ts.transpileModule(source, {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2020,
+        esModuleInterop: true,
+      },
+    }).outputText;
+  }
+  return compiledPlugin;
+}
+
+// Only fileName and text are read by the eslint-fix plugin; the other
+// PluginParams are unused.
+const driverSource = `
+const plugin = require('./eslint-fix-plugin.cjs').default;
+const [, , fileName, text] = process.argv;
+plugin.run({ fileName, text }).then(
+  (result) => process.stdout.write(JSON.stringify({ result })),
+  (error) => {
+    console.error(error);
+    process.exit(1);
+  },
+);
+`;
+
+function runInFixture(fixture: string, text: string): string | undefined {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ts-migrate-eslint-fix-'));
   try {
-    const plugin = require('../../src/plugins/eslint-fix').default;
-    return await plugin.run(mockPluginParams({ text, fileName: 'Foo.tsx' }));
+    fs.cpSync(path.join(__dirname, '..', 'fixtures', fixture), tmpDir, { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, 'eslint-fix-plugin.cjs'), getCompiledPlugin());
+    fs.writeFileSync(path.join(tmpDir, 'driver.cjs'), driverSource);
+
+    const env = { ...process.env };
+    delete env.ESLINT_USE_FLAT_CONFIG;
+    delete env.NODE_OPTIONS;
+    env.NODE_PATH = [
+      path.join(packageRoot, 'node_modules'),
+      path.join(packageRoot, '..', '..', 'node_modules'),
+    ].join(path.delimiter);
+
+    const stdout = execFileSync(process.execPath, ['driver.cjs', 'Foo.tsx', text], {
+      cwd: tmpDir,
+      env,
+      encoding: 'utf8',
+    });
+    return JSON.parse(stdout).result;
   } finally {
-    existsSyncSpy.mockRestore();
-    if (originalFlatConfigEnv === undefined) {
-      delete process.env.ESLINT_USE_FLAT_CONFIG;
-    } else {
-      process.env.ESLINT_USE_FLAT_CONFIG = originalFlatConfigEnv;
-    }
-    process.chdir(originalCwd);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
 
 describe('eslint-fix plugin', () => {
-  it('applies fixes using a flat config (eslint.config.*)', async () => {
-    const result = await runInDir(
-      path.join(__dirname, '..', 'fixtures', 'eslint-flat'),
-      `const hello = 'world'`,
-    );
+  it(
+    'applies fixes using a flat config (eslint.config.*)',
+    () => {
+      const result = runInFixture('eslint-flat', `const hello = 'world'`);
 
-    expect(result).toBe(`const hello = 'world';\n`);
-  });
+      expect(result).toBe(`const hello = 'world';\n`);
+    },
+    15000,
+  );
 
-  it('applies fixes using a legacy .eslintrc config', async () => {
-    const result = await runInDir(
-      path.join(__dirname, '..', 'fixtures', 'eslint-legacy'),
-      `const hello = 'world'`,
-    );
+  it(
+    'applies fixes using a legacy .eslintrc config',
+    () => {
+      const result = runInFixture('eslint-legacy', `const hello = 'world'`);
 
-    expect(result).toBe(`const hello = 'world';\n`);
-  });
+      expect(result).toBe(`const hello = 'world';\n`);
+    },
+    15000,
+  );
 });
