@@ -12,6 +12,7 @@ import {
   explicitAnyPlugin,
   hoistArrowFunctionsPlugin,
   hoistClassStaticsPlugin,
+  inferTypesPlugin,
   jsDocPlugin,
   memberAccessibilityPlugin,
   reactClassLifecycleMethodsPlugin,
@@ -34,6 +35,7 @@ const availablePlugins = [
   explicitAnyPlugin,
   hoistArrowFunctionsPlugin,
   hoistClassStaticsPlugin,
+  inferTypesPlugin,
   jsDocPlugin,
   memberAccessibilityPlugin,
   reactClassLifecycleMethodsPlugin,
@@ -179,6 +181,7 @@ yargs
             protectedRegex,
             publicRegex,
           })
+          .addPlugin(inferTypesPlugin, {})
           .addPlugin(explicitAnyPlugin, { anyAlias })
           .addPlugin(addConversionsPlugin, { anyAlias })
           // We need to run eslint-fix before ts-ignore because formatting may affect where
