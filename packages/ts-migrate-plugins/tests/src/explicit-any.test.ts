@@ -47,42 +47,33 @@ const { varA, varB: {
 somePromise.then((res1: any) => res1.default || res1);
 somePromise.then((res2: any) => res2.default || res2);
 let someArray: any;
-someArray.forEach(({
-  arg1,
-  arg2
-}: any) => {});
+someArray.forEach(({ arg1, arg2 }: any) => {});
 function fn1(p1: any, p2: any) {}
 const fn2 = function(p3: any, p4: any) {}
 function f3() {
   const var1: any = [];
   return var1;
 }
-function fn4({
-  arg4: { arg5, arg_6: arg6 }
-}: any) {}
+function fn4({ arg4: { arg5, arg_6: arg6 } }: any) {}
 function fn5(...rest: any[]) {}
 const fn6 = (...rest: any[]) => {}
 const fn7 = ({ id }: { id: any }) => {}
 const {
   root_see_all_link_text: rootSeeAllLinkText,
   root_subtitle: rootSubtitle,
-  root_title: rootTitle
+  root_title: rootTitle,
 }: any = {};
 function Foo({
   paramA,
   paramB,
   paramC = {},
-  paramD
+  paramD,
 }: any = {}) {
   return true ? paramA : paramB;
 }
-const {
-  varA,
-
-  varB: {
-    inVarA, inVarB,
-  } = {}
-}: any = {};
+const { varA, varB: {
+  inVarA, inVarB,
+} = {} }: any = {};
 `);
   });
 
@@ -167,9 +158,7 @@ function f4(this: any) { this.a = 1; this.b = 2; }
       }),
     );
 
-    expect(result).toBe(`export function pluck({
-  items: [first]
-}: any) {
+    expect(result).toBe(`export function pluck({ items: [first] }: any) {
   return first;
 }
 `);
@@ -193,9 +182,66 @@ function f4(this: any) { this.a = 1; this.b = 2; }
 `);
   });
 
-  it('returns the original text when parsing throws', async () => {
-    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
-    // Duplicate parameter names are a strict-mode SyntaxError for the parser.
+  it('annotates every parameter of arrows returning object literals', async () => {
+    const text = `export const trackEvent = (name, payload) => ({
+  type: 'TRACK',
+  meta: { label: \`cart:$\${payload?.total ?? 0}\`, name },
+});
+`;
+
+    const result = await explicitAnyPlugin.run(
+      await realPluginParams({
+        text,
+      }),
+    );
+
+    expect(result).toBe(`export const trackEvent = (name: any, payload: any) => ({
+  type: 'TRACK',
+  meta: { label: \`cart:$\${payload?.total ?? 0}\`, name },
+});
+`);
+  });
+
+  it('handles syntax that only TypeScript parses', async () => {
+    const text = `export class Cache {
+  static registry;
+
+  static {
+    Cache.registry = new Map();
+  }
+}
+
+export const EMOJI_RE = /[\\p{RGI_Emoji}]/v;
+
+export const config = { retries: 3 } satisfies Record<string, number>;
+
+export const strip = (input) => input.replace(EMOJI_RE, '');
+`;
+
+    const result = await explicitAnyPlugin.run(
+      await realPluginParams({
+        text,
+        compilerOptions: { target: ts.ScriptTarget.ESNext },
+      }),
+    );
+
+    expect(result).toBe(`export class Cache {
+  static registry: any;
+
+  static {
+    Cache.registry = new Map();
+  }
+}
+
+export const EMOJI_RE = /[\\p{RGI_Emoji}]/v;
+
+export const config = { retries: 3 } satisfies Record<string, number>;
+
+export const strip = (input: any) => input.replace(EMOJI_RE, '');
+`);
+  });
+
+  it('ignores diagnostics that do not map to an annotatable node', async () => {
     const text = `function f(a, a) { return a; }`;
 
     const result = await explicitAnyPlugin.run(
@@ -206,7 +252,5 @@ function f4(this: any) { this.a = 1; this.b = 2; }
     );
 
     expect(result).toBe(text);
-    expect(consoleError).toHaveBeenCalled();
-    consoleError.mockRestore();
   });
 });
