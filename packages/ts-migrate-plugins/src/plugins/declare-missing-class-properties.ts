@@ -105,6 +105,16 @@ function findParentClassBody(path: ASTPath): ASTPath<ClassBody> | undefined {
       return cur as ASTPath<ClassBody>;
     }
 
+    // These rebind `this`, so the member expression does not refer to the
+    // enclosing class instance.
+    if (
+      cur.node.type === 'FunctionDeclaration' ||
+      cur.node.type === 'FunctionExpression' ||
+      cur.node.type === 'ObjectMethod'
+    ) {
+      return undefined;
+    }
+
     cur = cur.parentPath;
   }
 

@@ -137,6 +137,62 @@ function f4(this: any) { this.a = 1; this.b = 2; }
     expect(result).toBe(`const fn = (b: any) => ({});`);
   });
 
+  it('adds explicit any to array-destructured parameters', async () => {
+    const text = `export function firstOf([head, ...tail], [a, b] = []) {
+  return head || a || tail.length || b;
+}
+`;
+
+    const result = await explicitAnyPlugin.run(
+      await realPluginParams({
+        text,
+      }),
+    );
+
+    expect(result).toBe(`export function firstOf([head, ...tail]: any, [a, b]: any = []) {
+  return head || a || tail.length || b;
+}
+`);
+  });
+
+  it('adds explicit any to array patterns inside object parameters', async () => {
+    const text = `export function pluck({ items: [first] }) {
+  return first;
+}
+`;
+
+    const result = await explicitAnyPlugin.run(
+      await realPluginParams({
+        text,
+      }),
+    );
+
+    expect(result).toBe(`export function pluck({
+  items: [first]
+}: any) {
+  return first;
+}
+`);
+  });
+
+  it('annotates the outermost pattern for object patterns nested in array patterns', async () => {
+    const text = `export function pick([{ x }]) {
+  return x;
+}
+`;
+
+    const result = await explicitAnyPlugin.run(
+      await realPluginParams({
+        text,
+      }),
+    );
+
+    expect(result).toBe(`export function pick([{ x }]: any) {
+  return x;
+}
+`);
+  });
+
   it('returns the original text when parsing throws', async () => {
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
     // Duplicate parameter names are a strict-mode SyntaxError for the parser.

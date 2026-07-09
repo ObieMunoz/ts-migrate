@@ -109,8 +109,16 @@ function hoistStaticClassProperties(
     if (!className) return;
 
     const properties: ts.PropertyDeclaration[] = [];
+    const classIndex = sourceFile.statements.indexOf(classDeclaration);
+    const declaredNames = new Set<string>();
+    // Hoisting an initializer moves its evaluation to class-definition time, so
+    // it is only safe while every statement between the class and the
+    // assignment has itself been hoisted (deleted). Once any other statement
+    // intervenes, only type annotations may be added.
+    let directlyFollowsClass = true;
 
-    sourceFile.statements.forEach((statement) => {
+    sourceFile.statements.forEach((statement, statementIndex) => {
+      if (statementIndex <= classIndex) return;
       if (
         ts.isExpressionStatement(statement) &&
         ts.isBinaryExpression(statement.expression) &&
@@ -119,21 +127,25 @@ function hoistStaticClassProperties(
         statement.expression.left.expression.text === className.text &&
         statement.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken
       ) {
-        if (isAlreadyHoisted(statement, classDeclaration)) {
+        const propertyName = statement.expression.left.name.text;
+        if (isAlreadyHoisted(statement, classDeclaration) || declaredNames.has(propertyName)) {
+          directlyFollowsClass = false;
           return;
         }
         if (
+          directlyFollowsClass &&
           canHoistExpression(statement.expression.right, classDeclaration.pos, knownDefinitions)
         ) {
           properties.push(
             ts.factory.createPropertyDeclaration(
               [ts.factory.createModifier(ts.SyntaxKind.StaticKeyword)],
-              statement.expression.left.name.text,
+              propertyName,
               undefined,
               undefined,
               statement.expression.right,
             ),
           );
+          declaredNames.add(propertyName);
           updates.push({
             kind: 'delete',
             index: statement.pos,
@@ -144,7 +156,7 @@ function hoistStaticClassProperties(
           properties.push(
             ts.factory.createPropertyDeclaration(
               [ts.factory.createModifier(ts.SyntaxKind.StaticKeyword)],
-              statement.expression.left.name.text,
+              propertyName,
               undefined,
               options.anyAlias != null
                 ? ts.factory.createTypeReferenceNode(options.anyAlias, undefined)
@@ -152,7 +164,11 @@ function hoistStaticClassProperties(
               undefined,
             ),
           );
+          declaredNames.add(propertyName);
+          directlyFollowsClass = false;
         }
+      } else {
+        directlyFollowsClass = false;
       }
     });
 
