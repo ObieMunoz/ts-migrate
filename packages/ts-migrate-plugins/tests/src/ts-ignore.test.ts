@@ -464,22 +464,22 @@ export default Foo;
   });
 });
 
-describe('ts-ignore plugin multiline string/comment contexts', () => {
-  // Re-checks plugin output with a fresh language service so assertions run
-  // against the diagnostics tsc would actually report post-migration.
-  async function residualDiagnosticCodes(
-    fileName: string,
-    text: string,
-    compilerOptions?: ts.CompilerOptions,
-  ): Promise<number[]> {
-    const params = await realPluginParams({ fileName, text, compilerOptions });
-    const languageService = params.getLanguageService();
-    return [
-      ...languageService.getSyntacticDiagnostics(params.fileName),
-      ...languageService.getSemanticDiagnostics(params.fileName),
-    ].map((diagnostic) => diagnostic.code);
-  }
+// Re-checks plugin output with a fresh language service so assertions run
+// against the diagnostics tsc would actually report post-migration.
+async function residualDiagnosticCodes(
+  fileName: string,
+  text: string,
+  compilerOptions?: ts.CompilerOptions,
+): Promise<number[]> {
+  const params = await realPluginParams({ fileName, text, compilerOptions });
+  const languageService = params.getLanguageService();
+  return [
+    ...languageService.getSyntacticDiagnostics(params.fileName),
+    ...languageService.getSemanticDiagnostics(params.fileName),
+  ].map((diagnostic) => diagnostic.code);
+}
 
+describe('ts-ignore plugin multiline string/comment contexts', () => {
   it('does not corrupt a backslash-continued string literal', async () => {
     const text = `const id = (a: number) => a;
 const banner = 'Hello \\
@@ -592,5 +592,63 @@ beta"`);
 
     expect(result).toContain('/* webpackChunkName: "lazy-mod" */');
     expect(await residualDiagnosticCodes('file.ts', result, compilerOptions)).not.toContain(2307);
+  });
+});
+
+// The `object` props placeholder must error at the props access itself (like the
+// legacy `{}` did), not type unknown props as `never` the way `Record<string, never>`
+// would — otherwise suppressions shift onto every downstream usage and existing
+// @ts-expect-error comments become unused directives (TS2578).
+describe('ts-ignore plugin with prop-less component placeholder', () => {
+  const componentText = `type State = any;
+
+declare class Component<P, S> {
+  props: Readonly<P>;
+  state: S;
+}
+`;
+  const compilerOptions = { jsx: ts.JsxEmit.React };
+
+  it('suppresses object-placeholder props errors at the access site', async () => {
+    const text = `${componentText}
+export class ReadMore extends Component<object, State> {
+  htmlSEO = () => {
+    const { html } = this.props;
+    return String(html);
+  };
+
+  render() {
+    const { text, title } = this.props;
+    return title ? String(title) : String(text);
+  }
+}
+`;
+
+    const result = (await tsIgnorePlugin.run(
+      await realPluginParams({ fileName: 'file.tsx', text, compilerOptions }),
+    )) as string;
+
+    const lines = result.split('\n');
+    ['const { html } = this.props;', 'const { text, title } = this.props;'].forEach((access) => {
+      const index = lines.findIndex((line) => line.includes(access));
+      expect(index).toBeGreaterThan(0);
+      expect(lines[index - 1]).toMatch(/^\s*\/\/ @ts-expect-error TS\(2339\)/);
+    });
+
+    expect(await residualDiagnosticCodes('file.tsx', result, compilerOptions)).toEqual([]);
+  });
+
+  it('keeps existing suppressions above props accesses valid', async () => {
+    const text = `${componentText}
+export class ReadMore extends Component<object, State> {
+  render() {
+    // @ts-expect-error TS(2339): Property 'html' does not exist on type 'Readonly<{}>'.
+    const { html } = this.props;
+    return String(html);
+  }
+}
+`;
+
+    expect(await residualDiagnosticCodes('file.tsx', text, compilerOptions)).toEqual([]);
   });
 });
