@@ -118,7 +118,10 @@ function findJSFiles(rootDir: string, configFile: string, sources?: string | str
  */
 function jsFileContainsJsx(jsFileName: string): boolean {
   const contents = fs.readFileSync(jsFileName, 'utf8');
-  return /(from ['"]react['"]|@jsx)/.test(contents) && /<[A-Za-z>]/.test(contents);
+  return (
+    /(from ['"]react['"]|require\(['"]react['"]\)|@jsx)/.test(contents) &&
+    /<[A-Za-z>]/.test(contents)
+  );
 }
 
 function updateProjectJson(rootDir: string) {

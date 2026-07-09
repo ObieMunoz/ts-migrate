@@ -86,18 +86,24 @@ function getTextWithIgnores(
         ws += ' ';
       }
 
-      if (inTemplateExpressionText(sourceFile, pos)) {
+      if (inNonInsertableText(sourceFile, pos)) {
         const node = findDiagnosticNode(diagnostic, sourceFile);
         if (node) {
+          // In JSX children a bare `//` line would become rendered text.
+          const comment = inJsxText(sourceFile, node.pos)
+            ? `{/* ${tsIgnoreCommentText} */}`
+            : `// ${tsIgnoreCommentText}`;
           updates.push({
             kind: 'insert',
             index: node.pos,
-            text: `${ws}${ts.sys.newLine}// ${tsIgnoreCommentText}${
+            text: `${ws}${ts.sys.newLine}${comment}${
               text[node.pos] !== ts.sys.newLine ? ts.sys.newLine : ''
             }`,
           });
         } else {
-          throw new Error(`Failed to add @${errorExpression} within template expression.`);
+          throw new Error(
+            `Failed to add @${errorExpression} within multiline string, template, or comment.`,
+          );
         }
       } else if (inJsxText(sourceFile, pos)) {
         updates.push({
@@ -112,24 +118,11 @@ function getTextWithIgnores(
           text: ` // ${tsIgnoreCommentText}${ts.sys.newLine}${ws} `,
         });
       } else {
-        let skip = false;
-        if (commentLine > 1) {
-          const prevLineText = text.slice(
-            getStartOfLinePos(commentLine - 1, sourceFile),
-            getStartOfLinePos(commentLine, sourceFile),
-          );
-          if (/\bwebpackChunkName\b/.test(prevLineText)) {
-            skip = true;
-          }
-        }
-
-        if (!skip) {
-          updates.push({
-            kind: 'insert',
-            index: pos,
-            text: `${ws}// ${tsIgnoreCommentText}${ts.sys.newLine}`,
-          });
-        }
+        updates.push({
+          kind: 'insert',
+          index: pos,
+          text: `${ws}// ${tsIgnoreCommentText}${ts.sys.newLine}`,
+        });
       }
 
       isIgnored[diagnosticLine] = true;
@@ -178,22 +171,52 @@ function inJsxText(sourceFile: ts.SourceFile, pos: number) {
   return !!ts.forEachChild(sourceFile, visitor);
 }
 
-function inTemplateExpressionText(sourceFile: ts.SourceFile, pos: number) {
+/**
+ * Whether pos (a start-of-line position) falls inside text that cannot hold a
+ * line comment: a string or template literal that spans lines, or a multiline
+ * block comment. Inserting there would alter the text instead of adding a comment.
+ */
+function inNonInsertableText(sourceFile: ts.SourceFile, pos: number): boolean {
+  return inStringOrTemplateText(sourceFile, pos) || inCommentText(sourceFile, pos);
+}
+
+function inStringOrTemplateText(sourceFile: ts.SourceFile, pos: number) {
   const visitor = (node: ts.Node): boolean | undefined => {
-    if (node.pos <= pos && pos < node.end && ts.isTemplateExpression(node)) {
-      const inHead = node.head.pos <= pos && pos < node.head.end;
-      const inMiddleOrTail = node.templateSpans.some(
-        (span) => span.literal.pos <= pos && pos < span.literal.end,
-      );
-      if (inHead || inMiddleOrTail) {
-        return true;
-      }
+    if (
+      node.getStart(sourceFile) < pos &&
+      pos < node.end &&
+      (ts.isStringLiteralLike(node) || ts.isTemplateLiteralToken(node))
+    ) {
+      return true;
     }
 
     return ts.forEachChild(node, visitor);
   };
 
   return !!ts.forEachChild(sourceFile, visitor);
+}
+
+function inCommentText(sourceFile: ts.SourceFile, pos: number): boolean {
+  let token: ts.Node = sourceFile;
+  let descended = true;
+  while (descended) {
+    descended = false;
+    for (const child of token.getChildren(sourceFile)) {
+      if (child.pos <= pos && pos < child.end) {
+        token = child;
+        descended = true;
+        break;
+      }
+    }
+  }
+
+  // pos is in the token's leading trivia; check whether a comment covers it.
+  if (pos >= token.getStart(sourceFile)) return false;
+  const commentRanges = [
+    ...(ts.getLeadingCommentRanges(sourceFile.text, token.pos) ?? []),
+    ...(ts.getTrailingCommentRanges(sourceFile.text, token.pos) ?? []),
+  ];
+  return commentRanges.some((range) => range.pos < pos && pos < range.end);
 }
 
 function getConditionalExpressionAtPos(sourceFile: ts.SourceFile, pos: number) {

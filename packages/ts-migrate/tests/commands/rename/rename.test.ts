@@ -52,6 +52,7 @@ describe('rename command', () => {
       { oldFile: 'dir-a/file-4.js', newFile: 'dir-a/file-4.tsx' },
       { oldFile: 'dir-a/file-5.js', newFile: 'dir-a/file-5.tsx' },
       { oldFile: 'dir-a/file-6.js', newFile: 'dir-a/file-6.tsx' },
+      { oldFile: 'dir-a/file-7.js', newFile: 'dir-a/file-7.tsx' },
       { oldFile: 'file-1.js', newFile: 'file-1.ts' },
     ]);
   });
