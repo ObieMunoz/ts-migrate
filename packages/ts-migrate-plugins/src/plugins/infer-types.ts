@@ -120,7 +120,15 @@ function withBodyWins(
     }
   });
 
-  const contested = attributeErrors(newErrors, candidate, fileName, changes, originalSource);
+  const annotatedFns = new Set(changesByFunction.keys());
+  const contested = attributeErrors(
+    newErrors,
+    candidate,
+    fileName,
+    changes,
+    originalSource,
+    annotatedFns,
+  );
 
   // Hide call sites of contested functions from the inference engine so
   // their annotations are recomputed from body evidence alone.
@@ -153,20 +161,23 @@ function withBodyWins(
   }
 
   // Body-only annotations may still contradict the body (a TS expressiveness
-  // limit); drop those functions entirely rather than suppressing inside them.
+  // limit); drop those rather than suppressing inside the function. When the
+  // conflict is a call to one specific annotated parameter (e.g. a redux
+  // dispatch inferred too narrowly from heterogeneous calls), only that
+  // parameter's annotation is dropped.
   let finalText = applyTextChanges(text, finalChanges);
   const finalService = createFileLanguageService(fileName, finalText, compilerOptions);
   const finalErrors = findNewErrors(baseline, finalService, finalChanges, fileName);
-  const bodyConflicted = attributeErrors(
+  const dropped = collectBodyConflictDrops(
     finalErrors,
     finalService,
     fileName,
     finalChanges,
     originalSource,
-    { bodyErrorsOnly: true },
+    annotatedFns,
   );
-  if (bodyConflicted.size > 0) {
-    finalChanges = assemble(bodyConflicted);
+  if (dropped.size > 0) {
+    finalChanges = finalChanges.filter((change) => !dropped.has(change));
     if (isNoOp(finalChanges)) {
       return undefined;
     }
@@ -174,6 +185,62 @@ function withBodyWins(
   }
 
   return finalText;
+}
+
+function collectBodyConflictDrops(
+  errors: ts.Diagnostic[],
+  service: ts.LanguageService,
+  fileName: string,
+  finalChanges: TextChange[],
+  originalSource: ts.SourceFile,
+  annotatedFns: Set<ts.Node | null>,
+): Set<TextChange> {
+  const dropped = new Set<TextChange>();
+  const program = service.getProgram();
+  if (!program) return dropped;
+  const source = program.getSourceFile(fileName);
+  if (!source) return dropped;
+  const checker = program.getTypeChecker();
+
+  const dropWithin = (start: number, end: number) => {
+    finalChanges.forEach((change) => {
+      if (change.start >= start && change.start < end) {
+        dropped.add(change);
+      }
+    });
+  };
+
+  errors.forEach((error) => {
+    if (error.start == null) return;
+
+    // A call that no longer matches an annotated *parameter* (e.g. a redux
+    // dispatch inferred too narrowly from heterogeneous calls) is a conflict
+    // of that parameter's annotation, wherever the call sits.
+    if (callArgumentErrorCodes.has(error.code)) {
+      const callee = calleeDeclarationAt(source, error.start, checker);
+      if (callee && ts.isParameter(callee) && callee.getSourceFile() === source) {
+        const start = toOriginalPos(callee.getStart(), finalChanges);
+        const end = toOriginalPos(callee.end, finalChanges);
+        dropWithin(start, end + 1);
+        return;
+      }
+    }
+
+    // The conflicting annotation may sit on any enclosing function (a
+    // parameter of an outer thunk used inside a nested callback).
+    const annotatedAncestors = ancestorFunctions(
+      originalSource,
+      toOriginalPos(error.start, finalChanges),
+    ).filter((fn) => annotatedFns.has(fn));
+    if (annotatedAncestors.length === 0) {
+      // A mismatched call to an annotated function from elsewhere is the
+      // expected way improper callers get flagged.
+      return;
+    }
+    const outermost = annotatedAncestors[annotatedAncestors.length - 1];
+    dropWithin(outermost.getStart(), outermost.end);
+  });
+  return dropped;
 }
 
 function getInferenceChanges(
@@ -269,7 +336,7 @@ function attributeErrors(
   fileName: string,
   changes: TextChange[],
   originalSource: ts.SourceFile,
-  { bodyErrorsOnly = false }: { bodyErrorsOnly?: boolean } = {},
+  annotatedFns: Set<ts.Node | null>,
 ): Set<ts.Node | null> {
   const attributed = new Set<ts.Node | null>();
   const program = service.getProgram();
@@ -281,6 +348,34 @@ function attributeErrors(
   errors.forEach((error) => {
     if (error.start == null) return;
 
+    // A bad call to an annotated *parameter* (e.g. a redux dispatch) is a
+    // conflict of the function owning that parameter.
+    if (callArgumentErrorCodes.has(error.code)) {
+      const callee = calleeDeclarationAt(source, error.start, checker);
+      if (callee && ts.isParameter(callee) && callee.getSourceFile() === source) {
+        const owner = enclosingFunctionLike(
+          originalSource,
+          toOriginalPos(callee.getStart(), changes),
+        );
+        if (owner != null && annotatedFns.has(owner)) {
+          attributed.add(owner);
+          return;
+        }
+      }
+    }
+
+    // Any other new error inside annotated functions contests them all — the
+    // conflicting annotation may sit on an outer function's parameter used
+    // inside a nested callback.
+    const annotatedAncestors = ancestorFunctions(
+      originalSource,
+      toOriginalPos(error.start, changes),
+    ).filter((fn) => annotatedFns.has(fn));
+    if (annotatedAncestors.length > 0) {
+      annotatedAncestors.forEach((fn) => attributed.add(fn));
+      return;
+    }
+
     if (callArgumentErrorCodes.has(error.code)) {
       const callee = calleeDeclarationAt(source, error.start, checker);
       if (callee && callee.getSourceFile() === source) {
@@ -289,9 +384,7 @@ function attributeErrors(
           toOriginalPos(callee.getStart(), changes),
         );
         if (originalFn != null) {
-          // A mismatched argument marks the *callee* as contested; in the
-          // final pass such flags on body-validated signatures are expected.
-          if (!bodyErrorsOnly) attributed.add(originalFn);
+          attributed.add(originalFn);
           return;
         }
       }
@@ -376,11 +469,17 @@ function isFunctionLikeWithBody(node: ts.Node): boolean {
 }
 
 function enclosingFunctionLike(source: ts.SourceFile, position: number): ts.Node | null {
-  let result: ts.Node | null = null;
+  const ancestors = ancestorFunctions(source, position);
+  return ancestors.length > 0 ? ancestors[0] : null;
+}
+
+// Enclosing function-likes at a position, innermost first.
+function ancestorFunctions(source: ts.SourceFile, position: number): ts.Node[] {
+  const result: ts.Node[] = [];
   const visit = (node: ts.Node) => {
     if (node.getStart() <= position && position < node.end) {
       if (isFunctionLikeWithBody(node)) {
-        result = node;
+        result.unshift(node);
       }
       node.forEachChild(visit);
     }

@@ -199,6 +199,32 @@ add(1, '2');
     expect(result).toBeUndefined();
   });
 
+  it('drops only the parameter whose inferred type its own body contradicts', async () => {
+    const text = `const load = () => (dispatch) => {
+  dispatch({ type: 'LOAD' });
+};
+const save = () => (dispatch, api) => {
+  dispatch(load());
+  dispatch({ type: 'SAVE', payload: 1 });
+  api({ method: 'GET', url: '/x' });
+};
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    // save's dispatch is called with incompatible shapes (a thunk and a plain
+    // action), so no inferred type can satisfy its body; api keeps its type.
+    expect(result).toBe(`const load = () => (dispatch: (arg0: { type: string; }) => void) => {
+  dispatch({ type: 'LOAD' });
+};
+const save = () => (dispatch, api: (arg0: { method: string; url: string; }) => void) => {
+  dispatch(load());
+  dispatch({ type: 'SAVE', payload: 1 });
+  api({ method: 'GET', url: '/x' });
+};
+`);
+  });
+
   it('leaves un-inferable locations to the explicit-any plugin', async () => {
     const text = `function track(count, mystery) {
   count.toFixed(2);
