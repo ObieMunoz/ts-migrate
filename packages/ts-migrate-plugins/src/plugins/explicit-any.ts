@@ -1,26 +1,20 @@
-import jscodeshift, { Identifier, TSTypeAnnotation } from 'jscodeshift';
-import { Collection } from 'jscodeshift/src/Collection';
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
+import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 
 type Options = AnyAliasOptions;
 
-export interface LintConfig {
-  useTabs: boolean;
-  tabWidth: number;
-}
-
 const explicitAnyPlugin: Plugin<Options> = {
   name: 'explicit-any',
 
-  run({ options, fileName, text, getLanguageService }, lintConfig?: LintConfig) {
-    const semanticDiagnostics = getLanguageService().getSemanticDiagnostics(fileName);
-    const diagnostics = semanticDiagnostics
+  run({ options, fileName, sourceFile, getLanguageService }) {
+    const diagnostics = getLanguageService()
+      .getSemanticDiagnostics(fileName)
       .filter(isDiagnosticWithLinePosition)
       .filter((d) => d.category === ts.DiagnosticCategory.Error);
-    return withExplicitAny(text, diagnostics, options.anyAlias, lintConfig);
+    return withExplicitAny(sourceFile, diagnostics, options.anyAlias, getLanguageService);
   },
 
   validate: validateAnyAliasOptions,
@@ -28,411 +22,273 @@ const explicitAnyPlugin: Plugin<Options> = {
 
 export default explicitAnyPlugin;
 
-const j = jscodeshift.withParser('tsx');
-
 function withExplicitAny(
-  text: string,
+  sourceFile: ts.SourceFile,
   diagnostics: ts.DiagnosticWithLocation[],
-  anyAlias?: string,
-  lintConfig?: any,
+  anyAlias: string | undefined,
+  getLanguageService: () => ts.LanguageService,
 ): string {
-  let root;
-  try {
-    root = j(text, lintConfig);
-  } catch (e) {
-    if (e instanceof Error) {
-      console.error('Error occurred in explicit-any plugin: ', e.message);
+  const anyType = anyAlias ?? 'any';
+  const updates: SourceTextUpdate[] = [];
+  const seen = new Set<string>();
+  const insert = (index: number, text: string) => {
+    const key = `${index}:${text}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      updates.push({ kind: 'insert', index, text });
     }
-    return text;
-  }
-
-  const anyType = anyAlias != null ? j.tsTypeReference(j.identifier(anyAlias)) : j.tsAnyKeyword();
-  const typeAnnotation = j.tsTypeAnnotation(anyType);
-  replaceTS2683(
-    root,
-    diagnostics.filter((diagnostic) => diagnostic.code === 2683),
-    typeAnnotation,
-  );
-  replaceTS7006AndTS7008(
-    root,
-    diagnostics.filter((diagnostic) => diagnostic.code === 7006 || diagnostic.code === 7008),
-    typeAnnotation,
-  );
-  replaceTS7019(
-    root,
-    diagnostics.filter((diagnostic) => diagnostic.code === 7019),
-    j.tsTypeAnnotation(j.tsArrayType(anyType)),
-  );
-  replaceTS7031(
-    root,
-    diagnostics.filter((diagnostic) => diagnostic.code === 7031),
-    typeAnnotation,
-  );
-  replaceDestructuringTS2339(
-    root,
-    diagnostics.filter((diagnostic) => diagnostic.code === 2339),
-    typeAnnotation,
-  );
-  replaceTS7034(
-    root,
-    diagnostics.filter((diagnostic) => diagnostic.code === 7034),
-    typeAnnotation,
-  );
-  replaceTS2459(
-    root,
-    diagnostics.filter((diagnostic) => diagnostic.code === 2459),
-    typeAnnotation,
-  );
-  replaceTS2525(
-    root,
-    diagnostics.filter((diagnostic) => diagnostic.code === 2525),
-    typeAnnotation,
-  );
-  return root.toSource(lintConfig);
-}
-
-// TS2683: "'this' implicitly has type 'any' because it does not have a type annotation."
-function replaceTS2683(
-  root: Collection<any>,
-  diagnostics: ts.DiagnosticWithLocation[],
-  typeAnnotation: TSTypeAnnotation,
-) {
-  const annotated = new Set();
+  };
 
   diagnostics.forEach((diagnostic) => {
-    root
-      .find(
-        j.ThisExpression,
-        (node: any) =>
-          node.start === diagnostic.start && node.end === diagnostic.start + diagnostic.length,
-      )
-      .forEach((path) => {
-        let newNode = path.parentPath;
-        // Find the containing function declaration/expression.
-        while (
-          newNode.parentPath &&
-          !j.FunctionDeclaration.check(newNode.node) &&
-          !j.FunctionExpression.check(newNode.node)
-        ) {
-          newNode = newNode.parentPath;
-        }
-
-        // Add annotation only if we haven't already added one to this function.
-        if (!annotated.has(newNode)) {
-          newNode.get('params').unshift(j.identifier.from({ name: 'this', typeAnnotation }));
-          annotated.add(newNode);
-        }
-      });
-  });
-}
-
-// TS7006: "Parameter '{0}' implicitly has an '{1}' type."
-// TS7008: "Member '{0}' implicitly has an '{1}' type."
-function replaceTS7006AndTS7008(
-  root: Collection<any>,
-  diagnostics: ts.DiagnosticWithLocation[],
-  typeAnnotation: TSTypeAnnotation,
-) {
-  diagnostics.forEach((diagnostic) => {
-    root
-      .find(
-        j.Identifier,
-        (node: any) =>
-          node.start === diagnostic.start &&
-          node.end === diagnostic.start + diagnostic.length &&
-          node.typeAnnotation == null,
-      )
-      .forEach((path) => {
-        let replaceArrow = false;
-
-        const parentNode = path.parent.node;
-        if (j.ArrowFunctionExpression.check(parentNode)) {
-          // Special casing to work around jscodeshift bugs.
-          let { body, params } = parentNode;
-
-          // Object literals used as arrow function returns do not have
-          // parentheses added.
-          // https://github.com/benjamn/recast/issues/743
-          if (j.ObjectExpression.check(body)) {
-            replaceArrow = true;
-            body = j.objectExpression.from({ ...body });
-          }
-
-          // Make sure to add parentheses around single parameters.
-          if (params.length === 1) {
-            replaceArrow = true;
-            params = [
-              j.identifier.from({
-                ...(parentNode.params[0] as Identifier),
-                typeAnnotation,
-              }),
-            ];
-          }
-
-          if (replaceArrow) {
-            path.parent.replace(
-              j.arrowFunctionExpression.from({
-                ...parentNode,
-                params,
-                body,
-              }),
-            );
-          }
-        }
-
-        if (!replaceArrow) {
-          path.get('typeAnnotation').replace(typeAnnotation);
-        }
-      });
-  });
-}
-
-// TS7019: "Rest parameter '{0}' implicitly has an 'any[]' type."
-function replaceTS7019(
-  root: Collection<any>,
-  diagnostics: ts.DiagnosticWithLocation[],
-  typeAnnotation: TSTypeAnnotation,
-) {
-  diagnostics.forEach((diagnostic) => {
-    root
-      .find(
-        j.RestElement,
-        (node: any) =>
-          node.start === diagnostic.start &&
-          node.end === diagnostic.start + diagnostic.length &&
-          node.typeAnnotation == null,
-      )
-      .forEach((path) => {
-        path.get('typeAnnotation').replace(typeAnnotation);
-      });
-  });
-}
-
-// TS7031: "Binding element '{0}' implicitly has an '{1}' type."
-function replaceTS7031(
-  root: Collection<any>,
-  diagnostics: ts.DiagnosticWithLocation[],
-  typeAnnotation: TSTypeAnnotation,
-) {
-  const matchesDiagnostic = (node: any, diagnostic: ts.DiagnosticWithLocation) =>
-    node != null &&
-    node.start === diagnostic.start &&
-    node.end === diagnostic.start + diagnostic.length;
-
-  // Climb to the outermost enclosing binding pattern, crossing object
-  // properties, nested patterns, rest elements, and defaults (`= {}`).
-  // Annotations are only valid on the outermost pattern, not on nested
-  // binding elements.
-  const getOutermostPattern = (path: any) => {
-    let res = path;
-    let cur = path.parent;
-    while (cur) {
-      if (j.ObjectPattern.check(cur.value) || j.ArrayPattern.check(cur.value)) {
-        res = cur;
-      } else if (
-        !j.ObjectProperty.check(cur.value) &&
-        !j.AssignmentPattern.check(cur.value) &&
-        !j.RestElement.check(cur.value)
-      ) {
+    switch (diagnostic.code) {
+      // TS2683: "'this' implicitly has type 'any' because it does not have a type annotation."
+      case 2683:
+        annotateThis(sourceFile, diagnostic, anyType, insert);
         break;
-      }
-      cur = cur.parent;
+      // TS7006: "Parameter '{0}' implicitly has an '{1}' type."
+      // TS7008: "Member '{0}' implicitly has an '{1}' type."
+      case 7006:
+      case 7008:
+        annotateIdentifierDeclaration(sourceFile, diagnostic, anyType, insert);
+        break;
+      // TS7019: "Rest parameter '{0}' implicitly has an 'any[]' type."
+      case 7019:
+        annotateRestParameter(sourceFile, diagnostic, anyType, insert);
+        break;
+      // TS7031: "Binding element '{0}' implicitly has an '{1}' type."
+      case 7031:
+        annotateBindingPattern(sourceFile, diagnostic, anyType, insert);
+        break;
+      // TS2339: "Property '{0}' does not exist on type '{1}'."
+      // On TS5, destructuring a missing property from a known type (e.g. `= {}`)
+      // is reported as TS2339 instead of TS7031. Only binding-pattern keys are
+      // matched, so member-access errors (e.g. `a.b`) are ignored.
+      case 2339:
+        annotateDestructuredKey(sourceFile, diagnostic, anyType, insert);
+        break;
+      // TS7034: "Variable '{0}' implicitly has type '{1}' in some locations where its type cannot be determined."
+      case 7034:
+        annotateVariable(sourceFile, diagnostic, anyType, insert);
+        break;
+      // TS2459: "Type '{0}' has no property '{1}' and no string index signature."
+      case 2459:
+        annotateEmptyObjectParameter(sourceFile, diagnostic, anyType, insert, getLanguageService);
+        break;
+      // TS2525: "Initializer provides no value for this binding element and the binding element has no default value."
+      case 2525:
+        annotateDefaultedPattern(sourceFile, diagnostic, anyType, insert);
+        break;
+      default:
+        break;
     }
-    return res;
-  };
-
-  diagnostics.forEach((diagnostic) => {
-    const annotateOutermostPattern = (path: any) => {
-      const pattern = getOutermostPattern(path);
-      if (pattern.node.typeAnnotation == null) {
-        pattern.get('typeAnnotation').replace(typeAnnotation);
-      }
-    };
-
-    root.find(j.ObjectPattern).forEach((path) => {
-      const matched = path.node.properties.some(
-        (property: any) => j.ObjectProperty.check(property) && matchesDiagnostic(property, diagnostic),
-      );
-      if (matched) {
-        annotateOutermostPattern(path);
-      }
-    });
-
-    root.find(j.ArrayPattern).forEach((path) => {
-      const matched = path.node.elements.some(
-        (element: any) =>
-          element != null &&
-          (matchesDiagnostic(element, diagnostic) ||
-            matchesDiagnostic(element.argument, diagnostic) ||
-            matchesDiagnostic(element.left, diagnostic)),
-      );
-      if (matched) {
-        annotateOutermostPattern(path);
-      }
-    });
   });
+
+  return updateSourceText(sourceFile.text, updates);
 }
 
-// TS2339: "Property '{0}' does not exist on type '{1}'."
-// On TS5, destructuring a missing property from a known type (e.g. `= {}`) is
-// reported as TS2339 instead of TS7031. Only property keys are matched, so
-// member-access errors (e.g. `a.b`) are ignored.
-function replaceDestructuringTS2339(
-  root: Collection<any>,
-  diagnostics: ts.DiagnosticWithLocation[],
-  typeAnnotation: TSTypeAnnotation,
-) {
-  // Climb to the outermost enclosing object pattern, skipping the
-  // AssignmentPattern wrapper of a nested pattern with a default (`= {}`).
-  const getParentObjectPattern = (path: any) => {
-    const skipAssignmentPattern = (p: any) => {
-      let cur = p;
-      while (cur && j.AssignmentPattern.check(cur.value)) {
-        cur = cur.parent;
-      }
-      return cur;
-    };
+type Insert = (index: number, text: string) => void;
 
-    let res = path;
-    let parent = skipAssignmentPattern(res.parent);
-    while (
-      parent &&
-      j.ObjectProperty.check(parent.value) &&
-      parent.parent &&
-      j.ObjectPattern.check(parent.parent.value)
-    ) {
-      res = parent.parent;
-      parent = skipAssignmentPattern(res.parent);
+/** The innermost node whose span matches the diagnostic exactly. */
+function findNodeAtSpan(
+  sourceFile: ts.SourceFile,
+  diagnostic: ts.DiagnosticWithLocation,
+): ts.Node | undefined {
+  const end = diagnostic.start + diagnostic.length;
+  let result: ts.Node | undefined;
+  const visit = (node: ts.Node): void => {
+    if (node.getStart(sourceFile) > diagnostic.start || node.end < end) return;
+    if (node.getStart(sourceFile) === diagnostic.start && node.end === end) {
+      result = node;
     }
-    return res;
+    node.forEachChild(visit);
   };
-
-  diagnostics.forEach((diagnostic) => {
-    root.find(j.ObjectPattern).forEach((path) => {
-      if (path.node.typeAnnotation != null) {
-        return;
-      }
-      const matchesKey = path.node.properties.some((property: any) => {
-        if (!j.ObjectProperty.check(property) || property.key == null) {
-          return false;
-        }
-        const key = property.key as any;
-        return (
-          key.start === diagnostic.start && key.end === diagnostic.start + diagnostic.length
-        );
-      });
-      if (matchesKey) {
-        const objectPattern = getParentObjectPattern(path);
-        if (objectPattern.node.typeAnnotation == null) {
-          objectPattern.get('typeAnnotation').replace(typeAnnotation);
-        }
-      }
-    });
-  });
+  visit(sourceFile);
+  return result;
 }
 
-// TS7034: Variable '{0}' implicitly has type '{1}' in some locations where its type cannot be determined.
-function replaceTS7034(
-  root: Collection<any>,
-  diagnostics: ts.DiagnosticWithLocation[],
-  typeAnnotation: TSTypeAnnotation,
+function annotateThis(
+  sourceFile: ts.SourceFile,
+  diagnostic: ts.DiagnosticWithLocation,
+  anyType: string,
+  insert: Insert,
 ) {
-  diagnostics.forEach((diagnostic) => {
-    root
-      .find(j.Identifier)
-      .filter(
-        (path: any) =>
-          path.node.start === diagnostic.start &&
-          path.node.end === diagnostic.start + diagnostic.length &&
-          path.node.typeAnnotation == null,
-      )
-      .forEach((path) => {
-        if (
-          !j.ImportSpecifier.check(path.parent.node) &&
-          !j.ImportDefaultSpecifier.check(path.parent.node) &&
-          !j.ImportNamespaceSpecifier.check(path.parent.node)
-        ) {
-          path.get('typeAnnotation').replace(typeAnnotation);
-        }
-      });
-  });
+  const node = findNodeAtSpan(sourceFile, diagnostic);
+  if (!node || node.kind !== ts.SyntaxKind.ThisKeyword) return;
+
+  // Find the containing function declaration/expression. Arrow functions
+  // cannot declare `this`, so climb past them.
+  let fn: ts.Node | undefined = node.parent;
+  while (fn && !ts.isFunctionDeclaration(fn) && !ts.isFunctionExpression(fn)) {
+    fn = fn.parent;
+  }
+  if (!fn) return;
+
+  const { parameters } = fn as ts.FunctionLikeDeclaration;
+  insert(parameters.pos, parameters.length > 0 ? `this: ${anyType}, ` : `this: ${anyType}`);
 }
 
-// TS2459: Type '{0}' has no property '{1}' and no string index signature.
-function replaceTS2459(
-  root: Collection<any>,
-  diagnostics: ts.DiagnosticWithLocation[],
-  typeAnnotation: TSTypeAnnotation,
+function annotateIdentifierDeclaration(
+  sourceFile: ts.SourceFile,
+  diagnostic: ts.DiagnosticWithLocation,
+  anyType: string,
+  insert: Insert,
 ) {
-  diagnostics.forEach((diagnostic) => {
-    root
-      .find(j.Identifier)
-      .filter(
-        (path: any) =>
-          path.node.start === diagnostic.start &&
-          path.node.end === diagnostic.start + diagnostic.length &&
-          path.node.typeAnnotation == null,
-      )
-      .forEach((path) => {
-        let newNode = path.parentPath;
-        // The error will only provide the location of the left hand side identifier
-        // so we have to find the variable declarator by traveling back up
-        while (newNode.parentPath && !j.VariableDeclarator.check(newNode.node)) {
-          newNode = newNode.parentPath;
-        }
-        if (newNode.get('init')) {
-          // init returns the right hand side identifier
-          const rightHandSideNodePath = newNode.get('init');
-          const name = rightHandSideNodePath.getValueProperty('name');
-          let { scope } = rightHandSideNodePath;
-          // we check if the current scope declares the identifier
-          // if not we move up to the parent scope
-          while (scope && scope.parent && !scope.declares(name)) {
-            scope = scope.parent;
-          }
-          if (scope && scope.getBindings()[name]) {
-            const binding = scope.getBindings()[name][0];
-            if (
-              j.AssignmentPattern.check(binding.parentPath.node) &&
-              j.ObjectExpression.check(binding.parentPath.node.right) &&
-              binding.parentPath.node.right.properties.length === 0 &&
-              binding.node.typeAnnotation == null
-            ) {
-              binding.get('typeAnnotation').replace(typeAnnotation);
-            }
-          }
-        }
-      });
-  });
+  const node = findNodeAtSpan(sourceFile, diagnostic);
+  if (!node || !ts.isIdentifier(node)) return;
+  const parent = node.parent as ts.Node;
+
+  if (ts.isParameter(parent) && parent.name === node && parent.type == null) {
+    const fn = parent.parent;
+    if (ts.isArrowFunction(fn) && fn.parameters.length === 1 && !hasParentheses(fn, sourceFile)) {
+      insert(node.getStart(sourceFile), '(');
+      insert(node.end, `: ${anyType})`);
+    } else {
+      insert(node.end, `: ${anyType}`);
+    }
+  } else if (
+    (ts.isPropertySignature(parent) || ts.isPropertyDeclaration(parent)) &&
+    parent.name === node &&
+    parent.type == null
+  ) {
+    insert((parent.questionToken ?? node).end, `: ${anyType}`);
+  }
 }
 
-// TS2525: Initializer provides no value for this binding element and the binding element has no default value.
-function replaceTS2525(
-  root: Collection<any>,
-  diagnostics: ts.DiagnosticWithLocation[],
-  typeAnnotation: TSTypeAnnotation,
+function hasParentheses(fn: ts.ArrowFunction, sourceFile: ts.SourceFile): boolean {
+  return fn.getChildren(sourceFile).some((c) => c.kind === ts.SyntaxKind.OpenParenToken);
+}
+
+function annotateRestParameter(
+  sourceFile: ts.SourceFile,
+  diagnostic: ts.DiagnosticWithLocation,
+  anyType: string,
+  insert: Insert,
 ) {
-  diagnostics.forEach((diagnostic) => {
-    root
-      .find(j.Identifier)
-      .filter(
-        (path: any) =>
-          path.node.start === diagnostic.start &&
-          path.node.end === diagnostic.start + diagnostic.length &&
-          path.node.typeAnnotation == null,
-      )
-      .forEach((path) => {
-        const potentialObjDestructionNode = path.parentPath.parentPath.parentPath;
-        if (
-          j.ObjectPattern.check(potentialObjDestructionNode.node) &&
-          (j.AssignmentPattern.check(potentialObjDestructionNode.parentPath.node) ||
-            j.VariableDeclarator.check(potentialObjDestructionNode.parentPath.node)) &&
-          // to prevent adding a type to the obj destruction inside of the destruction
-          !j.ObjectProperty.check(potentialObjDestructionNode.parentPath.parentPath.node) &&
-          potentialObjDestructionNode.node.typeAnnotation == null
-        ) {
-          potentialObjDestructionNode.get('typeAnnotation').replace(typeAnnotation);
-        }
-      });
-  });
+  const node = findNodeAtSpan(sourceFile, diagnostic);
+  if (!node || !ts.isParameter(node) || node.dotDotDotToken == null || node.type != null) return;
+  insert(node.name.end, `: ${anyType}[]`);
+}
+
+/**
+ * Climbs to the outermost enclosing binding pattern, crossing binding elements
+ * (which cover object properties, rest elements, and defaults). Annotations
+ * are only valid on the outermost pattern, not on nested binding elements.
+ */
+function getOutermostPattern(node: ts.Node): ts.BindingPattern | undefined {
+  let pattern: ts.BindingPattern | undefined;
+  let cur: ts.Node | undefined = node;
+  while (cur && (ts.isBindingElement(cur) || isBindingPattern(cur))) {
+    if (isBindingPattern(cur)) pattern = cur;
+    cur = cur.parent;
+  }
+  return pattern;
+}
+
+function isBindingPattern(node: ts.Node): node is ts.BindingPattern {
+  return ts.isObjectBindingPattern(node) || ts.isArrayBindingPattern(node);
+}
+
+function annotatePattern(pattern: ts.BindingPattern, anyType: string, insert: Insert) {
+  const decl = pattern.parent;
+  if ((ts.isParameter(decl) || ts.isVariableDeclaration(decl)) && decl.type == null) {
+    insert(pattern.end, `: ${anyType}`);
+  }
+}
+
+function annotateBindingPattern(
+  sourceFile: ts.SourceFile,
+  diagnostic: ts.DiagnosticWithLocation,
+  anyType: string,
+  insert: Insert,
+) {
+  let node = findNodeAtSpan(sourceFile, diagnostic);
+  if (!node) return;
+  if (ts.isIdentifier(node) && ts.isBindingElement(node.parent)) node = node.parent;
+  if (!ts.isBindingElement(node)) return;
+
+  const pattern = getOutermostPattern(node);
+  if (pattern) annotatePattern(pattern, anyType, insert);
+}
+
+function annotateDestructuredKey(
+  sourceFile: ts.SourceFile,
+  diagnostic: ts.DiagnosticWithLocation,
+  anyType: string,
+  insert: Insert,
+) {
+  const node = findNodeAtSpan(sourceFile, diagnostic);
+  if (!node || !ts.isIdentifier(node)) return;
+  const element = node.parent;
+  if (!ts.isBindingElement(element) || !ts.isObjectBindingPattern(element.parent)) return;
+  // Only property keys are matched.
+  const isKey = element.propertyName != null ? element.propertyName === node : element.name === node;
+  if (!isKey) return;
+
+  const pattern = getOutermostPattern(element);
+  if (pattern) annotatePattern(pattern, anyType, insert);
+}
+
+function annotateVariable(
+  sourceFile: ts.SourceFile,
+  diagnostic: ts.DiagnosticWithLocation,
+  anyType: string,
+  insert: Insert,
+) {
+  const node = findNodeAtSpan(sourceFile, diagnostic);
+  if (!node || !ts.isIdentifier(node)) return;
+  const decl = node.parent;
+  if (ts.isVariableDeclaration(decl) && decl.name === node && decl.type == null) {
+    insert(node.end, `: ${anyType}`);
+  }
+}
+
+function annotateEmptyObjectParameter(
+  sourceFile: ts.SourceFile,
+  diagnostic: ts.DiagnosticWithLocation,
+  anyType: string,
+  insert: Insert,
+  getLanguageService: () => ts.LanguageService,
+) {
+  const node = findNodeAtSpan(sourceFile, diagnostic);
+  if (!node || !ts.isIdentifier(node)) return;
+
+  // The error is on the left hand side of a variable declaration; the fix
+  // belongs on the parameter the right hand side identifier refers to.
+  let decl: ts.Node | undefined = node.parent;
+  while (decl && !ts.isVariableDeclaration(decl)) {
+    decl = decl.parent;
+  }
+  if (!decl || !ts.isVariableDeclaration(decl)) return;
+  const init = decl.initializer;
+  if (!init || !ts.isIdentifier(init)) return;
+
+  const program = getLanguageService().getProgram?.();
+  if (!program) return;
+  const symbol = program.getTypeChecker().getSymbolAtLocation(init);
+  const binding = symbol?.valueDeclaration;
+  if (
+    binding != null &&
+    ts.isParameter(binding) &&
+    ts.isIdentifier(binding.name) &&
+    binding.type == null &&
+    binding.initializer != null &&
+    ts.isObjectLiteralExpression(binding.initializer) &&
+    binding.initializer.properties.length === 0
+  ) {
+    insert(binding.name.end, `: ${anyType}`);
+  }
+}
+
+function annotateDefaultedPattern(
+  sourceFile: ts.SourceFile,
+  diagnostic: ts.DiagnosticWithLocation,
+  anyType: string,
+  insert: Insert,
+) {
+  const node = findNodeAtSpan(sourceFile, diagnostic);
+  if (!node || !ts.isIdentifier(node) || !ts.isBindingElement(node.parent)) return;
+  const pattern = node.parent.parent;
+  // To prevent annotating an object destructuring pattern nested inside
+  // another one, require the pattern to sit directly on the declaration.
+  if (ts.isObjectBindingPattern(pattern)) annotatePattern(pattern, anyType, insert);
 }
