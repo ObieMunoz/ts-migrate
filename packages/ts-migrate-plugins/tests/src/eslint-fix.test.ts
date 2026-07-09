@@ -4,12 +4,16 @@ import { mockPluginParams } from '../test-utils';
 
 // Run the plugin inside a fixture directory so it discovers that fixture's
 // config. The plugin caches ESLint at module scope, so reset modules each run.
-// Mask eslint.config.* files outside the fixture dir so the package-level
-// flat config doesn't leak into the plugin's engine detection.
+// The plugin picks its engine from ESLINT_USE_FLAT_CONFIG and from any
+// eslint.config.* found between cwd and the filesystem root, so clear the env
+// var and mask eslint.config.* files outside the fixture dir to keep the
+// tests hermetic.
 async function runInDir(dir: string, text: string): Promise<string | undefined> {
   const originalCwd = process.cwd();
+  const originalFlatConfigEnv = process.env.ESLINT_USE_FLAT_CONFIG;
   const realExistsSync = fs.existsSync;
   process.chdir(dir);
+  delete process.env.ESLINT_USE_FLAT_CONFIG;
   jest.resetModules();
   const existsSync = jest.spyOn(fs, 'existsSync').mockImplementation((file) => {
     if (/eslint\.config\.[cm]?[jt]s$/.test(String(file)) && path.dirname(String(file)) !== dir) {
@@ -22,6 +26,9 @@ async function runInDir(dir: string, text: string): Promise<string | undefined> 
     return await plugin.run(mockPluginParams({ text, fileName: 'Foo.tsx' }));
   } finally {
     existsSync.mockRestore();
+    if (originalFlatConfigEnv !== undefined) {
+      process.env.ESLINT_USE_FLAT_CONFIG = originalFlatConfigEnv;
+    }
     process.chdir(originalCwd);
   }
 }
