@@ -133,6 +133,84 @@ describe('migrate command', () => {
     expect(exitCode).not.toBe(0);
   });
 
+  describe('repeatUntilStable', () => {
+    it('re-runs the plugin group until a pass changes nothing', async () => {
+      const configDir = path.resolve(__dirname, 'config');
+      copyDir(configDir, rootDir);
+      fs.writeFileSync(path.resolve(rootDir, 'index.ts'), '8');
+
+      const config = new MigrateConfig()
+        .addPlugin(
+          {
+            name: 'halve-even',
+            run({ text }) {
+              const n = Number(text);
+              return n % 2 === 0 ? String(n / 2) : text;
+            },
+          },
+          {},
+          { repeatUntilStable: true },
+        )
+        .addPlugin(
+          {
+            name: 'decrement-odd',
+            run({ text }) {
+              const n = Number(text);
+              return n % 2 === 1 && n > 1 ? String(n - 1) : text;
+            },
+          },
+          {},
+          { repeatUntilStable: true },
+        );
+
+      const { exitCode } = await migrate({ rootDir, config });
+      expect(fs.readFileSync(path.resolve(rootDir, 'index.ts'), 'utf8')).toBe('1');
+      expect(exitCode).toBe(0);
+    });
+
+    it('caps the number of passes for a group that never stabilizes', async () => {
+      const configDir = path.resolve(__dirname, 'config');
+      copyDir(configDir, rootDir);
+      fs.writeFileSync(path.resolve(rootDir, 'index.ts'), 'x');
+
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'always-append',
+          run({ text }) {
+            return `${text}x`;
+          },
+        },
+        {},
+        { repeatUntilStable: true },
+      );
+
+      const { exitCode } = await migrate({ rootDir, config });
+      expect(fs.readFileSync(path.resolve(rootDir, 'index.ts'), 'utf8')).toBe('xxxxxx');
+      expect(exitCode).toBe(0);
+    });
+
+    it('runs unmarked plugins a single pass', async () => {
+      const configDir = path.resolve(__dirname, 'config');
+      copyDir(configDir, rootDir);
+      fs.writeFileSync(path.resolve(rootDir, 'index.ts'), '8');
+
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'halve-even',
+          run({ text }) {
+            const n = Number(text);
+            return n % 2 === 0 ? String(n / 2) : text;
+          },
+        },
+        {},
+      );
+
+      const { exitCode } = await migrate({ rootDir, config });
+      expect(fs.readFileSync(path.resolve(rootDir, 'index.ts'), 'utf8')).toBe('4');
+      expect(exitCode).toBe(0);
+    });
+  });
+
   it('Migrates project with two plugins', async () => {
     const inputDir = path.resolve(__dirname, 'input');
     const outputDir = path.resolve(__dirname, 'output_two');

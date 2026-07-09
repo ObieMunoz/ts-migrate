@@ -50,6 +50,7 @@ process.exit(exitCode);
 | [explicit-any](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/explicit-any.ts) | Annotate variables with `any` (`$TSFixMe`) in the case of an implicit any violation. |
 | [hoist-arrow-functions](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/hoist-arrow-functions.ts) | Convert arrow functions that are referenced before their definition into hoisted function declarations. Arrow functions only used after their definition are left alone. |
 | [hoist-class-statics](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/hoist-class-statics.ts) | Hoist static class members into the class body (vs. assigning them after the class definition). |
+| [infer-types](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/infer-types.ts) | Annotate implicit anys with types TypeScript can infer from usage, so only the truly undeterminable ones fall through to explicit-any. |
 | [jsdoc](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/jsdoc.ts) | Convert JSDoc @param types to TypeScript annotations. |
 | [member-accessibility](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/member-accessibility.ts) | Add accessibility modifiers (private, protected, or public) to class members according to naming conventions. |
 | [react-class-lifecycle-methods](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-class-lifecycle-methods.ts) | Annotate React lifecycle method types. |
@@ -59,6 +60,28 @@ process.exit(exitCode);
 | [react-shape](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-shape.ts) | Convert prop types shapes to TypeScript type. |
 | [strip-ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/strip-ts-ignore.ts) | Strip `// @ts-ignore`. comments |
 | [ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/ts-ignore.ts) | Add `// @ts-ignore` comments for the remaining errors. |
+
+## What infer-types annotations mean
+
+The function body is the source of truth for its contract. Call-site evidence
+is used only where it contradicts nothing; it never overrides what the body
+does:
+
+- Body evidence wins conflicts. `greet(name) { return name.toUpperCase(); }`
+  is annotated `name: string` no matter what callers pass; an improper
+  `greet(42)` becomes a type error that ts-ignore flags at the call site.
+- Harmless call-site evidence is kept. `logId(id) { console.log(id); }` called
+  only with numbers infers `id: number`; a setter infers its parameter from
+  consistent assignments.
+- Contradictory or missing evidence falls back to `any` (`$TSFixMe`). Call
+  sites that disagree with each other on an unconstrained body, or a body
+  TypeScript cannot express a type for (`a + b` with mixed callers), get no
+  annotation rather than an arbitrary or suppression-generating one. The
+  plugin never introduces suppressions inside a function body.
+- A signature can still be narrower than everything the function could handle
+  at runtime (`half(n) { return n / 2; }` infers `number` even though a
+  numeric string would not crash), and callers the program cannot see
+  (consumers of a published library) contribute no evidence.
 
 
 # Type of plugins

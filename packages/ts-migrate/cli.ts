@@ -12,6 +12,7 @@ import {
   explicitAnyPlugin,
   hoistArrowFunctionsPlugin,
   hoistClassStaticsPlugin,
+  inferTypesPlugin,
   jsDocPlugin,
   memberAccessibilityPlugin,
   reactClassLifecycleMethodsPlugin,
@@ -34,6 +35,7 @@ const availablePlugins = [
   explicitAnyPlugin,
   hoistArrowFunctionsPlugin,
   hoistClassStaticsPlugin,
+  inferTypesPlugin,
   jsDocPlugin,
   memberAccessibilityPlugin,
   reactClassLifecycleMethodsPlugin,
@@ -179,7 +181,11 @@ yargs
             protectedRegex,
             publicRegex,
           })
-          .addPlugin(explicitAnyPlugin, { anyAlias })
+          // Annotations from one pass can surface new implicit anys (e.g. a
+          // variable annotated `any` makes its callback parameters implicit
+          // any), so these two repeat until the files stop changing.
+          .addPlugin(inferTypesPlugin, {}, { repeatUntilStable: true })
+          .addPlugin(explicitAnyPlugin, { anyAlias }, { repeatUntilStable: true })
           .addPlugin(addConversionsPlugin, { anyAlias })
           // We need to run eslint-fix before ts-ignore because formatting may affect where
           // the errors are that need to get ignored.

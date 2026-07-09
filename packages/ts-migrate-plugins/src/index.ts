@@ -5,6 +5,7 @@ import eslintFixPlugin from './plugins/eslint-fix';
 import explicitAnyPlugin from './plugins/explicit-any';
 import hoistArrowFunctionsPlugin from './plugins/hoist-arrow-functions';
 import hoistClassStaticsPlugin from './plugins/hoist-class-statics';
+import inferTypesPlugin from './plugins/infer-types';
 import jsDocPlugin from './plugins/jsdoc';
 import memberAccessibilityPlugin from './plugins/member-accessibility';
 import reactClassLifecycleMethodsPlugin from './plugins/react-class-lifecycle-methods';
@@ -28,6 +29,7 @@ export {
   explicitAnyPlugin,
   hoistArrowFunctionsPlugin,
   hoistClassStaticsPlugin,
+  inferTypesPlugin,
   jsDocPlugin,
   memberAccessibilityPlugin,
   reactClassLifecycleMethodsPlugin,

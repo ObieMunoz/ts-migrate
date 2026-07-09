@@ -1,6 +1,12 @@
 import path from 'path';
+import fs from 'fs';
 // eslint-disable-next-line import/no-extraneous-dependencies
-import { tsIgnorePlugin, eslintFixPlugin, explicitAnyPlugin } from '@obiemunoz/ts-migrate-plugins';
+import {
+  tsIgnorePlugin,
+  eslintFixPlugin,
+  explicitAnyPlugin,
+  inferTypesPlugin,
+} from '@obiemunoz/ts-migrate-plugins';
 import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
 import { createDir, copyDir, deleteDir, getDirData } from '../../test-utils';
 
@@ -32,6 +38,33 @@ describe('migrate command', () => {
     const { exitCode } = await migrate({ rootDir, config });
     const [rootData, outputData] = getDirData(rootDir, outputDir);
     expect(rootData).toEqual(outputData);
+    expect(exitCode).toBe(0);
+  }, 10000);
+
+  it('annotates implicit anys that only surface after an earlier annotation', async () => {
+    const inputDir = path.resolve(__dirname, 'input');
+    copyDir(inputDir, rootDir);
+    // `h` only becomes an implicit any once `handlers` is annotated `any`, so
+    // a single pass would leave it for ts-ignore to suppress.
+    fs.writeFileSync(
+      path.resolve(rootDir, 'file-1.ts'),
+      `const handlers = [];
+handlers.map(h => h.onReady);
+`,
+    );
+    fs.unlinkSync(path.resolve(rootDir, 'Foo.tsx'));
+
+    const config = new MigrateConfig()
+      .addPlugin(inferTypesPlugin, {}, { repeatUntilStable: true })
+      .addPlugin(explicitAnyPlugin, {}, { repeatUntilStable: true })
+      .addPlugin(tsIgnorePlugin, {});
+
+    const { exitCode } = await migrate({ rootDir, config });
+    expect(fs.readFileSync(path.resolve(rootDir, 'file-1.ts'), 'utf8')).toBe(
+      `const handlers: any = [];
+handlers.map((h: { onReady: any; }) => h.onReady);
+`,
+    );
     expect(exitCode).toBe(0);
   }, 10000);
 });
