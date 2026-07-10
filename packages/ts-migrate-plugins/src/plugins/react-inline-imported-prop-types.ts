@@ -18,6 +18,13 @@ import { unpackInitializer } from './utils/react-props';
  * module-local values) are left alone; react-props falls back to
  * InferProps<typeof x> for those.
  */
+// One program snapshot serves a whole pass: this plugin only reads other
+// modules' exported initializers and import declarations, which its own edits
+// never modify (it rewrites consumer-side propTypes expressions, and import
+// removal is usage-gated). Re-synchronizing the program after every edited
+// file costs ~50ms per candidate on a 1000-file project for no benefit.
+const programCache = new WeakMap<ts.LanguageService, ts.Program>();
+
 const reactInlineImportedPropTypesPlugin: Plugin = {
   name: 'react-inline-imported-prop-types',
 
@@ -30,8 +37,10 @@ const reactInlineImportedPropTypesPlugin: Plugin = {
 
     const candidates = findCandidates(sourceFile, imports);
     if (candidates.length === 0) return undefined;
+    // Only relative specifiers ever resolve to project files.
+    if (!candidates.some((cur) => cur.binding.moduleSpecifier.startsWith('.'))) return undefined;
 
-    const program = getLanguageService().getProgram();
+    const program = getCachedProgram(getLanguageService());
     if (!program) return undefined;
 
     const normalizedFileName = fileName.replace(/\\/g, '/');
@@ -186,6 +195,15 @@ const reactInlineImportedPropTypesPlugin: Plugin = {
 };
 
 export default reactInlineImportedPropTypesPlugin;
+
+function getCachedProgram(languageService: ts.LanguageService): ts.Program | undefined {
+  let program = programCache.get(languageService);
+  if (!program) {
+    program = languageService.getProgram() ?? undefined;
+    if (program) programCache.set(languageService, program);
+  }
+  return program;
+}
 
 type ImportBinding = {
   kind: 'default' | 'named' | 'namespace';

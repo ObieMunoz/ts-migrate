@@ -122,6 +122,21 @@ MessageList.propTypes = messagePropTypes;
 export default MessageList;
 `,
     );
+    // A second consumer of the same module: the inliner reuses one program
+    // snapshot for the whole pass, so this file is processed after the first
+    // consumer was already edited.
+    fs.writeFileSync(
+      path.resolve(rootDir, 'MessageHeader.tsx'),
+      `import React from 'react';
+import { messagePropTypes } from './messagePropTypes';
+
+const MessageHeader = (props) => <h1>{props.title}</h1>;
+
+MessageHeader.propTypes = messagePropTypes;
+
+export default MessageHeader;
+`,
+    );
 
     const config = new MigrateConfig()
       .addPlugin(reactInlineImportedPropTypesPlugin, {})
@@ -139,6 +154,19 @@ type Props = {
 const MessageList = (props: Props) => <div>{props.title}</div>;
 
 export default MessageList;
+`,
+    );
+    expect(fs.readFileSync(path.resolve(rootDir, 'MessageHeader.tsx'), 'utf8')).toBe(
+      `import React from 'react';
+
+type Props = {
+    messages: string[];
+    title?: string;
+};
+
+const MessageHeader = (props: Props) => <h1>{props.title}</h1>;
+
+export default MessageHeader;
 `,
     );
     expect(fs.readFileSync(path.resolve(rootDir, 'messagePropTypes.ts'), 'utf8')).toBe(
