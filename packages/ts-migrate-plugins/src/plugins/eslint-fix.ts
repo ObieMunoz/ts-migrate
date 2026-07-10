@@ -57,9 +57,19 @@ function getESLint(): Promise<AnyESLint> {
   return eslintPromise;
 }
 
+// The exact text eslint-fix last produced for each file. eslint's autofix is
+// idempotent, so a file whose text is unchanged since then is already at a
+// fixed point and re-linting it is a guaranteed no-op. This lets the second
+// eslint-fix pass (which runs after ts-ignore) skip every file ts-ignore left
+// untouched instead of re-linting the whole project.
+const lastFixedText = new Map<string, string>();
+
 const eslintFixPlugin: Plugin = {
   name: 'eslint-fix',
   async run({ fileName, text }) {
+    if (lastFixedText.get(fileName) === text) {
+      return text;
+    }
     try {
       const cli = await getESLint();
       let newText = text;
@@ -73,6 +83,7 @@ const eslintFixPlugin: Plugin = {
         }
         newText = report.output;
       }
+      lastFixedText.set(fileName, newText);
       return newText;
     } catch (e) {
       console.error('Error occurred in eslint-fix plugin: ', e instanceof Error ? e.message : e);
