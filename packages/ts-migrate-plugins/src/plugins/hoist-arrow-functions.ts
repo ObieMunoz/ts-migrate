@@ -2,7 +2,6 @@
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
-import { collectIdentifierNodes } from './utils/identifiers';
 
 /**
  * Converts arrow functions that are referenced before their declaration into
@@ -13,6 +12,10 @@ const hoistArrowFunctionsPlugin: Plugin = {
   name: 'hoist-arrow-functions',
 
   run({ fileName, sourceFile, text, getLanguageService }) {
+    // Purely syntactic candidate scan first: most files have no convertible
+    // arrow function at all and skip the program entirely.
+    if (findCandidates(sourceFile).length === 0) return text;
+
     const program = getLanguageService().getProgram();
     if (!program) return undefined;
 
@@ -24,41 +27,71 @@ const hoistArrowFunctionsPlugin: Plugin = {
 
 export default hoistArrowFunctionsPlugin;
 
+type Candidate = {
+  statement: ts.VariableStatement;
+  name: ts.Identifier;
+  declaration: ts.VariableDeclaration;
+  arrow: ts.ArrowFunction;
+  statementStart: number;
+  // Set for a `var` in a nested block: it is function-scoped, but the
+  // converted function declaration would be block-scoped, so references
+  // outside the block disqualify the candidate.
+  block?: ts.Block;
+  usedBefore?: boolean;
+  escapesBlock?: boolean;
+};
+
 function hoistArrowFunctions(
   sourceFile: ts.SourceFile,
   sourceText: string,
   checker: ts.TypeChecker,
 ): string {
-  const updates: SourceTextUpdate[] = [];
-  const allIdentifiers = collectIdentifierNodes(sourceFile);
+  const candidates = findCandidates(sourceFile);
+  if (candidates.length === 0) return sourceText;
 
-  const visit = (node: ts.Node) => {
-    if (ts.isVariableStatement(node)) {
-      const candidate = getCandidate(node);
-      if (candidate && isUsedBeforeDefined(node, candidate.declaration, allIdentifiers, checker)) {
-        const index = node.getStart(sourceFile);
-        updates.push({
-          kind: 'replace',
-          index,
-          length: node.end - index,
-          text: toFunctionDeclarationText(node, candidate, sourceFile, sourceText),
-        });
-      }
+  const byName = new Map<string, Candidate[]>();
+  candidates.forEach((candidate) => {
+    const list = byName.get(candidate.name.text);
+    if (list) {
+      list.push(candidate);
+    } else {
+      byName.set(candidate.name.text, [candidate]);
     }
-    ts.forEachChild(node, visit);
-  };
-  visit(sourceFile);
+  });
+
+  findReferences(sourceFile, byName, checker);
+
+  const updates: SourceTextUpdate[] = [];
+  candidates.forEach((candidate) => {
+    if (!candidate.usedBefore || candidate.escapesBlock) return;
+    updates.push({
+      kind: 'replace',
+      index: candidate.statementStart,
+      length: candidate.statement.end - candidate.statementStart,
+      text: toFunctionDeclarationText(candidate.statement, candidate, sourceFile, sourceText),
+    });
+  });
 
   return updateSourceText(sourceText, updates);
 }
 
-type Candidate = {
-  name: ts.Identifier;
-  declaration: ts.VariableDeclaration;
-  arrow: ts.ArrowFunction;
-};
+function findCandidates(sourceFile: ts.SourceFile): Candidate[] {
+  const candidates: Candidate[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isVariableStatement(node)) {
+      const candidate = getCandidate(node, sourceFile);
+      if (candidate) candidates.push(candidate);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return candidates;
+}
 
-function getCandidate(statement: ts.VariableStatement): Candidate | undefined {
+function getCandidate(
+  statement: ts.VariableStatement,
+  sourceFile: ts.SourceFile,
+): Candidate | undefined {
   if (!ts.isSourceFile(statement.parent) && !ts.isBlock(statement.parent)) return undefined;
   if (
     statement.modifiers &&
@@ -85,7 +118,15 @@ function getCandidate(statement: ts.VariableStatement): Candidate | undefined {
   }
   if (!hasOwnBindings(arrow)) return undefined;
 
-  return { name: declaration.name, declaration, arrow };
+  const isVar = (statement.declarationList.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let)) === 0;
+  return {
+    statement,
+    name: declaration.name,
+    declaration,
+    arrow,
+    statementStart: statement.getStart(sourceFile),
+    block: isVar && ts.isBlock(statement.parent) ? statement.parent : undefined,
+  };
 }
 
 /**
@@ -121,36 +162,39 @@ function hasOwnBindings(arrow: ts.ArrowFunction): boolean {
   return safe;
 }
 
-function isUsedBeforeDefined(
-  statement: ts.VariableStatement,
-  declaration: ts.VariableDeclaration,
-  allIdentifiers: ts.Identifier[],
+/**
+ * One pass over the file recording, per candidate, whether it is referenced
+ * before its declaration and, for a nested `var`, whether any reference
+ * escapes the enclosing block. Position checks use token `end` (a stored
+ * property; tokens cannot straddle a statement start) and run before symbol
+ * resolution, so the checker is only consulted for identifiers that could
+ * still change the outcome.
+ */
+function findReferences(
+  sourceFile: ts.SourceFile,
+  byName: Map<string, Candidate[]>,
   checker: ts.TypeChecker,
-): boolean {
-  const name = declaration.name as ts.Identifier;
-  const references = allIdentifiers.filter(
-    (identifier) =>
-      identifier !== name &&
-      identifier.text === name.text &&
-      resolvesToDeclaration(identifier, declaration, checker),
-  );
-
-  const statementStart = statement.getStart();
-  if (!references.some((reference) => reference.getStart() < statementStart)) {
-    return false;
-  }
-
-  // A `var` in a nested block is function-scoped, but the converted function
-  // declaration would be block-scoped, so references outside the block break.
-  const isVar = (statement.declarationList.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let)) === 0;
-  if (isVar && !ts.isSourceFile(statement.parent)) {
-    const block = statement.parent;
-    return references.every(
-      (reference) => reference.pos >= block.pos && reference.end <= block.end,
-    );
-  }
-
-  return true;
+): void {
+  const visit = (node: ts.Node) => {
+    if (ts.isIdentifier(node)) {
+      const list = byName.get(node.text);
+      if (list) {
+        list.forEach((candidate) => {
+          if (node === candidate.name || candidate.escapesBlock) return;
+          const before = !candidate.usedBefore && node.end <= candidate.statementStart;
+          const escapes =
+            candidate.block != null &&
+            (node.pos < candidate.block.pos || node.end > candidate.block.end);
+          if ((before || escapes) && resolvesToDeclaration(node, candidate.declaration, checker)) {
+            if (before) candidate.usedBefore = true;
+            if (escapes) candidate.escapesBlock = true;
+          }
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
 }
 
 function resolvesToDeclaration(
