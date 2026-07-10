@@ -20,8 +20,8 @@ and with a [config of 2 simple plugins](https://github.com/ObieMunoz/ts-migrate/
 
 ```typescript
 function mult(first: number, second: number): number {
-  console.log(`args: ${arguments}`)
-  return first * second;
+    console.log(`args: ${arguments}`)
+return first * second;
 }
 ```
 
