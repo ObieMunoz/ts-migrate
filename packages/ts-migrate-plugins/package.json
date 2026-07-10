@@ -33,7 +33,7 @@
     "lint": "eslint .",
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf build",
-    "prepack": "yarn build"
+    "prepack": "yarn clean && yarn build"
   },
   "contributors": [
     {
