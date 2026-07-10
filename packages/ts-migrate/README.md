@@ -111,6 +111,45 @@ For the second option we created a re-ignore script, which will fully automate t
 
 Usage: `npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>`.
 
+# Type definition recommendations
+
+Many of the errors ts-migrate suppresses aren't really problems with your code —
+they are missing environment types. Without `@types/node`, every `require`,
+`process`, and `__dirname` becomes a suppressed "Cannot find name" error; without
+your test runner's types, so does every `describe` and `it`.
+
+`migrate` and `reignore` detect this from the compiler diagnostics themselves and
+end the run with a report:
+
+```
+Type definition recommendations:
+  Missing type definitions:
+    @types/node — 6 errors in 2 files (require, __dirname, module)
+    @types/jest — 4 errors in 1 file (describe, beforeEach, it)
+  Untyped imports (@types packages may exist for them):
+    @types/lodash — 1 error in 1 file (import 'lodash')
+  Install: yarn add -D @types/node @types/jest
+  Then try: yarn add -D @types/lodash
+  After installing type definitions, rerun: npx ts-migrate reignore <folder>
+```
+
+Installing the packages and re-running `reignore` deletes every suppression they
+resolve. The report only recommends what the diagnostics prove is missing:
+
+- A package that is installed and working is never mentioned.
+- A package that is installed but hidden by the tsconfig `types` array (or a
+  `typeRoots` override) gets a config suggestion instead of an install.
+- Installed `@types` packages whose major version lags the library (or Node
+  version) they describe are listed as possibly outdated.
+- `@types` packages made redundant by a library that now ships its own types are
+  flagged for removal.
+- The test-runner suggestion follows your package.json: jest, mocha, and jasmine
+  map to their `@types` packages; vitest projects are pointed at
+  `"types": ["vitest/globals"]` instead.
+
+The `Then try` line is separate because `@types` packages derived from untyped
+imports (rather than well-known globals) aren't guaranteed to exist on npm.
+
 # Using `--sources` for partial migrations
 
 There are times in which migrating an entire project is too large a change. The `--sources` flag (or `-s` for short) allows you to run `ts-migrate` on a subset of your project by providing a set of sources to override the defaults specified in your tsconfig. `--sources` takes a relative path from the root of your project. It accepts globs, but remember to wrap any globs with quotes.

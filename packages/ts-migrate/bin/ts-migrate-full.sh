@@ -178,8 +178,9 @@ left before everything runs again:
 4. Teach ESLint about TypeScript (the @typescript-eslint parser and plugin).
    Until then, linting will either fail to parse .ts files or find no files at all.
 
-5. Install any missing @types packages (@types/node, your test runner), then
-   re-run \`ts-migrate reignore <folder>\` to drop suppressions you no longer need.
+5. Install the packages from the \"Type definition recommendations\" report
+   printed above (e.g. @types/node, your test runner's types), then re-run
+   \`ts-migrate reignore <folder>\` to drop the suppressions they resolve.
 
 6. Push your changes with \`git push\` and open a PR!
 "
