@@ -114,3 +114,9 @@ jobs:
 
       - name: Test
         run: yarn test
+
+      - name: Example smoke test
+        run: |
+          yarn --cwd packages/ts-migrate-example example
+          grep -q 'first: number, second: number): number' packages/ts-migrate-example/src/input/index.ts
+          git checkout -- packages/ts-migrate-example/src/input/index.ts

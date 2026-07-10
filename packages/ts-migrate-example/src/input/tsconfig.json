@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "esModuleInterop": true,
+    "module": "commonjs",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "target": "esnext"
+  }
+}

@@ -30,14 +30,12 @@ const examplePluginTs: Plugin<Options> = {
       if (options.shouldReplaceText && hasTwoParams && multiplierReturn) {
         // create a new function declaration with a new type
         const newFunctionDeclaration = ts.factory.createFunctionDeclaration(
-          functionDeclaration.decorators,
           functionDeclaration.modifiers,
           functionDeclaration.asteriskToken,
           functionDeclaration.name,
           functionDeclaration.typeParameters,
           functionDeclaration.parameters.map((x) =>
             ts.factory.createParameterDeclaration(
-              x.decorators,
               x.modifiers,
               x.dotDotDotToken,
               x.name,
