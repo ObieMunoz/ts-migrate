@@ -79,6 +79,15 @@ does:
   TypeScript cannot express a type for (`a + b` with mixed callers), get no
   annotation rather than an arbitrary or suppression-generating one. The
   plugin never introduces suppressions inside a function body.
+- Members with no evidence are spelled `any`, not the empty object type or a
+  bottom array type. TypeScript prints a member it knows nothing about as `{}`
+  (banned by `@typescript-eslint/no-empty-object-type`) and an empty array
+  literal as `never[]` — `undefined[]` without strictNullChecks — which would
+  reject every element later added; `initialState = { settings: {},
+  items: [] }` infers `settings: any` and `items: any[]`. A genuine
+  `undefined[]` inferred from real undefined elements under strictNullChecks
+  is kept. An annotation that reduces entirely to `any` this way is dropped
+  and left to explicit-any, as usual.
 - A signature can still be narrower than everything the function could handle
   at runtime (`half(n) { return n / 2; }` infers `number` even though a
   numeric string would not crash), and callers the program cannot see
