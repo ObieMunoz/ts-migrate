@@ -61,6 +61,7 @@ process.exit(exitCode);
 | [react-shape](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-shape.ts) | Convert prop types shapes to TypeScript type. |
 | [strip-ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/strip-ts-ignore.ts) | Strip `// @ts-ignore`. comments |
 | [ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/ts-ignore.ts) | Add `// @ts-ignore` comments for the remaining errors. |
+| [update-import-paths](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/update-import-paths.ts) | Re-point relative imports that still say `./foo.js`/`./foo.jsx` after the file was renamed to `.ts`/`.tsx`. Drops the extension by default; keeps a `.js` extension in ESM packages (`"type": "module"`) or with `{ extension: 'js' }`. Imports whose target still exists on disk are left alone. |
 
 ## What infer-types annotations mean
 

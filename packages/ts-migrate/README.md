@@ -79,6 +79,13 @@ files in favor of the ones you've listed. It is effectively the same as replacin
 your tsconfig.json's `include` property with the provided sources. The flag can be
 passed multiple times.
 
+The `migrate` command starts by running the
+[update-import-paths](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/update-import-paths.ts)
+plugin: relative imports that still name the pre-rename file, like
+`import foo from './foo.js'` or `'./foo.jsx'`, are re-pointed at the renamed
+`.ts`/`.tsx` file (the extension is dropped, or kept as `.js` inside an ESM
+package). Imports whose target still exists on disk are left alone.
+
 The `migrate` command also accepts flags controlling the type-inference stage,
 the most expensive part of a migration:
 

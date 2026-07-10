@@ -6,6 +6,7 @@ import {
   eslintFixPlugin,
   explicitAnyPlugin,
   inferTypesPlugin,
+  updateImportPathsPlugin,
 } from '@obiemunoz/ts-migrate-plugins';
 import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
 import { createDir, copyDir, deleteDir, getDirData } from '../../test-utils';
@@ -63,6 +64,30 @@ handlers.map(h => h.onReady);
     expect(fs.readFileSync(path.resolve(rootDir, 'file-1.ts'), 'utf8')).toBe(
       `const handlers: any = [];
 handlers.map((h: { onReady: any; }) => h.onReady);
+`,
+    );
+    expect(exitCode).toBe(0);
+  }, 10000);
+
+  it('re-points imports of renamed files', async () => {
+    const inputDir = path.resolve(__dirname, 'input');
+    copyDir(inputDir, rootDir);
+    fs.writeFileSync(path.resolve(rootDir, 'util.ts'), `export const util = 1;\n`);
+    fs.writeFileSync(
+      path.resolve(rootDir, 'file-1.ts'),
+      `import { util } from './util.js';
+
+export const value = util;
+`,
+    );
+
+    const config = new MigrateConfig().addPlugin(updateImportPathsPlugin, {});
+
+    const { exitCode } = await migrate({ rootDir, config });
+    expect(fs.readFileSync(path.resolve(rootDir, 'file-1.ts'), 'utf8')).toBe(
+      `import { util } from './util';
+
+export const value = util;
 `,
     );
     expect(exitCode).toBe(0);

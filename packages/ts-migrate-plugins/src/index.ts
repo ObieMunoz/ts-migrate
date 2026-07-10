@@ -16,6 +16,7 @@ import reactPropsPlugin from './plugins/react-props';
 import reactShapePlugin from './plugins/react-shape';
 import stripTSIgnorePlugin from './plugins/strip-ts-ignore';
 import tsIgnorePlugin from './plugins/ts-ignore';
+import updateImportPathsPlugin from './plugins/update-import-paths';
 import updateSourceText, {
   SourceTextUpdate as SourceTextUpdateType,
 } from './utils/updateSourceText';
@@ -41,6 +42,7 @@ export {
   reactShapePlugin,
   stripTSIgnorePlugin,
   tsIgnorePlugin,
+  updateImportPathsPlugin,
 };
 
 export { updateSourceText };
