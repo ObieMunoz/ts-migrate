@@ -339,6 +339,74 @@ describe('migrate command', () => {
     });
   });
 
+  describe('mutationsPreserveTypes', () => {
+    const marker = '// touched\n';
+
+    // A plugin that appends `marker` to every file and, for each file it
+    // processes, records whether the shared program already reflects a sibling
+    // file's edit made earlier in this same pass.
+    const appendMarkerConfig = (mutationsPreserveTypes: boolean) => {
+      const sawSiblingEdit: boolean[] = [];
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'append-marker',
+          mutationsPreserveTypes,
+          run({ fileName, text, getLanguageService }) {
+            const program = getLanguageService().getProgram();
+            const sawSibling = Boolean(
+              program &&
+                program
+                  .getSourceFiles()
+                  .some(
+                    (sf) =>
+                      sf.fileName !== fileName &&
+                      /\/[ab]\.ts$/.test(sf.fileName) &&
+                      sf.text.includes(marker),
+                  ),
+            );
+            sawSiblingEdit.push(sawSibling);
+            return `${text}${marker}`;
+          },
+        },
+        {},
+      );
+      return { config, sawSiblingEdit };
+    };
+
+    beforeEach(() => {
+      const configDir = path.resolve(__dirname, 'config');
+      copyDir(configDir, rootDir);
+      fs.writeFileSync(path.resolve(rootDir, 'a.ts'), 'export const a = 1;\n');
+      fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 2;\n');
+    });
+
+    it('defers writes so the whole pass runs against one warm program', async () => {
+      const { config, sawSiblingEdit } = appendMarkerConfig(true);
+
+      const { exitCode } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      // Every deferred write is still flushed: no edit is dropped.
+      expect(fs.readFileSync(path.resolve(rootDir, 'a.ts'), 'utf8')).toContain(marker);
+      expect(fs.readFileSync(path.resolve(rootDir, 'b.ts'), 'utf8')).toContain(marker);
+      // No file observed a sibling's edit mid-pass, so the program was never
+      // rebuilt between files.
+      expect(sawSiblingEdit).toEqual([false, false]);
+    });
+
+    it('applies writes immediately for ordinary plugins (contrast)', async () => {
+      const { config, sawSiblingEdit } = appendMarkerConfig(false);
+
+      const { exitCode } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(path.resolve(rootDir, 'a.ts'), 'utf8')).toContain(marker);
+      expect(fs.readFileSync(path.resolve(rootDir, 'b.ts'), 'utf8')).toContain(marker);
+      // The second file processed sees the first file's already-committed edit.
+      expect(sawSiblingEdit).toContain(true);
+    });
+  });
+
   it('Migrates project with two plugins', async () => {
     const inputDir = path.resolve(__dirname, 'input');
     const outputDir = path.resolve(__dirname, 'output_two');

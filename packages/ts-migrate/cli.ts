@@ -251,6 +251,7 @@ yargs
       function withChangeTracking(plugin: Plugin<unknown>): Plugin<unknown> {
         return {
           name: plugin.name,
+          mutationsPreserveTypes: plugin.mutationsPreserveTypes,
           async run(params) {
             const prevText = params.text;
             const nextText = await plugin.run(params);
