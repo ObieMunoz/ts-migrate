@@ -49,16 +49,19 @@ const inferTypesPlugin: Plugin = {
   run({ fileName, text, getLanguageService }, lintConfig?: LintConfig) {
     const languageService = getLanguageService();
     const projectOptions = languageService.getProgram()?.getCompilerOptions() ?? {};
-    // Under noImplicitAny every inferable location is a semantic error and the
-    // suggestion variants (TS7043+) are never produced, so the suggestion scan
-    // (recomputed on every call, unlike semantic diagnostics) is skipped.
+    // Under noImplicitAny every inferable location is a semantic error
+    // (cached on the program), so clean files are gated without a code-fix
+    // pass. Without it the gate would need the suggestion scan (recomputed on
+    // every call) that the code-fix pass performs internally anyway, so the
+    // pass itself is the cheapest gate.
     const noImplicitAny = projectOptions.noImplicitAny ?? projectOptions.strict ?? false;
-    const hasInferableDiagnostics = [
-      ...languageService.getSemanticDiagnostics(fileName),
-      ...(noImplicitAny ? [] : languageService.getSuggestionDiagnostics(fileName)),
-    ].some((diagnostic) => inferableDiagnosticCodes.has(diagnostic.code));
-    if (!hasInferableDiagnostics) {
-      return undefined;
+    if (noImplicitAny) {
+      const hasInferableDiagnostics = languageService
+        .getSemanticDiagnostics(fileName)
+        .some((diagnostic) => inferableDiagnosticCodes.has(diagnostic.code));
+      if (!hasInferableDiagnostics) {
+        return undefined;
+      }
     }
 
     const formatSettings: ts.FormatCodeSettings = {
@@ -165,14 +168,26 @@ function withBodyWins(
     return undefined;
   }
 
+  // assemble() returns the original set untouched when every contested scope
+  // held no annotations (errors attributed to un-annotated functions or the
+  // top level); the candidate service already validated exactly that text.
+  const originalChanges = new Set(changes);
+  const reassembled =
+    finalChanges.length !== changes.length ||
+    finalChanges.some((change) => !originalChanges.has(change));
+
   // Body-only annotations may still contradict the body (a TS expressiveness
   // limit); drop those rather than suppressing inside the function. When the
   // conflict is a call to one specific annotated parameter (e.g. a redux
   // dispatch inferred too narrowly from heterogeneous calls), only that
   // parameter's annotation is dropped.
-  let finalText = applyTextChanges(text, finalChanges);
-  const finalService = createFileLanguageService(fileName, finalText, compilerOptions);
-  const finalErrors = findNewErrors(baseline, finalService, finalChanges, fileName);
+  let finalText = reassembled ? applyTextChanges(text, finalChanges) : candidateText;
+  const finalService = reassembled
+    ? createFileLanguageService(fileName, finalText, compilerOptions)
+    : candidate;
+  const finalErrors = reassembled
+    ? findNewErrors(baseline, finalService, finalChanges, fileName)
+    : newErrors;
   const dropped = collectBodyConflictDrops(
     finalErrors,
     finalService,
@@ -427,16 +442,21 @@ function findNewErrors(
   fileName: string,
 ): ts.Diagnostic[] {
   const isError = (d: ts.Diagnostic) => d.category === ts.DiagnosticCategory.Error;
+  // Checked first: a clean candidate never type-checks the baseline (the
+  // baseline service stays lazy until its first query).
+  const candidateErrors = candidate.getSemanticDiagnostics(fileName).filter(isError);
+  if (candidateErrors.length === 0) {
+    return [];
+  }
   const baselineKeys = new Set(
     baseline
       .getSemanticDiagnostics(fileName)
       .filter(isError)
       .map((d) => `${d.code}:${d.start == null ? '' : toCandidatePos(d.start, changes)}`),
   );
-  return candidate
-    .getSemanticDiagnostics(fileName)
-    .filter(isError)
-    .filter((d) => !baselineKeys.has(`${d.code}:${d.start == null ? '' : d.start}`));
+  return candidateErrors.filter(
+    (d) => !baselineKeys.has(`${d.code}:${d.start == null ? '' : d.start}`),
+  );
 }
 
 function bindingNameOf(fn: ts.Node): ts.Identifier | undefined {
