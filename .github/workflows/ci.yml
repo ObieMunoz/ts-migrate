@@ -41,6 +41,11 @@ jobs:
         if: steps.node-modules.outputs.cache-hit != 'true'
         run: yarn install --frozen-lockfile
 
+      # Nx state must never persist across runs via the node_modules cache
+      # (see the build job's Build step comment).
+      - name: Drop persisted Nx state
+        run: rm -rf node_modules/.cache/nx
+
       - name: Lint
         run: yarn lint
 
@@ -88,6 +93,12 @@ jobs:
       - name: Install dependencies
         if: steps.node-modules.outputs.cache-hit != 'true'
         run: yarn install --frozen-lockfile
+
+      # Nx keeps task-runner state in node_modules/.cache/nx, which the cache
+      # above would otherwise persist across runs; scrub it so a lerna/nx
+      # default flip can never replay results from a restored cache.
+      - name: Drop persisted Nx state
+        run: rm -rf node_modules/.cache/nx
 
       - name: Use TypeScript ${{ matrix.typescript-version }}
         run: |
