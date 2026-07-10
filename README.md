@@ -27,6 +27,7 @@ Check out Airbnb's original [blog post](https://medium.com/airbnb-engineering/ts
 * TypeScript 5.x and 6.x support (upstream tops out at TypeScript 4)
 * Plugin internals migrated to the TypeScript 5 node factory API
 * ESLint 9 flat config support (with legacy fallback)
+* Works on plain JS projects out of the box: no local TypeScript install required, and `init` writes a migration-friendly tsconfig instead of shelling out to `tsc --init`
 * Updated toolchain (Jest 29, modern dependencies)
 
 Upstream airbnb/ts-migrate has been unmaintained since 2022; this fork exists to keep the tool working on current TypeScript.
