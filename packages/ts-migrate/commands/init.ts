@@ -1,5 +1,4 @@
 import fs from 'fs';
-import { execSync } from 'child_process';
 import path from 'path';
 import log from 'updatable-log';
 
@@ -8,13 +7,47 @@ interface InitParams {
   isExtendedConfig: boolean;
 }
 
-const defaultConfig = `{
+const extendedConfig = `{
   "extends": "../typescript/tsconfig.base.json",
   "include": [".", "../typescript/types"]
 }
 `;
 
-export default function init({ rootDir, isExtendedConfig = false }: InitParams) {
+// Written directly instead of shelling out to `npx tsc --init`: in a project
+// without a local typescript install, npx resolves the npm placeholder
+// package named `tsc` and the command fails. Recent `tsc --init` output is
+// also a poor migration starting point ("types": [] hides @types packages,
+// and flags like verbatimModuleSyntax bury converted files in suppressions
+// unrelated to their actual types).
+function defaultConfig(rootDir: string): string {
+  let isEsm = false;
+  try {
+    const packageJson = fs.readFileSync(path.resolve(rootDir, 'package.json'), 'utf-8');
+    isEsm = JSON.parse(packageJson).type === 'module';
+  } catch (e) {
+    // No parseable package.json; assume CommonJS.
+  }
+
+  return `{
+  // Created by ts-migrate. A starting point for a migrated project;
+  // adjust as your codebase needs (see the ts-migrate README FAQ).
+  "compilerOptions": {
+    "target": "es2017",
+    "module": "${isEsm ? 'nodenext' : 'commonjs'}",
+    // Renamed CommonJS files often have no import/export statements yet;
+    // without this they would be treated as scripts sharing one global scope.
+    "moduleDetection": "force",
+    "jsx": "react",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true
+  }
+}
+`;
+}
+
+export default function init({ rootDir, isExtendedConfig = false }: InitParams): void {
   if (!fs.existsSync(rootDir)) {
     log.error(`${rootDir} does not exist`);
     return;
@@ -27,9 +60,9 @@ export default function init({ rootDir, isExtendedConfig = false }: InitParams) 
   }
 
   if (isExtendedConfig) {
-    fs.writeFileSync(configFile, defaultConfig);
+    fs.writeFileSync(configFile, extendedConfig);
   } else {
-    execSync('npx tsc --init', { cwd: rootDir });
+    fs.writeFileSync(configFile, defaultConfig(rootDir));
   }
 
   log.info(`Config file created at ${configFile}`);

@@ -50,6 +50,11 @@ It is recommended that you take the following steps before continuing...
 4. Make sure you have the latest npm modules installed.
    \`npm install\` or \`yarn install\`
 
+5. For a cleaner result, install type definitions for your environment first,
+   e.g. \`npm i -D @types/node\` plus the @types for your test runner (mocha, jest, ...).
+   With those in place, globals like \`require\` and \`describe\` get real types
+   instead of suppressed errors.
+
 If you need help or have feedback, please file an issue at https://github.com/ObieMunoz/ts-migrate/issues
 "
 
@@ -84,8 +89,23 @@ if [ ! -f "$frontend_folder/tsconfig.json" ]; then
   cli init $frontend_folder
 fi
 
-if ! stat -t $frontend_folder/.eslintrc.* >/dev/null 2>&1; then
-  touch $frontend_folder/.eslintrc
+# Look for any ESLint config the project may have: extensionless .eslintrc,
+# .eslintrc.{js,cjs,json,yml,...}, flat eslint.config.*, or package.json
+# "eslintConfig". Unmatched globs stay literal, so -e correctly fails on them.
+eslint_config_found=false
+for eslint_config in "$frontend_folder"/.eslintrc "$frontend_folder"/.eslintrc.* "$frontend_folder"/eslint.config.*; do
+  if [ -e "$eslint_config" ]; then
+    eslint_config_found=true
+    break
+  fi
+done
+if [ "$eslint_config_found" != "true" ] && [ -f "$frontend_folder/package.json" ] \
+  && grep -q '"eslintConfig"' "$frontend_folder/package.json"; then
+  eslint_config_found=true
+fi
+
+if [ "$eslint_config_found" != "true" ]; then
+  touch "$frontend_folder/.eslintrc"
   should_remove_eslintrc=true
 fi
 
@@ -113,18 +133,53 @@ maybe_commit -m "[ts-migrate][$folder_name] Run TS Migrate" -m 'Co-authored-by: 
 echo "
 [Step $((step_i++)) of ${step_count}] Checking for TS compilation errors (there shouldn't be any).
 "
-echo "$tsc_path -p $frontend_folder/tsconfig.json"
-$tsc_path -p $frontend_folder/tsconfig.json --noEmit
+
+# Prefer the requested tsc, then the target project's own install, then the
+# compiler bundled with ts-migrate (plain JS projects usually have no tsc).
+tsc_cmd=("$tsc_path")
+if [ ! -x "$tsc_path" ]; then
+  if [ -x "$frontend_folder/node_modules/.bin/tsc" ]; then
+    tsc_cmd=("$frontend_folder/node_modules/.bin/tsc")
+  else
+    bundled_tsc=$(node -e '
+      const path = require("path");
+      const req = require("module").createRequire(process.argv[1]);
+      process.stdout.write(path.join(path.dirname(req.resolve("typescript")), "..", "bin", "tsc"));
+    ' "$cli_js" 2>/dev/null)
+    if [ -z "$bundled_tsc" ] || [ ! -f "$bundled_tsc" ]; then
+      echo "Could not find a TypeScript compiler at $tsc_path or bundled with ts-migrate."
+      exit 1
+    fi
+    echo "No tsc found at $tsc_path; using the compiler bundled with ts-migrate."
+    tsc_cmd=(node "$bundled_tsc")
+  fi
+fi
+
+echo "${tsc_cmd[*]} -p $frontend_folder/tsconfig.json --noEmit"
+"${tsc_cmd[@]}" -p $frontend_folder/tsconfig.json --noEmit
 
 echo "
 ---
 All done!
 
-The recommended next steps are...
+Your project compiles with TypeScript now. That being said, the rest of your
+tooling doesn't know about the rename yet, so there is usually some cleanup
+left before everything runs again:
 
-1. Sanity check your changes locally by inspecting the commits and loading the affected pages.
+1. Sanity check your changes locally by inspecting the commits.
 
-2. Push your changes with \`git push\`.
+2. Give the project a way to produce JS again: add a build step (tsc) or a
+   TS-aware runner (ts-node, tsx). If package.json \"main\" pointed at a renamed
+   file, point it at build output that actually exists.
 
-3. Open a PR!
+3. Update scripts that reference old .js paths, like a mocha glob of
+   test/*.js, jest patterns, or docs generators.
+
+4. Teach ESLint about TypeScript (the @typescript-eslint parser and plugin).
+   Until then, linting will either fail to parse .ts files or find no files at all.
+
+5. Install any missing @types packages (@types/node, your test runner), then
+   re-run \`ts-migrate reignore <folder>\` to drop suppressions you no longer need.
+
+6. Push your changes with \`git push\` and open a PR!
 "
