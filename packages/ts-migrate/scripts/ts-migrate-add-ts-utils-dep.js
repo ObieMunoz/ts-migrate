@@ -2,7 +2,8 @@
 const fs = require('fs');
 const path = require('path');
 const JSON5 = require('json5');
-const json5Writer = require('json5-writer');
+// Compiled from ../utils/updateJSON5.ts; run `yarn build` first.
+const { setJSON5Key } = require('../build/utils/updateJSON5');
 
 if (process.argv.length < 3) {
   console.error('Must provide frontend folder arg');
@@ -24,14 +25,6 @@ if (
   !projectJsonConfig.internalDependencies ||
   !projectJsonConfig.internalDependencies['ts-utils']
 ) {
-  projectJsonConfig.internalDependencies = projectJsonConfig.internalDependencies || {};
-  projectJsonConfig.internalDependencies['ts-utils'] = true;
-
-  const writer = json5Writer.load(projectJsonText);
-  writer.write(projectJsonConfig);
-  fs.writeFileSync(
-    projectJsonPath,
-    writer.toSource({ quote: 'double', trailingComma: false, quoteKeys: true }),
-    'utf-8',
-  );
+  const updatedText = setJSON5Key(projectJsonText, ['internalDependencies', 'ts-utils'], true);
+  fs.writeFileSync(projectJsonPath, updatedText, 'utf-8');
 }

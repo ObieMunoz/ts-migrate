@@ -1,10 +1,12 @@
 {
+  // Comments and formatting in project.json survive renames.
   "allowedImports": [
     "file-1.js",
-    "./some-dir/file-3.jsx",
+    './some-dir/file-3.jsx' /* single quotes stay */,
     "some-dir/**/*",
     "some-dir/**/*.js",
-    "some-dir/*.jsx"
+    "some-dir/*.jsx",
   ],
+  entry: "file-1.js",
   "layout": "./hyperloop/layout.jsx"
 }
