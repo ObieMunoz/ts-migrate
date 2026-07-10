@@ -31,8 +31,10 @@ describe('init command', () => {
 
     const config = readConfig(rootDir);
     expect(config.compilerOptions).toMatchObject({
+      target: 'esnext',
       module: 'commonjs',
       moduleDetection: 'force',
+      jsx: 'react',
       esModuleInterop: true,
       strict: true,
       skipLibCheck: true,
@@ -49,6 +51,28 @@ describe('init command', () => {
     init({ rootDir, isExtendedConfig: false });
 
     expect(readConfig(rootDir).compilerOptions.module).toBe('nodenext');
+  });
+
+  it('uses the automatic JSX runtime for React 17+ projects', () => {
+    fs.writeFileSync(
+      path.join(rootDir, 'package.json'),
+      JSON.stringify({ dependencies: { react: '^18.2.0' } }),
+    );
+
+    init({ rootDir, isExtendedConfig: false });
+
+    expect(readConfig(rootDir).compilerOptions.jsx).toBe('react-jsx');
+  });
+
+  it('keeps the classic JSX transform for pre-17 React projects', () => {
+    fs.writeFileSync(
+      path.join(rootDir, 'package.json'),
+      JSON.stringify({ dependencies: { react: '~16.14.0' } }),
+    );
+
+    init({ rootDir, isExtendedConfig: false });
+
+    expect(readConfig(rootDir).compilerOptions.jsx).toBe('react');
   });
 
   it('ignores an unparseable package.json', () => {

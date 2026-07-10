@@ -21,23 +21,35 @@ const extendedConfig = `{
 // unrelated to their actual types).
 function defaultConfig(rootDir: string): string {
   let isEsm = false;
+  // The classic transform expects `import React` in scope, which is how
+  // pre-17 code is written; 17+ may rely on the automatic runtime instead.
+  let jsx = 'react';
   try {
-    const packageJson = fs.readFileSync(path.resolve(rootDir, 'package.json'), 'utf-8');
-    isEsm = JSON.parse(packageJson).type === 'module';
+    const packageJson = JSON.parse(fs.readFileSync(path.resolve(rootDir, 'package.json'), 'utf-8'));
+    isEsm = packageJson.type === 'module';
+    const reactRange: string =
+      packageJson.dependencies?.react ??
+      packageJson.devDependencies?.react ??
+      packageJson.peerDependencies?.react ??
+      '';
+    const reactMajor = parseInt(reactRange.replace(/^[^0-9]*/, ''), 10);
+    if (reactMajor >= 17) {
+      jsx = 'react-jsx';
+    }
   } catch (e) {
-    // No parseable package.json; assume CommonJS.
+    // No parseable package.json; keep the CommonJS + classic-JSX defaults.
   }
 
   return `{
   // Created by ts-migrate. A starting point for a migrated project;
   // adjust as your codebase needs (see the ts-migrate README FAQ).
   "compilerOptions": {
-    "target": "es2017",
+    "target": "esnext",
     "module": "${isEsm ? 'nodenext' : 'commonjs'}",
     // Renamed CommonJS files often have no import/export statements yet;
     // without this they would be treated as scripts sharing one global scope.
     "moduleDetection": "force",
-    "jsx": "react",
+    "jsx": "${jsx}",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
