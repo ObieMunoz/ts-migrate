@@ -3,6 +3,23 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.6.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.5.1...v0.6.0) (2026-07-10)
+
+### Bug Fixes
+
+- **infer-types:** rewrite no-evidence {} and never[]/undefined[] inferences to any ([#29](https://github.com/ObieMunoz/ts-migrate/issues/29)) ([874b9ae](https://github.com/ObieMunoz/ts-migrate/commit/874b9ae8f96f6f32f85ffbf20ee039e5308a2f54))
+
+### Features
+
+- **plugins:** add hoist-declarations plugin for use-before-define consts ([#26](https://github.com/ObieMunoz/ts-migrate/issues/26)) ([1055667](https://github.com/ObieMunoz/ts-migrate/commit/1055667245ba363e50c7c699b9771092dd8f71b0))
+
+### Performance Improvements
+
+- cut redundant type-checks and suggestion scans in infer-types (up to 1.7x) ([#23](https://github.com/ObieMunoz/ts-migrate/issues/23)) ([753a2ab](https://github.com/ObieMunoz/ts-migrate/commit/753a2ab5db532d3e9046e20518af569126f2682f))
+- run ts-ignore against one warm program via mutationsPreserveTypes ([#24](https://github.com/ObieMunoz/ts-migrate/issues/24)) ([af8cfe9](https://github.com/ObieMunoz/ts-migrate/commit/af8cfe998262529708e2878a83ca4a9ebdbabf30))
+- single-pass reference scan in hoist-arrow-functions (up to 9.5x) ([#27](https://github.com/ObieMunoz/ts-migrate/issues/27)) ([6c3aa5c](https://github.com/ObieMunoz/ts-migrate/commit/6c3aa5c62484e2b3e9b573684ebce09bfd818fee))
+- skip re-linting unchanged files in the second eslint-fix pass ([#25](https://github.com/ObieMunoz/ts-migrate/issues/25)) ([fce7e5c](https://github.com/ObieMunoz/ts-migrate/commit/fce7e5cbc297ab68310f7cfe27e9dad48c6a7f90))
+
 ## [0.5.1](https://github.com/ObieMunoz/ts-migrate/compare/v0.5.0...v0.5.1) (2026-07-10)
 
 ### Performance Improvements

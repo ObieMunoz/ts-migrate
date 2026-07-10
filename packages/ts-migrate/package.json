@@ -1,6 +1,6 @@
 {
   "name": "@obiemunoz/ts-migrate",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "A tool for migrating frontend application from JavaScript to TypeScript. Maintained fork of airbnb/ts-migrate, updated for TypeScript 5+.",
   "directories": {
     "test": "tests"
@@ -63,8 +63,8 @@
   "homepage": "https://github.com/ObieMunoz/ts-migrate#readme",
   "license": "MIT",
   "dependencies": {
-    "@obiemunoz/ts-migrate-plugins": "^0.5.1",
-    "@obiemunoz/ts-migrate-server": "^0.5.1",
+    "@obiemunoz/ts-migrate-plugins": "^0.6.0",
+    "@obiemunoz/ts-migrate-server": "^0.6.0",
     "create-jest-runner": "^0.5.3",
     "json5": "^2.1.1",
     "json5-writer": "^0.1.8",
