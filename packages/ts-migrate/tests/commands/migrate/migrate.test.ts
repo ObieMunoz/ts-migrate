@@ -7,6 +7,8 @@ import {
   explicitAnyPlugin,
   inferTypesPlugin,
   updateImportPathsPlugin,
+  reactInlineImportedPropTypesPlugin,
+  reactPropsPlugin,
 } from '@obiemunoz/ts-migrate-plugins';
 import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
 import { createDir, copyDir, deleteDir, getDirData } from '../../test-utils';
@@ -88,6 +90,92 @@ export const value = util;
       `import { util } from './util';
 
 export const value = util;
+`,
+    );
+    expect(exitCode).toBe(0);
+  }, 10000);
+
+  it('converts imported propTypes to a structural props type', async () => {
+    const inputDir = path.resolve(__dirname, 'input');
+    copyDir(inputDir, rootDir);
+    fs.unlinkSync(path.resolve(rootDir, 'Foo.tsx'));
+    fs.unlinkSync(path.resolve(rootDir, 'file-1.ts'));
+    fs.writeFileSync(
+      path.resolve(rootDir, 'messagePropTypes.ts'),
+      `import PropTypes from 'prop-types';
+
+export const messagePropTypes = {
+  messages: PropTypes.arrayOf(PropTypes.string).isRequired,
+  title: PropTypes.string,
+};
+`,
+    );
+    fs.writeFileSync(
+      path.resolve(rootDir, 'MessageList.tsx'),
+      `import React from 'react';
+import { messagePropTypes } from './messagePropTypes';
+
+const MessageList = (props) => <div>{props.title}</div>;
+
+MessageList.propTypes = messagePropTypes;
+
+export default MessageList;
+`,
+    );
+    // A second consumer of the same module: the inliner reuses one program
+    // snapshot for the whole pass, so this file is processed after the first
+    // consumer was already edited.
+    fs.writeFileSync(
+      path.resolve(rootDir, 'MessageHeader.tsx'),
+      `import React from 'react';
+import { messagePropTypes } from './messagePropTypes';
+
+const MessageHeader = (props) => <h1>{props.title}</h1>;
+
+MessageHeader.propTypes = messagePropTypes;
+
+export default MessageHeader;
+`,
+    );
+
+    const config = new MigrateConfig()
+      .addPlugin(reactInlineImportedPropTypesPlugin, {})
+      .addPlugin(reactPropsPlugin, {});
+
+    const { exitCode } = await migrate({ rootDir, config });
+    expect(fs.readFileSync(path.resolve(rootDir, 'MessageList.tsx'), 'utf8')).toBe(
+      `import React from 'react';
+
+type Props = {
+    messages: string[];
+    title?: string;
+};
+
+const MessageList = (props: Props) => <div>{props.title}</div>;
+
+export default MessageList;
+`,
+    );
+    expect(fs.readFileSync(path.resolve(rootDir, 'MessageHeader.tsx'), 'utf8')).toBe(
+      `import React from 'react';
+
+type Props = {
+    messages: string[];
+    title?: string;
+};
+
+const MessageHeader = (props: Props) => <h1>{props.title}</h1>;
+
+export default MessageHeader;
+`,
+    );
+    expect(fs.readFileSync(path.resolve(rootDir, 'messagePropTypes.ts'), 'utf8')).toBe(
+      `import PropTypes from 'prop-types';
+
+export const messagePropTypes = {
+  messages: PropTypes.arrayOf(PropTypes.string).isRequired,
+  title: PropTypes.string,
+};
 `,
     );
     expect(exitCode).toBe(0);

@@ -11,7 +11,77 @@ type Params = {
   implicitChildren?: boolean;
   spreadReplacements: { spreadId: string; typeRef: ts.TypeReferenceNode }[];
   propTypeIdentifiers?: PropTypesIdentifierMap;
+  importedIdentifiers?: Set<string>;
 };
+
+// Imported propTypes objects can't be converted structurally, but their type
+// can be derived from the value with InferProps<typeof x>.
+export function getImportedEntityName(
+  expression: ts.Expression,
+  importedIdentifiers: Set<string>,
+): ts.EntityName | undefined {
+  if (ts.isIdentifier(expression)) {
+    return importedIdentifiers.has(expression.text)
+      ? ts.factory.createIdentifier(expression.text)
+      : undefined;
+  }
+  if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.name)) {
+    const qualifier = getImportedEntityName(expression.expression, importedIdentifiers);
+    return qualifier && ts.factory.createQualifiedName(qualifier, expression.name.text);
+  }
+  return undefined;
+}
+
+export function createInferPropsTypeNode(entityName: ts.EntityName): ts.TypeReferenceNode {
+  return ts.factory.createTypeReferenceNode('InferProps', [
+    ts.factory.createTypeQueryNode(entityName),
+  ]);
+}
+
+export function unpackInitializer(
+  initializer: ts.Expression | undefined,
+  sourceFile: ts.SourceFile,
+): ts.ObjectLiteralExpression | undefined {
+  if (!initializer) {
+    return undefined;
+  }
+
+  if (ts.isObjectLiteralExpression(initializer)) {
+    return initializer;
+  }
+
+  if (
+    ts.isCallExpression(initializer) &&
+    ts.isIdentifier(initializer.expression) &&
+    initializer.expression.text === 'forbidExtraProps' &&
+    initializer.arguments.length === 1
+  ) {
+    const arg = initializer.arguments[0];
+    if (ts.isObjectLiteralExpression(arg)) {
+      return arg;
+    }
+  }
+
+  if (ts.isIdentifier(initializer)) {
+    for (const statement of sourceFile.statements) {
+      if (
+        ts.isVariableStatement(statement) &&
+        statement.declarationList.declarations.length === 1
+      ) {
+        const declaration = statement.declarationList.declarations[0];
+        if (
+          ts.isVariableDeclaration(declaration) &&
+          ts.isIdentifier(declaration.name) &&
+          declaration.name.text === initializer.text
+        ) {
+          return unpackInitializer(declaration.initializer, sourceFile);
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
 
 export default function getTypeFromPropTypesObjectLiteral(
   objectLiteral: ts.ObjectLiteralExpression,
@@ -35,12 +105,20 @@ export default function getTypeFromPropTypesObjectLiteral(
           handled = true;
         }
       }
-    } else if (ts.isSpreadAssignment(property) && ts.isIdentifier(property.expression)) {
-      const spreadId = property.expression.text;
-      const replacement = params.spreadReplacements.find((cur) => cur.spreadId === spreadId);
+    } else if (ts.isSpreadAssignment(property)) {
+      const spreadId = ts.isIdentifier(property.expression) ? property.expression.text : undefined;
+      const replacement = spreadId
+        ? params.spreadReplacements.find((cur) => cur.spreadId === spreadId)
+        : undefined;
       if (replacement) {
         intersectionTypes.push(replacement.typeRef);
         handled = true;
+      } else if (params.importedIdentifiers) {
+        const entityName = getImportedEntityName(property.expression, params.importedIdentifiers);
+        if (entityName) {
+          intersectionTypes.push(createInferPropsTypeNode(entityName));
+          handled = true;
+        }
       }
     }
 

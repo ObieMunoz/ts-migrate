@@ -9,7 +9,12 @@ import {
 } from './utils/react';
 import isNotNull from '../utils/isNotNull';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
-import getTypeFromPropTypesObjectLiteral, { createPropsTypeNameGetter } from './utils/react-props';
+import getTypeFromPropTypesObjectLiteral, {
+  createInferPropsTypeNode,
+  createPropsTypeNameGetter,
+  getImportedEntityName,
+  unpackInitializer,
+} from './utils/react-props';
 import { getTextPreservingWhitespace } from './utils/text';
 import { updateImports, DefaultImport, NamedImport } from './utils/imports';
 import {
@@ -46,20 +51,39 @@ const reactPropsPlugin: Plugin<Options> = {
     const getPropsTypeName = createPropsTypeNameGetter(sourceFile);
 
     const propTypeIdentifiers: PropTypesIdentifierMap = {};
+    const importedIdentifiers = new Set<string>();
 
     for (const node of sourceFile.statements) {
       // Scan for prop type imports and build a map
       // Assumes import statements are higher up in the file than react components
-      if (ts.isImportDeclaration(node) && /prop-types/.test(node.moduleSpecifier.getText())) {
-        const importBindings = node.importClause?.namedBindings;
-        if (importBindings && ts.isNamedImports(importBindings)) {
-          importBindings.elements.forEach((specifier) => {
-            if (!specifier.propertyName) {
-              propTypeIdentifiers[specifier.name.getText()] = specifier.name.getText();
+      if (ts.isImportDeclaration(node)) {
+        const { importClause } = node;
+        if (importClause) {
+          if (importClause.name) {
+            importedIdentifiers.add(importClause.name.text);
+          }
+          if (importClause.namedBindings) {
+            if (ts.isNamespaceImport(importClause.namedBindings)) {
+              importedIdentifiers.add(importClause.namedBindings.name.text);
             } else {
-              propTypeIdentifiers[specifier.name.getText()] = specifier.propertyName.getText();
+              importClause.namedBindings.elements.forEach((specifier) => {
+                importedIdentifiers.add(specifier.name.text);
+              });
             }
-          });
+          }
+        }
+
+        if (/prop-types/.test(node.moduleSpecifier.getText())) {
+          const importBindings = node.importClause?.namedBindings;
+          if (importBindings && ts.isNamedImports(importBindings)) {
+            importBindings.elements.forEach((specifier) => {
+              if (!specifier.propertyName) {
+                propTypeIdentifiers[specifier.name.getText()] = specifier.name.getText();
+              } else {
+                propTypeIdentifiers[specifier.name.getText()] = specifier.propertyName.getText();
+              }
+            });
+          }
         }
       }
 
@@ -67,7 +91,14 @@ const reactPropsPlugin: Plugin<Options> = {
         const componentName = getComponentName(node);
         const propsTypeName = getPropsTypeName(componentName);
         updates.push(
-          ...updatePropTypes(node, propsTypeName, sourceFile, propTypeIdentifiers, options),
+          ...updatePropTypes(
+            node,
+            propsTypeName,
+            sourceFile,
+            propTypeIdentifiers,
+            importedIdentifiers,
+            options,
+          ),
         );
       }
     }
@@ -78,19 +109,22 @@ const reactPropsPlugin: Plugin<Options> = {
       updatedSourceText,
       sourceFile.languageVersion,
     );
-    const importUpdates = !options.shouldKeepPropTypes
-      ? updateImports(
-          updatedSourceFile,
-          spreadReplacements.map((cur) => cur.typeImport),
-          [
+    const importUpdates = updateImports(
+      updatedSourceFile,
+      [
+        { namedImport: 'InferProps', moduleSpecifier: 'prop-types' },
+        ...spreadReplacements.map((cur) => cur.typeImport),
+      ],
+      !options.shouldKeepPropTypes
+        ? [
             { moduleSpecifier: 'prop-types' },
             ...(options.shouldUpdateAirbnbImports ? importReplacements : []),
             ...(options.shouldUpdateAirbnbImports
               ? spreadReplacements.map((cur) => cur.spreadImport)
               : []),
-          ],
-        )
-      : [];
+          ]
+        : [],
+    );
     return updateSourceText(updatedSourceText, importUpdates);
   },
 
@@ -167,6 +201,7 @@ function updatePropTypes(
   propsTypeName: string,
   sourceFile: ts.SourceFile,
   propTypeIdentifiers: PropTypesIdentifierMap,
+  importedIdentifiers: Set<string>,
   options: Options,
 ) {
   const updates: SourceTextUpdate[] = [];
@@ -179,18 +214,28 @@ function updatePropTypes(
     if (propsParam && !propsParam.type) {
       const propTypesNode = findSfcPropTypesNode(node, sourceFile);
       const objectLiteral = propTypesNode && findPropTypesObjectLiteral(propTypesNode, sourceFile);
-      if (objectLiteral) {
-        updates.push(
-          ...updateObjectLiteral(
-            node,
-            objectLiteral,
-            propsTypeName,
-            sourceFile,
-            propTypeIdentifiers,
-            options,
-            false,
-          ),
-        );
+      const importedPropTypes = objectLiteral
+        ? undefined
+        : findImportedPropTypes(propTypesNode, importedIdentifiers);
+      if (objectLiteral || importedPropTypes) {
+        if (objectLiteral) {
+          updates.push(
+            ...updateObjectLiteral(
+              node,
+              objectLiteral,
+              propsTypeName,
+              sourceFile,
+              propTypeIdentifiers,
+              importedIdentifiers,
+              options,
+              false,
+            ),
+          );
+        } else if (importedPropTypes) {
+          updates.push(
+            insertInferPropsTypeAlias(node, importedPropTypes, propsTypeName, sourceFile),
+          );
+        }
         if (forwardRefComponent) {
           updates.push({
             kind: 'replace',
@@ -256,10 +301,28 @@ function updatePropTypes(
     if (!propsType || isEmptyPropsType(propsType)) {
       const propTypesNode = findClassPropTypesNode(node, sourceFile);
       const objectLiteral = propTypesNode && findPropTypesObjectLiteral(propTypesNode, sourceFile);
-      if (objectLiteral) {
-        updates.push(
-          ...updateObjectLiteral(node, objectLiteral, propsTypeName, sourceFile, {}, options, true),
-        );
+      const importedPropTypes = objectLiteral
+        ? undefined
+        : findImportedPropTypes(propTypesNode, importedIdentifiers);
+      if (objectLiteral || importedPropTypes) {
+        if (objectLiteral) {
+          updates.push(
+            ...updateObjectLiteral(
+              node,
+              objectLiteral,
+              propsTypeName,
+              sourceFile,
+              {},
+              importedIdentifiers,
+              options,
+              true,
+            ),
+          );
+        } else if (importedPropTypes) {
+          updates.push(
+            insertInferPropsTypeAlias(node, importedPropTypes, propsTypeName, sourceFile),
+          );
+        }
 
         updates.push({
           kind: 'replace',
@@ -314,6 +377,7 @@ function updateObjectLiteral(
   propsTypeName: string,
   sourceFile: ts.SourceFile,
   propTypeIdentifiers: PropTypesIdentifierMap,
+  importedIdentifiers: Set<string>,
   options: Options,
   implicitChildren: boolean,
 ) {
@@ -326,6 +390,7 @@ function updateObjectLiteral(
     implicitChildren,
     spreadReplacements,
     propTypeIdentifiers,
+    importedIdentifiers,
   });
   let propsTypeAlias = ts.factory.createTypeAliasDeclaration(
     undefined,
@@ -574,47 +639,51 @@ function findPropTypesObjectLiteral(
   return unpackInitializer(expression, sourceFile);
 }
 
-function unpackInitializer(
-  initializer: ts.Expression | undefined,
-  sourceFile: ts.SourceFile,
-): ts.ObjectLiteralExpression | undefined {
-  if (!initializer) {
-    return undefined;
-  }
+function findImportedPropTypes(
+  propTypesNode: ts.PropertyDeclaration | ts.ExpressionStatement | undefined,
+  importedIdentifiers: Set<string>,
+): ts.EntityName | undefined {
+  if (!propTypesNode) return undefined;
 
-  if (ts.isObjectLiteralExpression(initializer)) {
-    return initializer;
+  let expression: ts.Expression | undefined;
+  if (ts.isPropertyDeclaration(propTypesNode) && propTypesNode.initializer != null) {
+    expression = propTypesNode.initializer;
+  } else if (
+    ts.isExpressionStatement(propTypesNode) &&
+    ts.isBinaryExpression(propTypesNode.expression)
+  ) {
+    expression = propTypesNode.expression.right;
   }
+  if (!expression) return undefined;
 
   if (
-    ts.isCallExpression(initializer) &&
-    ts.isIdentifier(initializer.expression) &&
-    initializer.expression.text === 'forbidExtraProps' &&
-    initializer.arguments.length === 1
+    ts.isCallExpression(expression) &&
+    ts.isIdentifier(expression.expression) &&
+    expression.expression.text === 'forbidExtraProps' &&
+    expression.arguments.length === 1
   ) {
-    const arg = initializer.arguments[0];
-    if (ts.isObjectLiteralExpression(arg)) {
-      return arg;
-    }
+    [expression] = expression.arguments;
   }
 
-  if (ts.isIdentifier(initializer)) {
-    for (const statement of sourceFile.statements) {
-      if (
-        ts.isVariableStatement(statement) &&
-        statement.declarationList.declarations.length === 1
-      ) {
-        const declaration = statement.declarationList.declarations[0];
-        if (
-          ts.isVariableDeclaration(declaration) &&
-          ts.isIdentifier(declaration.name) &&
-          declaration.name.text === initializer.text
-        ) {
-          return unpackInitializer(declaration.initializer, sourceFile);
-        }
-      }
-    }
-  }
+  return getImportedEntityName(expression, importedIdentifiers);
+}
 
-  return undefined;
+function insertInferPropsTypeAlias(
+  node: ReactNode,
+  propTypesEntityName: ts.EntityName,
+  propsTypeName: string,
+  sourceFile: ts.SourceFile,
+): SourceTextUpdate {
+  const printer = ts.createPrinter();
+  const propsTypeAlias = ts.factory.createTypeAliasDeclaration(
+    undefined,
+    propsTypeName,
+    undefined,
+    createInferPropsTypeNode(propTypesEntityName),
+  );
+  return {
+    kind: 'insert',
+    index: node.pos,
+    text: `\n\n${printer.printNode(ts.EmitHint.Unspecified, propsTypeAlias, sourceFile)}`,
+  };
 }
