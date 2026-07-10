@@ -84,7 +84,7 @@ does:
 - Members with no evidence are spelled `any`, not the empty object type or a
   bottom array type. TypeScript prints a member it knows nothing about as `{}`
   (banned by `@typescript-eslint/no-empty-object-type`) and an empty array
-  literal as `never[]` — `undefined[]` without strictNullChecks — which would
+  literal as `never[]` (`undefined[]` without strictNullChecks), which would
   reject every element later added; `initialState = { settings: {},
   items: [] }` infers `settings: any` and `items: any[]`. A genuine
   `undefined[]` inferred from real undefined elements under strictNullChecks
@@ -107,9 +107,9 @@ We have two main categories of plugins:
 
 # FAQ
 
-> What is the ts-migrate plugin?
+> What is a ts-migrate plugin?
 
-The plugin is an abstraction around codemods which provides centralized interfaces for the *ts-migrate*. Plugins should implement the following interface:
+The unit of work in the migration pipeline. A plugin gets a file (its text, a parsed `ts.SourceFile`, and a lazily-created language service for the questions that need type information) and returns the new text of the file. The interface is small on purpose:
 
 ```typescript
 interface Plugin {
@@ -127,16 +127,21 @@ interface PluginParams<TPluginOptions = {}> {
 }
 ```
 
+> How do I write my own plugin?
 
-> How I can write my own plugin?
+Start with the [example plugins](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-example/src), which show the text-based and AST-based approaches side by side, then read the [real plugins](https://github.com/ObieMunoz/ts-migrate/tree/master/packages/ts-migrate-plugins/src/plugins) in this package. My advice: prefer computing text updates from AST node positions over regenerating whole files, since splices preserve the formatting of everything you didn't touch.
 
-You can take a look into the [plugin examples](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-example/src).
-For more information, please check the [plugins implementation](https://github.com/ObieMunoz/ts-migrate/tree/master/packages/ts-migrate-plugins/src/plugins) for the *ts-migrate*.
+> Didn't these plugins use jscodeshift?
 
+They did, and honestly that was one of the first things I regretted keeping. The jscodeshift plugins parsed with a babel config frozen around 2018 syntax, so they'd fail on newer JavaScript (class static blocks, for example) or quietly drop type annotations during reprinting. Every plugin now works off the TypeScript AST or plain text splices, so there's exactly one parser involved: the same one that compiles your code. The jscodeshift dependency is gone entirely.
+
+> Why does eslint-fix use my project's ESLint instead of bundling one?
+
+Because the point of that step is to make the migrated code pass *your* lint setup, and only your ESLint install knows your plugins, parser, and rule set. It auto-detects flat versus legacy configs (ESLint 9 included). The flip side: if your config can't parse TypeScript yet, the plugin can't fix those files. It warns once and leaves them unchanged rather than guessing.
 
 > I have an issue with a specific plugin, what should I do?
 
-Please file an [issue here](https://github.com/ObieMunoz/ts-migrate/issues/new).
+Please file an [issue](https://github.com/ObieMunoz/ts-migrate/issues/new) with the smallest input file that reproduces it. Transform bugs get regression tests here, so a good reproduction usually stays fixed for good.
 
 
 # Contributing

@@ -41,17 +41,19 @@ process.exit(exitCode);
 
 > How can I use *ts-migrate-server*?
 
-You can take a look at [basic usage example](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-example/src/index.ts#L2).
-Another resource would be [source code](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate/cli.ts) of the *ts-migrate* cli.
+The [basic usage example](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-example/src/index.ts#L2) is the quickest way in. After that, the best reference is the [source of the ts-migrate CLI](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate/cli.ts) itself, since the CLI is just a consumer of this package: it builds a `MigrateConfig` out of plugins and hands it to `migrate`.
 
-> Why not just use codemods?
+> Why a server instead of standalone codemods?
 
-You actually can use [codemods](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/declare-missing-class-properties.ts) in your plugins!
-*ts-migrate-server* provides a more standardized API around TypeScript compiler usage and allows us to use the benefits of the TypeScript APIs without complicated setup.
+Standalone codemods each pay their own setup cost: parse the project, build a program, apply changes, repeat. The server does that once and shares it. Plugins get the parsed `SourceFile` and a language service backed by one shared program, updates are applied in memory between plugins, and files only hit disk at the end. That's what makes a 19-plugin pipeline practical; the plugins that need type information (like type inference against usage) would be far too slow re-creating a program per plugin per file.
 
-> I have an issue with a specific plugin, what should I do?
+> Which TypeScript versions does it work with?
 
-Please file an [issue here](https://github.com/ObieMunoz/ts-migrate/issues/new).
+The peer range is `>=5.0 <7`, same as the rest of the fork. The compiler is a peer dependency on purpose: the program it builds should be the one your project compiles with, not whatever happened to be bundled here. Version-skew between "the compiler that parses" and "the compiler that reads the AST" is a class of bug I've been bitten by once already, and once was plenty.
+
+> I have an issue, what should I do?
+
+Please file an [issue](https://github.com/ObieMunoz/ts-migrate/issues/new) with the smallest reproduction you can manage.
 
 # Contributing
 

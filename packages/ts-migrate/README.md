@@ -20,7 +20,7 @@ Or [yarn](https://yarnpkg.com):
 
 The CLI commands are still named `ts-migrate` and `ts-migrate-full`. Because the
 package is scoped, one-off `npx` runs need the `-p @obiemunoz/ts-migrate` flag to
-tell npx which package provides those commands — a bare `npx ts-migrate-full ...`
+tell npx which package provides those commands: a bare `npx ts-migrate-full ...`
 would download the unmaintained upstream `ts-migrate` package instead. If you've
 installed `@obiemunoz/ts-migrate` as a devDependency of your project, the commands
 are already in `node_modules/.bin`, so plain `npx ts-migrate-full <folder>` (or an
@@ -91,7 +91,7 @@ the most expensive part of a migration:
 
 - `--no-inferTypes` skips the [infer-types](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/infer-types.ts)
   plugin and annotates every implicit any with plain `any` (the original
-  ts-migrate behavior) — much faster, at the cost of annotation quality.
+  ts-migrate behavior), which is much faster, at the cost of annotation quality.
 - `--maxStablePasses <n>` (default 5) caps how many times the
   infer-types/explicit-any group repeats while files keep changing. Pass 1 does
   the bulk of the work; later passes resolve annotations that only become
@@ -131,38 +131,58 @@ npx -p @obiemunoz/ts-migrate ts-migrate-full /path/to/your/project \
   --sources "node_modules/**/*.d.ts"
 ```
 
+# After the migration
+
+The tool's contract is narrow on purpose: when it finishes, `tsc` compiles your project with zero errors. It does not touch your package.json scripts, your test runner config, or your lint setup, and those still point at a world of `.js` files that no longer exists. When I ran the full pipeline against a plain CommonJS library as a smoke test, the migration itself was clean, and the test suite still wouldn't run until the project plumbing caught up. Expect to do these afterwards:
+
+1. **Give the project a way to produce JS again.** Add a build step (`tsc`) or a TS-aware runner (ts-node, tsx). If package.json `main` pointed at a renamed file, point it at build output that actually exists.
+2. **Update scripts that reference old `.js` paths.** A mocha glob like `test/*.js` now matches nothing. Same idea for jest patterns and docs generators.
+3. **Teach ESLint about TypeScript.** Until the `@typescript-eslint` parser and plugin are in place, `eslint .` will either fail to parse `.ts` files or find no files at all. The eslint-fix step of the migration uses your project's own ESLint, so it skips unparseable files too until this is done.
+4. **Install missing `@types` packages, then re-run reignore.** `npm i -D @types/node` plus the types for your test runner, then `npx ts-migrate reignore <folder>` to drop the suppression comments you no longer need.
+
+Honestly, item 4 is worth doing before you migrate at all. With the environment types in place, globals like `require` and `describe` resolve to real types instead of a wall of suppressed "Cannot find name" errors.
+
 # FAQ
+
+> Why fork airbnb/ts-migrate?
+
+Upstream has been unmaintained since 2022 and tops out at TypeScript 4. I needed it on a current compiler, and it turned out that keeping AST-based codemods working across compiler major versions is a real job: TypeScript is willing to renumber internal AST constants between releases, which can make a codemod silently misread your code rather than fail loudly. This fork runs on TypeScript 5 and 6, has a canary test for exactly that class of breakage, and gets exercised against deliberately weird JavaScript so transform bugs get caught with regression tests instead of in your codebase.
+
+> Which TypeScript versions are supported?
+
+5.x and 6.x (the peer range is `>=5.0 <7`). Support for the TypeScript 7 native port is in progress; the compiler API is moving around enough that I'd rather land it properly than rush it.
 
 > Can it magically figure out all the types?
 
-Unfortunately, no, it is only so smart. It does figure out types from propTypes, but it will fall back to `any` (`$TSFixMe`) for things it can't figure it out.
+No, and I feel like anyone who tells you otherwise is selling something. The infer-types step does real inference where the language service can prove a type from how a value is used (and from propTypes on React components). Everything it can't prove falls back to `any` with a suppression comment. I'm very much of the mindset that a project that compiles today and gets better types incrementally beats a migration that stalls at 80% trying to be perfect.
 
+> I see lots of `@ts-expect-error` and `any`. Is that expected?
 
-> I ran ts-migrate on my code and see lots of `@ts-expect-error` (`@ts-ignores`) and `any`. Is that expected?
-
-The ts-migrate codemods are only so smart. So, follow up is required to refine the types and remove the `any` (`$TSFixMe`) and `@ts-expect-error` (`@ts-ignores`). The hope is that it's a nicer starting point than from scratch and that it helps accelerate the TypeScript migration process.
-
-
-> Um... ts-migrate broke my code! D:
-
-Please file the [issue here](https://github.com/ObieMunoz/ts-migrate/issues/new).
-
+Yes. The output is a starting point, not a finish line. That being said, two things shrink the wall of comments considerably. First, install your `@types` packages before migrating: on one plain CommonJS library I tested, roughly 90 of the 101 suppressions were just missing environment types (`require`, `describe`, and friends), not real type problems. Second, whenever you improve types or add `@types` packages later, re-run `npx ts-migrate reignore <folder>` to strip the suppressions that are no longer needed.
 
 > What is `$TSFixMe`?
 
-It's just an alias to `any`: `type $TSFixMe = any;`. We use it at Airbnb for simplifying the migration experience.
-We also have the same alias for functions: `type $TSFixMeFunction = (...args: any[]) => any;`.
+An Airbnb convention this fork inherited: an alias for `any` (`type $TSFixMe = any;`, plus `$TSFixMeFunction` for function signatures). It made the follow-up work easy to grep for in their codebase. It's opt-in here with `--aliases tsfixme`; the default is plain `any`, because the alias only compiles if your project defines it as a global type.
 
+> Does it work with ESLint 9 and flat configs?
 
-> How did you use ts-migrate?
+Yes. The eslint-fix step loads your project's own ESLint installation and auto-detects flat versus legacy config (set `ESLINT_USE_FLAT_CONFIG` to override the detection). One caveat: if your ESLint can't parse TypeScript yet, there is nothing for it to fix. It warns and moves on, which is one more reason to get `@typescript-eslint` set up early.
 
-It was used a lot at Airbnb codebase! With the help of the ts-migrate we were able to migrate the main part of the entire codebase to the TypeScript. We were able to provide much better starting points in the migration for the huge applications (50k+ lines of codes) and they were migrated in one day!
+> It's slow on my big repo.
 
+Type inference is the expensive part, and it's several times faster now than it was when I forked the project. On a huge codebase you still have knobs: `--no-inferTypes` skips inference entirely, and `--maxStablePasses` caps how many times the repeating plugins re-run while files keep changing.
 
-> Is ts-migrate framework-oriented?
+> Is ts-migrate React-specific?
 
-By itself, ts-migrate is not related to any framework. We created a set of plugins, which are related to the React (link to react). So, default configuration(link) contains plugins, which are expecting a react codebase as an input. We didn't test it on any other frameworks or libraries, use at your own risk!
+No. The default pipeline includes React-focused plugins because that's the tool's heritage, but they no-op quickly on anything else. Running against a plain CommonJS i18n library, every React plugin finished in about a millisecond and changed nothing, and the migration came out correct.
 
+> ts-migrate broke my code!
+
+It happens; JavaScript has an effectively infinite supply of weirdness. Everything found so far, from suppression comments corrupting template strings to transforms racing each other, has a fix and a regression test. If you hit something, please file an [issue](https://github.com/ObieMunoz/ts-migrate/issues/new) with the smallest input file you can manage.
+
+> How was it used originally?
+
+Airbnb built it and migrated the bulk of their codebase with it, including applications north of 50,000 lines converted in a day. This fork keeps that machinery alive on modern TypeScript.
 
 # Contributing
 
