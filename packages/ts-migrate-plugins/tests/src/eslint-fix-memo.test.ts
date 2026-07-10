@@ -6,7 +6,7 @@ import { mockPluginParams } from '../test-utils';
 // real (flat) config in the jest sandbox.
 jest.mock('eslint', () => {
   const lintText = jest.fn(async (text: string) => [
-    { output: text.endsWith(';') ? text : `${text};` },
+    { messages: [], output: text.endsWith(';') ? text : `${text};` },
   ]);
   class FakeESLint {
     lintText = lintText;

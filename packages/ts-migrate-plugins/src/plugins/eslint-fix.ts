@@ -64,6 +64,10 @@ function getESLint(): Promise<AnyESLint> {
 // untouched instead of re-linting the whole project.
 const lastFixedText = new Map<string, string>();
 
+// Warned at most once per run: a project whose ESLint parser is not
+// TypeScript-aware fails the same way for every file.
+let warnedAboutParseErrors = false;
+
 const eslintFixPlugin: Plugin = {
   name: 'eslint-fix',
   async run({ fileName, text }) {
@@ -77,6 +81,16 @@ const eslintFixPlugin: Plugin = {
         const [report] = await cli.lintText(newText, {
           filePath: fileName,
         });
+
+        const fatalMessage = report?.messages?.find((message) => message.fatal);
+        if (fatalMessage && !warnedAboutParseErrors) {
+          warnedAboutParseErrors = true;
+          console.warn(
+            `[eslint-fix] ESLint could not parse ${fileName} (${fatalMessage.message}). ` +
+              'Lint fixes are skipped for files ESLint cannot parse. If this is a TypeScript ' +
+              'file, the project ESLint config likely needs the @typescript-eslint parser.',
+          );
+        }
 
         if (!report || !report.output || report.output === newText) {
           break;
