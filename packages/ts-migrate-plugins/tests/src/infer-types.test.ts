@@ -122,6 +122,29 @@ add(1, 2);
 `);
   });
 
+  it('never runs the suggestion scan on the project service', async () => {
+    const params = await realPluginParams({
+      text: `function add(a, b) {
+  return a + b;
+}
+add(1, 2);
+`,
+      compilerOptions: { strict: false, noImplicitAny: false },
+    });
+    // The code-fix pass computes suggestion diagnostics internally; a separate
+    // gating scan would double that work.
+    const suggestionScan = jest.spyOn(params.getLanguageService(), 'getSuggestionDiagnostics');
+
+    const result = await inferTypesPlugin.run(params);
+
+    expect(result).toBe(`function add(a: number, b: number) {
+  return a + b;
+}
+add(1, 2);
+`);
+    expect(suggestionScan).not.toHaveBeenCalled();
+  });
+
   it('keeps consistent call-site inference', async () => {
     const text = `function logId(id) {
   console.log(id);
@@ -222,6 +245,26 @@ const save = () => (dispatch, api: (arg0: { method: string; url: string; }) => v
   dispatch({ type: 'SAVE', payload: 1 });
   api({ method: 'GET', url: '/x' });
 };
+`);
+  });
+
+  it('keeps annotations when the only conflict is an improper caller elsewhere', async () => {
+    const text = `function wrap(cb) {
+  return cb(1);
+}
+declare function register(f: (s: string) => void): void;
+register(wrap);
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    // The mismatched register(wrap) call becomes a type error for ts-ignore
+    // to flag; wrap's body-derived annotation stays.
+    expect(result).toBe(`function wrap(cb: (arg0: number) => any) {
+  return cb(1);
+}
+declare function register(f: (s: string) => void): void;
+register(wrap);
 `);
   });
 
