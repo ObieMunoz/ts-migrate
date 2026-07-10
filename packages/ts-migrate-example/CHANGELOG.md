@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.8.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.6.0...v0.8.0) (2026-07-10)
+
+### Bug Fixes
+
+- **example:** repair yarn example and smoke-test it in CI ([#36](https://github.com/ObieMunoz/ts-migrate/issues/36)) ([c44c417](https://github.com/ObieMunoz/ts-migrate/commit/c44c4172f99532ba43be2f6403a82f74de6d6ccc))
+
+### Performance Improvements
+
+- **ts-migrate:** replace json5-writer with comment-preserving JSON5 text splices ([#35](https://github.com/ObieMunoz/ts-migrate/issues/35)) ([d6d6ef0](https://github.com/ObieMunoz/ts-migrate/commit/d6d6ef0586c170810f34e777a5e7228b5aee65a7))
+
 # [0.7.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.6.0...v0.7.0) (2026-07-10)
 
 ### Bug Fixes

@@ -3,6 +3,24 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.8.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.6.0...v0.8.0) (2026-07-10)
+
+### Bug Fixes
+
+- **deps:** resolve all Dependabot advisories via resolutions (0 regressions) ([#33](https://github.com/ObieMunoz/ts-migrate/issues/33)) ([512c35e](https://github.com/ObieMunoz/ts-migrate/commit/512c35ef93a0876fff99fc5ceccb4b7565e94014))
+- **example:** repair yarn example and smoke-test it in CI ([#36](https://github.com/ObieMunoz/ts-migrate/issues/36)) ([c44c417](https://github.com/ObieMunoz/ts-migrate/commit/c44c4172f99532ba43be2f6403a82f74de6d6ccc))
+- **ts-migrate:** keep stale build output from failing prepack with TS5055 ([#40](https://github.com/ObieMunoz/ts-migrate/issues/40)) ([1476e46](https://github.com/ObieMunoz/ts-migrate/commit/1476e46f17920ac40a8f88a3db35374477646be7))
+
+### Features
+
+- **plugins:** add update-import-paths plugin for renamed .js/.jsx imports ([#37](https://github.com/ObieMunoz/ts-migrate/issues/37)) ([b80a69b](https://github.com/ObieMunoz/ts-migrate/commit/b80a69b6c2ef6237b0670fe05e688c1ef420019a))
+- **ts-migrate-plugins:** convert imported propTypes objects (inline-into-consumer + InferProps fallback) ([#38](https://github.com/ObieMunoz/ts-migrate/issues/38)) ([a795d26](https://github.com/ObieMunoz/ts-migrate/commit/a795d26c411f3c311833bb1d093818d1f5375c4a))
+
+### Performance Improvements
+
+- **ci:** cache node_modules and consolidate test runs into one jest process ([#34](https://github.com/ObieMunoz/ts-migrate/issues/34)) ([44f2a5a](https://github.com/ObieMunoz/ts-migrate/commit/44f2a5a73e34b4779bd958fe4e61970e0377263c))
+- **ts-migrate:** replace json5-writer with comment-preserving JSON5 text splices ([#35](https://github.com/ObieMunoz/ts-migrate/issues/35)) ([d6d6ef0](https://github.com/ObieMunoz/ts-migrate/commit/d6d6ef0586c170810f34e777a5e7228b5aee65a7))
+
 # [0.7.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.6.0...v0.7.0) (2026-07-10)
 
 ### Bug Fixes
