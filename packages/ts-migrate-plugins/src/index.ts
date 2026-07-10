@@ -5,6 +5,7 @@ import eslintFixPlugin from './plugins/eslint-fix';
 import explicitAnyPlugin from './plugins/explicit-any';
 import hoistArrowFunctionsPlugin from './plugins/hoist-arrow-functions';
 import hoistClassStaticsPlugin from './plugins/hoist-class-statics';
+import hoistDeclarationsPlugin from './plugins/hoist-declarations';
 import inferTypesPlugin from './plugins/infer-types';
 import jsDocPlugin from './plugins/jsdoc';
 import memberAccessibilityPlugin from './plugins/member-accessibility';
@@ -29,6 +30,7 @@ export {
   explicitAnyPlugin,
   hoistArrowFunctionsPlugin,
   hoistClassStaticsPlugin,
+  hoistDeclarationsPlugin,
   inferTypesPlugin,
   jsDocPlugin,
   memberAccessibilityPlugin,

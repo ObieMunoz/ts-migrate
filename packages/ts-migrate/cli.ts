@@ -12,6 +12,7 @@ import {
   explicitAnyPlugin,
   hoistArrowFunctionsPlugin,
   hoistClassStaticsPlugin,
+  hoistDeclarationsPlugin,
   inferTypesPlugin,
   jsDocPlugin,
   memberAccessibilityPlugin,
@@ -35,6 +36,7 @@ const availablePlugins = [
   explicitAnyPlugin,
   hoistArrowFunctionsPlugin,
   hoistClassStaticsPlugin,
+  hoistDeclarationsPlugin,
   inferTypesPlugin,
   jsDocPlugin,
   memberAccessibilityPlugin,
@@ -178,6 +180,7 @@ yargs
           .addPlugin(stripTSIgnorePlugin, {})
           .addPlugin(hoistClassStaticsPlugin, { anyAlias })
           .addPlugin(hoistArrowFunctionsPlugin, {})
+          .addPlugin(hoistDeclarationsPlugin, {})
           .addPlugin(reactPropsPlugin, {
             anyAlias,
             anyFunctionAlias,
