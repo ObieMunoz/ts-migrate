@@ -280,23 +280,76 @@ function getInferenceChanges(
     return [];
   }
 
+  // Without strictNullChecks an empty array literal prints as `undefined[]`
+  // (with it, `never[]`), so only there does that spelling mean "no element
+  // evidence" rather than an array genuinely seeded with undefined values.
+  const options = languageService.getProgram()?.getCompilerOptions() ?? {};
+  const rewriteUndefinedArrays = !(options.strictNullChecks ?? options.strict);
+
   const changes: TextChange[] = [];
   const seen = new Set<string>();
   actions.changes
     .filter((fileChanges) => fileChanges.fileName === fileName)
     .forEach((fileChanges) => {
       fileChanges.textChanges.forEach(({ span, newText }) => {
+        const annotation = replaceNoEvidenceTypes(newText, rewriteUndefinedArrays);
         // Setter parameters produce the same insert twice (TS7032 + TS7006).
-        const key = `${span.start}:${span.length}:${newText}`;
+        const key = `${span.start}:${span.length}:${annotation}`;
         if (seen.has(key)) return;
         seen.add(key);
 
-        if (anyFallbackRegex.test(newText)) return;
+        if (anyFallbackRegex.test(annotation)) return;
 
-        changes.push({ start: span.start, length: span.length, text: newText });
+        changes.push({ start: span.start, length: span.length, text: annotation });
       });
     });
   return changes;
+}
+
+// A member the inference engine has no evidence for prints as the empty
+// object type (banned by @typescript-eslint/no-empty-object-type), and an
+// empty array literal as `never[]` — or `undefined[]` without
+// strictNullChecks — which rejects every element added later; all spell
+// "nothing known", so they become `any`/`any[]`. Tokens are paired with a
+// scanner because `{}` can also appear inside a string literal (a property
+// named '{}').
+function replaceNoEvidenceTypes(annotation: string, rewriteUndefinedArrays: boolean): string {
+  if (
+    !annotation.includes('{') &&
+    !annotation.includes('never') &&
+    !(rewriteUndefinedArrays && annotation.includes('undefined'))
+  ) {
+    return annotation;
+  }
+  const scanner = ts.createScanner(
+    ts.ScriptTarget.Latest,
+    /* skipTrivia */ true,
+    ts.LanguageVariant.Standard,
+    annotation,
+  );
+  const spans: Array<{ start: number; end: number; text: string }> = [];
+  let openBraceStart = -1;
+  let elementKeywordStart = -1;
+  let arrayStart = -1;
+  for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
+    if (token === ts.SyntaxKind.CloseBraceToken && openBraceStart >= 0) {
+      spans.push({ start: openBraceStart, end: scanner.getTokenEnd(), text: 'any' });
+    } else if (token === ts.SyntaxKind.CloseBracketToken && arrayStart >= 0) {
+      spans.push({ start: arrayStart, end: scanner.getTokenEnd(), text: 'any[]' });
+    }
+    openBraceStart = token === ts.SyntaxKind.OpenBraceToken ? scanner.getTokenStart() : -1;
+    arrayStart = token === ts.SyntaxKind.OpenBracketToken ? elementKeywordStart : -1;
+    elementKeywordStart =
+      token === ts.SyntaxKind.NeverKeyword ||
+      (rewriteUndefinedArrays && token === ts.SyntaxKind.UndefinedKeyword)
+        ? scanner.getTokenStart()
+        : -1;
+  }
+  let result = annotation;
+  for (let i = spans.length - 1; i >= 0; i -= 1) {
+    result = `${result.slice(0, spans[i].start)}${spans[i].text}${result.slice(spans[i].end)}`;
+  }
+  return result;
 }
 
 function inferBodyOnly(

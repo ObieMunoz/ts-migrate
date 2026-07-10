@@ -95,6 +95,116 @@ c.val = 42;
     expect(result).toBeUndefined();
   });
 
+  it('rewrites inferred empty object types to any', async () => {
+    const text = `function track(event) {
+  return event.name;
+}
+track({ name: 'add', metadata: {} });
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`function track(event: { name: any; metadata?: any; }) {
+  return event.name;
+}
+track({ name: 'add', metadata: {} });
+`);
+  });
+
+  it('drops annotations that reduce to plain any after the empty object rewrite', async () => {
+    const text = `function mergeConfig(base, overrides) {
+  return { ...base, overrides };
+}
+mergeConfig({ id: 1 }, {});
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`function mergeConfig(base: { id: number; }, overrides) {
+  return { ...base, overrides };
+}
+mergeConfig({ id: 1 }, {});
+`);
+  });
+
+  it('rewrites inferred never arrays to any arrays', async () => {
+    const text = `function track(event) {
+  return event.name;
+}
+track({ name: 'add', tags: [] });
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`function track(event: { name: any; tags?: any[]; }) {
+  return event.name;
+}
+track({ name: 'add', tags: [] });
+`);
+  });
+
+  it('rewrites undefined arrays from empty literals when strictNullChecks is off', async () => {
+    const text = `function track(event) {
+  return event.name;
+}
+track({ name: 'add', tags: [] });
+`;
+
+    const result = await inferTypesPlugin.run(
+      await realPluginParams({ text, compilerOptions: { strict: false, noImplicitAny: true } }),
+    );
+
+    expect(result).toBe(`function track(event: { name: any; tags?: any[]; }) {
+  return event.name;
+}
+track({ name: 'add', tags: [] });
+`);
+  });
+
+  it('keeps undefined arrays backed by real elements under strictNullChecks', async () => {
+    const text = `function track(event) {
+  return event.name;
+}
+track({ name: 'add', tags: [undefined] });
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`function track(event: { name: any; tags?: undefined[]; }) {
+  return event.name;
+}
+track({ name: 'add', tags: [undefined] });
+`);
+  });
+
+  it('leaves parameters alone when inference sees only an empty array', async () => {
+    const text = `function buildList(items) {
+  return items;
+}
+buildList([]);
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBeUndefined();
+  });
+
+  it('leaves string literals containing an empty brace pair intact', async () => {
+    const text = `function keep(o) {
+  return o;
+}
+keep({ '{}': 1, real: {} });
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`function keep(o: { '{}': number; real: any; }) {
+  return o;
+}
+keep({ '{}': 1, real: {} });
+`);
+  });
+
   it('is a no-op on files without implicit anys', async () => {
     const text = `const x: number = 1;
 `;
