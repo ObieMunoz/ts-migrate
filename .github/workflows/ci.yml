@@ -26,8 +26,25 @@ jobs:
           node-version: '22'
           cache: yarn
 
+      # Manifests are part of the key so a dependency change always misses and
+      # goes through a real frozen-lockfile install.
+      - name: Restore node_modules
+        id: node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('yarn.lock', 'package.json', 'packages/*/package.json') }}
+
       - name: Install dependencies
+        if: steps.node-modules.outputs.cache-hit != 'true'
         run: yarn install --frozen-lockfile
+
+      # Nx state must never persist across runs via the node_modules cache
+      # (see the build job's Build step comment).
+      - name: Drop persisted Nx state
+        run: rm -rf node_modules/.cache/nx
 
       - name: Lint
         run: yarn lint
@@ -60,8 +77,28 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: yarn
 
+      # The TypeScript version is part of the key because the saved node_modules
+      # contains the swapped compiler. Manifests are part of the key so a
+      # dependency change always misses and goes through a real frozen-lockfile
+      # install.
+      - name: Restore node_modules
+        id: node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-node${{ matrix.node-version }}-ts${{ matrix.typescript-version }}-${{ hashFiles('yarn.lock', 'package.json', 'packages/*/package.json') }}
+
       - name: Install dependencies
+        if: steps.node-modules.outputs.cache-hit != 'true'
         run: yarn install --frozen-lockfile
+
+      # Nx keeps task-runner state in node_modules/.cache/nx, which the cache
+      # above would otherwise persist across runs; scrub it so a lerna/nx
+      # default flip can never replay results from a restored cache.
+      - name: Drop persisted Nx state
+        run: rm -rf node_modules/.cache/nx
 
       - name: Use TypeScript ${{ matrix.typescript-version }}
         run: |
