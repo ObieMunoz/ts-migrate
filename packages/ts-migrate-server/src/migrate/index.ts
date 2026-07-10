@@ -97,6 +97,14 @@ export default async function migrate({
             (dirtyFilesThisPass === null || dirtyFilesThisPass.has(fileName)),
         );
 
+        // A plugin whose edits never change any file's types can run its whole
+        // pass against one program: holding its overlay writes until the pass
+        // ends keeps the checker warm across files rather than rebuilding it
+        // after each changed file. Writes are flushed below before the next
+        // plugin (and before the end-of-run diagnostics) observe the program.
+        const deferWrites = plugin.mutationsPreserveTypes === true;
+        const deferredWrites: { fileName: string; text: string }[] = [];
+
         for (const sourceFile of sourceFiles) {
           const { fileName } = sourceFile;
           // const fileTimer = new PerfTimer();
@@ -116,7 +124,11 @@ export default async function migrate({
           try {
             const newText = await plugin.run(params, lintConfig);
             if (typeof newText === 'string' && newText !== sourceFile.text) {
-              project.updateSourceFile(fileName, newText);
+              if (deferWrites) {
+                deferredWrites.push({ fileName, text: newText });
+              } else {
+                project.updateSourceFile(fileName, newText);
+              }
               updatedSourceFiles.add(sourceFile.fileName);
               changedInPass = true;
               changedThisPass.add(fileName);
@@ -126,6 +138,10 @@ export default async function migrate({
             exitCode = -1;
           }
           // log.info(`${fileLogPrefix} Finished in ${fileTimer.elapsedStr()}.`);
+        }
+
+        for (const { fileName, text } of deferredWrites) {
+          project.updateSourceFile(fileName, text);
         }
 
         log.info(`${pluginLogPrefix} Finished in ${pluginTimer.elapsedStr()}.`);

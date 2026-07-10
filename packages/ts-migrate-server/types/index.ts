@@ -25,6 +25,14 @@ export interface Plugin<TPluginOptions = unknown> {
   ): Promise<PluginResult> | PluginResult;
 
   /**
+   * Set when the plugin's edits never change any file's types (e.g. it only
+   * inserts suppression comments). The runner then defers this plugin's overlay
+   * writes to the end of its pass, so the language service checks every file
+   * against one warm program instead of rebuilding it after each changed file.
+   */
+  mutationsPreserveTypes?: boolean;
+
+  /**
    * Returns true if options is a valid options object for this plugin.
    * If options is invalid, it throws a PluginOptionsError.
    *

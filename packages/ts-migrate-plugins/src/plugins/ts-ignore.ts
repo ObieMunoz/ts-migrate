@@ -19,6 +19,10 @@ const optionProperties: Properties = {
 const tsIgnorePlugin: Plugin<Options> = {
   name: 'ts-ignore',
 
+  // Only inserts suppression comments, so the runner can defer its writes and
+  // check every file against one warm program.
+  mutationsPreserveTypes: true,
+
   run({ getLanguageService, fileName, sourceFile, options }) {
     const diagnostics = getLanguageService()
       .getSemanticDiagnostics(fileName)
