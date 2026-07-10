@@ -14,7 +14,7 @@
   "scripts": {
     "build": "lerna run build",
     "lint": "lerna run lint",
-    "test": "lerna run test"
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest"
   },
   "devDependencies": {
     "@babel/core": "^7.23.0",
@@ -29,6 +29,7 @@
     "@typescript-eslint/eslint-plugin": "^4.33.0",
     "@typescript-eslint/parser": "^4.33.0",
     "babel-jest": "^29.7.0",
+    "cross-env": "^7.0.3",
     "eslint": "^7.32.0",
     "eslint-config-airbnb": "^18.2.1",
     "eslint-config-prettier": "^6.15.0",
