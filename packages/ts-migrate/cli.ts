@@ -23,6 +23,7 @@ import {
   reactShapePlugin,
   stripTSIgnorePlugin,
   tsIgnorePlugin,
+  updateImportPathsPlugin,
   Plugin,
 } from '@obiemunoz/ts-migrate-plugins';
 import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
@@ -47,6 +48,7 @@ const availablePlugins = [
   reactShapePlugin,
   stripTSIgnorePlugin,
   tsIgnorePlugin,
+  updateImportPathsPlugin,
 ];
 
 // eslint-disable-next-line no-unused-expressions
@@ -177,6 +179,7 @@ yargs
         const { defaultAccessibility, privateRegex, protectedRegex, publicRegex } = args;
 
         config = new MigrateConfig()
+          .addPlugin(updateImportPathsPlugin, {})
           .addPlugin(stripTSIgnorePlugin, {})
           .addPlugin(hoistClassStaticsPlugin, { anyAlias })
           .addPlugin(hoistArrowFunctionsPlugin, {})
