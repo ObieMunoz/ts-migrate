@@ -2,6 +2,7 @@
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
+import { resolvesToDeclaration } from './utils/identifiers';
 
 /**
  * Converts arrow functions that are referenced before their declaration into
@@ -195,20 +196,6 @@ function findReferences(
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
-}
-
-function resolvesToDeclaration(
-  identifier: ts.Identifier,
-  declaration: ts.VariableDeclaration,
-  checker: ts.TypeChecker,
-): boolean {
-  let symbol = ts.isShorthandPropertyAssignment(identifier.parent)
-    ? checker.getShorthandAssignmentValueSymbol(identifier.parent)
-    : checker.getSymbolAtLocation(identifier);
-  if (symbol && symbol.flags & ts.SymbolFlags.Alias) {
-    symbol = checker.getAliasedSymbol(symbol);
-  }
-  return symbol != null && symbol.valueDeclaration === declaration;
 }
 
 function toFunctionDeclarationText(

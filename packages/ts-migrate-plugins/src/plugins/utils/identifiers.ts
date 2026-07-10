@@ -67,3 +67,21 @@ export function findKnownVariables(sourceFile: ts.SourceFile): KnownDefinitionMa
   });
   return knownVariables;
 }
+
+/**
+ * Checks whether an identifier's symbol (following shorthand property
+ * assignments and aliases) resolves to the given declaration.
+ */
+export function resolvesToDeclaration(
+  identifier: ts.Identifier,
+  declaration: ts.VariableDeclaration,
+  checker: ts.TypeChecker,
+): boolean {
+  let symbol = ts.isShorthandPropertyAssignment(identifier.parent)
+    ? checker.getShorthandAssignmentValueSymbol(identifier.parent)
+    : checker.getSymbolAtLocation(identifier);
+  if (symbol && symbol.flags & ts.SymbolFlags.Alias) {
+    symbol = checker.getAliasedSymbol(symbol);
+  }
+  return symbol != null && symbol.valueDeclaration === declaration;
+}

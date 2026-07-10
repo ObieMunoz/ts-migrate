@@ -2,7 +2,7 @@
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
-import { collectIdentifierNodes } from './utils/identifiers';
+import { collectIdentifierNodes, resolvesToDeclaration } from './utils/identifiers';
 
 /**
  * Moves a top-level `const`/`let` statement above its first use when the binding
@@ -263,20 +263,6 @@ function topLevelAncestor(node: ts.Node, sourceFile: ts.SourceFile): ts.Statemen
     current = current.parent;
   }
   return current.parent === sourceFile ? (current as ts.Statement) : undefined;
-}
-
-function resolvesToDeclaration(
-  identifier: ts.Identifier,
-  declaration: ts.VariableDeclaration,
-  checker: ts.TypeChecker,
-): boolean {
-  let symbol = ts.isShorthandPropertyAssignment(identifier.parent)
-    ? checker.getShorthandAssignmentValueSymbol(identifier.parent)
-    : checker.getSymbolAtLocation(identifier);
-  if (symbol && symbol.flags & ts.SymbolFlags.Alias) {
-    symbol = checker.getAliasedSymbol(symbol);
-  }
-  return symbol != null && symbol.valueDeclaration === declaration;
 }
 
 function toNonConflictingUpdates(moves: Move[]): SourceTextUpdate[] {
