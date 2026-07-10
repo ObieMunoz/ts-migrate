@@ -115,8 +115,6 @@ jobs:
       - name: Test
         run: yarn test
 
-      # End-to-end check of the built packages through their only consumer
-      # example; nothing else in CI exercises ts-migrate-example.
       - name: Example smoke test
         run: |
           yarn --cwd packages/ts-migrate-example example
