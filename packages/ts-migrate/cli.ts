@@ -25,11 +25,28 @@ import {
   stripTSIgnorePlugin,
   tsIgnorePlugin,
   updateImportPathsPlugin,
+  createTypesPackageDetector,
+  formatTypesPackageReport,
   Plugin,
+  TypesPackageDetector,
 } from '@obiemunoz/ts-migrate-plugins';
 import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
 import init from './commands/init';
 import rename from './commands/rename';
+
+/** A recommendation report must never fail an otherwise successful run. */
+function printTypesPackageReport(
+  detector: TypesPackageDetector,
+  rootDir: string,
+  folder: string,
+): void {
+  try {
+    const report = formatTypesPackageReport(detector.summarize(rootDir), folder);
+    if (report) log.info(report);
+  } catch (err) {
+    log.warn('Skipped type definition recommendations:', err);
+  }
+}
 
 const availablePlugins = [
   addConversionsPlugin,
@@ -151,6 +168,7 @@ yargs
       const rootDir = path.resolve(process.cwd(), args.folder);
       const { sources } = args;
       let config: MigrateConfig;
+      let typesPackageDetector: TypesPackageDetector | undefined;
 
       const airbnbAnyAlias = '$TSFixMe';
       const airbnbAnyFunctionAlias = '$TSFixMeFunction';
@@ -218,11 +236,15 @@ yargs
         } else {
           config.addPlugin(explicitAnyPlugin, { anyAlias });
         }
+        typesPackageDetector = createTypesPackageDetector();
         config
           .addPlugin(addConversionsPlugin, { anyAlias })
           // We need to run eslint-fix before ts-ignore because formatting may affect where
           // the errors are that need to get ignored.
           .addPlugin(eslintFixPlugin, {})
+          // Recommends @types packages from the diagnostics ts-ignore is about
+          // to suppress, so it must run before they are hidden.
+          .addPlugin(typesPackageDetector.plugin, {})
           .addPlugin(tsIgnorePlugin, {})
           // We need to run eslint-fix again after ts-ignore to fix up formatting.
           .addPlugin(eslintFixPlugin, {});
@@ -235,6 +257,10 @@ yargs
         maxStablePasses: args.maxStablePasses,
         incrementalPasses: args.incrementalPasses,
       });
+
+      if (typesPackageDetector) {
+        printTypesPackageReport(typesPackageDetector, rootDir, args.folder);
+      }
 
       process.exit(exitCode);
     },
@@ -281,14 +307,18 @@ yargs
         },
       };
 
+      const typesPackageDetector = createTypesPackageDetector();
       const config = new MigrateConfig()
         .addPlugin(withChangeTracking(stripTSIgnorePlugin), {})
+        .addPlugin(typesPackageDetector.plugin, {})
         .addPlugin(withChangeTracking(tsIgnorePlugin), {
           messagePrefix: args.messagePrefix,
         })
         .addPlugin(eslintFixChangedPlugin, {});
 
       const { exitCode } = await migrate({ rootDir, config });
+
+      printTypesPackageReport(typesPackageDetector, rootDir, args.folder);
 
       process.exit(exitCode);
     },

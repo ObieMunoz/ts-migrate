@@ -21,9 +21,17 @@ import updateImportPathsPlugin from './plugins/update-import-paths';
 import updateSourceText, {
   SourceTextUpdate as SourceTextUpdateType,
 } from './utils/updateSourceText';
+import {
+  createTypesPackageDetector,
+  formatTypesPackageReport,
+  TypesPackageDetector as TypesPackageDetectorType,
+  TypesPackageReport as TypesPackageReportType,
+} from './utils/typesPackages';
 
 export type Plugin<T = unknown> = PluginType<T>;
 export type SourceTextUpdate = SourceTextUpdateType;
+export type TypesPackageDetector = TypesPackageDetectorType;
+export type TypesPackageReport = TypesPackageReportType;
 
 export {
   addConversionsPlugin,
@@ -47,4 +55,4 @@ export {
   updateImportPathsPlugin,
 };
 
-export { updateSourceText };
+export { updateSourceText, createTypesPackageDetector, formatTypesPackageReport };
