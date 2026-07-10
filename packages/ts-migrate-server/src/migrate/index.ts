@@ -5,6 +5,7 @@ import path from 'path';
 import log from 'updatable-log';
 import MigrateConfig from './MigrateConfig';
 import MigrationProject from './MigrationProject';
+import computeDirtyFiles from './dirtyFiles';
 import PerfTimer from '../utils/PerfTimer';
 import { PluginParams, LintConfig } from '../../types';
 
@@ -14,6 +15,8 @@ interface MigrateParams {
   config: MigrateConfig;
   sources?: string | string[];
   lintConfig?: LintConfig;
+  maxStablePasses?: number;
+  incrementalPasses?: boolean;
 }
 
 export default async function migrate({
@@ -22,6 +25,8 @@ export default async function migrate({
   config,
   sources,
   lintConfig,
+  maxStablePasses = 5,
+  incrementalPasses = true,
 }: MigrateParams): Promise<{ exitCode: number; updatedSourceFiles: Set<string> }> {
   let exitCode = 0;
   log.info(`TypeScript version: ${ts.version}`);
@@ -68,11 +73,13 @@ export default async function migrate({
     }
   });
 
-  const maxStablePasses = 5;
-
   for (const pluginGroup of pluginGroups) {
+    // Files whose outcome can still change this pass; null means all files.
+    let dirtyFiles: Set<string> | null = null;
     for (let pass = 0; ; pass += 1) {
       let changedInPass = false;
+      const changedThisPass = new Set<string>();
+      const dirtyFilesThisPass = dirtyFiles;
 
       for (const i of pluginGroup.pluginIndexes) {
         const { plugin, options: pluginOptions } = config.plugins[i];
@@ -84,8 +91,10 @@ export default async function migrate({
           `${pluginLogPrefix} Plugin ${i + 1} of ${config.plugins.length}${passSuffix}. Start...`,
         );
 
-        const sourceFiles = getSourceFilesToMigrate(project).filter(({ fileName }) =>
-          originalSourceFilesToMigrate.has(fileName),
+        const sourceFiles = getSourceFilesToMigrate(project).filter(
+          ({ fileName }) =>
+            originalSourceFilesToMigrate.has(fileName) &&
+            (dirtyFilesThisPass === null || dirtyFilesThisPass.has(fileName)),
         );
 
         for (const sourceFile of sourceFiles) {
@@ -110,6 +119,7 @@ export default async function migrate({
               project.updateSourceFile(fileName, newText);
               updatedSourceFiles.add(sourceFile.fileName);
               changedInPass = true;
+              changedThisPass.add(fileName);
             }
           } catch (pluginErr) {
             log.error(`${fileLogPrefix} Error:\n`, pluginErr);
@@ -130,6 +140,12 @@ export default async function migrate({
           .join(', ');
         log.warn(`Plugin group [${names}] still changing files after ${maxStablePasses} passes.`);
         break;
+      }
+      dirtyFiles = incrementalPasses
+        ? computeDirtyFiles(project.getSourceFiles(), changedThisPass, project.getCompilerOptions())
+        : null;
+      if (dirtyFiles !== null) {
+        log.info(`Next pass revisits ${dirtyFiles.size} file(s) affected by this pass's changes.`);
       }
     }
   }

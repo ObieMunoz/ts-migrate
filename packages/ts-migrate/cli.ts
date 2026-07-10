@@ -113,6 +113,24 @@ yargs
         .string('sources')
         .alias('sources', 's')
         .describe('sources', 'Path to a subset of your project to rename (globs are ok).')
+        .boolean('inferTypes')
+        .default('inferTypes', true)
+        .describe(
+          'inferTypes',
+          'Infer types from usage before falling back to any. Disable with --no-inferTypes.',
+        )
+        .number('maxStablePasses')
+        .default('maxStablePasses', 5)
+        .describe(
+          'maxStablePasses',
+          'Maximum number of passes for plugins that repeat until files stop changing.',
+        )
+        .boolean('incrementalPasses')
+        .default('incrementalPasses', true)
+        .describe(
+          'incrementalPasses',
+          'Revisit only files affected by the previous pass when repeating plugins. Disable with --no-incrementalPasses.',
+        )
         .example('migrate /frontend/foo', 'Migrate all the files in /frontend/foo')
         .example(
           '$0 migrate /frontend/foo -s "bar/**/*" -s "node_modules/**/*.d.ts"',
@@ -180,12 +198,18 @@ yargs
             privateRegex,
             protectedRegex,
             publicRegex,
-          })
+          });
+        if (args.inferTypes) {
           // Annotations from one pass can surface new implicit anys (e.g. a
           // variable annotated `any` makes its callback parameters implicit
           // any), so these two repeat until the files stop changing.
-          .addPlugin(inferTypesPlugin, {}, { repeatUntilStable: true })
-          .addPlugin(explicitAnyPlugin, { anyAlias }, { repeatUntilStable: true })
+          config
+            .addPlugin(inferTypesPlugin, {}, { repeatUntilStable: true })
+            .addPlugin(explicitAnyPlugin, { anyAlias }, { repeatUntilStable: true });
+        } else {
+          config.addPlugin(explicitAnyPlugin, { anyAlias });
+        }
+        config
           .addPlugin(addConversionsPlugin, { anyAlias })
           // We need to run eslint-fix before ts-ignore because formatting may affect where
           // the errors are that need to get ignored.
@@ -195,7 +219,13 @@ yargs
           .addPlugin(eslintFixPlugin, {});
       }
 
-      const { exitCode } = await migrate({ rootDir, config, sources });
+      const { exitCode } = await migrate({
+        rootDir,
+        config,
+        sources,
+        maxStablePasses: args.maxStablePasses,
+        incrementalPasses: args.incrementalPasses,
+      });
 
       process.exit(exitCode);
     },

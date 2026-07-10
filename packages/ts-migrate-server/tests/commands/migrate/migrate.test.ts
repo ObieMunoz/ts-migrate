@@ -189,6 +189,134 @@ describe('migrate command', () => {
       expect(exitCode).toBe(0);
     });
 
+    it('revisits only files affected by the previous pass', async () => {
+      const configDir = path.resolve(__dirname, 'config');
+      copyDir(configDir, rootDir);
+      fs.writeFileSync(
+        path.resolve(rootDir, 'a.ts'),
+        "import { b } from './b';\nexport const a = b;\n",
+      );
+      fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 1; // CHANGE_ME\n');
+      fs.writeFileSync(path.resolve(rootDir, 'c.ts'), 'export const c = 3;\n');
+
+      const visited: string[] = [];
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'change-b-once',
+          run({ fileName, text }) {
+            visited.push(path.basename(fileName));
+            return text.replace('CHANGE_ME', 'CHANGED');
+          },
+        },
+        {},
+        { repeatUntilStable: true },
+      );
+
+      const { exitCode } = await migrate({ rootDir, config });
+      // Pass 2 revisits the changed file and its importer, but not c.ts.
+      expect(visited).toEqual(['a.ts', 'b.ts', 'c.ts', 'a.ts', 'b.ts']);
+      expect(exitCode).toBe(0);
+    });
+
+    it('revisits transitive importers through re-exports', async () => {
+      const configDir = path.resolve(__dirname, 'config');
+      copyDir(configDir, rootDir);
+      fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 1; // CHANGE_ME\n');
+      fs.writeFileSync(path.resolve(rootDir, 'barrel.ts'), "export * from './b';\n");
+      fs.writeFileSync(
+        path.resolve(rootDir, 'a.ts'),
+        "import { b } from './barrel';\nexport const a = b;\n",
+      );
+      fs.writeFileSync(path.resolve(rootDir, 'c.ts'), 'export const c = 3;\n');
+
+      const visited: string[] = [];
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'change-b-once',
+          run({ fileName, text }) {
+            visited.push(path.basename(fileName));
+            return text.replace('CHANGE_ME', 'CHANGED');
+          },
+        },
+        {},
+        { repeatUntilStable: true },
+      );
+
+      const { exitCode } = await migrate({ rootDir, config });
+      expect(visited).toEqual(['a.ts', 'b.ts', 'barrel.ts', 'c.ts', 'a.ts', 'b.ts', 'barrel.ts']);
+      expect(exitCode).toBe(0);
+    });
+
+    it('revisits every file when a changed file affects the global scope', async () => {
+      const configDir = path.resolve(__dirname, 'config');
+      copyDir(configDir, rootDir);
+      // No import/export makes b.ts a script contributing to the global scope.
+      fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'const b = 1; // CHANGE_ME\n');
+      fs.writeFileSync(path.resolve(rootDir, 'c.ts'), 'export const c = 3;\n');
+
+      const visited: string[] = [];
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'change-b-once',
+          run({ fileName, text }) {
+            visited.push(path.basename(fileName));
+            return text.replace('CHANGE_ME', 'CHANGED');
+          },
+        },
+        {},
+        { repeatUntilStable: true },
+      );
+
+      const { exitCode } = await migrate({ rootDir, config });
+      expect(visited).toEqual(['b.ts', 'c.ts', 'b.ts', 'c.ts']);
+      expect(exitCode).toBe(0);
+    });
+
+    it('revisits every file with incrementalPasses disabled', async () => {
+      const configDir = path.resolve(__dirname, 'config');
+      copyDir(configDir, rootDir);
+      fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 1; // CHANGE_ME\n');
+      fs.writeFileSync(path.resolve(rootDir, 'c.ts'), 'export const c = 3;\n');
+
+      const visited: string[] = [];
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'change-b-once',
+          run({ fileName, text }) {
+            visited.push(path.basename(fileName));
+            return text.replace('CHANGE_ME', 'CHANGED');
+          },
+        },
+        {},
+        { repeatUntilStable: true },
+      );
+
+      const { exitCode } = await migrate({ rootDir, config, incrementalPasses: false });
+      expect(visited).toEqual(['b.ts', 'c.ts', 'b.ts', 'c.ts']);
+      expect(exitCode).toBe(0);
+    });
+
+    it('honors a custom maxStablePasses cap', async () => {
+      const configDir = path.resolve(__dirname, 'config');
+      copyDir(configDir, rootDir);
+      fs.writeFileSync(path.resolve(rootDir, 'index.ts'), 'x');
+
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'always-append',
+          run({ text }) {
+            return `${text}x`;
+          },
+        },
+        {},
+        { repeatUntilStable: true },
+      );
+
+      const { exitCode } = await migrate({ rootDir, config, maxStablePasses: 2 });
+      expect(fs.readFileSync(path.resolve(rootDir, 'index.ts'), 'utf8')).toBe('xxx');
+      expect(exitCode).toBe(0);
+    });
+
     it('runs unmarked plugins a single pass', async () => {
       const configDir = path.resolve(__dirname, 'config');
       copyDir(configDir, rootDir);
