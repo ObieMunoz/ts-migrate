@@ -19,6 +19,7 @@ import {
   reactClassLifecycleMethodsPlugin,
   reactClassStatePlugin,
   reactDefaultPropsPlugin,
+  reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
   reactShapePlugin,
   stripTSIgnorePlugin,
@@ -44,6 +45,7 @@ const availablePlugins = [
   reactClassLifecycleMethodsPlugin,
   reactClassStatePlugin,
   reactDefaultPropsPlugin,
+  reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
   reactShapePlugin,
   stripTSIgnorePlugin,
@@ -181,6 +183,7 @@ yargs
         config = new MigrateConfig()
           .addPlugin(updateImportPathsPlugin, {})
           .addPlugin(stripTSIgnorePlugin, {})
+          .addPlugin(reactInlineImportedPropTypesPlugin, {})
           .addPlugin(hoistClassStaticsPlugin, { anyAlias })
           .addPlugin(hoistArrowFunctionsPlugin, {})
           .addPlugin(hoistDeclarationsPlugin, {})

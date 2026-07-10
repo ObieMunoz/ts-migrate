@@ -38,6 +38,51 @@ export function createInferPropsTypeNode(entityName: ts.EntityName): ts.TypeRefe
   ]);
 }
 
+export function unpackInitializer(
+  initializer: ts.Expression | undefined,
+  sourceFile: ts.SourceFile,
+): ts.ObjectLiteralExpression | undefined {
+  if (!initializer) {
+    return undefined;
+  }
+
+  if (ts.isObjectLiteralExpression(initializer)) {
+    return initializer;
+  }
+
+  if (
+    ts.isCallExpression(initializer) &&
+    ts.isIdentifier(initializer.expression) &&
+    initializer.expression.text === 'forbidExtraProps' &&
+    initializer.arguments.length === 1
+  ) {
+    const arg = initializer.arguments[0];
+    if (ts.isObjectLiteralExpression(arg)) {
+      return arg;
+    }
+  }
+
+  if (ts.isIdentifier(initializer)) {
+    for (const statement of sourceFile.statements) {
+      if (
+        ts.isVariableStatement(statement) &&
+        statement.declarationList.declarations.length === 1
+      ) {
+        const declaration = statement.declarationList.declarations[0];
+        if (
+          ts.isVariableDeclaration(declaration) &&
+          ts.isIdentifier(declaration.name) &&
+          declaration.name.text === initializer.text
+        ) {
+          return unpackInitializer(declaration.initializer, sourceFile);
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
+
 export default function getTypeFromPropTypesObjectLiteral(
   objectLiteral: ts.ObjectLiteralExpression,
   sourceFile: ts.SourceFile,

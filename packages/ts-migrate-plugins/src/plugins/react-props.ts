@@ -13,6 +13,7 @@ import getTypeFromPropTypesObjectLiteral, {
   createInferPropsTypeNode,
   createPropsTypeNameGetter,
   getImportedEntityName,
+  unpackInitializer,
 } from './utils/react-props';
 import { getTextPreservingWhitespace } from './utils/text';
 import { updateImports, DefaultImport, NamedImport } from './utils/imports';
@@ -685,49 +686,4 @@ function insertInferPropsTypeAlias(
     index: node.pos,
     text: `\n\n${printer.printNode(ts.EmitHint.Unspecified, propsTypeAlias, sourceFile)}`,
   };
-}
-
-function unpackInitializer(
-  initializer: ts.Expression | undefined,
-  sourceFile: ts.SourceFile,
-): ts.ObjectLiteralExpression | undefined {
-  if (!initializer) {
-    return undefined;
-  }
-
-  if (ts.isObjectLiteralExpression(initializer)) {
-    return initializer;
-  }
-
-  if (
-    ts.isCallExpression(initializer) &&
-    ts.isIdentifier(initializer.expression) &&
-    initializer.expression.text === 'forbidExtraProps' &&
-    initializer.arguments.length === 1
-  ) {
-    const arg = initializer.arguments[0];
-    if (ts.isObjectLiteralExpression(arg)) {
-      return arg;
-    }
-  }
-
-  if (ts.isIdentifier(initializer)) {
-    for (const statement of sourceFile.statements) {
-      if (
-        ts.isVariableStatement(statement) &&
-        statement.declarationList.declarations.length === 1
-      ) {
-        const declaration = statement.declarationList.declarations[0];
-        if (
-          ts.isVariableDeclaration(declaration) &&
-          ts.isIdentifier(declaration.name) &&
-          declaration.name.text === initializer.text
-        ) {
-          return unpackInitializer(declaration.initializer, sourceFile);
-        }
-      }
-    }
-  }
-
-  return undefined;
 }

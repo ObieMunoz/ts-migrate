@@ -72,14 +72,26 @@ export async function realPluginParams<TOptions = unknown>(params: {
   text?: string;
   options?: TOptions;
   compilerOptions?: ts.CompilerOptions;
+  extraFiles?: { [fileName: string]: string };
 }): Promise<PluginParams<TOptions>> {
-  const { fileName = 'file.ts', text = '', options = {}, compilerOptions } = params;
+  const {
+    fileName = 'file.ts',
+    text = '',
+    options = {},
+    compilerOptions,
+    extraFiles = {},
+  } = params;
 
-  // In-memory language service: only the test file lives in memory; default
+  // In-memory language service: only the test files live in memory; default
   // libs and anything else resolve from disk.
   const resolvedOptions: ts.CompilerOptions = { strict: true, ...compilerOptions };
   const rootFileName = `/${fileName}`;
-  const files = new Map([[rootFileName, text]]);
+  const files = new Map([
+    [rootFileName, text],
+    ...Object.entries(extraFiles).map(
+      ([extraFileName, extraText]) => [`/${extraFileName}`, extraText] as const,
+    ),
+  ]);
 
   const serviceHost: ts.LanguageServiceHost = {
     getCompilationSettings: () => resolvedOptions,

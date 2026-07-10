@@ -12,6 +12,7 @@ import memberAccessibilityPlugin from './plugins/member-accessibility';
 import reactClassLifecycleMethodsPlugin from './plugins/react-class-lifecycle-methods';
 import reactClassStatePlugin from './plugins/react-class-state';
 import reactDefaultPropsPlugin from './plugins/react-default-props';
+import reactInlineImportedPropTypesPlugin from './plugins/react-inline-imported-prop-types';
 import reactPropsPlugin from './plugins/react-props';
 import reactShapePlugin from './plugins/react-shape';
 import stripTSIgnorePlugin from './plugins/strip-ts-ignore';
@@ -38,6 +39,7 @@ export {
   reactClassLifecycleMethodsPlugin,
   reactClassStatePlugin,
   reactDefaultPropsPlugin,
+  reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
   reactShapePlugin,
   stripTSIgnorePlugin,
