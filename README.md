@@ -13,7 +13,7 @@ It takes a JavaScript, or a partial TypeScript, project in and gives a compiling
 Plugins are combined into migration configs. We currently have two main migration configs:
 
 * for the main JavaScript → TypeScript migration
-* for the reignore script
+* for the reignore command
 
 These configs can be moved out of the default script, and people can add custom configs with a different set of plugins for their needs.
 
