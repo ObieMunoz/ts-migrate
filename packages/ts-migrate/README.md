@@ -79,6 +79,20 @@ files in favor of the ones you've listed. It is effectively the same as replacin
 your tsconfig.json's `include` property with the provided sources. The flag can be
 passed multiple times.
 
+The `migrate` command also accepts flags controlling the type-inference stage,
+the most expensive part of a migration:
+
+- `--no-inferTypes` skips the [infer-types](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/infer-types.ts)
+  plugin and annotates every implicit any with plain `any` (the original
+  ts-migrate behavior) — much faster, at the cost of annotation quality.
+- `--maxStablePasses <n>` (default 5) caps how many times the
+  infer-types/explicit-any group repeats while files keep changing. Pass 1 does
+  the bulk of the work; later passes resolve annotations that only become
+  inferable after their callers were annotated.
+- `--no-incrementalPasses` makes every repeat pass revisit all files, instead of
+  only the files affected by the previous pass's changes (as computed from the
+  import graph).
+
 # Reignore
 
 If you are in a situation where you made some big project-wide changes, update of the common library like TypeScript, React or Redux or improve types for the large codebase. As a result of these operations, you might get quite a few TypeScript compilation errors. There are two ways to proceed:

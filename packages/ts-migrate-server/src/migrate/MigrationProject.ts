@@ -111,6 +111,10 @@ export default class MigrationProject {
     return this.languageService;
   }
 
+  getCompilerOptions(): ts.CompilerOptions {
+    return this.compilerOptions;
+  }
+
   private getProgram(): ts.Program {
     const program = this.languageService.getProgram();
     if (!program) {

@@ -48,9 +48,14 @@ const inferTypesPlugin: Plugin = {
 
   run({ fileName, text, getLanguageService }, lintConfig?: LintConfig) {
     const languageService = getLanguageService();
+    const projectOptions = languageService.getProgram()?.getCompilerOptions() ?? {};
+    // Under noImplicitAny every inferable location is a semantic error and the
+    // suggestion variants (TS7043+) are never produced, so the suggestion scan
+    // (recomputed on every call, unlike semantic diagnostics) is skipped.
+    const noImplicitAny = projectOptions.noImplicitAny ?? projectOptions.strict ?? false;
     const hasInferableDiagnostics = [
       ...languageService.getSemanticDiagnostics(fileName),
-      ...languageService.getSuggestionDiagnostics(fileName),
+      ...(noImplicitAny ? [] : languageService.getSuggestionDiagnostics(fileName)),
     ].some((diagnostic) => inferableDiagnosticCodes.has(diagnostic.code));
     if (!hasInferableDiagnostics) {
       return undefined;
@@ -543,26 +548,59 @@ function getSourceFileOrThrow(service: ts.LanguageService, fileName: string): ts
   return source;
 }
 
+// Parsed and bound dependency files (default libs, node_modules, the import
+// graph) and disk reads are shared across all validation services: disk
+// content is stable for the whole run because migrate persists overlay
+// changes only at the very end. Only the file under migration differs
+// between services, so it gets a fresh version and everything else stays
+// cached in the registry.
+const sharedDocumentRegistry = ts.createDocumentRegistry(
+  ts.sys.useCaseSensitiveFileNames,
+  ts.sys.getCurrentDirectory(),
+);
+const diskFileText = new Map<string, string | undefined>();
+const diskFilePresence = new Map<string, boolean>();
+let overrideVersion = 0;
+
+function readFileCached(name: string): string | undefined {
+  if (!diskFileText.has(name)) {
+    diskFileText.set(name, ts.sys.readFile(name));
+  }
+  return diskFileText.get(name);
+}
+
+function fileExistsCached(name: string): boolean {
+  let exists = diskFilePresence.get(name);
+  if (exists === undefined) {
+    exists = ts.sys.fileExists(name);
+    diskFilePresence.set(name, exists);
+  }
+  return exists;
+}
+
 function createFileLanguageService(
   fileName: string,
   content: string,
   compilerOptions: ts.CompilerOptions,
 ): ts.LanguageService {
   // Only the file under migration is overridden; imports and default libs
-  // resolve from disk.
-  const files = new Map([[fileName, content]]);
+  // resolve from disk. The shared registry reuses cached files purely by
+  // version, so the overridden file must never repeat one for different
+  // content.
+  overrideVersion += 1;
+  const version = String(overrideVersion);
   const host: ts.LanguageServiceHost = {
     getCompilationSettings: () => compilerOptions,
-    getScriptFileNames: () => Array.from(files.keys()),
-    getScriptVersion: () => '0',
+    getScriptFileNames: () => [fileName],
+    getScriptVersion: (name) => (name === fileName ? version : '0'),
     getScriptSnapshot: (name) => {
-      const contents = files.get(name) ?? ts.sys.readFile(name);
+      const contents = name === fileName ? content : readFileCached(name);
       return contents !== undefined ? ts.ScriptSnapshot.fromString(contents) : undefined;
     },
     getCurrentDirectory: () => path.dirname(fileName),
     getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
-    fileExists: (name) => files.has(name) || ts.sys.fileExists(name),
-    readFile: (name) => files.get(name) ?? ts.sys.readFile(name),
+    fileExists: (name) => name === fileName || fileExistsCached(name),
+    readFile: (name) => (name === fileName ? content : readFileCached(name)),
   };
-  return ts.createLanguageService(host);
+  return ts.createLanguageService(host, sharedDocumentRegistry);
 }
