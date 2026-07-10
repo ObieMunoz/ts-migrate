@@ -1,0 +1,2 @@
+# Test fixtures named project.json are JSON5, not Nx project configuration.
+packages/*/tests/**/project.json

@@ -96,11 +96,9 @@ does:
 
 # Type of plugins
 
-We have three main categories of plugins:
+We have two main categories of plugins:
 
 - Text based plugins. Plugins of this category are operating with a text of source files and operate based on this.  Example: [example-plugin-text](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-example/src/example-plugin-text.ts).
-
-- Jscodeshift based plugins. These plugins are using a [jscodeshift toolkit](https://github.com/facebook/jscodeshift) as a base for operations and transformations around Abstract Syntax Tree. Example: [example-plugin-jscodeshift](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-example/src/example-plugin-jscodeshift.ts).
 
 - TypeScript ast-based plugins. The main idea behind these plugins is by parsing Abstract Syntax Tree with [TypeScript compiler API](https://github.com/microsoft/TypeScript/wiki/Using-the-Compiler-API), we can generate an array of updates for the text and apply them to the source file. Example: [example-plugin-ts](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-example/src/example-plugin-ts.ts).
 

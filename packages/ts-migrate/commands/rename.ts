@@ -3,8 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 import ts from 'typescript';
-import json5 from 'json5';
-import json5Writer from 'json5-writer';
+import { replaceJSON5Strings } from '../utils/updateJSON5';
 
 interface RenameParams {
   rootDir: string;
@@ -131,21 +130,16 @@ function updateProjectJson(rootDir: string) {
   }
 
   const projectJsonText = fs.readFileSync(projectJsonFile, 'utf-8');
-  const projectJson = json5.parse(projectJsonText);
+  const updatedText = replaceJSON5Strings(projectJsonText, (keyPath, value) => {
+    const isAllowedImport =
+      keyPath.length === 2 && keyPath[0] === 'allowedImports' && typeof keyPath[1] === 'number';
+    const isLayout = keyPath.length === 1 && keyPath[0] === 'layout';
+    if ((isAllowedImport || isLayout) && /\.jsx?$/.test(value)) {
+      return value.replace(/\.js(x?)$/, '.ts$1');
+    }
+    return undefined;
+  });
 
-  if (projectJson && projectJson.allowedImports) {
-    projectJson.allowedImports = projectJson.allowedImports.map((allowedImport: string) =>
-      /.jsx?$/.test(allowedImport) ? allowedImport.replace(/\.js(x?)$/, '.ts$1') : allowedImport,
-    );
-  }
-
-  if (projectJson && projectJson.layout) {
-    const { layout } = projectJson;
-    projectJson.layout = /.jsx?$/.test(layout) ? layout.replace(/\.js(x?)$/, '.ts$1') : layout;
-  }
-
-  const writer = json5Writer.load(projectJsonText);
-  writer.write(projectJson);
-  fs.writeFileSync(projectJsonFile, writer.toSource({ quote: 'double' }), 'utf-8');
+  fs.writeFileSync(projectJsonFile, updatedText, 'utf-8');
   log.info(`Updated allowedImports in ${projectJsonFile}`);
 }

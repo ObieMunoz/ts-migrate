@@ -10,7 +10,6 @@
   "dependencies": {
     "@obiemunoz/ts-migrate-plugins": "^0.6.0",
     "@obiemunoz/ts-migrate-server": "^0.6.0",
-    "jscodeshift": "^0.12.0",
     "ts-node": "^8.3.0"
   },
   "peerDependencies": {
