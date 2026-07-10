@@ -5,6 +5,7 @@
   },
   "exclude": [
     "tests",
-    "build"
+    "build",
+    "scripts"
   ]
 }
