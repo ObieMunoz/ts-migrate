@@ -317,7 +317,7 @@ function replaceNoEvidenceTypes(annotation: string, rewriteUndefinedArrays: bool
   if (
     !annotation.includes('{') &&
     !annotation.includes('never') &&
-    !annotation.includes('undefined')
+    !(rewriteUndefinedArrays && annotation.includes('undefined'))
   ) {
     return annotation;
   }
