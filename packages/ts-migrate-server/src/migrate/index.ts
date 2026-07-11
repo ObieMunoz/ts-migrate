@@ -105,7 +105,8 @@ export default async function migrate({
         const deferWrites = plugin.mutationsPreserveTypes === true;
         const deferredWrites: { fileName: string; text: string }[] = [];
 
-        for (const sourceFile of sourceFiles) {
+        // eslint-disable-next-line no-loop-func
+        const runPluginOnFile = async (sourceFile: ts.SourceFile) => {
           const { fileName } = sourceFile;
           // const fileTimer = new PerfTimer();
           const relFile = path.relative(rootDir, sourceFile.fileName);
@@ -138,6 +139,16 @@ export default async function migrate({
             exitCode = -1;
           }
           // log.info(`${fileLogPrefix} Finished in ${fileTimer.elapsedStr()}.`);
+        };
+
+        if (plugin.independentFiles) {
+          // Every file's run() is in flight at once, letting the plugin
+          // overlap per-file work; each result still lands per file above.
+          await Promise.all(sourceFiles.map(runPluginOnFile));
+        } else {
+          for (const sourceFile of sourceFiles) {
+            await runPluginOnFile(sourceFile);
+          }
         }
 
         for (const { fileName, text } of deferredWrites) {

@@ -300,6 +300,7 @@ yargs
         return {
           name: plugin.name,
           mutationsPreserveTypes: plugin.mutationsPreserveTypes,
+          independentFiles: plugin.independentFiles,
           async run(params) {
             const prevText = params.text;
             const nextText = await plugin.run(params);
@@ -313,6 +314,7 @@ yargs
       }
       const eslintFixChangedPlugin: Plugin = {
         name: 'eslint-fix-changed',
+        independentFiles: eslintFixPlugin.independentFiles,
         async run(params) {
           if (!changedFiles.has(params.fileName)) return undefined;
           if (changedFiles.get(params.fileName) === params.text) return undefined;

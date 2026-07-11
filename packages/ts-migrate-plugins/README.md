@@ -138,7 +138,7 @@ They did, and honestly that was one of the first things I regretted keeping. The
 
 > Why does eslint-fix use my project's ESLint instead of bundling one?
 
-Because the point of that step is to make the migrated code pass *your* lint setup, and only your ESLint install knows your plugins, parser, and rule set. It auto-detects flat versus legacy configs (ESLint 9 included). The flip side: if your config can't parse TypeScript yet, the plugin can't fix those files. It warns once and leaves them unchanged rather than guessing.
+Because the point of that step is to make the migrated code pass *your* lint setup, and only your ESLint install knows your plugins, parser, and rule set. It auto-detects flat versus legacy configs (ESLint 9 included). The flip side: if your config can't parse TypeScript yet, the plugin can't fix those files. It warns once and leaves them unchanged rather than guessing. Unless your config is type-aware (`parserOptions.project`/`projectService`, which would multiply TypeScript's memory use per thread), fixes spread across a worker pool once there is enough lint work to repay spinning it up — set `TS_MIGRATE_ESLINT_FIX_WORKERS` to force a pool size, or `0` to always lint in-process.
 
 > I have an issue with a specific plugin, what should I do?
 

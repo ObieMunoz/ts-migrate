@@ -33,6 +33,15 @@ export interface Plugin<TPluginOptions = unknown> {
   mutationsPreserveTypes?: boolean;
 
   /**
+   * Set when each file's new text depends only on that file's own current
+   * text — not on other files or on language service state that another
+   * file's edit could change mid-pass. The runner then keeps every file's
+   * run() call in flight at once instead of awaiting them one at a time,
+   * which lets the plugin overlap per-file work (e.g. in worker threads).
+   */
+  independentFiles?: boolean;
+
+  /**
    * Returns true if options is a valid options object for this plugin.
    * If options is invalid, it throws a PluginOptionsError.
    *
