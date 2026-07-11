@@ -34,6 +34,7 @@ import {
 import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
 import init from './commands/init';
 import rename from './commands/rename';
+import readAgentsPlaybook from './utils/agentsPlaybook';
 
 /** A recommendation report must never fail an otherwise successful run. */
 function printTypesPackageReport(
@@ -335,6 +336,14 @@ yargs
       process.exit(exitCode);
     },
   )
+  .command(
+    'agents',
+    'Print usage instructions for AI coding agents (non-interactive playbook)',
+    (cmd) => cmd,
+    () => {
+      process.stdout.write(readAgentsPlaybook());
+    },
+  )
   .example('$0 --help', 'Show help')
   .example('$0 migrate --help', 'Show help for the migrate command')
   .example('$0 init frontend/foo', 'Create tsconfig.json file at frontend/foo/tsconfig.json')
@@ -346,6 +355,11 @@ yargs
   .example(
     '$0 rename frontend/foo --s "bar/baz"',
     'Rename files in frontend/foo/bar/baz from JS/JSX to TS/TSX',
+  )
+  .example('$0 agents', 'Print the agent playbook')
+  .epilogue(
+    'AI coding agents: run `npx -p @obiemunoz/ts-migrate ts-migrate agents` for the full ' +
+      'non-interactive usage playbook.',
   )
   .demandCommand(1, 'Must provide a command.')
   .help('h')

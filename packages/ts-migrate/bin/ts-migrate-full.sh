@@ -2,8 +2,31 @@
 
 set -e
 
-frontend_folder=$1
-folder_name=`basename $1`
+# --yes and --no-commit belong to this script; everything else after the
+# folder is forwarded to the rename and migrate commands.
+auto_yes=false
+no_commit=false
+frontend_folder=""
+additional_args=()
+for arg in "$@"; do
+  case $arg in
+    --yes|-y) auto_yes=true ;;
+    --no-commit) no_commit=true ;;
+    *)
+      if [ -z "$frontend_folder" ]; then
+        frontend_folder=$arg
+      else
+        additional_args+=("$arg")
+      fi
+      ;;
+  esac
+done
+
+if [ -z "$frontend_folder" ]; then
+  echo "Usage: ts-migrate-full <folder> [--yes] [--no-commit] [rename/migrate options...]"
+  exit 1
+fi
+folder_name=$(basename "$frontend_folder")
 
 # Resolve this script's real location (following the symlinks npm/npx create
 # in .bin) so the bundled CLI is found regardless of the working directory.
@@ -27,7 +50,6 @@ step_i=1
 step_count=4
 tsc_path="./node_modules/.bin/tsc"
 should_remove_eslintrc=false
-additional_args="${@:2}"
 
 # The migrate step writes its type definition recommendations here so they can
 # be shown at the end of the run, where they won't scroll out of view.
@@ -63,21 +85,29 @@ It is recommended that you take the following steps before continuing...
 If you need help or have feedback, please file an issue at https://github.com/ObieMunoz/ts-migrate/issues
 "
 
-read -p "Continue? (y/N) " should_fetch_and_reset
-if [ "$should_fetch_and_reset" != "y" ] && [ "$should_fetch_and_reset" != "Y" ] # lol
-then
-  echo "See you later."
-  exit
-fi
+if [ "$auto_yes" != "true" ]; then
+  read -p "Continue? (y/N) " should_fetch_and_reset || {
+    echo "No input available; re-run with --yes to skip the prompts."
+    exit 1
+  }
+  if [ "$should_fetch_and_reset" != "y" ] && [ "$should_fetch_and_reset" != "Y" ] # lol
+  then
+    echo "See you later."
+    exit
+  fi
 
-read -p "Set a custom path for the typescript compiler. (It's an optional step. Skip if you don't need it. Default path is ./node_modules/.bin/tsc.): " custom_tsc_path
-if [[ -z "$custom_tsc_path" ]]; then
-  echo "Your default tsc path is $tsc_path."
-else
-  tsc_path=$custom_tsc_path;
+  read -p "Set a custom path for the typescript compiler. (It's an optional step. Skip if you don't need it. Default path is ./node_modules/.bin/tsc.): " custom_tsc_path || custom_tsc_path=""
+  if [[ -z "$custom_tsc_path" ]]; then
+    echo "Your default tsc path is $tsc_path."
+  else
+    tsc_path=$custom_tsc_path;
+  fi
 fi
 
 function maybe_commit() {
+  if [ "$no_commit" = "true" ]; then
+    return
+  fi
   cd $frontend_folder
   if [[ `git status --porcelain` ]]
   then
@@ -119,14 +149,14 @@ maybe_commit -m "[ts-migrate][$folder_name] Init tsconfig.json file" -m 'Co-auth
 echo "
 [Step $((step_i++)) of ${step_count}] Renaming files from JS/JSX to TS/TSX and updating project.json\...
 "
-cli rename $frontend_folder $additional_args
+cli rename "$frontend_folder" "${additional_args[@]}"
 
 maybe_commit -m "[ts-migrate][$folder_name] Rename files from JS/JSX to TS/TSX" -m 'Co-authored-by: ts-migrate <>'
 
 echo "
 [Step $((step_i++)) of ${step_count}] Fixing TypeScript errors...
 "
-cli migrate $frontend_folder --typesReportFile "$types_report_file" $additional_args
+cli migrate "$frontend_folder" --typesReportFile "$types_report_file" "${additional_args[@]}"
 
 if [ "$should_remove_eslintrc" = "true" ]; then
   rm -f $frontend_folder/.eslintrc
@@ -175,7 +205,7 @@ fi
 echo "
 Remaining cleanup — the rest of your tooling doesn't know about the rename yet:
 
-1. Sanity check the commits.
+1. Sanity check the commits (or, with --no-commit, the working tree).
 2. Add a build step (tsc) or a TS-aware runner (ts-node, tsx). If package.json
    \"main\" pointed at a renamed file, point it at build output that exists.
 3. Update scripts that reference old .js paths (mocha globs, jest patterns).

@@ -20,6 +20,7 @@
     "bin",
     "package.json",
     "README.md",
+    "AGENTS.md",
     "LICENSE"
   ],
   "repository": {
