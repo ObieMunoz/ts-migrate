@@ -21,33 +21,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-          cache: yarn
-
-      # Manifests are part of the key so a dependency change always misses and
-      # goes through a real frozen-lockfile install.
-      - name: Restore node_modules
-        id: node-modules
-        uses: actions/cache@v6
-        with:
-          path: |
-            node_modules
-            packages/*/node_modules
-          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('yarn.lock', 'package.json', 'packages/*/package.json') }}
+          cache: pnpm
 
       - name: Install dependencies
-        if: steps.node-modules.outputs.cache-hit != 'true'
-        run: yarn install --frozen-lockfile
-
-      # Nx state must never persist across runs via the node_modules cache
-      # (see the build job's Build step comment).
-      - name: Drop persisted Nx state
-        run: rm -rf node_modules/.cache/nx
+        run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: yarn lint
+        run: pnpm run lint
 
   build:
     runs-on: ubuntu-latest
@@ -71,52 +56,34 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: pnpm/action-setup@v4
+
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
-          cache: yarn
-
-      # The TypeScript version is part of the key because the saved node_modules
-      # contains the swapped compiler. Manifests are part of the key so a
-      # dependency change always misses and goes through a real frozen-lockfile
-      # install.
-      - name: Restore node_modules
-        id: node-modules
-        uses: actions/cache@v6
-        with:
-          path: |
-            node_modules
-            packages/*/node_modules
-          key: node-modules-${{ runner.os }}-node${{ matrix.node-version }}-ts${{ matrix.typescript-version }}-${{ hashFiles('yarn.lock', 'package.json', 'packages/*/package.json') }}
+          cache: pnpm
 
       - name: Install dependencies
-        if: steps.node-modules.outputs.cache-hit != 'true'
-        run: yarn install --frozen-lockfile
-
-      # Nx keeps task-runner state in node_modules/.cache/nx, which the cache
-      # above would otherwise persist across runs; scrub it so a lerna/nx
-      # default flip can never replay results from a restored cache.
-      - name: Drop persisted Nx state
-        run: rm -rf node_modules/.cache/nx
+        run: pnpm install --frozen-lockfile
 
       - name: Use TypeScript ${{ matrix.typescript-version }}
         run: |
           if [ "$(node -p "require('typescript').version")" != "${{ matrix.typescript-version }}" ]; then
-            yarn add -W -D -E typescript@${{ matrix.typescript-version }}
+            pnpm add -w -D -E typescript@${{ matrix.typescript-version }}
           fi
 
-      # The matrix swaps only the typescript version, which Nx doesn't hash. Never
-      # give this step a persisted Nx cache (e.g. actions/cache on .nx): a warm cache
-      # reports "Successfully ran" over a failing tsc, hiding real build breakage.
+      # The matrix swaps typescript without changing any file a content hash would
+      # see. Never put a task cache (nx/turbo) in front of these builds: a warm
+      # cache reports success over a failing tsc.
       - name: Build
-        run: yarn build
+        run: pnpm run build
 
       - name: Test
-        run: yarn test
+        run: pnpm run test
 
       - name: Example smoke test
         run: |
-          yarn --cwd packages/ts-migrate-example example
+          pnpm -C packages/ts-migrate-example run example
           grep -q 'first: number, second: number): number' packages/ts-migrate-example/src/input/index.ts
           git checkout -- packages/ts-migrate-example/src/input/index.ts

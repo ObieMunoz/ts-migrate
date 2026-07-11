@@ -11,9 +11,10 @@
   "private": true,
   "description": "ts-migrate monorepo — maintained fork of airbnb/ts-migrate, updated for TypeScript 5+",
   "author": "Obie Munoz <obiemunozjr@gmail.com>",
+  "packageManager": "pnpm@10.34.5",
   "scripts": {
-    "build": "lerna run build",
-    "lint": "lerna run lint",
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r run lint",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest"
   },
   "devDependencies": {
@@ -45,23 +46,22 @@
     "ts-jest": "^29.1.0",
     "typescript": "5.9.3"
   },
-  "resolutions": {
-    "@babel/core": "^7.29.6",
-    "@babel/helpers": "^7.26.10",
-    "@babel/plugin-transform-modules-systemjs": "^7.29.4",
-    "@babel/runtime": "^7.26.10",
-    "@babel/runtime-corejs3": "^7.26.10",
-    "braces": "^3.0.3",
-    "micromatch": "^4.0.8",
-    "cross-spawn": "^7.0.6",
-    "flatted": "^3.4.2",
-    "diff": "^4.0.4",
-    "core-js-compat": "^3.40.0",
-    "lerna/tar": "^7.5.16",
-    "lerna/js-yaml": "^4.2.0"
+  "pnpm": {
+    "overrides": {
+      "@babel/core": "^7.29.6",
+      "@babel/helpers": "^7.26.10",
+      "@babel/plugin-transform-modules-systemjs": "^7.29.4",
+      "@babel/runtime": "^7.26.10",
+      "@babel/runtime-corejs3": "^7.26.10",
+      "braces": "^3.0.3",
+      "micromatch": "^4.0.8",
+      "cross-spawn": "^7.0.6",
+      "flatted": "^3.4.2",
+      "diff": "^4.0.4",
+      "core-js-compat": "^3.40.0",
+      "lerna>tar": "^7.5.16",
+      "lerna>js-yaml": "^4.2.0"
+    }
   },
-  "workspaces": [
-    "packages/*"
-  ],
   "license": "MIT"
 }

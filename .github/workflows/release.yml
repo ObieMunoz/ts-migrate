@@ -22,22 +22,24 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-          cache: yarn
+          cache: pnpm
 
       - name: Update npm for trusted publishing
         run: npm install -g npm@latest
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: yarn build
+        run: pnpm run build
 
       - name: Test
-        run: yarn test
+        run: pnpm run test
 
       - name: Configure git for the release commit
         run: |
@@ -45,9 +47,9 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Version and create GitHub release
-        run: npx lerna version --yes
+        run: pnpm exec lerna version --yes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to npm
-        run: npx lerna publish from-package --yes
+        run: pnpm exec lerna publish from-package --yes
