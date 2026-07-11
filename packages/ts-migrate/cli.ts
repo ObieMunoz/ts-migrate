@@ -80,7 +80,7 @@ const availablePlugins = [
 
 // eslint-disable-next-line no-unused-expressions
 yargs
-  .scriptName('npm run ts-migrate --')
+  .scriptName('ts-migrate')
   .version(false)
   .usage('Usage: $0 <command> [options]')
   .command(

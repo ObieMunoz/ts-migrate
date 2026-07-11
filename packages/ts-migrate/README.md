@@ -51,31 +51,29 @@ Or, you can run individual CLI commands:
 ```
 $ npx -p @obiemunoz/ts-migrate ts-migrate --help
 
-Usage: npm run ts-migrate -- <command> [options]
+Usage: ts-migrate <command> [options]
 
 Commands:
-  npm run ts-migrate -- init <folder>               Initialize tsconfig.json file in <folder>
-  npm run ts-migrate -- init:extended <folder>      Initialize tsconfig.json file in <folder>
-  npm run ts-migrate -- rename [options] <folder>   Rename files in folder from JS/JSX to TS/TSX
-  npm run ts-migrate -- migrate [options] <folder>  Fix TypeScript errors, using codemods
-  npm run ts-migrate -- reignore <folder>           Re-run ts-ignore on a project
-  npm run ts-migrate -- agents                      Print usage instructions for AI coding agents
-                                                    (non-interactive playbook)
+  ts-migrate init <folder>               Initialize tsconfig.json file in <folder>
+  ts-migrate init:extended <folder>      Initialize tsconfig.json file in <folder>
+  ts-migrate rename [options] <folder>   Rename files in folder from JS/JSX to TS/TSX
+  ts-migrate migrate [options] <folder>  Fix TypeScript errors, using codemods
+  ts-migrate reignore <folder>           Re-run ts-ignore on a project
+  ts-migrate agents                      Print usage instructions for AI coding agents (non-interactive playbook)
 
 Options:
   -h, --help  Show help  [boolean]
 
 Examples:
-  npm run ts-migrate -- --help                             Show help
-  npm run ts-migrate -- migrate --help                     Show help for the migrate command
-  npm run ts-migrate -- init frontend/foo                  Create tsconfig.json file at frontend/foo/tsconfig.json
-  npm run ts-migrate -- init:extended frontend/foo         Create extended from the base tsconfig.json file at frontend/foo/tsconfig.json
-  npm run ts-migrate -- rename frontend/foo                Rename files in frontend/foo from JS/JSX to TS/TSX
-  npm run ts-migrate -- rename frontend/foo --s "bar/baz"  Rename files in frontend/foo/bar/baz from JS/JSX to TS/TSX
-  npm run ts-migrate -- agents                             Print the agent playbook
+  ts-migrate --help                             Show help
+  ts-migrate migrate --help                     Show help for the migrate command
+  ts-migrate init frontend/foo                  Create tsconfig.json file at frontend/foo/tsconfig.json
+  ts-migrate init:extended frontend/foo         Create extended from the base tsconfig.json file at frontend/foo/tsconfig.json
+  ts-migrate rename frontend/foo                Rename files in frontend/foo from JS/JSX to TS/TSX
+  ts-migrate rename frontend/foo --s "bar/baz"  Rename files in frontend/foo/bar/baz from JS/JSX to TS/TSX
+  ts-migrate agents                             Print the agent playbook
 
-AI coding agents: run `npx -p @obiemunoz/ts-migrate ts-migrate agents` for the
-full non-interactive usage playbook.
+AI coding agents: run `npx -p @obiemunoz/ts-migrate ts-migrate agents` for the full non-interactive usage playbook.
 ```
 
 The `rename` and `migrate` commands accept a `--sources` (or `-s`) flag. This flag
