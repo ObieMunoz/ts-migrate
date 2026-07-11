@@ -269,7 +269,7 @@ function projectTypeScriptVersion(rootDir: string): string | undefined {
     try {
       const packageJsonPath = path.join(dir, 'node_modules', 'typescript', 'package.json');
       return JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')).version;
-    } catch (e) {
+    } catch {
       if (path.dirname(dir) === dir) return undefined;
     }
   }

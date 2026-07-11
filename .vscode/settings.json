@@ -1,5 +1,6 @@
 {
-    // Disable formatOnSave for TS/JS since ESLint takes care of this
+    // Disable formatOnSave for TS/JS; formatting is not lint-enforced and
+    // editor formatters would create churn
     "[javascript]": {
         "editor.formatOnSave": false
     },
