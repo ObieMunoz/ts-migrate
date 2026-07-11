@@ -33,7 +33,7 @@ Migrate an entire project like this:
 ```sh
 npx -p @obiemunoz/ts-migrate ts-migrate-full <folder>
 ```
-The `ts-migrate-full` command will perform a `git add` and `git commit` after each major step (_[details here]( https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate/bin/ts-migrate-full.sh )_).
+The `ts-migrate-full` command asks for confirmation before it starts and will perform a `git add` and `git commit` after each major step (_[details here]( https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate/bin/ts-migrate-full.sh )_). For unattended runs — scripts, CI, AI coding agents — pass `--yes` to skip the prompts and `--no-commit` to leave the changes uncommitted in the working tree.
 
 Please note that it may take a long time to do a full migration.
 You can also migrate individual parts of a project by specifying a subset of sources:
@@ -59,6 +59,8 @@ Commands:
   npm run ts-migrate -- rename [options] <folder>   Rename files in folder from JS/JSX to TS/TSX
   npm run ts-migrate -- migrate [options] <folder>  Fix TypeScript errors, using codemods
   npm run ts-migrate -- reignore <folder>           Re-run ts-ignore on a project
+  npm run ts-migrate -- agents                      Print usage instructions for AI coding agents
+                                                    (non-interactive playbook)
 
 Options:
   -h, --help  Show help  [boolean]
@@ -70,6 +72,10 @@ Examples:
   npm run ts-migrate -- init:extended frontend/foo         Create extended from the base tsconfig.json file at frontend/foo/tsconfig.json
   npm run ts-migrate -- rename frontend/foo                Rename files in frontend/foo from JS/JSX to TS/TSX
   npm run ts-migrate -- rename frontend/foo --s "bar/baz"  Rename files in frontend/foo/bar/baz from JS/JSX to TS/TSX
+  npm run ts-migrate -- agents                             Print the agent playbook
+
+AI coding agents: run `npx -p @obiemunoz/ts-migrate ts-migrate agents` for the
+full non-interactive usage playbook.
 ```
 
 The `rename` and `migrate` commands accept a `--sources` (or `-s`) flag. This flag
@@ -99,6 +105,42 @@ the most expensive part of a migration:
 - `--no-incrementalPasses` makes every repeat pass revisit all files, instead of
   only the files affected by the previous pass's changes (as computed from the
   import graph).
+
+# Using ts-migrate with AI agents
+
+The package ships a playbook written for AI coding agents (Claude Code, Cursor,
+Codex, ...) covering non-interactive usage, the recommended migration workflow,
+and the failure modes agents tend to hit. Print it with:
+
+```sh
+npx -p @obiemunoz/ts-migrate ts-migrate agents
+```
+
+The same document is published as [AGENTS.md](./AGENTS.md) in this package. The
+essentials: run the full pipeline non-interactively with
+
+```sh
+npx -p @obiemunoz/ts-migrate ts-migrate-full <folder> --yes --no-commit
+```
+
+where `--yes` skips the confirmation prompts and `--no-commit` leaves the
+changes in the working tree instead of creating git commits.
+
+To point your repository's agents at the tool, paste this into your project's
+`CLAUDE.md` / `AGENTS.md`:
+
+```markdown
+## Migrating JavaScript to TypeScript
+
+Use `@obiemunoz/ts-migrate` — a bare `npx ts-migrate` would fetch the
+unmaintained upstream package. First print and follow the tool's playbook:
+
+    npx -p @obiemunoz/ts-migrate ts-migrate agents
+
+Then run the migration non-interactively:
+
+    npx -p @obiemunoz/ts-migrate ts-migrate-full <folder> --yes --no-commit
+```
 
 # Reignore
 
