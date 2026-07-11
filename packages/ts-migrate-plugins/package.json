@@ -33,7 +33,7 @@
     "lint": "eslint .",
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf build",
-    "prepack": "yarn clean && yarn build"
+    "prepack": "pnpm run clean && pnpm run build"
   },
   "contributors": [
     {
@@ -60,7 +60,7 @@
   "homepage": "https://github.com/ObieMunoz/ts-migrate#readme",
   "license": "MIT",
   "dependencies": {
-    "@obiemunoz/ts-migrate-server": "^0.10.0",
+    "@obiemunoz/ts-migrate-server": "workspace:^",
     "eslint": "^9.18.0",
     "jiti": "^2.4.2",
     "json-schema": "^0.4.0"

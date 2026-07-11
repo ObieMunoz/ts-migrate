@@ -33,7 +33,7 @@
     "lint": "eslint . --ext=.js,.jsx,.ts,.tsx --ignore-path ../../.eslintignore",
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf build",
-    "prepack": "yarn clean && yarn build"
+    "prepack": "pnpm run clean && pnpm run build"
   },
   "contributors": [
     {
