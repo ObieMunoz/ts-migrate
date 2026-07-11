@@ -1,8 +1,6 @@
 import fs from 'fs';
 import glob from 'glob';
 import path from 'path';
-// eslint-disable-next-line import/no-extraneous-dependencies
-import rimraf from 'rimraf';
 import log from 'updatable-log';
 
 function assertDirExists(dir: string) {
@@ -46,7 +44,7 @@ export function copyDir(srcDir: string, destDir: string) {
 
 export function deleteDir(dir: string) {
   assertDirExists(dir);
-  rimraf.sync(dir);
+  fs.rmSync(dir, { recursive: true, force: true });
 }
 
 export function getDirData(dir1: string, dir2: string) {
