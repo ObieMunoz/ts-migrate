@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 /* eslint-disable no-await-in-loop, no-restricted-syntax */
+import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 import yargs from 'yargs';
@@ -39,10 +40,16 @@ function printTypesPackageReport(
   detector: TypesPackageDetector,
   rootDir: string,
   folder: string,
+  reportFile?: string,
 ): void {
   try {
     const report = formatTypesPackageReport(detector.summarize(rootDir), folder);
-    if (report) log.info(report);
+    if (!report) return;
+    if (reportFile) {
+      fs.writeFileSync(reportFile, `${report}\n`);
+    } else {
+      log.info(report);
+    }
   } catch (err) {
     log.warn('Skipped type definition recommendations:', err);
   }
@@ -154,6 +161,11 @@ yargs
           'incrementalPasses',
           'Revisit only files affected by the previous pass when repeating plugins. Disable with --no-incrementalPasses.',
         )
+        .string('typesReportFile')
+        .describe(
+          'typesReportFile',
+          'Write the type definition recommendations to this file instead of printing them. Used by ts-migrate-full to show the report at the end of the run.',
+        )
         .example('migrate /frontend/foo', 'Migrate all the files in /frontend/foo')
         .example(
           '$0 migrate /frontend/foo -s "bar/**/*" -s "node_modules/**/*.d.ts"',
@@ -259,7 +271,7 @@ yargs
       });
 
       if (typesPackageDetector) {
-        printTypesPackageReport(typesPackageDetector, rootDir, args.folder);
+        printTypesPackageReport(typesPackageDetector, rootDir, args.folder, args.typesReportFile);
       }
 
       process.exit(exitCode);

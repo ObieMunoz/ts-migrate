@@ -29,6 +29,11 @@ tsc_path="./node_modules/.bin/tsc"
 should_remove_eslintrc=false
 additional_args="${@:2}"
 
+# The migrate step writes its type definition recommendations here so they can
+# be shown at the end of the run, where they won't scroll out of view.
+types_report_file=$(mktemp)
+trap 'rm -f "$types_report_file"' EXIT
+
 
 echo "Welcome to TS Migrate! :D
 
@@ -121,7 +126,7 @@ maybe_commit -m "[ts-migrate][$folder_name] Rename files from JS/JSX to TS/TSX" 
 echo "
 [Step $((step_i++)) of ${step_count}] Fixing TypeScript errors...
 "
-cli migrate $frontend_folder $additional_args
+cli migrate $frontend_folder --typesReportFile "$types_report_file" $additional_args
 
 if [ "$should_remove_eslintrc" = "true" ]; then
   rm -f $frontend_folder/.eslintrc
@@ -160,27 +165,20 @@ echo "${tsc_cmd[*]} -p $frontend_folder/tsconfig.json --noEmit"
 
 echo "
 ---
-All done!
+All done! Your project compiles with TypeScript now."
 
-Your project compiles with TypeScript now. That being said, the rest of your
-tooling doesn't know about the rename yet, so there is usually some cleanup
-left before everything runs again:
+if [ -s "$types_report_file" ]; then
+  echo ""
+  cat "$types_report_file"
+fi
 
-1. Sanity check your changes locally by inspecting the commits.
+echo "
+Remaining cleanup — the rest of your tooling doesn't know about the rename yet:
 
-2. Give the project a way to produce JS again: add a build step (tsc) or a
-   TS-aware runner (ts-node, tsx). If package.json \"main\" pointed at a renamed
-   file, point it at build output that actually exists.
-
-3. Update scripts that reference old .js paths, like a mocha glob of
-   test/*.js, jest patterns, or docs generators.
-
+1. Sanity check the commits.
+2. Add a build step (tsc) or a TS-aware runner (ts-node, tsx). If package.json
+   \"main\" pointed at a renamed file, point it at build output that exists.
+3. Update scripts that reference old .js paths (mocha globs, jest patterns).
 4. Teach ESLint about TypeScript (the @typescript-eslint parser and plugin).
-   Until then, linting will either fail to parse .ts files or find no files at all.
-
-5. Install the packages from the \"Type definition recommendations\" report
-   printed above (e.g. @types/node, your test runner's types), then re-run
-   \`ts-migrate reignore <folder>\` to drop the suppressions they resolve.
-
-6. Push your changes with \`git push\` and open a PR!
+5. Push your changes with \`git push\` and open a PR!
 "
