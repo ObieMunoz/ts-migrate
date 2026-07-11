@@ -21,10 +21,11 @@ Or [pnpm](https://pnpm.io):
 The CLI commands are still named `ts-migrate` and `ts-migrate-full`. Because the
 package is scoped, one-off `npx` runs need the `-p @obiemunoz/ts-migrate` flag to
 tell npx which package provides those commands: a bare `npx ts-migrate-full ...`
-would download the unmaintained upstream `ts-migrate` package instead. If you've
-installed `@obiemunoz/ts-migrate` as a devDependency of your project, the commands
-are already in `node_modules/.bin`, so plain `npx ts-migrate-full <folder>` (or an
-npm script) resolves to this fork.
+would download the unmaintained upstream `ts-migrate` package instead. The pnpm
+equivalent is `pnpm --package=@obiemunoz/ts-migrate dlx ts-migrate-full ...`.
+If you've installed `@obiemunoz/ts-migrate` as a devDependency of your project,
+the commands are already in `node_modules/.bin`, so `npx ts-migrate-full <folder>`,
+`pnpm ts-migrate-full <folder>`, or a package.json script all resolve to this fork.
 
 # Usage
 
@@ -46,36 +47,35 @@ npx -p @obiemunoz/ts-migrate ts-migrate-full <folder> \
   --sources="node_modules/**/*.d.ts"
 ```
 
-Or, you can run individual CLI commands:
+Or, you can run individual CLI commands (the help text lists them by bin name —
+prefix with your runner: `npx ts-migrate ...` or `pnpm ts-migrate ...`):
 
 ```
 $ npx -p @obiemunoz/ts-migrate ts-migrate --help
 
-Usage: npm run ts-migrate -- <command> [options]
+Usage: ts-migrate <command> [options]
 
 Commands:
-  npm run ts-migrate -- init <folder>               Initialize tsconfig.json file in <folder>
-  npm run ts-migrate -- init:extended <folder>      Initialize tsconfig.json file in <folder>
-  npm run ts-migrate -- rename [options] <folder>   Rename files in folder from JS/JSX to TS/TSX
-  npm run ts-migrate -- migrate [options] <folder>  Fix TypeScript errors, using codemods
-  npm run ts-migrate -- reignore <folder>           Re-run ts-ignore on a project
-  npm run ts-migrate -- agents                      Print usage instructions for AI coding agents
-                                                    (non-interactive playbook)
+  ts-migrate init <folder>               Initialize tsconfig.json file in <folder>
+  ts-migrate init:extended <folder>      Initialize tsconfig.json file in <folder>
+  ts-migrate rename [options] <folder>   Rename files in folder from JS/JSX to TS/TSX
+  ts-migrate migrate [options] <folder>  Fix TypeScript errors, using codemods
+  ts-migrate reignore <folder>           Re-run ts-ignore on a project
+  ts-migrate agents                      Print usage instructions for AI coding agents (non-interactive playbook)
 
 Options:
   -h, --help  Show help  [boolean]
 
 Examples:
-  npm run ts-migrate -- --help                             Show help
-  npm run ts-migrate -- migrate --help                     Show help for the migrate command
-  npm run ts-migrate -- init frontend/foo                  Create tsconfig.json file at frontend/foo/tsconfig.json
-  npm run ts-migrate -- init:extended frontend/foo         Create extended from the base tsconfig.json file at frontend/foo/tsconfig.json
-  npm run ts-migrate -- rename frontend/foo                Rename files in frontend/foo from JS/JSX to TS/TSX
-  npm run ts-migrate -- rename frontend/foo --s "bar/baz"  Rename files in frontend/foo/bar/baz from JS/JSX to TS/TSX
-  npm run ts-migrate -- agents                             Print the agent playbook
+  ts-migrate --help                             Show help
+  ts-migrate migrate --help                     Show help for the migrate command
+  ts-migrate init frontend/foo                  Create tsconfig.json file at frontend/foo/tsconfig.json
+  ts-migrate init:extended frontend/foo         Create extended from the base tsconfig.json file at frontend/foo/tsconfig.json
+  ts-migrate rename frontend/foo                Rename files in frontend/foo from JS/JSX to TS/TSX
+  ts-migrate rename frontend/foo --s "bar/baz"  Rename files in frontend/foo/bar/baz from JS/JSX to TS/TSX
+  ts-migrate agents                             Print the agent playbook
 
-AI coding agents: run `npx -p @obiemunoz/ts-migrate ts-migrate agents` for the
-full non-interactive usage playbook.
+AI coding agents: run `npx -p @obiemunoz/ts-migrate ts-migrate agents` for the full non-interactive usage playbook.
 ```
 
 The `rename` and `migrate` commands accept a `--sources` (or `-s`) flag. This flag
