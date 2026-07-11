@@ -18,7 +18,7 @@ so use a Conventional Commits title with the package as the scope, e.g.:
 
 ## Checklist
 
-- [ ] `yarn build`, `yarn test`, and `yarn lint` pass locally
+- [ ] `pnpm run build`, `pnpm run test`, and `pnpm run lint` pass locally
 - [ ] Tests added or updated for behavior changes
 - [ ] Docs updated where relevant (package README, `packages/ts-migrate/AGENTS.md` for CLI behavior changes)
 - [ ] PR title follows Conventional Commits with a package scope (drives lerna versioning)
