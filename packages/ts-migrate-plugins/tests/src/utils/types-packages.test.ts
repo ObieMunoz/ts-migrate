@@ -109,7 +109,7 @@ describe('summarizeTypesEvidence', () => {
     const formatted = formatTypesPackageReport(report, 'src')!;
     expect(formatted).toContain('Install: yarn add -D @types/jest @types/node');
     expect(formatted).toContain('Then try: yarn add -D @types/lodash @types/acme__priv');
-    expect(formatted).toContain('npx ts-migrate reignore src');
+    expect(formatted).toContain('npx -p @obiemunoz/ts-migrate ts-migrate reignore src');
   });
 
   it('suggests tsconfig wiring instead of an install when the package is already present', () => {
@@ -277,7 +277,7 @@ describe('formatTypesPackageReport', () => {
         Possibly redundant (the library ships its own types):
           @types/axios — axios bundles its own type definitions
         Note: 1 more untyped import(s) omitted.
-        After installing type definitions, rerun: npx ts-migrate reignore src"
+        After installing type definitions, rerun: npx -p @obiemunoz/ts-migrate ts-migrate reignore src"
     `);
   });
 });

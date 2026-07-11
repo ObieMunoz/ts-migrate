@@ -119,7 +119,8 @@ they are missing environment types. Without `@types/node`, every `require`,
 your test runner's types, so does every `describe` and `it`.
 
 `migrate` and `reignore` detect this from the compiler diagnostics themselves and
-end the run with a report:
+end the run with a report (`ts-migrate-full` holds it back until the very end,
+after the compile check):
 
 ```
 Type definition recommendations:
@@ -130,7 +131,7 @@ Type definition recommendations:
     @types/lodash — 1 error in 1 file (import 'lodash')
   Install: yarn add -D @types/node @types/jest
   Then try: yarn add -D @types/lodash
-  After installing type definitions, rerun: npx ts-migrate reignore <folder>
+  After installing type definitions, rerun: npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>
 ```
 
 Installing the packages and re-running `reignore` deletes every suppression they
@@ -177,7 +178,7 @@ The tool's contract is narrow on purpose: when it finishes, `tsc` compiles your 
 1. **Give the project a way to produce JS again.** Add a build step (`tsc`) or a TS-aware runner (ts-node, tsx). If package.json `main` pointed at a renamed file, point it at build output that actually exists.
 2. **Update scripts that reference old `.js` paths.** A mocha glob like `test/*.js` now matches nothing. Same idea for jest patterns and docs generators.
 3. **Teach ESLint about TypeScript.** Until the `@typescript-eslint` parser and plugin are in place, `eslint .` will either fail to parse `.ts` files or find no files at all. The eslint-fix step of the migration uses your project's own ESLint, so it skips unparseable files too until this is done.
-4. **Install missing `@types` packages, then re-run reignore.** `npm i -D @types/node` plus the types for your test runner, then `npx ts-migrate reignore <folder>` to drop the suppression comments you no longer need.
+4. **Install missing `@types` packages, then re-run reignore.** `npm i -D @types/node` plus the types for your test runner, then `npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>` to drop the suppression comments you no longer need.
 
 Honestly, item 4 is worth doing before you migrate at all. With the environment types in place, globals like `require` and `describe` resolve to real types instead of a wall of suppressed "Cannot find name" errors.
 
@@ -197,7 +198,7 @@ No, and I feel like anyone who tells you otherwise is selling something. The inf
 
 > I see lots of `@ts-expect-error` and `any`. Is that expected?
 
-Yes. The output is a starting point, not a finish line. That being said, two things shrink the wall of comments considerably. First, install your `@types` packages before migrating: on one plain CommonJS library I tested, roughly 90 of the 101 suppressions were just missing environment types (`require`, `describe`, and friends), not real type problems. Second, whenever you improve types or add `@types` packages later, re-run `npx ts-migrate reignore <folder>` to strip the suppressions that are no longer needed.
+Yes. The output is a starting point, not a finish line. That being said, two things shrink the wall of comments considerably. First, install your `@types` packages before migrating: on one plain CommonJS library I tested, roughly 90 of the 101 suppressions were just missing environment types (`require`, `describe`, and friends), not real type problems. Second, whenever you improve types or add `@types` packages later, re-run `npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>` to strip the suppressions that are no longer needed.
 
 > What is `$TSFixMe`?
 

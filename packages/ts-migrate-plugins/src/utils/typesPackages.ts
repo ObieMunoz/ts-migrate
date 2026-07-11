@@ -548,7 +548,10 @@ export function formatTypesPackageReport(
   report.notes.forEach((note) => lines.push(`  Note: ${note}`));
 
   if (report.missing.length > 0 || report.untyped.length > 0 || report.notLoaded.length > 0) {
-    lines.push(`  After installing type definitions, rerun: npx ts-migrate reignore ${folder}`);
+    lines.push(
+      '  After installing type definitions, rerun: ' +
+        `npx -p @obiemunoz/ts-migrate ts-migrate reignore ${folder}`,
+    );
   }
 
   if (lines.length === 0) return null;
