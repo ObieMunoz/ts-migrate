@@ -1,7 +1,8 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import init from '../../../commands/init';
-import { createDir, deleteDir } from '../../test-utils';
+import { deleteDir } from '../../test-utils';
 
 jest.mock('updatable-log', () => {
   // eslint-disable-next-line global-require
@@ -19,7 +20,10 @@ describe('init command', () => {
   let rootDir: string;
 
   beforeEach(() => {
-    rootDir = createDir();
+    // An OS temp dir rather than one inside this repo: init scans the
+    // project directory and its ancestors for node_modules/@types, and the
+    // workspace's own @types packages would leak into the generated config.
+    rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ts-migrate-init-'));
   });
 
   afterEach(() => {
@@ -81,6 +85,69 @@ describe('init command', () => {
     init({ rootDir, isExtendedConfig: false });
 
     expect(readConfig(rootDir).compilerOptions.module).toBe('commonjs');
+  });
+
+  it('pins installed @types packages in the "types" array', () => {
+    const typesDir = path.join(rootDir, 'node_modules', '@types');
+    const addTypesPackage = (name: string, packageJson?: Record<string, unknown>) => {
+      fs.mkdirSync(path.join(typesDir, name), { recursive: true });
+      if (packageJson) {
+        fs.writeFileSync(path.join(typesDir, name, 'package.json'), JSON.stringify(packageJson));
+      }
+    };
+    addTypesPackage('node', { name: '@types/node' });
+    addTypesPackage('mocha', { name: '@types/mocha' });
+    // A stub for a library that ships its own types; the compiler's
+    // automatic inclusion skips these.
+    addTypesPackage('json5', { name: '@types/json5', typings: null });
+    addTypesPackage('.cache');
+
+    init({ rootDir, isExtendedConfig: false });
+
+    expect(readConfig(rootDir).compilerOptions.types).toEqual(['mocha', 'node']);
+  });
+
+  it('pins @types packages hoisted to an ancestor node_modules', () => {
+    const appDir = path.join(rootDir, 'packages', 'app');
+    fs.mkdirSync(appDir, { recursive: true });
+    const reactDir = path.join(rootDir, 'node_modules', '@types', 'react');
+    fs.mkdirSync(reactDir, { recursive: true });
+    fs.writeFileSync(path.join(reactDir, 'package.json'), JSON.stringify({ name: '@types/react' }));
+
+    init({ rootDir: appDir, isExtendedConfig: false });
+
+    expect(readConfig(appDir).compilerOptions.types).toEqual(['react']);
+  });
+
+  it('ignores @types packages above the repository boundary', () => {
+    // A stray install outside the repo resolves on this machine only;
+    // pinning it would be a hard TS2688 on any other checkout.
+    const strayDir = path.join(rootDir, 'node_modules', '@types', 'stray');
+    fs.mkdirSync(strayDir, { recursive: true });
+    fs.writeFileSync(path.join(strayDir, 'package.json'), JSON.stringify({ name: '@types/stray' }));
+    const repoDir = path.join(rootDir, 'repo');
+    fs.mkdirSync(path.join(repoDir, '.git'), { recursive: true });
+    const nodeDir = path.join(repoDir, 'node_modules', '@types', 'node');
+    fs.mkdirSync(nodeDir, { recursive: true });
+    fs.writeFileSync(path.join(nodeDir, 'package.json'), JSON.stringify({ name: '@types/node' }));
+
+    init({ rootDir: repoDir, isExtendedConfig: false });
+
+    expect(readConfig(repoDir).compilerOptions.types).toEqual(['node']);
+  });
+
+  it('skips dangling @types symlinks like the compiler does', () => {
+    const typesDir = path.join(rootDir, 'node_modules', '@types');
+    fs.mkdirSync(path.join(typesDir, 'node'), { recursive: true });
+    fs.writeFileSync(
+      path.join(typesDir, 'node', 'package.json'),
+      JSON.stringify({ name: '@types/node' }),
+    );
+    fs.symlinkSync(path.join(rootDir, 'nowhere'), path.join(typesDir, 'gone'));
+
+    init({ rootDir, isExtendedConfig: false });
+
+    expect(readConfig(rootDir).compilerOptions.types).toEqual(['node']);
   });
 
   it('does not overwrite an existing tsconfig.json', () => {

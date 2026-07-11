@@ -298,6 +298,8 @@ export interface TypesPackageReport {
   outdated: { packageName: string; installedVersion: string; suggestion: string }[];
   redundant: { packageName: string; libName: string }[];
   notes: string[];
+  /** The tsconfig pins a "types" array, so installing a package is not enough to load it. */
+  typesPinned?: boolean;
 }
 
 function typesPackageFor(moduleName: string): string {
@@ -327,6 +329,7 @@ export function summarizeTypesEvidence(
     outdated: [],
     redundant: [],
     notes: [],
+    typesPinned: evidence.compilerTypes !== undefined,
   };
 
   const nearest = findNearestPackageJson(rootDir);
@@ -525,6 +528,12 @@ export function formatTypesPackageReport(
   if (report.untyped.length > 0) {
     const verb = report.missing.length > 0 ? 'Then try' : 'Try';
     lines.push(`  ${verb}: ${install} ${report.untyped.map((rec) => rec.packageName).join(' ')}`);
+  }
+  if (report.typesPinned && (report.missing.length > 0 || report.untyped.length > 0)) {
+    lines.push(
+      '  Then add each installed package to the "types" array in tsconfig.json' +
+        ' (drop the "@types/" prefix).',
+    );
   }
 
   if (report.notLoaded.length > 0) {

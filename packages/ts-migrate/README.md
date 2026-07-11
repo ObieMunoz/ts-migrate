@@ -182,6 +182,9 @@ resolve. The report only recommends what the diagnostics prove is missing:
 - A package that is installed and working is never mentioned.
 - A package that is installed but hidden by the tsconfig `types` array (or a
   `typeRoots` override) gets a config suggestion instead of an install.
+- When the tsconfig pins a `types` array (the config `ts-migrate init` writes
+  pins whichever `@types` packages it finds installed), the report reminds you
+  to add newly installed packages to that array as well.
 - Installed `@types` packages whose major version lags the library (or Node
   version) they describe are listed as possibly outdated.
 - `@types` packages made redundant by a library that now ships its own types are
@@ -236,13 +239,17 @@ Upstream has been unmaintained since 2022 and tops out at TypeScript 4. I needed
 
 5.x and 6.x (the peer range is `>=5.0 <7`). Support for the TypeScript 7 native port is in progress; the compiler API is moving around enough that I'd rather land it properly than rush it.
 
+> Why does the generated tsconfig pin a `types` array?
+
+TypeScript 6 stopped loading `node_modules/@types` automatically (bulk inclusion now requires `types: ["*"]`, which TypeScript 5 rejects as a package name). Naming the installed packages is the only form both majors read identically. Without it, the TypeScript that ts-migrate runs and the `tsc` your project runs can disagree about whether globals like `require` and `describe` exist — one adds suppressions the other reports as unused (TS2578). The trade-off: after installing a new `@types` package, add it to the array.
+
 > Can it magically figure out all the types?
 
 No, and I feel like anyone who tells you otherwise is selling something. The infer-types step does real inference where the language service can prove a type from how a value is used (and from propTypes on React components). Everything it can't prove falls back to `any` with a suppression comment. I'm very much of the mindset that a project that compiles today and gets better types incrementally beats a migration that stalls at 80% trying to be perfect.
 
 > I see lots of `@ts-expect-error` and `any`. Is that expected?
 
-Yes. The output is a starting point, not a finish line. That being said, two things shrink the wall of comments considerably. First, install your `@types` packages before migrating: on one plain CommonJS library I tested, roughly 90 of the 101 suppressions were just missing environment types (`require`, `describe`, and friends), not real type problems. Second, whenever you improve types or add `@types` packages later, re-run `npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>` to strip the suppressions that are no longer needed.
+Yes. The output is a starting point, not a finish line. That being said, two things shrink the wall of comments considerably. First, install your `@types` packages before migrating: on one plain CommonJS library I tested, roughly 90 of the 101 suppressions were just missing environment types (`require`, `describe`, and friends), not real type problems. Second, whenever you improve types or add `@types` packages later, re-run `npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>` to strip the suppressions that are no longer needed (if your tsconfig pins a `types` array — the generated one does — add the new package names there first).
 
 > What is `$TSFixMe`?
 
@@ -259,6 +266,10 @@ Type inference is the expensive part, and it's several times faster now than it 
 > Is ts-migrate React-specific?
 
 No. The default pipeline includes React-focused plugins because that's the tool's heritage, but they no-op quickly on anything else. Running against a plain CommonJS i18n library, every React plugin finished in about a millisecond and changed nothing, and the migration came out correct.
+
+> The final compile check failed on files I didn't migrate.
+
+Suppression comments can only fix type errors in the migrated files. If the project references a declaration file that doesn't parse — hand-written or produced by a code generator — every `tsc` run fails on it regardless of what the migration did. The migrate step lists such files up front (look for "syntax errors ts-migrate cannot fix" in the log): fix or regenerate them, or exclude them in tsconfig.json, then re-run the compile check. Re-running the migration will not change them.
 
 > ts-migrate broke my code!
 

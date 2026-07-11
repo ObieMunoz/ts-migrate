@@ -112,6 +112,24 @@ describe('summarizeTypesEvidence', () => {
     expect(formatted).toContain('npx -p @obiemunoz/ts-migrate ts-migrate reignore src');
   });
 
+  it('tells the user to extend a pinned "types" array after installing', () => {
+    const rootDir = makeFixture({ 'package.json': JSON.stringify({}) });
+
+    const unpinned = summarizeTypesEvidence(nodeAndTestRunnerEvidence(), rootDir);
+    expect(unpinned.typesPinned).toBe(false);
+    expect(formatTypesPackageReport(unpinned, 'src')).not.toContain(
+      'add each installed package to the "types" array',
+    );
+
+    const evidence = nodeAndTestRunnerEvidence();
+    evidence.compilerTypes = ['mocha'];
+    const report = summarizeTypesEvidence(evidence, rootDir);
+    expect(report.typesPinned).toBe(true);
+    expect(formatTypesPackageReport(report, 'src')).toContain(
+      'add each installed package to the "types" array in tsconfig.json',
+    );
+  });
+
   it('suggests tsconfig wiring instead of an install when the package is already present', () => {
     const rootDir = makeFixture({
       'package.json': JSON.stringify({}),

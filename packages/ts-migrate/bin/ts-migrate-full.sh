@@ -109,7 +109,10 @@ function maybe_commit() {
     return
   fi
   cd $frontend_folder
-  if [[ `git status --porcelain` ]]
+  # Scope the dirtiness check to the folder being committed; `git status`
+  # alone reports the whole repository, and changes elsewhere would send an
+  # empty commit to `git commit`, which fails and aborts the run (set -e).
+  if [[ `git status --porcelain .` ]]
   then
     git add . && git commit "$@"
   fi
@@ -191,7 +194,33 @@ if [ ! -x "$tsc_path" ]; then
 fi
 
 echo "${tsc_cmd[*]} -p $frontend_folder/tsconfig.json --noEmit"
-"${tsc_cmd[@]}" -p $frontend_folder/tsconfig.json --noEmit
+check_failed=false
+"${tsc_cmd[@]}" -p "$frontend_folder/tsconfig.json" --noEmit || check_failed=true
+
+if [ "$check_failed" = true ]; then
+  echo "
+---
+The TypeScript check failed. What the errors above usually mean:
+
+- TS2578 (unused '@ts-expect-error'): the compiler running this check disagrees
+  with the one the migration used — usually a typescript version mismatch
+  between the project and ts-migrate (the migration log prints a warning when
+  it detects one). Align the versions, make sure tsconfig.json pins a \"types\"
+  array, then strip and re-add the suppressions with:
+    npx -p @obiemunoz/ts-migrate ts-migrate reignore \"$frontend_folder\"
+- Syntax errors (TS1xxx) in generated or third-party .d.ts files: those files
+  are outside the migration's control (the migration log lists them). Fix or
+  regenerate them, or exclude them in tsconfig.json — re-running the migration
+  will not change them.
+- Other type errors in migrated files: run the reignore command above to
+  re-suppress them."
+
+  if [ -s "$types_report_file" ]; then
+    echo ""
+    cat "$types_report_file"
+  fi
+  exit 1
+fi
 
 echo "
 ---

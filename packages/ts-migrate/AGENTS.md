@@ -46,6 +46,9 @@ npx -p @obiemunoz/ts-migrate ts-migrate-full <folder> --yes --no-commit
 # 2. Read the "Type definition recommendations" report printed at the end of
 #    the run. Install what it recommends, e.g.:
 npm i -D @types/jest
+#    If the generated tsconfig pins a "types" array (it does whenever @types
+#    packages were installed at init time), also add the new package there,
+#    e.g. "jest" — the report says so when it applies.
 
 # 3. Re-run reignore: it strips every suppression the new types resolve and
 #    prints an updated recommendations report.
@@ -77,7 +80,11 @@ verify with `tsc --noEmit`.
 ### `ts-migrate init <folder>` / `ts-migrate init:extended <folder>`
 
 Writes a migration-friendly `tsconfig.json` in `<folder>` (no-op if one
-exists). `init:extended` writes a config extending a shared base instead.
+exists). Installed `@types` packages are pinned in a `types` array so that
+TypeScript 5 (which loads `node_modules/@types` automatically) and
+TypeScript 6 (which does not) check the project identically; add new
+`@types` packages to that array after installing them. `init:extended`
+writes a config extending a shared base instead.
 
 ### `ts-migrate rename <folder> [-s <glob>]`
 
@@ -117,7 +124,12 @@ Prints this document.
 - `migrate`/`reignore` exit `0` on success and nonzero (255) if a plugin
   errored or a file still has syntax errors after migration.
 - `ts-migrate-full` stops at the first failing step; the final `tsc` check
-  failing means the migration did not reach a compiling state.
+  failing means the migration did not reach a compiling state. Its failure
+  message distinguishes the common causes: TS2578 (compiler version skew —
+  align typescript versions, then `reignore`), TS1xxx syntax errors in
+  generated/third-party `.d.ts` files (fix, regenerate, or exclude them —
+  the migrate step lists these files up front; re-running the migration
+  cannot change them), and ordinary type errors (`reignore`).
 - "eslint-fix skipped / could not parse" warnings are expected until the
   project's ESLint understands TypeScript; the migration is still valid.
 - `rename` exits nonzero if `<folder>` has no `tsconfig.json` — run `init`
