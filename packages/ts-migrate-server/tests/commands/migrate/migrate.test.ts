@@ -133,6 +133,49 @@ describe('migrate command', () => {
     expect(exitCode).not.toBe(0);
   });
 
+  it('reports syntax errors in files the migration cannot edit', async () => {
+    // An explicit empty "types" keeps the fixture's program free of this
+    // workspace's own @types packages (the fixture lives inside the repo).
+    fs.writeFileSync(
+      path.resolve(rootDir, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { strict: true, types: [] } }),
+    );
+    fs.writeFileSync(
+      path.resolve(rootDir, 'index.ts'),
+      "import './generated';\nexport const a = 1;\n",
+    );
+    // A malformed declaration file, like a code generator can produce; it is
+    // part of the program but never part of the migration set.
+    fs.writeFileSync(
+      path.resolve(rootDir, 'generated.d.ts'),
+      'export { default as Widget.js } from "./widget";\n',
+    );
+
+    const config = new MigrateConfig();
+    const { exitCode, nonMigratedFilesWithSyntaxErrors } = await migrate({ rootDir, config });
+
+    // The migration itself succeeded; the broken input is surfaced, not owned.
+    expect(exitCode).toBe(0);
+    expect(nonMigratedFilesWithSyntaxErrors).toHaveLength(1);
+    expect(nonMigratedFilesWithSyntaxErrors[0]).toMatch(/generated\.d\.ts$/);
+  });
+
+  it('does not flag parseable files outside the migration set', async () => {
+    fs.writeFileSync(
+      path.resolve(rootDir, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { strict: true, types: [] } }),
+    );
+    fs.writeFileSync(path.resolve(rootDir, 'index.ts'), "import './generated';\n");
+    fs.writeFileSync(path.resolve(rootDir, 'generated.d.ts'), 'declare const widget: string;\n');
+
+    const { nonMigratedFilesWithSyntaxErrors } = await migrate({
+      rootDir,
+      config: new MigrateConfig(),
+    });
+
+    expect(nonMigratedFilesWithSyntaxErrors).toEqual([]);
+  });
+
   describe('repeatUntilStable', () => {
     it('re-runs the plugin group until a pass changes nothing', async () => {
       const configDir = path.resolve(__dirname, 'config');

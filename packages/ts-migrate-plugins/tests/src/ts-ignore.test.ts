@@ -470,14 +470,44 @@ async function residualDiagnosticCodes(
   fileName: string,
   text: string,
   compilerOptions?: ts.CompilerOptions,
+  extraFiles?: { [extraFileName: string]: string },
 ): Promise<number[]> {
-  const params = await realPluginParams({ fileName, text, compilerOptions });
+  const params = await realPluginParams({ fileName, text, compilerOptions, extraFiles });
   const languageService = params.getLanguageService();
   return [
     ...languageService.getSyntacticDiagnostics(params.fileName),
     ...languageService.getSemanticDiagnostics(params.fileName),
   ].map((diagnostic) => diagnostic.code);
 }
+
+describe('ts-ignore plugin with ambient environment types', () => {
+  // Global declarations standing in for an @types package (the harness has
+  // no directory enumeration, so the stub is loaded as a root file).
+  const strictOptions: ts.CompilerOptions = { strict: true };
+  const typesFixture = {
+    'node_modules/@types/node/index.d.ts': 'declare var require: (id: string) => any;\n',
+  };
+
+  it('suppresses nothing for globals that ambient declarations provide, and the output passes a fresh check', async () => {
+    const text = "var lib = require('some-lib');\nconst count: number = 'oops';\n";
+
+    const result = (await tsIgnorePlugin.run(
+      await realPluginParams({
+        text,
+        compilerOptions: strictOptions,
+        extraFiles: typesFixture,
+      }),
+    )) as string;
+
+    // `require` resolves through the ambient declaration — suppressing it
+    // would leave an unused directive for any compiler that loads the types.
+    expect(result).not.toMatch(/TS\(2591\)|TS\(2580\)|TS\(2304\)/);
+    expect(result).toContain('TS(2322)');
+    expect(await residualDiagnosticCodes('file.ts', result, strictOptions, typesFixture)).toEqual(
+      [],
+    );
+  });
+});
 
 describe('ts-ignore plugin multiline string/comment contexts', () => {
   it('does not corrupt a backslash-continued string literal', async () => {

@@ -19,6 +19,17 @@ interface MigrateParams {
   incrementalPasses?: boolean;
 }
 
+interface MigrateResult {
+  exitCode: number;
+  updatedSourceFiles: Set<string>;
+  /**
+   * Program files with syntax errors that no plugin can edit (declaration
+   * files, files outside the migration set). They will fail any tsc run
+   * over this project until fixed, regenerated, or excluded.
+   */
+  nonMigratedFilesWithSyntaxErrors: string[];
+}
+
 export default async function migrate({
   rootDir,
   tsConfigDir = rootDir,
@@ -27,9 +38,17 @@ export default async function migrate({
   lintConfig,
   maxStablePasses = 5,
   incrementalPasses = true,
-}: MigrateParams): Promise<{ exitCode: number; updatedSourceFiles: Set<string> }> {
+}: MigrateParams): Promise<MigrateResult> {
   let exitCode = 0;
   log.info(`TypeScript version: ${ts.version}`);
+  const projectTsVersion = projectTypeScriptVersion(rootDir);
+  if (projectTsVersion && projectTsVersion.split('.')[0] !== ts.version.split('.')[0]) {
+    log.warn(
+      `This project has typescript ${projectTsVersion} installed, but ts-migrate resolved ` +
+        `TypeScript ${ts.version}; the suppressions added here may not match what the ` +
+        `project's own tsc reports.`,
+    );
+  }
 
   const serverInitTimer = new PerfTimer();
 
@@ -198,6 +217,34 @@ export default async function migrate({
     exitCode = -1;
   }
 
+  // Suppression comments can only fix type errors in the migrated files; a
+  // parse error anywhere else in the program (a generated .d.ts, a file
+  // outside the migration set) fails every later tsc run no matter what the
+  // plugins did. Name those files now so the compile check's failure has a
+  // diagnosis attached.
+  const nonMigratedFilesWithSyntaxErrors: string[] = [];
+  const program = project.getLanguageService().getProgram();
+  if (program) {
+    program.getSourceFiles().forEach((sourceFile) => {
+      if (originalSourceFilesToMigrate.has(sourceFile.fileName)) return;
+      if (program.getSyntacticDiagnostics(sourceFile).length > 0) {
+        nonMigratedFilesWithSyntaxErrors.push(sourceFile.fileName);
+      }
+    });
+  }
+  if (nonMigratedFilesWithSyntaxErrors.length > 0) {
+    log.error(
+      `${nonMigratedFilesWithSyntaxErrors.length} file(s) this project depends on have syntax ` +
+        `errors ts-migrate cannot fix (declaration files or files outside the migration ` +
+        `scope). The TypeScript compile check will keep failing until they are fixed, ` +
+        `regenerated, or excluded via tsconfig.json — re-running the migration will not ` +
+        `change them:`,
+    );
+    nonMigratedFilesWithSyntaxErrors.forEach((fileName) => {
+      log.error(`  ${path.relative(rootDir, fileName)}`);
+    });
+  }
+
   const writeTimer = new PerfTimer();
 
   log.info(`Writing ${updatedSourceFiles.size} updated file(s)...`);
@@ -211,7 +258,21 @@ export default async function migrate({
 
   log.info(`Wrote ${updatedSourceFiles.size} updated file(s) in ${writeTimer.elapsedStr()}.`);
 
-  return { updatedSourceFiles, exitCode };
+  return { updatedSourceFiles, exitCode, nonMigratedFilesWithSyntaxErrors };
+}
+
+// An explicit ancestor walk rather than require.resolve: resolve's global
+// fallbacks (NODE_PATH, global installs) can name a typescript the project
+// itself would never load.
+function projectTypeScriptVersion(rootDir: string): string | undefined {
+  for (let dir = path.resolve(rootDir); ; dir = path.dirname(dir)) {
+    try {
+      const packageJsonPath = path.join(dir, 'node_modules', 'typescript', 'package.json');
+      return JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')).version;
+    } catch (e) {
+      if (path.dirname(dir) === dir) return undefined;
+    }
+  }
 }
 
 function getSourceFilesToMigrate(project: MigrationProject) {

@@ -13,6 +13,49 @@ const extendedConfig = `{
 }
 `;
 
+// TypeScript 6 no longer loads node_modules/@types automatically when
+// "types" is unspecified (bulk inclusion requires types: ["*"], which
+// TypeScript 5 rejects). Pinning the packages present at init time makes
+// every compiler version type-check the migrated project the same way.
+function installedTypesPackages(rootDir: string): string[] {
+  const names = new Set<string>();
+  // Mirror the compiler's default typeRoots (node_modules/@types in the
+  // project directory and its ancestors), but stop at the repository
+  // boundary: an entry found above it exists only on this machine, and a
+  // pinned entry that fails to resolve is a hard TS2688 everywhere else.
+  for (let dir = path.resolve(rootDir); ; dir = path.dirname(dir)) {
+    const typesDir = path.join(dir, 'node_modules', '@types');
+    let entries: string[] = [];
+    try {
+      entries = fs.readdirSync(typesDir);
+    } catch (e) {
+      // No @types directory at this level.
+    }
+    entries.forEach((entry) => {
+      if (entry.startsWith('.')) return;
+      try {
+        if (!fs.statSync(path.join(typesDir, entry)).isDirectory()) return;
+      } catch (e) {
+        // Dangling symlink; the compiler's own enumeration skips these too.
+        return;
+      }
+      try {
+        // "typings": null marks a stub whose library ships its own types;
+        // the compiler skips these during automatic inclusion.
+        const packageJson = JSON.parse(
+          fs.readFileSync(path.join(typesDir, entry, 'package.json'), 'utf-8'),
+        );
+        if (packageJson.typings === null) return;
+      } catch (e) {
+        // Unreadable package.json; assume a regular @types package.
+      }
+      names.add(entry);
+    });
+    if (fs.existsSync(path.join(dir, '.git')) || path.dirname(dir) === dir) break;
+  }
+  return [...names].sort();
+}
+
 // Written directly instead of shelling out to `npx tsc --init`: in a project
 // without a local typescript install, npx resolves the npm placeholder
 // package named `tsc` and the command fails. Recent `tsc --init` output is
@@ -40,6 +83,16 @@ function defaultConfig(rootDir: string): string {
     // No parseable package.json; keep the CommonJS + classic-JSX defaults.
   }
 
+  const typesPackages = installedTypesPackages(rootDir);
+  const typesField =
+    typesPackages.length > 0
+      ? `,
+    // @types packages present at migration time, pinned because TypeScript 6
+    // no longer loads node_modules/@types automatically. Add new @types
+    // packages here after installing them.
+    "types": [${typesPackages.map((name) => `"${name}"`).join(', ')}]`
+      : '';
+
   return `{
   // Created by ts-migrate. A starting point for a migrated project;
   // adjust as your codebase needs (see the ts-migrate README FAQ).
@@ -53,7 +106,7 @@ function defaultConfig(rootDir: string): string {
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
-    "skipLibCheck": true
+    "skipLibCheck": true${typesField}
   }
 }
 `;
