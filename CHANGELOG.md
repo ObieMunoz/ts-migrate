@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.10.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.9.2...v0.10.0) (2026-07-11)
+
+### Features
+
+- **ts-migrate:** add agent playbook command and non-interactive ts-migrate-full flags ([#48](https://github.com/ObieMunoz/ts-migrate/issues/48)) ([9b9fc9a](https://github.com/ObieMunoz/ts-migrate/commit/9b9fc9adafae1558e1951f0f3bc93287d2d35122))
+
 ## [0.9.2](https://github.com/ObieMunoz/ts-migrate/compare/v0.9.1...v0.9.2) (2026-07-11)
 
 ### Bug Fixes
