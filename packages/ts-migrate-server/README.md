@@ -14,9 +14,9 @@ Install *@obiemunoz/ts-migrate-server* using [npm](https://www.npmjs.com):
 
 `npm install --save-dev @obiemunoz/ts-migrate-server`
 
-Or [yarn](https://yarnpkg.com):
+Or [pnpm](https://pnpm.io):
 
-`yarn add --dev @obiemunoz/ts-migrate-server`
+`pnpm add -D @obiemunoz/ts-migrate-server`
 
 
 # Usage

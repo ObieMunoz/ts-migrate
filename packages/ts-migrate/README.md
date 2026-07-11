@@ -14,9 +14,9 @@ Install [*@obiemunoz/ts-migrate*](https://www.npmjs.com/package/@obiemunoz/ts-mi
 
 `npm install --save-dev @obiemunoz/ts-migrate`
 
-Or [yarn](https://yarnpkg.com):
+Or [pnpm](https://pnpm.io):
 
-`yarn add --dev @obiemunoz/ts-migrate`
+`pnpm add -D @obiemunoz/ts-migrate`
 
 The CLI commands are still named `ts-migrate` and `ts-migrate-full`. Because the
 package is scoped, one-off `npx` runs need the `-p @obiemunoz/ts-migrate` flag to
@@ -171,8 +171,8 @@ Type definition recommendations:
     @types/jest — 4 errors in 1 file (describe, beforeEach, it)
   Untyped imports (@types packages may exist for them):
     @types/lodash — 1 error in 1 file (import 'lodash')
-  Install: yarn add -D @types/node @types/jest
-  Then try: yarn add -D @types/lodash
+  Install: pnpm add -D @types/node @types/jest
+  Then try: pnpm add -D @types/lodash
   After installing type definitions, rerun: npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>
 ```
 
@@ -189,6 +189,8 @@ resolve. The report only recommends what the diagnostics prove is missing:
 - The test-runner suggestion follows your package.json: jest, mocha, and jasmine
   map to their `@types` packages; vitest projects are pointed at
   `"types": ["vitest/globals"]` instead.
+- The install command matches your project's package manager: npm, yarn, pnpm,
+  and bun are recognized by their lockfiles.
 
 The `Then try` line is separate because `@types` packages derived from untyped
 imports (rather than well-known globals) aren't guaranteed to exist on npm.

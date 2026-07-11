@@ -32,7 +32,7 @@ docs live in this package's README.md.
 ```sh
 # 0. Preflight — from the target project's root:
 #    - working tree clean, on a fresh branch
-#    - dependencies installed (npm install / yarn install)
+#    - dependencies installed (npm install / pnpm install / yarn install)
 #    - environment types installed FIRST; this typically prevents the
 #      majority of suppressions (require, process, describe, it, ...):
 npm i -D @types/node          # plus your test runner's types:

@@ -16,9 +16,9 @@ Install *@obiemunoz/ts-migrate-plugins* using [npm](https://www.npmjs.com):
 
 `npm install --save-dev @obiemunoz/ts-migrate-plugins`
 
-Or [yarn](https://yarnpkg.com):
+Or [pnpm](https://pnpm.io):
 
-`yarn add --dev @obiemunoz/ts-migrate-plugins`
+`pnpm add -D @obiemunoz/ts-migrate-plugins`
 
 
 # Usage
