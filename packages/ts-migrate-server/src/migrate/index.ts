@@ -158,7 +158,12 @@ export default async function migrate({
         break;
       }
       dirtyFiles = incrementalPasses
-        ? computeDirtyFiles(project.getSourceFiles(), changedThisPass, project.getCompilerOptions())
+        ? computeDirtyFiles(
+            project.getSourceFiles(),
+            changedThisPass,
+            project.getCompilerOptions(),
+            project.getModuleResolution(),
+          )
         : null;
       if (dirtyFiles !== null) {
         log.info(`Next pass revisits ${dirtyFiles.size} file(s) affected by this pass's changes.`);
