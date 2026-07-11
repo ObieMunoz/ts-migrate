@@ -407,6 +407,79 @@ describe('migrate command', () => {
     });
   });
 
+  describe('independentFiles', () => {
+    // A plugin that yields once mid-run and records how many of its run()
+    // calls were in flight together.
+    const overlapConfig = (independentFiles: boolean) => {
+      let inFlight = 0;
+      let maxInFlight = 0;
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'count-overlap',
+          independentFiles,
+          async run({ text }) {
+            inFlight += 1;
+            await new Promise((resolve) => {
+              setImmediate(resolve);
+            });
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            inFlight -= 1;
+            return `${text}// touched\n`;
+          },
+        },
+        {},
+      );
+      return { config, getMaxInFlight: () => maxInFlight };
+    };
+
+    beforeEach(() => {
+      const configDir = path.resolve(__dirname, 'config');
+      copyDir(configDir, rootDir);
+      fs.writeFileSync(path.resolve(rootDir, 'a.ts'), 'export const a = 1;\n');
+      fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 2;\n');
+    });
+
+    it('keeps every file in flight at once', async () => {
+      const { config, getMaxInFlight } = overlapConfig(true);
+
+      const { exitCode } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      expect(getMaxInFlight()).toBe(2);
+      expect(fs.readFileSync(path.resolve(rootDir, 'a.ts'), 'utf8')).toContain('// touched');
+      expect(fs.readFileSync(path.resolve(rootDir, 'b.ts'), 'utf8')).toContain('// touched');
+    });
+
+    it('runs ordinary plugins one file at a time (contrast)', async () => {
+      const { config, getMaxInFlight } = overlapConfig(false);
+
+      const { exitCode } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      expect(getMaxInFlight()).toBe(1);
+    });
+
+    it('isolates a failing file without dropping the others', async () => {
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'fail-on-b',
+          independentFiles: true,
+          async run({ fileName, text }) {
+            if (fileName.endsWith('b.ts')) throw new Error('boom');
+            return `${text}// touched\n`;
+          },
+        },
+        {},
+      );
+
+      const { exitCode } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(-1);
+      expect(fs.readFileSync(path.resolve(rootDir, 'a.ts'), 'utf8')).toContain('// touched');
+      expect(fs.readFileSync(path.resolve(rootDir, 'b.ts'), 'utf8')).not.toContain('// touched');
+    });
+  });
+
   it('Migrates project with two plugins', async () => {
     const inputDir = path.resolve(__dirname, 'input');
     const outputDir = path.resolve(__dirname, 'output_two');
