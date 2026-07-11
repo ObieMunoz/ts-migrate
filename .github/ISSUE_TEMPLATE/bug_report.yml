@@ -19,10 +19,10 @@ body:
     id: reproduction
     attributes:
       label: Steps to reproduce
-      description: The exact command you ran (e.g. `npx ts-migrate-full`, `ts-migrate migrate`) and a minimal input file, snippet, or repo that triggers the problem.
+      description: The exact command you ran (e.g. `npx -p @obiemunoz/ts-migrate ts-migrate-full`, or `ts-migrate migrate` with the package installed) and a minimal input file, snippet, or repo that triggers the problem.
       placeholder: |
         1. Create `example.js` with the snippet below
-        2. Run `npx ts-migrate-full <folder> --yes`
+        2. Run `npx -p @obiemunoz/ts-migrate ts-migrate-full <folder> --yes`
         3. See the error / mangled output
     validations:
       required: true
