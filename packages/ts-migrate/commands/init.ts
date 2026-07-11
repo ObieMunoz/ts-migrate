@@ -28,14 +28,14 @@ function installedTypesPackages(rootDir: string): string[] {
     let entries: string[] = [];
     try {
       entries = fs.readdirSync(typesDir);
-    } catch (e) {
+    } catch {
       // No @types directory at this level.
     }
     entries.forEach((entry) => {
       if (entry.startsWith('.')) return;
       try {
         if (!fs.statSync(path.join(typesDir, entry)).isDirectory()) return;
-      } catch (e) {
+      } catch {
         // Dangling symlink; the compiler's own enumeration skips these too.
         return;
       }
@@ -46,7 +46,7 @@ function installedTypesPackages(rootDir: string): string[] {
           fs.readFileSync(path.join(typesDir, entry, 'package.json'), 'utf-8'),
         );
         if (packageJson.typings === null) return;
-      } catch (e) {
+      } catch {
         // Unreadable package.json; assume a regular @types package.
       }
       names.add(entry);
@@ -79,7 +79,7 @@ function defaultConfig(rootDir: string): string {
     if (reactMajor >= 17) {
       jsx = 'react-jsx';
     }
-  } catch (e) {
+  } catch {
     // No parseable package.json; keep the CommonJS + classic-JSX defaults.
   }
 

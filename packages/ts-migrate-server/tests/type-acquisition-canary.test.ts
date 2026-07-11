@@ -6,7 +6,6 @@ import MigrationProject from '../src/migrate/MigrationProject';
 
 // The npm alias pins the first major that dropped automatic @types loading,
 // so this canary keeps working after the workspace `typescript` moves on.
-// eslint-disable-next-line import/no-extraneous-dependencies, @typescript-eslint/no-var-requires, global-require
 const ts6: typeof ts = require('typescript6');
 
 /**

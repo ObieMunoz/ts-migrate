@@ -78,7 +78,7 @@ const availablePlugins = [
   updateImportPathsPlugin,
 ];
 
-// eslint-disable-next-line no-unused-expressions
+// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 yargs
   .scriptName('ts-migrate')
   .version(false)
