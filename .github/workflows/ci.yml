@@ -1,10 +1,45 @@
 name: CI
 
+# Docs and repo meta that no CI job reads. packages/ts-migrate/AGENTS.md is
+# deliberately not listed: agentsPlaybook.test.ts asserts on its content.
+# lerna.json and .nxignore are release-only config; ci.yml never invokes lerna.
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'CONTRIBUTING.md'
+      - 'LICENSE'
+      - 'packages/*/README.md'
+      - 'packages/*/CHANGELOG.md'
+      - 'packages/*/LICENSE'
+      - 'packages/*/LICENCE'
+      - '.gitattributes'
+      - '.gitignore'
+      - '.vscode/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+      - 'lerna.json'
+      - '.nxignore'
   pull_request:
     branches: [master]
+    paths-ignore:
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'CONTRIBUTING.md'
+      - 'LICENSE'
+      - 'packages/*/README.md'
+      - 'packages/*/CHANGELOG.md'
+      - 'packages/*/LICENSE'
+      - 'packages/*/LICENCE'
+      - '.gitattributes'
+      - '.gitignore'
+      - '.vscode/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+      - 'lerna.json'
+      - '.nxignore'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
