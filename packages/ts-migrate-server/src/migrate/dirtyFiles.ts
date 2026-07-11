@@ -14,6 +14,9 @@ export default function computeDirtyFiles(
   sourceFiles: ts.SourceFile[],
   changedFiles: Set<string>,
   compilerOptions: ts.CompilerOptions,
+  // The project-wide resolution host and cache: resolutions stay valid across
+  // passes (and match the language service's), so nothing is re-resolved here.
+  resolution: { host: ts.ModuleResolutionHost; cache: ts.ModuleResolutionCache },
 ): Set<string> | null {
   const byName = new Map(sourceFiles.map((sourceFile) => [sourceFile.fileName, sourceFile]));
   const unbounded = Array.from(changedFiles).some((fileName) => {
@@ -24,11 +27,6 @@ export default function computeDirtyFiles(
     return null;
   }
 
-  const resolutionCache = ts.createModuleResolutionCache(
-    ts.sys.getCurrentDirectory(),
-    (fileName) => (ts.sys.useCaseSensitiveFileNames ? fileName : fileName.toLowerCase()),
-    compilerOptions,
-  );
   const imports = new Map<string, string[]>();
   const importers = new Map<string, string[]>();
   const addEdge = (edges: Map<string, string[]>, from: string, to: string) => {
@@ -45,8 +43,8 @@ export default function computeDirtyFiles(
         imported.fileName,
         sourceFile.fileName,
         compilerOptions,
-        ts.sys,
-        resolutionCache,
+        resolution.host,
+        resolution.cache,
       ).resolvedModule?.resolvedFileName;
       if (resolved !== undefined && byName.has(resolved)) {
         addEdge(imports, sourceFile.fileName, resolved);

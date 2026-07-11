@@ -17,6 +17,50 @@ const SCRIPT_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs',
 
 const normalizeSlashes = (fileName: string): string => fileName.split(path.sep).join('/');
 
+interface CachedModuleResolutionHost extends ts.ModuleResolutionHost {
+  fileExists(fileName: string): boolean;
+  readFile(fileName: string): string | undefined;
+  directoryExists(directoryName: string): boolean;
+  getDirectories(directoryName: string): string[];
+}
+
+// The language service reads host.getModuleResolutionCache at runtime (the
+// program reuses its packageJsonInfoCache), but the method is marked
+// @internal on ts.LanguageServiceHost and missing from the public type.
+interface LanguageServiceHostWithCache extends ts.LanguageServiceHost {
+  getModuleResolutionCache?(): ts.ModuleResolutionCache | undefined;
+}
+
+/**
+ * A module resolution host whose filesystem probes are memoized forever:
+ * on-disk state is stable for a project's lifetime because edits live in the
+ * overlay and are persisted only after migration finishes.
+ */
+const createCachedModuleResolutionHost = (currentDirectory: string): CachedModuleResolutionHost => {
+  const memo = <T>(cache: Map<string, T>, key: string, compute: (key: string) => T): T => {
+    if (!cache.has(key)) {
+      cache.set(key, compute(key));
+    }
+    return cache.get(key) as T;
+  };
+  const fileText = new Map<string, string | undefined>();
+  const filePresence = new Map<string, boolean>();
+  const directoryPresence = new Map<string, boolean>();
+  const directoryNames = new Map<string, string[]>();
+  const realpaths = new Map<string, string>();
+  const sysRealpath = ts.sys.realpath;
+  return {
+    fileExists: (fileName) => memo(filePresence, fileName, ts.sys.fileExists),
+    readFile: (fileName) => memo(fileText, fileName, ts.sys.readFile),
+    directoryExists: (directoryName) =>
+      memo(directoryPresence, directoryName, ts.sys.directoryExists),
+    getDirectories: (directoryName) => memo(directoryNames, directoryName, ts.sys.getDirectories),
+    ...(sysRealpath ? { realpath: (p: string) => memo(realpaths, p, sysRealpath) } : undefined),
+    getCurrentDirectory: () => currentDirectory,
+    useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
+  };
+};
+
 /**
  * A minimal project abstraction backed by the `typescript` package's
  * LanguageService, so plugins receive ASTs from the same TypeScript instance
@@ -34,6 +78,12 @@ export default class MigrationProject {
   private readonly overlays = new Map<string, FileOverlay>();
 
   private readonly languageService: ts.LanguageService;
+
+  private readonly moduleResolutionHost: CachedModuleResolutionHost;
+
+  private readonly moduleResolutionCache: ts.ModuleResolutionCache;
+
+  private readonly typeReferenceDirectiveResolutionCache: ts.TypeReferenceDirectiveResolutionCache;
 
   private projectVersion = 0;
 
@@ -58,7 +108,24 @@ export default class MigrationProject {
       skipAddingFilesFromTsConfig ? [] : parsedConfig.fileNames.map(normalizeSlashes),
     );
 
-    const serviceHost: ts.LanguageServiceHost = {
+    const currentDirectory = path.dirname(tsConfigFilePath);
+    const getCanonicalFileName = ts.sys.useCaseSensitiveFileNames
+      ? (fileName: string) => fileName
+      : (fileName: string) => fileName.toLowerCase();
+    this.moduleResolutionHost = createCachedModuleResolutionHost(currentDirectory);
+    this.moduleResolutionCache = ts.createModuleResolutionCache(
+      currentDirectory,
+      getCanonicalFileName,
+      this.compilerOptions,
+    );
+    this.typeReferenceDirectiveResolutionCache = ts.createTypeReferenceDirectiveResolutionCache(
+      currentDirectory,
+      getCanonicalFileName,
+      this.compilerOptions,
+      this.moduleResolutionCache.getPackageJsonInfoCache(),
+    );
+
+    const serviceHost: LanguageServiceHostWithCache = {
       getCompilationSettings: () => this.compilerOptions,
       getProjectVersion: () => String(this.projectVersion),
       getScriptFileNames: () => Array.from(this.rootFileNames),
@@ -68,16 +135,58 @@ export default class MigrationProject {
         const text = this.readFile(fileName);
         return text !== undefined ? ts.ScriptSnapshot.fromString(text) : undefined;
       },
-      getCurrentDirectory: () => path.dirname(tsConfigFilePath),
+      getCurrentDirectory: () => currentDirectory,
       getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
       fileExists: (fileName) =>
-        this.overlays.has(normalizeSlashes(fileName)) || ts.sys.fileExists(fileName),
+        this.overlays.has(normalizeSlashes(fileName)) ||
+        this.moduleResolutionHost.fileExists(fileName),
       readFile: (fileName) => this.readFile(fileName),
       readDirectory: ts.sys.readDirectory,
-      directoryExists: ts.sys.directoryExists,
-      getDirectories: ts.sys.getDirectories,
-      realpath: ts.sys.realpath,
+      directoryExists: this.moduleResolutionHost.directoryExists,
+      getDirectories: this.moduleResolutionHost.getDirectories,
+      realpath: this.moduleResolutionHost.realpath,
       useCaseSensitiveFileNames: () => ts.sys.useCaseSensitiveFileNames,
+      // Resolving through the shared caches (instead of the per-program cache
+      // each program rebuild starts with) is sound because module resolution
+      // inputs never change during a migration: renames happen in the earlier
+      // `rename` command and overlay edits are persisted only at the end.
+      resolveModuleNameLiterals: (
+        moduleLiterals,
+        containingFile,
+        redirectedReference,
+        options,
+        containingSourceFile,
+      ) =>
+        moduleLiterals.map((literal) =>
+          ts.resolveModuleName(
+            literal.text,
+            containingFile,
+            options,
+            this.moduleResolutionHost,
+            this.moduleResolutionCache,
+            redirectedReference,
+            ts.getModeForUsageLocation(containingSourceFile, literal, options),
+          ),
+        ),
+      resolveTypeReferenceDirectiveReferences: (
+        typeDirectiveReferences,
+        containingFile,
+        redirectedReference,
+        options,
+        containingSourceFile,
+      ) =>
+        typeDirectiveReferences.map((reference) =>
+          ts.resolveTypeReferenceDirective(
+            typeof reference === 'string' ? reference : reference.fileName,
+            containingFile,
+            options,
+            this.moduleResolutionHost,
+            redirectedReference,
+            this.typeReferenceDirectiveResolutionCache,
+            ts.getModeForFileReference(reference, containingSourceFile?.impliedNodeFormat),
+          ),
+        ),
+      getModuleResolutionCache: () => this.moduleResolutionCache,
     };
 
     this.languageService = ts.createLanguageService(
@@ -115,6 +224,11 @@ export default class MigrationProject {
     return this.compilerOptions;
   }
 
+  /** The project-wide resolution host and cache, for reuse outside the language service. */
+  getModuleResolution(): { host: ts.ModuleResolutionHost; cache: ts.ModuleResolutionCache } {
+    return { host: this.moduleResolutionHost, cache: this.moduleResolutionCache };
+  }
+
   private getProgram(): ts.Program {
     const program = this.languageService.getProgram();
     if (!program) {
@@ -146,6 +260,9 @@ export default class MigrationProject {
   }
 
   private readFile(fileName: string): string | undefined {
-    return this.overlays.get(normalizeSlashes(fileName))?.text ?? ts.sys.readFile(fileName);
+    return (
+      this.overlays.get(normalizeSlashes(fileName))?.text ??
+      this.moduleResolutionHost.readFile(fileName)
+    );
   }
 }
