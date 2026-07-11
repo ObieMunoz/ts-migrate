@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest an improvement or new capability for ts-migrate
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that ts-migrate doesn't handle (or handles badly) today?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What you'd like to happen. For new migration behavior, note whether it fits an existing plugin or needs a new one.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds
+      description: Anything you've tried or considered, including manual workarounds.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Sample code, links, or anything else that helps.

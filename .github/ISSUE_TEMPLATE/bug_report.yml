@@ -1,0 +1,62 @@
+name: Bug report
+description: Something in ts-migrate is broken or produces wrong output
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Before filing, please search [existing issues](https://github.com/ObieMunoz/ts-migrate/issues) for duplicates.
+
+        This is a maintained fork of airbnb/ts-migrate, published as `@obiemunoz/ts-migrate`. If you're running the unscoped upstream packages, please try the fork first — most upstream breakage on modern TypeScript is already fixed here.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect to happen instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: The exact command you ran (e.g. `npx ts-migrate-full`, `ts-migrate migrate`) and a minimal input file, snippet, or repo that triggers the problem.
+      placeholder: |
+        1. Create `example.js` with the snippet below
+        2. Run `npx ts-migrate-full <folder> --yes`
+        3. See the error / mangled output
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output
+      description: Error message, stack trace, or the incorrectly migrated code. This is formatted as code automatically — no backticks needed.
+      render: shell
+  - type: input
+    id: ts-migrate-version
+    attributes:
+      label: ts-migrate version
+      description: Check with `npm ls @obiemunoz/ts-migrate` (the CLI has no `--version` flag).
+      placeholder: e.g. 0.9.2
+    validations:
+      required: true
+  - type: input
+    id: typescript-version
+    attributes:
+      label: TypeScript version
+      description: The version in the project being migrated (`npx tsc --version`), or "none" for a plain JS project.
+      placeholder: e.g. 5.9.3
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      placeholder: e.g. 22.12.0
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: e.g. macOS 15, Ubuntu 24.04, Windows 11
