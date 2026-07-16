@@ -241,6 +241,22 @@ function collectBodyConflictDrops(
         dropWithin(start, end + 1);
         return;
       }
+
+      // When the callee is external (declared outside this file), the argument
+      // being passed may itself be an annotated parameter — e.g.
+      // `showErr(dispatch)` where `dispatch` was annotated.  Drop just that
+      // argument's annotation rather than the entire enclosing function.
+      const argNode = argumentNodeAt(source, error.start);
+      if (argNode && ts.isIdentifier(argNode)) {
+        const argSymbol = checker.getSymbolAtLocation(argNode);
+        const argDecl = argSymbol?.declarations?.[0];
+        if (argDecl && ts.isParameter(argDecl) && argDecl.getSourceFile() === source) {
+          const start = toOriginalPos(argDecl.getStart(), finalChanges);
+          const end = toOriginalPos(argDecl.end, finalChanges);
+          dropWithin(start, end + 1);
+          return;
+        }
+      }
     }
 
     // The conflicting annotation may sit on any enclosing function (a
@@ -471,8 +487,21 @@ function calleeDeclarationAt(
   checker: ts.TypeChecker,
 ): ts.Node | undefined {
   let node = nodeAt(source, position);
-  while (node && !ts.isCallExpression(node) && !ts.isNewExpression(node)) {
-    node = node.parent;
+  // Walk up from the node at `position` until we find a node that is a
+  // direct argument of a CallExpression/NewExpression.  For argument-
+  // mismatch errors (TS2345 etc.) the diagnostic position is at the
+  // argument expression, which may itself be a nested call — so the
+  // first ancestor CallExpression would be that nested call rather than
+  // the outer one whose parameter type is wrong.
+  while (node) {
+    const parent = node.parent;
+    if (parent && (ts.isCallExpression(parent) || ts.isNewExpression(parent))) {
+      if (parent.arguments && parent.arguments.some((a) => a === node)) {
+        node = parent;
+        break;
+      }
+    }
+    node = parent;
   }
   if (!node) return undefined;
   const symbol = checker.getSymbolAtLocation((node as ts.CallExpression).expression);
@@ -573,6 +602,23 @@ function nodeAt(source: ts.SourceFile, position: number): ts.Node | undefined {
   };
   source.forEachChild(visit);
   return result;
+}
+
+// Returns the direct argument node that contains `position` within a
+// CallExpression/NewExpression, or undefined if the position is not inside
+// an argument list.
+function argumentNodeAt(source: ts.SourceFile, position: number): ts.Node | undefined {
+  let node = nodeAt(source, position);
+  while (node) {
+    const parent = node.parent;
+    if (parent && (ts.isCallExpression(parent) || ts.isNewExpression(parent))) {
+      if (parent.arguments && parent.arguments.some((a) => a === node)) {
+        return node;
+      }
+    }
+    node = node.parent;
+  }
+  return undefined;
 }
 
 function toCandidatePos(originalPos: number, changes: TextChange[]): number {
