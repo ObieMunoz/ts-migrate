@@ -57,6 +57,49 @@ interface PropInfo {
 // ---------------------------------------------------------------------------
 
 // Given a symbol, try to find the module it should be imported from.
+// Scan a source file's named-import declarations for a given identifier.
+// Returns a NamedImport spec, resolving any relative paths relative to componentFileName.
+function findNamedImportInSourceFile(
+  namedImport: string,
+  sourceFile: ts.SourceFile,
+  componentFileName: string,
+): NamedImport | undefined {
+  for (const stmt of sourceFile.statements) {
+    if (!ts.isImportDeclaration(stmt)) continue;
+    if (!ts.isStringLiteral(stmt.moduleSpecifier)) continue;
+    const moduleStr = stmt.moduleSpecifier.text;
+    const bindings = stmt.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) continue;
+    for (const el of bindings.elements) {
+      if (el.name.text === namedImport) {
+        if (!moduleStr.startsWith('.') && !moduleStr.startsWith('/')) {
+          return { namedImport, moduleSpecifier: moduleStr };
+        }
+        // Relative: resolve from the call-site directory then re-relativise to component.
+        const abs = path.resolve(path.dirname(sourceFile.fileName), moduleStr);
+        const rel = path.relative(path.dirname(componentFileName), abs);
+        const moduleSpecifier = rel.startsWith('.') ? rel : `./${rel}`;
+        return { namedImport, moduleSpecifier };
+      }
+    }
+  }
+  return undefined;
+}
+
+// Extract an npm package name from a file path that passes through node_modules.
+// e.g. "/…/node_modules/@reduxjs/toolkit/dist/index.d.ts" → "@reduxjs/toolkit"
+//      "/…/node_modules/react/index.d.ts"                 → "react"
+function packageNameFromNodeModulesPath(filePath: string): string | undefined {
+  const idx = filePath.lastIndexOf('/node_modules/');
+  if (idx === -1) return undefined;
+  const rest = filePath.slice(idx + '/node_modules/'.length);
+  const parts = rest.split('/');
+  if (parts[0].startsWith('@') && parts.length >= 2) {
+    return `${parts[0]}/${parts[1]}`;
+  }
+  return parts[0] || undefined;
+}
+
 // Returns undefined when the symbol is declared in the same file or has no
 // clear single-module home (e.g. intrinsic / anonymous types).
 function resolveSymbolImport(
@@ -71,7 +114,17 @@ function resolveSymbolImport(
   const fqn = checker.getFullyQualifiedName(sym);
   // External modules have FQN of the form `"module-or-path".SymbolName`
   const moduleMatch = /^"(.+)"\.[^.]+$/.exec(fqn);
-  if (!moduleMatch) return undefined; // same-file symbol — no import needed
+  if (!moduleMatch) {
+    // Some npm packages (e.g. @reduxjs/toolkit) declare types as interfaces in
+    // plain .d.ts files rather than inside `declare module "…"` blocks. In that
+    // case TypeScript returns a bare FQN with no module prefix. Fall back to
+    // extracting the package name from the declaration file path.
+    const pkgName = packageNameFromNodeModulesPath(sym.declarations[0].getSourceFile().fileName);
+    if (pkgName) {
+      return { namedImport, moduleSpecifier: pkgName };
+    }
+    return undefined; // same-file symbol — no import needed
+  }
 
   const moduleStr = moduleMatch[1];
 
@@ -539,11 +592,26 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
             ) {
               tsType = checker.getTypeAtLocation(attr.initializer.expression);
               typeStr = checker.typeToString(tsType);
-              // Normalise the import() notation TypeScript sometimes emits
-              // (e.g. `import("@reduxjs/toolkit").AsyncThunk`) to the bare name.
-              const importNotation = /^import\("([^"]+)"\)\.([^.]+)$/.exec(typeStr);
-              if (importNotation) {
-                typeStr = importNotation[2];
+              // Strip any import() notation TypeScript may emit for types from
+              // external modules not imported in the component file, e.g.:
+              //   import("@reduxjs/toolkit").ActionCreatorWithOptionalPayload<P, T>
+              const importPrefix = /^import\("[^"]+"\)\./.exec(typeStr);
+              if (importPrefix) {
+                typeStr = typeStr.slice(importPrefix[0].length);
+              }
+              // Fallback: scan the call-site's named imports for the leading
+              // type name.  collectImportSpecs silently misses instantiated
+              // generic type aliases whose TypeScript aliasSymbol is transient
+              // (no .declarations), which is common for types inferred through
+              // Redux-style createSlice or other mapped/conditional type machinery.
+              const baseTypeName = /^([A-Z][A-Za-z0-9_$]*)/.exec(typeStr)?.[1];
+              if (baseTypeName) {
+                const callSiteImport = findNamedImportInSourceFile(
+                  baseTypeName,
+                  refSourceFile,
+                  fileName,
+                );
+                if (callSiteImport) neededImports.push(callSiteImport);
               }
             } else {
               typeStr = anyAlias ?? 'any';

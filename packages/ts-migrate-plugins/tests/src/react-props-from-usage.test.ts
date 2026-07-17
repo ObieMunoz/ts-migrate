@@ -439,4 +439,77 @@ const el = <Foo size={size} variant={variant} />;
     expect(result).toMatch(/import.*ButtonSize.*from/s);
     expect(result).toMatch(/import.*ButtonVariant.*from/s);
   });
+
+  it('adds missing imports for generic types with type parameters (direct annotation)', async () => {
+    const libFile = `
+export type ActionCreatorWithOptionalPayload<P, T extends string = string> = {
+  (): { type: T; payload: P | undefined };
+  type: T;
+  match: (action: unknown) => boolean;
+};
+`;
+    const componentText = `import React from 'react';
+class Foo extends React.Component {
+  render() { return null; }
+}
+export default Foo;
+`;
+    const caller = `import React from 'react';
+import Foo from '/Foo';
+import { ActionCreatorWithOptionalPayload } from '/lib';
+declare const action: ActionCreatorWithOptionalPayload<string, 'search/update'>;
+const el = <Foo action={action} />;
+`;
+    const result = await run(
+      componentText,
+      { 'caller.tsx': caller, 'lib.ts': libFile },
+    );
+    expect(result).toContain('ActionCreatorWithOptionalPayload');
+    expect(result).not.toContain('import(');
+    expect(result).toMatch(/import.*ActionCreatorWithOptionalPayload.*from/s);
+  });
+
+  it('adds missing imports for types from npm packages that use interface + re-export pattern', async () => {
+    // Reproduces the @reduxjs/toolkit case: the type is an interface declared
+    // WITHOUT the `export` keyword, then re-exported via `export { type ... }`.
+    // TypeScript's getFullyQualifiedName() returns a bare name (no module prefix)
+    // for such types. The plugin must fall back to extracting the package name
+    // from the declaration file path.
+    const libDts = `
+interface ActionCreatorWithOptionalPayload<P, T extends string = string> {
+  (payload?: P): { type: T; payload: P | undefined };
+  type: T;
+  match: (action: unknown) => boolean;
+}
+export { type ActionCreatorWithOptionalPayload };
+export declare function makeActionCreator<P, T extends string>(type: T): ActionCreatorWithOptionalPayload<P, T>;
+`;
+    const componentText = `import React from 'react';
+class Foo extends React.Component {
+  render() { return null; }
+}
+export default Foo;
+`;
+    // Caller imports from 'mylib' (bare package name). TypeScript resolves this
+    // to /node_modules/mylib/index.d.ts via the virtual LS host.
+    const caller = `import React from 'react';
+import Foo from '/Foo';
+import { makeActionCreator } from 'mylib';
+const action = makeActionCreator<string, 'search/update'>('search/update');
+const el = <Foo action={action} />;
+`;
+    const result = await run(
+      componentText,
+      {
+        'node_modules/mylib/index.d.ts': libDts,
+        'caller.tsx': caller,
+      },
+    );
+    // The plugin should add an import for ActionCreatorWithOptionalPayload from
+    // 'mylib' even though the FQN has no module prefix.
+    expect(result).toBeDefined();
+    expect(result).toContain('ActionCreatorWithOptionalPayload');
+    expect(result).not.toContain('import(');
+    expect(result).toMatch(/import.*ActionCreatorWithOptionalPayload.*from\s+['"]mylib['"]/s);
+  });
 });
