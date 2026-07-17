@@ -115,6 +115,7 @@ function resolveSymbolImport(
   const namedImport = sym.getName();
   if (!namedImport || namedImport.startsWith('__')) return undefined;
 
+  const decl = sym.declarations[0];
   const fqn = checker.getFullyQualifiedName(sym);
   // External modules have FQN of the form `"module-or-path".SymbolName`
   const moduleMatch = /^"(.+)"\.[^.]+$/.exec(fqn);
@@ -123,11 +124,24 @@ function resolveSymbolImport(
     // plain .d.ts files rather than inside `declare module "…"` blocks. In that
     // case TypeScript returns a bare FQN with no module prefix. Fall back to
     // extracting the package name from the declaration file path.
-    const pkgName = packageNameFromNodeModulesPath(sym.declarations[0].getSourceFile().fileName);
-    if (pkgName) {
-      return { namedImport, moduleSpecifier: pkgName };
+    const declSourceFile = decl.getSourceFile();
+    const pkgName = packageNameFromNodeModulesPath(declSourceFile.fileName);
+    if (!pkgName) return undefined; // same-file or lib — no import needed
+
+    // Only emit an import if the symbol is actually exported from the package.
+    // Internal types (e.g. immer's WritableNonArrayDraft) also have bare FQNs
+    // but are NOT exported — importing them would produce a TS error.
+    // We use getExportsOfModule so that both `export type Foo` and
+    // `export { type Foo }` patterns are covered.
+    const moduleSymbol = checker.getSymbolAtLocation(declSourceFile);
+    if (moduleSymbol) {
+      const exports = checker.getExportsOfModule(moduleSymbol);
+      if (!exports.some((exp) => exp.getName() === namedImport)) {
+        return undefined;
+      }
     }
-    return undefined; // same-file symbol — no import needed
+
+    return { namedImport, moduleSpecifier: pkgName };
   }
 
   const moduleStr = moduleMatch[1];

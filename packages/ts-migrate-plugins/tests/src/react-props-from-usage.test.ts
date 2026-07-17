@@ -440,6 +440,36 @@ const el = <Foo size={size} variant={variant} />;
     expect(result).toMatch(/import.*ButtonVariant.*from/s);
   });
 
+  it('does not import unexported internal types from npm packages', async () => {
+    // Reproduces the immer WritableNonArrayDraft case: the type is declared in
+    // a node_modules .d.ts but has no `export` modifier and is not in an export
+    // specifier — it is an internal implementation detail that cannot be imported.
+    const libDts = `
+type InternalDraft<T> = { [K in keyof T]: T[K] };
+export type WritableDraft<T> = InternalDraft<T>;
+export declare function produce<T>(base: T, recipe: (draft: WritableDraft<T>) => void): T;
+`;
+    const componentText = `import React from 'react';
+class Foo extends React.Component {
+  render() { return null; }
+}
+export default Foo;
+`;
+    const caller = `import React from 'react';
+import Foo from '/Foo';
+import { produce } from 'mylib';
+const state = { count: 0 };
+const next = produce(state, draft => { draft.count++; });
+const el = <Foo data={next} />;
+`;
+    const result = await run(
+      componentText,
+      { 'node_modules/mylib/index.d.ts': libDts, 'caller.tsx': caller },
+    );
+    // InternalDraft must not be imported — it has no export modifier.
+    expect(result).not.toMatch(/import.*InternalDraft.*from/s);
+  });
+
   it('does not add an import for TypeScript built-in utility types like Record', async () => {
     // Record is declared in lib.es5.d.ts inside the TypeScript package itself.
     // It is globally available and must not be imported.
