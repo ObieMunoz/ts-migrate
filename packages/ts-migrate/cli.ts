@@ -22,6 +22,7 @@ import {
   reactDefaultPropsPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
+  reactPropsFromUsagePlugin,
   reactShapePlugin,
   stripTSIgnorePlugin,
   tsIgnorePlugin,
@@ -72,6 +73,7 @@ const availablePlugins = [
   reactDefaultPropsPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
+  reactPropsFromUsagePlugin,
   reactShapePlugin,
   stripTSIgnorePlugin,
   tsIgnorePlugin,
@@ -223,6 +225,7 @@ yargs
             anyFunctionAlias,
             shouldUpdateAirbnbImports: true,
           })
+          .addPlugin(reactPropsFromUsagePlugin, { anyAlias, anyFunctionAlias })
           .addPlugin(reactClassStatePlugin, { anyAlias })
           .addPlugin(reactClassLifecycleMethodsPlugin, { force: true })
           .addPlugin(reactDefaultPropsPlugin, {

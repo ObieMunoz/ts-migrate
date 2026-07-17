@@ -14,6 +14,7 @@ import reactClassStatePlugin from './plugins/react-class-state';
 import reactDefaultPropsPlugin from './plugins/react-default-props';
 import reactInlineImportedPropTypesPlugin from './plugins/react-inline-imported-prop-types';
 import reactPropsPlugin from './plugins/react-props';
+import reactPropsFromUsagePlugin from './plugins/react-props-from-usage';
 import reactShapePlugin from './plugins/react-shape';
 import stripTSIgnorePlugin from './plugins/strip-ts-ignore';
 import tsIgnorePlugin from './plugins/ts-ignore';
@@ -49,6 +50,7 @@ export {
   reactDefaultPropsPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
+  reactPropsFromUsagePlugin,
   reactShapePlugin,
   stripTSIgnorePlugin,
   tsIgnorePlugin,
