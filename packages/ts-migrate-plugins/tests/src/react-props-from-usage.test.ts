@@ -401,4 +401,42 @@ const el = <Foo name="hi" />;
     expect(result).toContain('type Props = {');
     expect(result).toContain('name: string');
   });
+
+  // ---------------------------------------------------------------------------
+  // Import injection
+  // ---------------------------------------------------------------------------
+
+  it('adds missing imports for types inferred from JSX expressions', async () => {
+    // Declare a named type in a separate "library" file so the language service
+    // can resolve it and produce a non-primitive type string.
+    const libFile = `
+export type ButtonSize = 'sm' | 'md' | 'lg';
+export type ButtonVariant = 'primary' | 'secondary';
+`;
+    const componentText = `import React from 'react';
+class Foo extends React.Component {
+  render() { return null; }
+}
+export default Foo;
+`;
+    // The caller imports from the lib and passes ButtonSize / ButtonVariant values.
+    const caller = `import React from 'react';
+import Foo from '/Foo';
+import { ButtonSize, ButtonVariant } from '/lib';
+declare const size: ButtonSize;
+declare const variant: ButtonVariant;
+const el = <Foo size={size} variant={variant} />;
+`;
+    const result = await run(
+      componentText,
+      { 'caller.tsx': caller, 'lib.ts': libFile },
+      {},
+    );
+    // The Props type should reference ButtonSize and ButtonVariant.
+    expect(result).toContain('ButtonSize');
+    expect(result).toContain('ButtonVariant');
+    // The component file should now import those types from the lib.
+    expect(result).toMatch(/import.*ButtonSize.*from/s);
+    expect(result).toMatch(/import.*ButtonVariant.*from/s);
+  });
 });

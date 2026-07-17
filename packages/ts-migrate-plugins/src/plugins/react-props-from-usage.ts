@@ -1,3 +1,4 @@
+import path from 'path';
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import {
@@ -7,6 +8,7 @@ import {
 } from './utils/react';
 import { collectIdentifiers } from './utils/identifiers';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
+import { updateImports, NamedImport } from './utils/imports';
 import {
   AnyAliasOptions,
   AnyFunctionAliasOptions,
@@ -37,6 +39,9 @@ const optionProperties: Properties = {
 interface PropInfo {
   // Observed TypeScript type strings (e.g. '"sm"', 'number', 'boolean').
   observedTypes: string[];
+  // Parallel array: the raw ts.Type for each entry in observedTypes, or null
+  // when the type was synthesised (string literal, boolean shorthand, etc.).
+  observedTsTypes: (ts.Type | null)[];
   // Number of call sites where this prop appeared as an explicit attribute.
   presentCount: number;
   // Whether optional-access patterns (?.  / default destructuring) were seen
@@ -45,6 +50,94 @@ interface PropInfo {
   // True when the prop was only found via this.props analysis (no call-site
   // evidence at all).
   thisPropsOnly: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Import helpers
+// ---------------------------------------------------------------------------
+
+// Given a symbol, try to find the module it should be imported from.
+// Returns undefined when the symbol is declared in the same file or has no
+// clear single-module home (e.g. intrinsic / anonymous types).
+function resolveSymbolImport(
+  sym: ts.Symbol,
+  checker: ts.TypeChecker,
+  componentFileName: string,
+): NamedImport | undefined {
+  if (!sym.declarations?.length) return undefined;
+  const namedImport = sym.getName();
+  if (!namedImport || namedImport.startsWith('__')) return undefined;
+
+  const fqn = checker.getFullyQualifiedName(sym);
+  // External modules have FQN of the form `"module-or-path".SymbolName`
+  const moduleMatch = /^"(.+)"\.[^.]+$/.exec(fqn);
+  if (!moduleMatch) return undefined; // same-file symbol — no import needed
+
+  const moduleStr = moduleMatch[1];
+
+  // Bare package name (no leading . or /): use as-is.
+  if (!moduleStr.startsWith('.') && !moduleStr.startsWith('/')) {
+    return { namedImport, moduleSpecifier: moduleStr };
+  }
+
+  // Local file: compute a relative specifier from the component file.
+  const rel = path
+    .relative(path.dirname(componentFileName), moduleStr)
+    .replace(/\.d\.ts$/, '')
+    .replace(/\.(tsx?|jsx?)$/, '');
+  const moduleSpecifier = rel.startsWith('.') ? rel : `./${rel}`;
+  return { namedImport, moduleSpecifier };
+}
+
+// Recursively collect all importable symbols from a ts.Type, including its
+// type arguments, union/intersection members, etc.
+function collectImportSpecs(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+  componentFileName: string,
+  seen: Set<ts.Symbol>,
+  out: NamedImport[],
+): void {
+  // Always prefer the alias symbol: if the type is `ButtonSize = 'sm' | 'md'`,
+  // we want `ButtonSize` — not a recursion into the string literal members.
+  if (type.aliasSymbol) {
+    if (!seen.has(type.aliasSymbol)) {
+      seen.add(type.aliasSymbol);
+      const imp = resolveSymbolImport(type.aliasSymbol, checker, componentFileName);
+      if (imp) out.push(imp);
+    }
+    // Recurse into alias type arguments (e.g. Map<K, V> → also import K and V).
+    if (type.aliasTypeArguments) {
+      for (const arg of type.aliasTypeArguments) {
+        collectImportSpecs(arg, checker, componentFileName, seen, out);
+      }
+    }
+    return;
+  }
+
+  // Recurse into union / intersection members.
+  if (type.isUnion() || type.isIntersection()) {
+    for (const part of type.types) {
+      collectImportSpecs(part, checker, componentFileName, seen, out);
+    }
+    return;
+  }
+
+  // Plain reference type: collect the symbol.
+  const sym = type.symbol;
+  if (sym && !seen.has(sym)) {
+    seen.add(sym);
+    const imp = resolveSymbolImport(sym, checker, componentFileName);
+    if (imp) out.push(imp);
+  }
+
+  // Recurse into type arguments (generic instantiations).
+  const typeArgs = (type as ts.TypeReference).typeArguments;
+  if (typeArgs) {
+    for (const arg of typeArgs) {
+      collectImportSpecs(arg, checker, componentFileName, seen, out);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -327,6 +420,9 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
 
     const updates: SourceTextUpdate[] = [];
     const printer = ts.createPrinter();
+    // Collects import specs for all type references used across all emitted Props types.
+    const neededImports: NamedImport[] = [];
+    const importSeen = new Set<ts.Symbol>();
 
     for (const classDeclaration of reactClassDeclarations) {
       const heritageType = getReactComponentHeritageType(classDeclaration);
@@ -355,6 +451,7 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
         for (const [name, { optionalHint }] of thisProps) {
           propMap.set(name, {
             observedTypes: [],
+            observedTsTypes: [],
             presentCount: 0,
             optionalHint,
             thisPropsOnly: true,
@@ -415,6 +512,7 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
             } else {
               propMap.set('children', {
                 observedTypes: ['React.ReactNode'],
+                observedTsTypes: [null],
                 presentCount: 1,
                 optionalHint: true,
                 thisPropsOnly: false,
@@ -429,6 +527,7 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
             if (!propName || propName === 'key' || propName === 'ref') continue;
 
             let typeStr: string;
+            let tsType: ts.Type | null = null;
             if (!attr.initializer) {
               // Boolean shorthand: <Foo disabled />
               typeStr = 'boolean';
@@ -438,8 +537,14 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
               ts.isJsxExpression(attr.initializer) &&
               attr.initializer.expression != null
             ) {
-              const type = checker.getTypeAtLocation(attr.initializer.expression);
-              typeStr = checker.typeToString(type);
+              tsType = checker.getTypeAtLocation(attr.initializer.expression);
+              typeStr = checker.typeToString(tsType);
+              // Normalise the import() notation TypeScript sometimes emits
+              // (e.g. `import("@reduxjs/toolkit").AsyncThunk`) to the bare name.
+              const importNotation = /^import\("([^"]+)"\)\.([^.]+)$/.exec(typeStr);
+              if (importNotation) {
+                typeStr = importNotation[2];
+              }
             } else {
               typeStr = anyAlias ?? 'any';
             }
@@ -447,11 +552,13 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
             const existing = propMap.get(propName);
             if (existing) {
               existing.observedTypes.push(typeStr);
+              existing.observedTsTypes.push(tsType);
               existing.presentCount++;
               existing.thisPropsOnly = false;
             } else {
               propMap.set(propName, {
                 observedTypes: [typeStr],
+                observedTsTypes: [tsType],
                 presentCount: 1,
                 optionalHint: false,
                 thisPropsOnly: false,
@@ -507,6 +614,13 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
             ? widenTypes(info.observedTypes, anyAlias)
             : (anyAlias ?? 'any');
 
+        // Collect imports for any non-primitive, non-keyword types that survive widening.
+        for (const tsType of info.observedTsTypes) {
+          if (tsType != null) {
+            collectImportSpecs(tsType, checker, fileName, importSeen, neededImports);
+          }
+        }
+
         members.push(
           ts.factory.createPropertySignature(
             undefined,
@@ -555,7 +669,18 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
     }
 
     if (updates.length === 0) return undefined;
-    return updateSourceText(sourceFile.text, updates);
+
+    // --- Apply content edits, then add missing import statements ---
+    const updatedText = updateSourceText(sourceFile.text, updates);
+    const updatedSourceFile = ts.createSourceFile(
+      fileName,
+      updatedText,
+      sourceFile.languageVersion,
+    );
+    const importUpdates = updateImports(updatedSourceFile, neededImports, []);
+    return importUpdates.length > 0
+      ? updateSourceText(updatedText, importUpdates)
+      : updatedText;
   },
 
   validate: createValidate<Options>(optionProperties),
