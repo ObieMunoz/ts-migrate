@@ -92,6 +92,10 @@ function findNamedImportInSourceFile(
 function packageNameFromNodeModulesPath(filePath: string): string | undefined {
   const idx = filePath.lastIndexOf('/node_modules/');
   if (idx === -1) return undefined;
+  // TypeScript's own built-in lib files (lib.es5.d.ts, lib.dom.d.ts, etc.) live
+  // at {typescript-pkg}/lib/lib.*.d.ts. The types they declare (Record, Partial,
+  // Array, etc.) are globally available and must never be imported.
+  if (filePath.includes('/typescript/lib/lib.')) return undefined;
   const rest = filePath.slice(idx + '/node_modules/'.length);
   const parts = rest.split('/');
   if (parts[0].startsWith('@') && parts.length >= 2) {

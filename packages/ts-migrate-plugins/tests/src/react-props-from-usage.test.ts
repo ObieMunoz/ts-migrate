@@ -440,6 +440,28 @@ const el = <Foo size={size} variant={variant} />;
     expect(result).toMatch(/import.*ButtonVariant.*from/s);
   });
 
+  it('does not add an import for TypeScript built-in utility types like Record', async () => {
+    // Record is declared in lib.es5.d.ts inside the TypeScript package itself.
+    // It is globally available and must not be imported.
+    const componentText = `import React from 'react';
+class Foo extends React.Component {
+  render() { return null; }
+}
+export default Foo;
+`;
+    const caller = `import React from 'react';
+import Foo from '/Foo';
+declare const data: Record<string, number>;
+const el = <Foo data={data} />;
+`;
+    const result = await run(componentText, { 'caller.tsx': caller });
+    expect(result).toBeDefined();
+    // The prop type should reference Record…
+    expect(result).toContain('Record');
+    // …but there must be no import statement for it.
+    expect(result).not.toMatch(/import.*Record.*from/s);
+  });
+
   it('adds missing imports for generic types with type parameters (direct annotation)', async () => {
     const libFile = `
 export type ActionCreatorWithOptionalPayload<P, T extends string = string> = {
