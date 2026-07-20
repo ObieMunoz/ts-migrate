@@ -242,10 +242,12 @@ function collectBodyConflictDrops(
         return;
       }
 
-      // When the callee is external (declared outside this file), the argument
-      // being passed may itself be an annotated parameter — e.g.
-      // `showErr(dispatch)` where `dispatch` was annotated.  Drop just that
-      // argument's annotation rather than the entire enclosing function.
+      // When the callee doesn't resolve to an annotated in-file parameter
+      // (an external function, or an in-file declaration like a `declare
+      // function`), the argument at the error position may itself be an
+      // annotated parameter — e.g. `showErr(dispatch)` where `dispatch` was
+      // annotated. Drop just that argument's annotation rather than the
+      // entire enclosing function.
       const argNode = argumentNodeAt(source, error.start);
       if (argNode && ts.isIdentifier(argNode)) {
         const argSymbol = checker.getSymbolAtLocation(argNode);
