@@ -424,6 +424,71 @@ getItem('abc');
 `);
   });
 
+    it('retains body-derived types when a narrow callable annotation is called with too few arguments', async () => {
+    // TS2554's span sits on the callee (`dispatch`), not on an argument.
+    const text = `declare function showErr(dispatch: (msg: string) => void): void;
+
+function getItem(id) {
+  return (dispatch) => {
+    dispatch();
+    showErr(dispatch);
+    return id.toUpperCase();
+  };
+}
+getItem('abc');
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`declare function showErr(dispatch: (msg: string) => void): void;
+
+function getItem(id: string) {
+  return (dispatch) => {
+    dispatch();
+    showErr(dispatch);
+    return id.toUpperCase();
+  };
+}
+getItem('abc');
+`);
+  });
+
+  it('retains body-derived types when the arity conflict sits inside a callback argument', async () => {
+    // The violated call (`dispatch()`) is inside a callback that is itself an
+    // argument of `each(...)` — the walk must not skip past it to `each`.
+    const text = `declare function showErr(dispatch: (msg: string) => void): void;
+declare function each(items: string[], cb: (item: string) => void): void;
+
+function getItem(id) {
+  return (dispatch) => {
+    each([], function (item) {
+      dispatch();
+    });
+    showErr(dispatch);
+    return id.toUpperCase();
+  };
+}
+getItem('abc');
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`declare function showErr(dispatch: (msg: string) => void): void;
+declare function each(items: string[], cb: (item: string) => void): void;
+
+function getItem(id: string) {
+  return (dispatch) => {
+    each([], function (item) {
+      dispatch();
+    });
+    showErr(dispatch);
+    return id.toUpperCase();
+  };
+}
+getItem('abc');
+`);
+  });
+
   it('leaves un-inferable locations to the explicit-any plugin', async () => {
     const text = `function track(count, mystery) {
   count.toFixed(2);

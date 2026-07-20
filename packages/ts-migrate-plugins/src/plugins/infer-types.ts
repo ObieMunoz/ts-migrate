@@ -234,7 +234,7 @@ function collectBodyConflictDrops(
     // dispatch inferred too narrowly from heterogeneous calls) is a conflict
     // of that parameter's annotation, wherever the call sits.
     if (callArgumentErrorCodes.has(error.code)) {
-      const callee = calleeDeclarationAt(source, error.start, checker);
+      const callee = calleeDeclarationAt(source, error.start, error.length ?? 0, checker);
       if (callee && ts.isParameter(callee) && callee.getSourceFile() === source) {
         const start = toOriginalPos(callee.getStart(), finalChanges);
         const end = toOriginalPos(callee.end, finalChanges);
@@ -439,7 +439,7 @@ function attributeErrors(
     // A bad call to an annotated *parameter* (e.g. a redux dispatch) is a
     // conflict of the function owning that parameter.
     if (callArgumentErrorCodes.has(error.code)) {
-      const callee = calleeDeclarationAt(source, error.start, checker);
+      const callee = calleeDeclarationAt(source, error.start, error.length ?? 0, checker);
       if (callee && ts.isParameter(callee) && callee.getSourceFile() === source) {
         const owner = enclosingFunctionLike(
           originalSource,
@@ -465,7 +465,7 @@ function attributeErrors(
     }
 
     if (callArgumentErrorCodes.has(error.code)) {
-      const callee = calleeDeclarationAt(source, error.start, checker);
+      const callee = calleeDeclarationAt(source, error.start, error.length ?? 0, checker);
       if (callee && callee.getSourceFile() === source) {
         const originalFn = enclosingFunctionLike(
           originalSource,
@@ -485,20 +485,23 @@ function attributeErrors(
 
 function calleeDeclarationAt(
   source: ts.SourceFile,
-  position: number,
+  start: number,
+  length: number,
   checker: ts.TypeChecker,
 ): ts.Node | undefined {
-  let node = nodeAt(source, position);
-  // Walk up from the node at `position` until we find a node that is a
-  // direct argument of a CallExpression/NewExpression.  For argument-
-  // mismatch errors (TS2345 etc.) the diagnostic position is at the
-  // argument expression, which may itself be a nested call — so the
-  // first ancestor CallExpression would be that nested call rather than
-  // the outer one whose parameter type is wrong.
+  // The node covering the whole error span disambiguates which call the
+  // diagnostic blames: argument-mismatch spans (TS2345) cover the argument
+  // expression - which may itself be a nested call whose callee identifier
+  // starts at the same position - while arity spans (TS2554/2555) cover just
+  // the callee expression. Walking up from that node, the violated call is
+  // the first one holding it as its callee or as a direct argument.
+  let node = nodeSpanning(source, start, start + length);
   while (node) {
-    const parent = node.parent;
+    const parent: ts.Node | undefined = node.parent;
     if (parent && (ts.isCallExpression(parent) || ts.isNewExpression(parent))) {
-      if (parent.arguments && parent.arguments.some((a) => a === node)) {
+      const isCallee = parent.expression === node;
+      const isArgument = parent.arguments != null && parent.arguments.some((a) => a === node);
+      if (isCallee || isArgument) {
         node = parent;
         break;
       }
@@ -514,6 +517,20 @@ function calleeDeclarationAt(
     return declaration.initializer;
   }
   return declaration;
+}
+
+// Innermost node covering the whole span; equals nodeAt for empty spans.
+function nodeSpanning(source: ts.SourceFile, start: number, end: number): ts.Node | undefined {
+  const spanEnd = Math.max(end, start + 1);
+  let result: ts.Node | undefined;
+  const visit = (node: ts.Node) => {
+    if (node.getStart() <= start && spanEnd <= node.end) {
+      result = node;
+      node.forEachChild(visit);
+    }
+  };
+  source.forEachChild(visit);
+  return result;
 }
 
 function findNewErrors(
