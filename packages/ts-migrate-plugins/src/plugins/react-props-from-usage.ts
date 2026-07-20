@@ -9,6 +9,8 @@ import {
 import { collectIdentifiers } from './utils/identifiers';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { updateImports, NamedImport } from './utils/imports';
+import { collectImportSpecs } from './utils/importSpecs';
+import { buildTypeNode, widenTypes } from './utils/typeStrings';
 import {
   AnyAliasOptions,
   AnyFunctionAliasOptions,
@@ -84,131 +86,6 @@ function findNamedImportInSourceFile(
     }
   }
   return undefined;
-}
-
-// Extract an npm package name from a file path that passes through node_modules.
-// e.g. "/…/node_modules/@reduxjs/toolkit/dist/index.d.ts" → "@reduxjs/toolkit"
-//      "/…/node_modules/react/index.d.ts"                 → "react"
-function packageNameFromNodeModulesPath(filePath: string): string | undefined {
-  const idx = filePath.lastIndexOf('/node_modules/');
-  if (idx === -1) return undefined;
-  // TypeScript's own built-in lib files (lib.es5.d.ts, lib.dom.d.ts, etc.) live
-  // at {typescript-pkg}/lib/lib.*.d.ts. The types they declare (Record, Partial,
-  // Array, etc.) are globally available and must never be imported.
-  if (filePath.includes('/typescript/lib/lib.')) return undefined;
-  const rest = filePath.slice(idx + '/node_modules/'.length);
-  const parts = rest.split('/');
-  if (parts[0].startsWith('@') && parts.length >= 2) {
-    return `${parts[0]}/${parts[1]}`;
-  }
-  return parts[0] || undefined;
-}
-
-// Returns undefined when the symbol is declared in the same file or has no
-// clear single-module home (e.g. intrinsic / anonymous types).
-function resolveSymbolImport(
-  sym: ts.Symbol,
-  checker: ts.TypeChecker,
-  componentFileName: string,
-): NamedImport | undefined {
-  if (!sym.declarations?.length) return undefined;
-  const namedImport = sym.getName();
-  if (!namedImport || namedImport.startsWith('__')) return undefined;
-
-  const decl = sym.declarations[0];
-  const fqn = checker.getFullyQualifiedName(sym);
-  // External modules have FQN of the form `"module-or-path".SymbolName`
-  const moduleMatch = /^"(.+)"\.[^.]+$/.exec(fqn);
-  if (!moduleMatch) {
-    // Some npm packages (e.g. @reduxjs/toolkit) declare types as interfaces in
-    // plain .d.ts files rather than inside `declare module "…"` blocks. In that
-    // case TypeScript returns a bare FQN with no module prefix. Fall back to
-    // extracting the package name from the declaration file path.
-    const declSourceFile = decl.getSourceFile();
-    const pkgName = packageNameFromNodeModulesPath(declSourceFile.fileName);
-    if (!pkgName) return undefined; // same-file or lib — no import needed
-
-    // Only emit an import if the symbol is actually exported from the package.
-    // Internal types (e.g. immer's WritableNonArrayDraft) also have bare FQNs
-    // but are NOT exported — importing them would produce a TS error.
-    // We use getExportsOfModule so that both `export type Foo` and
-    // `export { type Foo }` patterns are covered.
-    const moduleSymbol = checker.getSymbolAtLocation(declSourceFile);
-    if (moduleSymbol) {
-      const exports = checker.getExportsOfModule(moduleSymbol);
-      if (!exports.some((exp) => exp.getName() === namedImport)) {
-        return undefined;
-      }
-    }
-
-    return { namedImport, moduleSpecifier: pkgName };
-  }
-
-  const moduleStr = moduleMatch[1];
-
-  // Bare package name (no leading . or /): use as-is.
-  if (!moduleStr.startsWith('.') && !moduleStr.startsWith('/')) {
-    return { namedImport, moduleSpecifier: moduleStr };
-  }
-
-  // Local file: compute a relative specifier from the component file.
-  const rel = path
-    .relative(path.dirname(componentFileName), moduleStr)
-    .replace(/\.d\.ts$/, '')
-    .replace(/\.(tsx?|jsx?)$/, '');
-  const moduleSpecifier = rel.startsWith('.') ? rel : `./${rel}`;
-  return { namedImport, moduleSpecifier };
-}
-
-// Recursively collect all importable symbols from a ts.Type, including its
-// type arguments, union/intersection members, etc.
-function collectImportSpecs(
-  type: ts.Type,
-  checker: ts.TypeChecker,
-  componentFileName: string,
-  seen: Set<ts.Symbol>,
-  out: NamedImport[],
-): void {
-  // Always prefer the alias symbol: if the type is `ButtonSize = 'sm' | 'md'`,
-  // we want `ButtonSize` — not a recursion into the string literal members.
-  if (type.aliasSymbol) {
-    if (!seen.has(type.aliasSymbol)) {
-      seen.add(type.aliasSymbol);
-      const imp = resolveSymbolImport(type.aliasSymbol, checker, componentFileName);
-      if (imp) out.push(imp);
-    }
-    // Recurse into alias type arguments (e.g. Map<K, V> → also import K and V).
-    if (type.aliasTypeArguments) {
-      for (const arg of type.aliasTypeArguments) {
-        collectImportSpecs(arg, checker, componentFileName, seen, out);
-      }
-    }
-    return;
-  }
-
-  // Recurse into union / intersection members.
-  if (type.isUnion() || type.isIntersection()) {
-    for (const part of type.types) {
-      collectImportSpecs(part, checker, componentFileName, seen, out);
-    }
-    return;
-  }
-
-  // Plain reference type: collect the symbol.
-  const sym = type.symbol;
-  if (sym && !seen.has(sym)) {
-    seen.add(sym);
-    const imp = resolveSymbolImport(sym, checker, componentFileName);
-    if (imp) out.push(imp);
-  }
-
-  // Recurse into type arguments (generic instantiations).
-  const typeArgs = (type as ts.TypeReference).typeArguments;
-  if (typeArgs) {
-    for (const arg of typeArgs) {
-      collectImportSpecs(arg, checker, componentFileName, seen, out);
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -352,167 +229,6 @@ function findNodeAtPosition(sourceFile: ts.SourceFile, pos: number): ts.Node | u
     return ts.forEachChild(node, find) ?? node;
   }
   return find(sourceFile);
-}
-
-// Split a type string on `sep` only at depth 0 (not inside < > ( ) [ ] { }).
-function splitTopLevel(str: string, sep: string): string[] {
-  const result: string[] = [];
-  let depth = 0;
-  let current = '';
-  for (let i = 0; i < str.length; i++) {
-    const ch = str[i];
-    if (ch === '<' || ch === '(' || ch === '[' || ch === '{') depth++;
-    else if (ch === '>' || ch === ')' || ch === ']' || ch === '}') depth--;
-    if (depth === 0 && str.startsWith(sep, i)) {
-      result.push(current.trim());
-      current = '';
-      i += sep.length - 1;
-    } else {
-      current += ch;
-    }
-  }
-  result.push(current.trim());
-  return result;
-}
-
-// Convert a type string (as produced by checker.typeToString or our own
-// literal-union builder) to a ts.TypeNode using ts.factory calls only, so
-// the resulting nodes have no source positions and print cleanly.
-function buildTypeNode(typeStr: string, anyAlias?: string): ts.TypeNode {
-  typeStr = typeStr.trim();
-
-  // Union type: split at top-level ' | '
-  const unionParts = splitTopLevel(typeStr, ' | ');
-  if (unionParts.length > 1) {
-    return ts.factory.createUnionTypeNode(
-      unionParts.map((p) => buildTypeNode(p, anyAlias)),
-    );
-  }
-
-  // Double-quoted string literal
-  if (typeStr.startsWith('"') && typeStr.endsWith('"') && typeStr.length >= 2) {
-    return ts.factory.createLiteralTypeNode(
-      ts.factory.createStringLiteral(typeStr.slice(1, -1)),
-    );
-  }
-  // Single-quoted string literal
-  if (typeStr.startsWith("'") && typeStr.endsWith("'") && typeStr.length >= 2) {
-    return ts.factory.createLiteralTypeNode(
-      ts.factory.createStringLiteral(typeStr.slice(1, -1)),
-    );
-  }
-
-  // Numeric literal (including negative)
-  if (/^-?\d+(\.\d+)?$/.test(typeStr)) {
-    const numVal = Number(typeStr);
-    const literal =
-      numVal < 0
-        ? (ts.factory.createPrefixUnaryExpression(
-            ts.SyntaxKind.MinusToken,
-            ts.factory.createNumericLiteral(String(-numVal)),
-          ) as unknown as ts.LiteralExpression)
-        : ts.factory.createNumericLiteral(typeStr);
-    return ts.factory.createLiteralTypeNode(literal);
-  }
-
-  // Boolean literals
-  if (typeStr === 'true') return ts.factory.createLiteralTypeNode(ts.factory.createTrue());
-  if (typeStr === 'false') return ts.factory.createLiteralTypeNode(ts.factory.createFalse());
-
-  // Array type: T[]
-  if (typeStr.endsWith('[]')) {
-    return ts.factory.createArrayTypeNode(buildTypeNode(typeStr.slice(0, -2), anyAlias));
-  }
-
-  // Generic type reference: Name<A, B>
-  const genericMatch = /^([A-Za-z_$][A-Za-z0-9_$.]*)<(.+)>$/.exec(typeStr);
-  if (genericMatch) {
-    const [, name, args] = genericMatch;
-    const typeArgs = splitTopLevel(args, ', ').map((a) => buildTypeNode(a, anyAlias));
-    return ts.factory.createTypeReferenceNode(name, typeArgs);
-  }
-
-  // Keyword types
-  switch (typeStr) {
-    case 'string':
-      return ts.factory.createKeywordTypeNode(ts.SyntaxKind.StringKeyword);
-    case 'number':
-      return ts.factory.createKeywordTypeNode(ts.SyntaxKind.NumberKeyword);
-    case 'boolean':
-      return ts.factory.createKeywordTypeNode(ts.SyntaxKind.BooleanKeyword);
-    case 'any':
-      return ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
-    case 'void':
-      return ts.factory.createKeywordTypeNode(ts.SyntaxKind.VoidKeyword);
-    case 'never':
-      return ts.factory.createKeywordTypeNode(ts.SyntaxKind.NeverKeyword);
-    case 'unknown':
-      return ts.factory.createKeywordTypeNode(ts.SyntaxKind.UnknownKeyword);
-    case 'null':
-      return ts.factory.createLiteralTypeNode(ts.factory.createNull());
-    case 'undefined':
-      return ts.factory.createKeywordTypeNode(ts.SyntaxKind.UndefinedKeyword);
-    case 'object':
-      return ts.factory.createKeywordTypeNode(ts.SyntaxKind.ObjectKeyword);
-    case 'symbol':
-      return ts.factory.createKeywordTypeNode(ts.SyntaxKind.SymbolKeyword);
-    case 'bigint':
-      return ts.factory.createKeywordTypeNode(ts.SyntaxKind.BigIntKeyword);
-    default:
-      break;
-  }
-
-  // anyAlias reference
-  if (anyAlias && typeStr === anyAlias) {
-    return ts.factory.createTypeReferenceNode(anyAlias, undefined);
-  }
-
-  // Qualified / dotted name (e.g. React.ReactNode, JSX.Element)
-  if (/^[A-Za-z_$][A-Za-z0-9_$.]*$/.test(typeStr)) {
-    const parts = typeStr.split('.');
-    let entityName: ts.EntityName = ts.factory.createIdentifier(parts[0]);
-    for (let i = 1; i < parts.length; i++) {
-      entityName = ts.factory.createQualifiedName(
-        entityName,
-        ts.factory.createIdentifier(parts[i]),
-      );
-    }
-    return ts.factory.createTypeReferenceNode(entityName, undefined);
-  }
-
-  // Fallback: emit anyAlias / any
-  return anyAlias
-    ? ts.factory.createTypeReferenceNode(anyAlias, undefined)
-    : ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
-}
-
-// Reduce a list of observed type strings to a single canonical type string.
-// All literals are widened to their base type.
-function widenTypes(observedTypes: string[], anyAlias?: string): string {
-  if (observedTypes.length === 0) return anyAlias ?? 'any';
-  const anyType = anyAlias ?? 'any';
-
-  const unique = [...new Set(observedTypes)];
-
-  if (unique.some((t) => t === 'any' || (anyAlias != null && t === anyAlias))) {
-    return anyType;
-  }
-
-  const isStrLit = (t: string) => /^["'].*["']$/.test(t);
-  const isNumLit = (t: string) => /^-?\d+(\.\d+)?$/.test(t);
-  const isBoolLit = (t: string) => t === 'true' || t === 'false';
-
-  // Widen each observed type to its base type, then union the distinct bases.
-  const baseTypes = new Set<string>();
-  for (const t of unique) {
-    if (isStrLit(t)) baseTypes.add('string');
-    else if (isNumLit(t)) baseTypes.add('number');
-    else if (isBoolLit(t)) baseTypes.add('boolean');
-    else baseTypes.add(t);
-  }
-
-  const arr = [...baseTypes];
-  return arr.length === 1 ? arr[0] : arr.join(' | ');
 }
 
 // ---------------------------------------------------------------------------
@@ -878,10 +594,19 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
             ? widenTypes(info.observedTypes, anyAlias)
             : (anyAlias ?? 'any');
 
-        // Collect imports for any non-primitive, non-keyword types that survive widening.
-        for (const tsType of info.observedTsTypes) {
-          if (tsType != null) {
-            collectImportSpecs(tsType, checker, fileName, importSeen, neededImports);
+        const typeNode = buildTypeNode(finalTypeStr, anyAlias);
+        const printedType = printer.printNode(ts.EmitHint.Unspecified, typeNode, sourceFile);
+        const degradesToAny =
+          printedType === 'any' || printedType === (anyAlias ?? 'any');
+
+        // Collect imports for the type's referenced symbols — but only when the
+        // emitted type actually survives. Emitting `any` while importing the
+        // type's symbols would leave dangling, unused imports.
+        if (!degradesToAny) {
+          for (const tsType of info.observedTsTypes) {
+            if (tsType != null) {
+              collectImportSpecs(tsType, checker, fileName, importSeen, neededImports);
+            }
           }
         }
 
@@ -890,7 +615,7 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
             undefined,
             propName,
             isOptional ? ts.factory.createToken(ts.SyntaxKind.QuestionToken) : undefined,
-            buildTypeNode(finalTypeStr, anyAlias),
+            typeNode,
           ),
         );
       }
