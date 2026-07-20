@@ -312,6 +312,40 @@ function collectThisPropsUsage(
   return result;
 }
 
+// immer's Draft helpers (Draft / WritableDraft / WritableNonArrayDraft /
+// WritableArrayDraft) are structurally identical to the type they wrap but are
+// internal aliases — WritableNonArrayDraft and WritableArrayDraft are not even
+// exported from immer. TypeScript surfaces them at call sites when a value has
+// flowed through a redux-toolkit reducer (state is `Draft<T>`), so e.g.
+// `store.usage` (RootState['usage']) reports as `WritableNonArrayDraft<UsageState>`.
+// Emitting that verbatim produces an unresolvable type name, so unwrap the
+// alias to its single underlying type argument.
+const IMMER_DRAFT_ALIASES = new Set([
+  'Draft',
+  'WritableDraft',
+  'WritableNonArrayDraft',
+  'WritableArrayDraft',
+]);
+
+function isDeclaredInImmer(sym: ts.Symbol): boolean {
+  return (sym.declarations ?? []).some((decl) =>
+    decl.getSourceFile().fileName.includes('/immer/'),
+  );
+}
+
+function unwrapImmerDraft(type: ts.Type): ts.Type {
+  const aliasSymbol = type.aliasSymbol;
+  if (
+    aliasSymbol &&
+    IMMER_DRAFT_ALIASES.has(aliasSymbol.getName()) &&
+    isDeclaredInImmer(aliasSymbol) &&
+    type.aliasTypeArguments?.length === 1
+  ) {
+    return unwrapImmerDraft(type.aliasTypeArguments[0]);
+  }
+  return type;
+}
+
 function findNodeAtPosition(sourceFile: ts.SourceFile, pos: number): ts.Node | undefined {
   function find(node: ts.Node): ts.Node | undefined {
     if (pos < node.getStart(sourceFile) || pos >= node.getEnd()) return undefined;
@@ -584,7 +618,7 @@ function collectCallSiteProps(
           ts.isJsxExpression(attr.initializer) &&
           attr.initializer.expression != null
         ) {
-          tsType = checker.getTypeAtLocation(attr.initializer.expression);
+          tsType = unwrapImmerDraft(checker.getTypeAtLocation(attr.initializer.expression));
           typeStr = checker.typeToString(tsType);
           // Strip any import() notation TypeScript may emit for types from
           // external modules not imported in the component file.

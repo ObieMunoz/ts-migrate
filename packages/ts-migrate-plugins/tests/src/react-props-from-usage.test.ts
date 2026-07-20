@@ -116,6 +116,36 @@ const el = <Foo name="Alice" count={42} />;
     expect(result).toContain('class Foo extends React.Component<Props>');
   });
 
+  it('unwraps immer draft alias to the underlying type at a call site', async () => {
+    const text = `import React from 'react';
+class Foo extends React.Component {
+  render() { return null; }
+}
+export default Foo;
+`;
+    // Fake immer module at a path containing /immer/ so the unwrap heuristic
+    // recognises it. Mirrors redux-toolkit reducer state being Draft<T>.
+    const immer = `export type WritableNonArrayDraft<T> = { -readonly [K in keyof T]: T[K] };
+export const draft = <T>(base: T): WritableNonArrayDraft<T> => base as WritableNonArrayDraft<T>;
+`;
+    const state = `export type UsageState = { total: number };
+`;
+    const caller = `import React from 'react';
+import Foo from '/Foo';
+import { UsageState } from '/state';
+import { draft } from '/immer/index';
+const usages = draft<UsageState>({ total: 0 });
+const el = <Foo usages={usages} />;
+`;
+    const result = await run(text, {
+      'immer/index.ts': immer,
+      'state.ts': state,
+      'caller.tsx': caller,
+    });
+    expect(result).toContain('usages: UsageState');
+    expect(result).not.toContain('WritableNonArrayDraft');
+  });
+
   it('widens string attrs to string', async () => {
     const text = `import React from 'react';
 class Foo extends React.Component {
