@@ -234,12 +234,30 @@ function collectBodyConflictDrops(
     // dispatch inferred too narrowly from heterogeneous calls) is a conflict
     // of that parameter's annotation, wherever the call sits.
     if (callArgumentErrorCodes.has(error.code)) {
-      const callee = calleeDeclarationAt(source, error.start, checker);
+      const callee = calleeDeclarationAt(source, error.start, error.length ?? 0, checker);
       if (callee && ts.isParameter(callee) && callee.getSourceFile() === source) {
         const start = toOriginalPos(callee.getStart(), finalChanges);
         const end = toOriginalPos(callee.end, finalChanges);
         dropWithin(start, end + 1);
         return;
+      }
+
+      // When the callee doesn't resolve to an annotated in-file parameter
+      // (an external function, or an in-file declaration like a `declare
+      // function`), the argument at the error position may itself be an
+      // annotated parameter — e.g. `showErr(dispatch)` where `dispatch` was
+      // annotated. Drop just that argument's annotation rather than the
+      // entire enclosing function.
+      const argNode = argumentNodeAt(source, error.start);
+      if (argNode && ts.isIdentifier(argNode)) {
+        const argSymbol = checker.getSymbolAtLocation(argNode);
+        const argDecl = argSymbol?.declarations?.[0];
+        if (argDecl && ts.isParameter(argDecl) && argDecl.getSourceFile() === source) {
+          const start = toOriginalPos(argDecl.getStart(), finalChanges);
+          const end = toOriginalPos(argDecl.end, finalChanges);
+          dropWithin(start, end + 1);
+          return;
+        }
       }
     }
 
@@ -421,7 +439,7 @@ function attributeErrors(
     // A bad call to an annotated *parameter* (e.g. a redux dispatch) is a
     // conflict of the function owning that parameter.
     if (callArgumentErrorCodes.has(error.code)) {
-      const callee = calleeDeclarationAt(source, error.start, checker);
+      const callee = calleeDeclarationAt(source, error.start, error.length ?? 0, checker);
       if (callee && ts.isParameter(callee) && callee.getSourceFile() === source) {
         const owner = enclosingFunctionLike(
           originalSource,
@@ -447,7 +465,7 @@ function attributeErrors(
     }
 
     if (callArgumentErrorCodes.has(error.code)) {
-      const callee = calleeDeclarationAt(source, error.start, checker);
+      const callee = calleeDeclarationAt(source, error.start, error.length ?? 0, checker);
       if (callee && callee.getSourceFile() === source) {
         const originalFn = enclosingFunctionLike(
           originalSource,
@@ -467,12 +485,28 @@ function attributeErrors(
 
 function calleeDeclarationAt(
   source: ts.SourceFile,
-  position: number,
+  start: number,
+  length: number,
   checker: ts.TypeChecker,
 ): ts.Node | undefined {
-  let node = nodeAt(source, position);
-  while (node && !ts.isCallExpression(node) && !ts.isNewExpression(node)) {
-    node = node.parent;
+  // The node covering the whole error span disambiguates which call the
+  // diagnostic blames: argument-mismatch spans (TS2345) cover the argument
+  // expression - which may itself be a nested call whose callee identifier
+  // starts at the same position - while arity spans (TS2554/2555) cover just
+  // the callee expression. Walking up from that node, the violated call is
+  // the first one holding it as its callee or as a direct argument.
+  let node = nodeSpanning(source, start, start + length);
+  while (node) {
+    const parent: ts.Node | undefined = node.parent;
+    if (parent && (ts.isCallExpression(parent) || ts.isNewExpression(parent))) {
+      const isCallee = parent.expression === node;
+      const isArgument = parent.arguments != null && parent.arguments.some((a) => a === node);
+      if (isCallee || isArgument) {
+        node = parent;
+        break;
+      }
+    }
+    node = parent;
   }
   if (!node) return undefined;
   const symbol = checker.getSymbolAtLocation((node as ts.CallExpression).expression);
@@ -483,6 +517,20 @@ function calleeDeclarationAt(
     return declaration.initializer;
   }
   return declaration;
+}
+
+// Innermost node covering the whole span; equals nodeAt for empty spans.
+function nodeSpanning(source: ts.SourceFile, start: number, end: number): ts.Node | undefined {
+  const spanEnd = Math.max(end, start + 1);
+  let result: ts.Node | undefined;
+  const visit = (node: ts.Node) => {
+    if (node.getStart() <= start && spanEnd <= node.end) {
+      result = node;
+      node.forEachChild(visit);
+    }
+  };
+  source.forEachChild(visit);
+  return result;
 }
 
 function findNewErrors(
@@ -573,6 +621,23 @@ function nodeAt(source: ts.SourceFile, position: number): ts.Node | undefined {
   };
   source.forEachChild(visit);
   return result;
+}
+
+// Returns the direct argument node that contains `position` within a
+// CallExpression/NewExpression, or undefined if the position is not inside
+// an argument list.
+function argumentNodeAt(source: ts.SourceFile, position: number): ts.Node | undefined {
+  let node = nodeAt(source, position);
+  while (node) {
+    const parent = node.parent;
+    if (parent && (ts.isCallExpression(parent) || ts.isNewExpression(parent))) {
+      if (parent.arguments && parent.arguments.some((a) => a === node)) {
+        return node;
+      }
+    }
+    node = node.parent;
+  }
+  return undefined;
 }
 
 function toCandidatePos(originalPos: number, changes: TextChange[]): number {

@@ -378,6 +378,117 @@ register(wrap);
 `);
   });
 
+  it('retains body-derived types when the only conflict is a nested call as a dispatch argument', async () => {
+    // Regression test for calleeDeclarationAt stopping at the wrong call node.
+    //
+    // `inferFromUsage` annotates `dispatch` with a type derived from the
+    // `showErr(dispatch)` call site.  That annotation makes
+    // `dispatch(setFlag(true))` a TS2345 error because setFlag's return type
+    // doesn't satisfy the narrow dispatch annotation.
+    //
+    // The TS2345 error position lands on `setFlag(true)` — itself a
+    // CallExpression passed as an argument.  The old calleeDeclarationAt
+    // walked up to that inner call, resolved `setFlag` (not a Parameter), and
+    // fell through to the annotated-ancestor path which dropped ALL annotations
+    // in `getItem` — including `id: string`.
+    //
+    // The fix walks up until the current node is a direct argument of an outer
+    // call, resolves `dispatch` as the conflicting Parameter, and drops only
+    // the dispatch annotation — leaving `id: string` intact.
+    const text = `declare function showErr(dispatch: (msg: string) => void): void;
+declare function setFlag(v: boolean): number;
+
+function getItem(id) {
+  return (dispatch) => {
+    dispatch(setFlag(true));
+    showErr(dispatch);
+    return id.toUpperCase();
+  };
+}
+getItem('abc');
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`declare function showErr(dispatch: (msg: string) => void): void;
+declare function setFlag(v: boolean): number;
+
+function getItem(id: string) {
+  return (dispatch) => {
+    dispatch(setFlag(true));
+    showErr(dispatch);
+    return id.toUpperCase();
+  };
+}
+getItem('abc');
+`);
+  });
+
+    it('retains body-derived types when a narrow callable annotation is called with too few arguments', async () => {
+    // TS2554's span sits on the callee (`dispatch`), not on an argument.
+    const text = `declare function showErr(dispatch: (msg: string) => void): void;
+
+function getItem(id) {
+  return (dispatch) => {
+    dispatch();
+    showErr(dispatch);
+    return id.toUpperCase();
+  };
+}
+getItem('abc');
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`declare function showErr(dispatch: (msg: string) => void): void;
+
+function getItem(id: string) {
+  return (dispatch) => {
+    dispatch();
+    showErr(dispatch);
+    return id.toUpperCase();
+  };
+}
+getItem('abc');
+`);
+  });
+
+  it('retains body-derived types when the arity conflict sits inside a callback argument', async () => {
+    // The violated call (`dispatch()`) is inside a callback that is itself an
+    // argument of `each(...)` — the walk must not skip past it to `each`.
+    const text = `declare function showErr(dispatch: (msg: string) => void): void;
+declare function each(items: string[], cb: (item: string) => void): void;
+
+function getItem(id) {
+  return (dispatch) => {
+    each([], function (item) {
+      dispatch();
+    });
+    showErr(dispatch);
+    return id.toUpperCase();
+  };
+}
+getItem('abc');
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`declare function showErr(dispatch: (msg: string) => void): void;
+declare function each(items: string[], cb: (item: string) => void): void;
+
+function getItem(id: string) {
+  return (dispatch) => {
+    each([], function (item) {
+      dispatch();
+    });
+    showErr(dispatch);
+    return id.toUpperCase();
+  };
+}
+getItem('abc');
+`);
+  });
+
   it('leaves un-inferable locations to the explicit-any plugin', async () => {
     const text = `function track(count, mystery) {
   count.toFixed(2);
