@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.10.4](https://github.com/ObieMunoz/ts-migrate/compare/v0.10.3...v0.10.4) (2026-07-21)
+
+
+### Bug Fixes
+
+* **infer-types:** preserve body-derived annotations when a narrow dispatch parameter causes argument-mismatch errors ([#59](https://github.com/ObieMunoz/ts-migrate/issues/59)) ([e55fc82](https://github.com/ObieMunoz/ts-migrate/commit/e55fc8285977c1980b75af66d47cf322db60f5d6))
+
+
+
+
+
 ## [0.10.3](https://github.com/ObieMunoz/ts-migrate/compare/v0.10.2...v0.10.3) (2026-07-11)
 
 ### Bug Fixes
