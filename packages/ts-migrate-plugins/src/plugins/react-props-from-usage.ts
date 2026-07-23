@@ -537,7 +537,6 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
               collectImportSpecs(tsType, checker, fileName, importSeen, neededImports);
             }
           }
-          neededImports.push(...callNeededImports);
 
           updates.push({
             kind: 'replace',
@@ -547,6 +546,9 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
           });
           patched = true;
         }
+        // callNeededImports holds `typeof`-import specs for the entire call-site
+        // scan (not per-member), so push them once after the member loop.
+        if (patched) neededImports.push(...callNeededImports);
         if (!patched) continue;
         continue;
       }
