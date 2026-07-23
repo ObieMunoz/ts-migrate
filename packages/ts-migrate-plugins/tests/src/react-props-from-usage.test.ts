@@ -610,6 +610,95 @@ const el = <Foo data={next} />;
     expect(result).not.toMatch(/import.*InternalDraft.*from/s);
   });
 
+  it('emits `typeof <value>` when a call-site value type degrades to any but is an exported value', async () => {
+    // Mirrors `updateVideoPage={bindActionCreators(updateVideoPage, dispatch)}`:
+    // the value is an exported action creator whose function type is too large
+    // to reconstruct (degrades to `any`), but `typeof updateThing` is both
+    // accurate and importable. `wrap` stands in for bindActionCreators — its
+    // single-argument overload returns the same type as its argument.
+    const libFile = `
+export function updateThing(id: string, value: number) {
+  return (dispatch: unknown) => Promise.resolve();
+}
+export function wrap<T>(fn: T, dispatch: unknown): T { return fn; }
+`;
+    const componentText = `import React from 'react';
+class Foo extends React.Component {
+  render() { return null; }
+}
+export default Foo;
+`;
+    const caller = `import React from 'react';
+import Foo from '/Foo';
+import { updateThing, wrap } from '/lib';
+declare const dispatch: unknown;
+const el = <Foo onUpdate={wrap(updateThing, dispatch)} />;
+`;
+    const result = await run(componentText, { 'caller.tsx': caller, 'lib.ts': libFile });
+    expect(result).toContain('onUpdate: typeof updateThing');
+    expect(result).not.toContain('onUpdate: any');
+    expect(result).toMatch(/import.*updateThing.*from/s);
+  });
+
+  it('does not emit `typeof default` for a default-exported value (falls back to any)', async () => {
+    // Reproduces TagSearch: two call sites pass different default-exported
+    // functions to the same prop. A default export's symbol name is `default`,
+    // which cannot be referenced via `typeof default` nor imported as a named
+    // import. The prop must fall back to `any` with no broken import.
+    const utilA = `export default function removeStringTagDuplicates(tag: { id: string }, tagValue: unknown) {
+  return tagValue;
+}
+`;
+    const utilB = `export default function removeTagDuplicates(tag: { id: string }, tagValue: unknown) {
+  return tagValue;
+}
+`;
+    const componentText = `import React from 'react';
+class Foo extends React.Component {
+  render() { return null; }
+}
+export default Foo;
+`;
+    const callerA = `import React from 'react';
+import Foo from '/Foo';
+import removeStringTagDuplicates from '/utilA';
+const el = <Foo removeDupes={removeStringTagDuplicates} />;
+`;
+    const callerB = `import React from 'react';
+import Foo from '/Foo';
+import removeTagDuplicates from '/utilB';
+const el = <Foo removeDupes={removeTagDuplicates} />;
+`;
+    const result = await run(componentText, {
+      'utilA.ts': utilA,
+      'utilB.ts': utilB,
+      'callerA.tsx': callerA,
+      'callerB.tsx': callerB,
+    });
+    expect(result).toContain('removeDupes: any');
+    expect(result).not.toContain('typeof default');
+    expect(result).not.toMatch(/import\s*\{\s*default\s*\}/);
+  });
+
+  it('leaves an inline/anonymous function prop as any without adding an import', async () => {
+    // Mirrors `saveVideo={bindActionCreators(saveVideo, dispatch)}` where the
+    // resolved value is an anonymous `__function`: there is no name to reference
+    // via `typeof`, so the prop stays `any` and nothing is imported.
+    const componentText = `import React from 'react';
+class Foo extends React.Component {
+  render() { return null; }
+}
+export default Foo;
+`;
+    const caller = `import React from 'react';
+import Foo from '/Foo';
+const el = <Foo onClick={(x: number) => x + 1} />;
+`;
+    const result = await run(componentText, { 'caller.tsx': caller });
+    expect(result).toContain('onClick: any');
+    expect(result).not.toContain('typeof');
+  });
+
   it('does not add an import for TypeScript built-in utility types like Record', async () => {
     // Record is declared in lib.es5.d.ts inside the TypeScript package itself.
     // It is globally available and must not be imported.

@@ -9,8 +9,8 @@ import {
 import { collectIdentifiers } from './utils/identifiers';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { updateImports, NamedImport } from './utils/imports';
-import { collectImportSpecs } from './utils/importSpecs';
-import { buildTypeNode, widenTypes } from './utils/typeStrings';
+import { collectImportSpecs, resolveSymbolImport } from './utils/importSpecs';
+import { buildTypeNode, widenTypes, typeStrDegradesToAny } from './utils/typeStrings';
 import {
   AnyAliasOptions,
   AnyFunctionAliasOptions,
@@ -231,6 +231,50 @@ function findNodeAtPosition(sourceFile: ts.SourceFile, pos: number): ts.Node | u
   return find(sourceFile);
 }
 
+// When a call-site value's type would degrade to `any` (e.g. an action creator
+// with a large function signature), but that type is exactly the type of a
+// named, exported value, we can express the prop as `typeof <value>` — which is
+// both accurate and imports cleanly. Returns the import spec for that value, or
+// undefined when no such value symbol exists (e.g. type-only aliases like
+// `Search`, anonymous functions, or union/intrinsic types).
+function resolveTypeofValueImport(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+  componentFileName: string,
+): NamedImport | undefined {
+  const sym = type.aliasSymbol ?? type.symbol;
+  if (!sym) return undefined;
+  // `typeof` is only valid on something with a value meaning; a type-only alias
+  // (e.g. `type Search = …`) must keep its own name, not become `typeof Search`.
+  if (!(sym.flags & ts.SymbolFlags.Value)) return undefined;
+  const name = sym.getName();
+  if (!name || name.startsWith('__')) return undefined;
+  // Default exports have the internal symbol name `default`, which cannot be
+  // referenced via a named import (`import { default }` is invalid) nor used in
+  // `typeof default`. Supporting default imports here would also collide when
+  // multiple call sites pass different default exports to the same prop, so we
+  // bail and let the prop fall back to `any`.
+  if (name === 'default') return undefined;
+
+  const imp = resolveSymbolImport(sym, checker, componentFileName);
+  if (!imp || imp.namedImport !== name) return undefined;
+
+  // Verify the value is actually exported from its declaring module so the
+  // emitted import resolves. resolveSymbolImport already checks this for
+  // node_modules packages; extend the guard to local files so we never
+  // reference a non-exported local binding.
+  const declFile = sym.declarations?.[0]?.getSourceFile();
+  if (declFile) {
+    const moduleSymbol = checker.getSymbolAtLocation(declFile);
+    if (moduleSymbol) {
+      const exports = checker.getExportsOfModule(moduleSymbol);
+      if (!exports.some((exp) => exp.getName() === name)) return undefined;
+    }
+  }
+
+  return imp;
+}
+
 // ---------------------------------------------------------------------------
 // Call-site evidence collection (shared between "generate" and "patch" paths)
 // ---------------------------------------------------------------------------
@@ -342,15 +386,30 @@ function collectCallSiteProps(
           if (importPrefix) {
             typeStr = typeStr.slice(importPrefix[0].length);
           }
-          // Fallback: scan the call-site's named imports for the leading type name.
-          const baseTypeName = /^([A-Z][A-Za-z0-9_$]*)/.exec(typeStr)?.[1];
-          if (baseTypeName) {
-            const callSiteImport = findNamedImportInSourceFile(
-              baseTypeName,
-              refSourceFile,
-              fileName,
-            );
-            if (callSiteImport) neededImports.push(callSiteImport);
+          if (typeStrDegradesToAny(typeStr)) {
+            // The type can't be reconstructed as anything better than `any`
+            // (typically a function type such as an action creator). If it is
+            // exactly the type of a named, exported value, express it as
+            // `typeof <value>` and import that value instead of emitting `any`.
+            const typeofImport = resolveTypeofValueImport(tsType, checker, fileName);
+            if (typeofImport) {
+              typeStr = `typeof ${typeofImport.namedImport}`;
+              neededImports.push(typeofImport);
+              // The import is handled here; don't let collectImportSpecs run on
+              // the raw function type later (it would re-add the same import).
+              tsType = null;
+            }
+          } else {
+            // Fallback: scan the call-site's named imports for the leading type name.
+            const baseTypeName = /^([A-Z][A-Za-z0-9_$]*)/.exec(typeStr)?.[1];
+            if (baseTypeName) {
+              const callSiteImport = findNamedImportInSourceFile(
+                baseTypeName,
+                refSourceFile,
+                fileName,
+              );
+              if (callSiteImport) neededImports.push(callSiteImport);
+            }
           }
         } else {
           typeStr = anyAlias ?? 'any';
