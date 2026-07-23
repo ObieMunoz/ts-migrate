@@ -400,7 +400,12 @@ function collectCallSiteProps(
               tsType = null;
             }
           } else {
-            // Fallback: scan the call-site's named imports for the leading type name.
+            // Fallback: scan the call-site's own import declarations for the
+            // leading identifier of typeStr. This catches types that are
+            // re-exported through a barrel and have a bare FQN (no module
+            // prefix), so resolveSymbolImport / collectImportSpecs cannot
+            // determine which specifier to import from — but the call site
+            // already has the correct import and we can mirror it.
             const baseTypeName = /^([A-Z][A-Za-z0-9_$]*)/.exec(typeStr)?.[1];
             if (baseTypeName) {
               const callSiteImport = findNamedImportInSourceFile(
