@@ -104,9 +104,15 @@ function getTextWithIgnores(
             }`,
           });
         } else {
-          throw new Error(
-            `Failed to add @${errorExpression} within multiline string, template, or comment.`,
+          // The directive only reaches the line directly below it, so hoisting
+          // the comment elsewhere cannot suppress this diagnostic; skip it and
+          // leave it for the post-migration compile check.
+          console.warn(
+            `[ts-ignore] ${sourceFile.fileName}:${diagnosticLine + 1}: failed to add ` +
+              `@${errorExpression} for TS(${code}) within multiline string, template, ` +
+              `or comment; skipping this diagnostic.`,
           );
+          return;
         }
       } else if (inJsxText(sourceFile, pos)) {
         updates.push({

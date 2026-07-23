@@ -604,6 +604,39 @@ beta"`);
     expect(residual.filter((code) => code >= 1000 && code < 2000)).toEqual([]); // no parse errors
   });
 
+  it('skips a diagnostic no AST node matches inside a multiline template, keeping other suppressions', async () => {
+    const text = `const sql = \`SELECT *
+  FROM widgets\`;
+comsole.log(sql);
+`;
+
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = await tsIgnorePlugin.run(
+        mockPluginParams({
+          text,
+          semanticDiagnostics: [
+            // Span covers text inside the template token, so no node matches.
+            mockDiagnostic(text, 'FROM', { code: 2554 }),
+            mockDiagnostic(text, 'comsole'),
+          ],
+          options: { messagePrefix: 'FIXME' },
+        }),
+      );
+
+      expect(result).toBe(`const sql = \`SELECT *
+  FROM widgets\`;
+// @ts-expect-error TS(123) FIXME: diagnostic message
+comsole.log(sql);
+`);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('file.ts:2'));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('TS(2554)'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('suppresses module errors on imports with webpackChunkName magic comments', async () => {
     const text = `export const load = () =>
   import(
