@@ -225,6 +225,35 @@ function needsPropsType(heritageType: ts.ExpressionWithTypeArguments): boolean {
   return false;
 }
 
+// Returns the TypeAliasDeclaration for the props type argument when it is a
+// same-file named alias whose type literal has at least one `any`-typed
+// property — i.e. it can be patched with call-site evidence.
+function findPatchablePropsAlias(
+  heritageType: ts.ExpressionWithTypeArguments,
+  sourceFile: ts.SourceFile,
+): ts.TypeAliasDeclaration | undefined {
+  const args = heritageType.typeArguments;
+  if (!args || args.length === 0) return undefined;
+  const propsArg = args[0];
+  if (!ts.isTypeReferenceNode(propsArg)) return undefined;
+  if (!ts.isIdentifier(propsArg.typeName)) return undefined;
+  const refName = propsArg.typeName.text;
+
+  for (const stmt of sourceFile.statements) {
+    if (!ts.isTypeAliasDeclaration(stmt)) continue;
+    if (stmt.name.text !== refName) continue;
+    if (!ts.isTypeLiteralNode(stmt.type)) continue;
+    const hasAnyMember = stmt.type.members.some(
+      (m): m is ts.PropertySignature =>
+        ts.isPropertySignature(m) &&
+        m.type != null &&
+        m.type.kind === ts.SyntaxKind.AnyKeyword,
+    );
+    if (hasAnyMember) return stmt;
+  }
+  return undefined;
+}
+
 function collectThisPropsUsage(
   classDeclaration: ts.ClassDeclaration,
 ): Map<string, { optionalHint: boolean }> {
@@ -453,6 +482,153 @@ function widenTypes(observedTypes: string[], anyAlias?: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Call-site evidence collection (shared between "generate" and "patch" paths)
+// ---------------------------------------------------------------------------
+
+interface CallSiteResult {
+  propMap: Map<string, PropInfo>;
+  totalCallSites: number;
+  shouldSkip: boolean;
+  neededImports: NamedImport[];
+}
+
+function collectCallSiteProps(
+  classDeclaration: ts.ClassDeclaration,
+  sourceFile: ts.SourceFile,
+  fileName: string,
+  languageService: ts.LanguageService,
+  checker: ts.TypeChecker,
+  options: {
+    anyAlias?: string;
+    includeChildren: boolean;
+    skipOnSpread: boolean;
+  },
+  program: ts.Program,
+): CallSiteResult {
+  const { anyAlias, includeChildren, skipOnSpread } = options;
+  const propMap = new Map<string, PropInfo>();
+  const neededImports: NamedImport[] = [];
+  let totalCallSites = 0;
+  let shouldSkip = false;
+
+  const classNamePos = classDeclaration.name!.getStart(sourceFile);
+  const referencedSymbols = languageService.findReferences(fileName, classNamePos) ?? [];
+
+  outer: for (const referencedSymbol of referencedSymbols) {
+    for (const ref of referencedSymbol.references) {
+      if (ref.isDefinition) continue;
+
+      const refSourceFile = program.getSourceFile(ref.fileName);
+      if (!refSourceFile) continue;
+
+      const refNode = findNodeAtPosition(refSourceFile, ref.textSpan.start);
+      if (!refNode || !ts.isIdentifier(refNode)) continue;
+
+      const parent = refNode.parent;
+      let jsxElement: ts.JsxOpeningElement | ts.JsxSelfClosingElement | undefined;
+
+      if (ts.isJsxOpeningElement(parent) && parent.tagName === refNode) {
+        jsxElement = parent;
+      } else if (ts.isJsxSelfClosingElement(parent) && parent.tagName === refNode) {
+        jsxElement = parent;
+      }
+
+      if (!jsxElement) continue;
+
+      // Check for spread attributes before counting this as a call site.
+      for (const attr of jsxElement.attributes.properties) {
+        if (ts.isJsxSpreadAttribute(attr) && skipOnSpread) {
+          shouldSkip = true;
+          break outer;
+        }
+      }
+
+      totalCallSites++;
+
+      // Check children (only for opening elements, not self-closing).
+      if (
+        includeChildren &&
+        ts.isJsxOpeningElement(jsxElement) &&
+        ts.isJsxElement(jsxElement.parent) &&
+        jsxElement.parent.children.length > 0
+      ) {
+        const info = propMap.get('children');
+        if (info) {
+          info.presentCount++;
+          info.thisPropsOnly = false;
+        } else {
+          propMap.set('children', {
+            observedTypes: ['React.ReactNode'],
+            observedTsTypes: [null],
+            presentCount: 1,
+            optionalHint: true,
+            thisPropsOnly: false,
+          });
+        }
+      }
+
+      // Collect explicit JSX attributes.
+      for (const attr of jsxElement.attributes.properties) {
+        if (!ts.isJsxAttribute(attr)) continue;
+        const propName = ts.isIdentifier(attr.name) ? attr.name.text : undefined;
+        if (!propName || propName === 'key' || propName === 'ref') continue;
+
+        let typeStr: string;
+        let tsType: ts.Type | null = null;
+        if (!attr.initializer) {
+          // Boolean shorthand: <Foo disabled />
+          typeStr = 'boolean';
+        } else if (ts.isStringLiteral(attr.initializer)) {
+          typeStr = `"${attr.initializer.text}"`;
+        } else if (
+          ts.isJsxExpression(attr.initializer) &&
+          attr.initializer.expression != null
+        ) {
+          tsType = checker.getTypeAtLocation(attr.initializer.expression);
+          typeStr = checker.typeToString(tsType);
+          // Strip any import() notation TypeScript may emit for types from
+          // external modules not imported in the component file.
+          const importPrefix = /^import\("[^"]+"\)\./.exec(typeStr);
+          if (importPrefix) {
+            typeStr = typeStr.slice(importPrefix[0].length);
+          }
+          // Fallback: scan the call-site's named imports for the leading type name.
+          const baseTypeName = /^([A-Z][A-Za-z0-9_$]*)/.exec(typeStr)?.[1];
+          if (baseTypeName) {
+            const callSiteImport = findNamedImportInSourceFile(
+              baseTypeName,
+              refSourceFile,
+              fileName,
+            );
+            if (callSiteImport) neededImports.push(callSiteImport);
+          }
+        } else {
+          typeStr = anyAlias ?? 'any';
+        }
+
+        const existing = propMap.get(propName);
+        if (existing) {
+          existing.observedTypes.push(typeStr);
+          existing.observedTsTypes.push(tsType);
+          existing.presentCount++;
+          existing.thisPropsOnly = false;
+        } else {
+          propMap.set(propName, {
+            observedTypes: [typeStr],
+            observedTsTypes: [tsType],
+            presentCount: 1,
+            optionalHint: false,
+            thisPropsOnly: false,
+          });
+        }
+      }
+    }
+  }
+
+  return { propMap, totalCallSites, shouldSkip, neededImports };
+}
+
+// ---------------------------------------------------------------------------
 // Plugin
 // ---------------------------------------------------------------------------
 
@@ -498,8 +674,70 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
     for (const classDeclaration of reactClassDeclarations) {
       const heritageType = getReactComponentHeritageType(classDeclaration);
       if (!heritageType) continue;
-      if (!needsPropsType(heritageType)) continue;
       if (!classDeclaration.name) continue;
+
+      // --- Patch path: existing named Props alias with `any` members ---
+      const patchableAlias = !needsPropsType(heritageType)
+        ? findPatchablePropsAlias(heritageType, sourceFile)
+        : undefined;
+
+      if (patchableAlias != null) {
+        const { propMap, shouldSkip, neededImports: callNeededImports } = collectCallSiteProps(
+          classDeclaration,
+          sourceFile,
+          fileName,
+          languageService,
+          checker,
+          { anyAlias, includeChildren, skipOnSpread },
+          program,
+        );
+
+        if (shouldSkip) continue;
+
+        const typeLiteral = patchableAlias.type as ts.TypeLiteralNode;
+        let patched = false;
+        for (const member of typeLiteral.members) {
+          if (!ts.isPropertySignature(member)) continue;
+          if (!member.type || member.type.kind !== ts.SyntaxKind.AnyKeyword) continue;
+          if (!ts.isIdentifier(member.name)) continue;
+          const propName = member.name.text;
+          const info = propMap.get(propName);
+          if (!info || info.observedTypes.length === 0) continue;
+          const finalTypeStr = widenTypes(info.observedTypes, anyAlias);
+          if (finalTypeStr === 'any' || finalTypeStr === (anyAlias ?? 'any')) continue;
+
+          // Reconstruct the type via the factory rather than splicing the raw
+          // `typeToString` output as text: for large types `typeToString`
+          // truncates with `...`/`... N more ...`/`<...>` markers that are not
+          // valid syntax. buildTypeNode falls back to `any` for anything it
+          // cannot parse, so the emitted text is always syntactically valid
+          // (matching the generate path below). Skip when it degrades to `any`,
+          // which leaves the member as its existing `any`.
+          const typeNode = buildTypeNode(finalTypeStr, anyAlias);
+          const printedType = printer.printNode(ts.EmitHint.Unspecified, typeNode, sourceFile);
+          if (printedType === 'any' || printedType === (anyAlias ?? 'any')) continue;
+
+          // Collect imports for surviving non-primitive types.
+          for (const tsType of info.observedTsTypes) {
+            if (tsType != null) {
+              collectImportSpecs(tsType, checker, fileName, importSeen, neededImports);
+            }
+          }
+          neededImports.push(...callNeededImports);
+
+          updates.push({
+            kind: 'replace',
+            index: member.type.getStart(sourceFile),
+            length: member.type.getWidth(sourceFile),
+            text: printedType,
+          });
+          patched = true;
+        }
+        if (!patched) continue;
+        continue;
+      }
+
+      if (!needsPropsType(heritageType)) continue;
 
       const componentName = classDeclaration.name.text;
 
@@ -531,126 +769,32 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
       }
 
       // 2b. Call-site analysis via findReferences.
-      const classNamePos = classDeclaration.name.getStart(sourceFile);
-      let totalCallSites = 0;
-      let shouldSkip = false;
+      const {
+        propMap: callSitePropMap,
+        totalCallSites,
+        shouldSkip,
+        neededImports: callNeededImports,
+      } = collectCallSiteProps(
+        classDeclaration,
+        sourceFile,
+        fileName,
+        languageService,
+        checker,
+        { anyAlias, includeChildren, skipOnSpread },
+        program,
+      );
+      neededImports.push(...callNeededImports);
 
-      const referencedSymbols =
-        languageService.findReferences(fileName, classNamePos) ?? [];
-
-      outer: for (const referencedSymbol of referencedSymbols) {
-        for (const ref of referencedSymbol.references) {
-          if (ref.isDefinition) continue;
-
-          const refSourceFile = program.getSourceFile(ref.fileName);
-          if (!refSourceFile) continue;
-
-          const refNode = findNodeAtPosition(refSourceFile, ref.textSpan.start);
-          if (!refNode || !ts.isIdentifier(refNode)) continue;
-
-          const parent = refNode.parent;
-          let jsxElement: ts.JsxOpeningElement | ts.JsxSelfClosingElement | undefined;
-
-          if (ts.isJsxOpeningElement(parent) && parent.tagName === refNode) {
-            jsxElement = parent;
-          } else if (ts.isJsxSelfClosingElement(parent) && parent.tagName === refNode) {
-            jsxElement = parent;
-          }
-
-          if (!jsxElement) continue;
-
-          // Check for spread attributes before counting this as a call site.
-          for (const attr of jsxElement.attributes.properties) {
-            if (ts.isJsxSpreadAttribute(attr) && skipOnSpread) {
-              shouldSkip = true;
-              break outer;
-            }
-          }
-
-          totalCallSites++;
-
-          // Check children (only for opening elements, not self-closing).
-          if (
-            includeChildren &&
-            ts.isJsxOpeningElement(jsxElement) &&
-            ts.isJsxElement(jsxElement.parent) &&
-            jsxElement.parent.children.length > 0
-          ) {
-            const info = propMap.get('children');
-            if (info) {
-              info.presentCount++;
-              info.thisPropsOnly = false;
-            } else {
-              propMap.set('children', {
-                observedTypes: ['React.ReactNode'],
-                observedTsTypes: [null],
-                presentCount: 1,
-                optionalHint: true,
-                thisPropsOnly: false,
-              });
-            }
-          }
-
-          // Collect explicit JSX attributes.
-          for (const attr of jsxElement.attributes.properties) {
-            if (!ts.isJsxAttribute(attr)) continue;
-            const propName = ts.isIdentifier(attr.name) ? attr.name.text : undefined;
-            if (!propName || propName === 'key' || propName === 'ref') continue;
-
-            let typeStr: string;
-            let tsType: ts.Type | null = null;
-            if (!attr.initializer) {
-              // Boolean shorthand: <Foo disabled />
-              typeStr = 'boolean';
-            } else if (ts.isStringLiteral(attr.initializer)) {
-              typeStr = `"${attr.initializer.text}"`;
-            } else if (
-              ts.isJsxExpression(attr.initializer) &&
-              attr.initializer.expression != null
-            ) {
-              tsType = checker.getTypeAtLocation(attr.initializer.expression);
-              typeStr = checker.typeToString(tsType);
-              // Strip any import() notation TypeScript may emit for types from
-              // external modules not imported in the component file, e.g.:
-              //   import("@reduxjs/toolkit").ActionCreatorWithOptionalPayload<P, T>
-              const importPrefix = /^import\("[^"]+"\)\./.exec(typeStr);
-              if (importPrefix) {
-                typeStr = typeStr.slice(importPrefix[0].length);
-              }
-              // Fallback: scan the call-site's named imports for the leading
-              // type name.  collectImportSpecs silently misses instantiated
-              // generic type aliases whose TypeScript aliasSymbol is transient
-              // (no .declarations), which is common for types inferred through
-              // Redux-style createSlice or other mapped/conditional type machinery.
-              const baseTypeName = /^([A-Z][A-Za-z0-9_$]*)/.exec(typeStr)?.[1];
-              if (baseTypeName) {
-                const callSiteImport = findNamedImportInSourceFile(
-                  baseTypeName,
-                  refSourceFile,
-                  fileName,
-                );
-                if (callSiteImport) neededImports.push(callSiteImport);
-              }
-            } else {
-              typeStr = anyAlias ?? 'any';
-            }
-
-            const existing = propMap.get(propName);
-            if (existing) {
-              existing.observedTypes.push(typeStr);
-              existing.observedTsTypes.push(tsType);
-              existing.presentCount++;
-              existing.thisPropsOnly = false;
-            } else {
-              propMap.set(propName, {
-                observedTypes: [typeStr],
-                observedTsTypes: [tsType],
-                presentCount: 1,
-                optionalHint: false,
-                thisPropsOnly: false,
-              });
-            }
-          }
+      // Merge call-site evidence into the propMap (seeded from this.props).
+      for (const [propName, info] of callSitePropMap) {
+        const existing = propMap.get(propName);
+        if (existing) {
+          existing.observedTypes.push(...info.observedTypes);
+          existing.observedTsTypes.push(...info.observedTsTypes);
+          existing.presentCount += info.presentCount;
+          if (!info.thisPropsOnly) existing.thisPropsOnly = false;
+        } else {
+          propMap.set(propName, info);
         }
       }
 

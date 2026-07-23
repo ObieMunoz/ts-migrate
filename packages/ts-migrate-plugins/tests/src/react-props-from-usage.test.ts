@@ -250,6 +250,116 @@ const el = <Wrapper><span>hi</span></Wrapper>;
   });
 
   // ---------------------------------------------------------------------------
+  // Patching an existing named Props type with any members
+  // ---------------------------------------------------------------------------
+
+  it('narrows any members in an existing named Props type from JSX call sites', async () => {
+    const text = `import React from 'react';
+type Props = { name: any; count: any };
+type State = { loading: boolean };
+export default class Header extends React.Component<Props, State> {
+  render() { return null; }
+}
+`;
+    const caller = `import React from 'react';
+import Header from '/Foo';
+const el = <Header name="Alice" count={42} />;
+`;
+    const result = await run(text, { 'caller.tsx': caller });
+    // The any members should be narrowed from the JSX call site.
+    expect(result).toContain('name: string');
+    expect(result).toContain('count: number');
+    // The class heritage line itself must not change.
+    expect(result).toContain('React.Component<Props, State>');
+  });
+
+  it('leaves already-typed members untouched when patching', async () => {
+    const text = `import React from 'react';
+type Props = { name: string; count: any };
+export default class Header extends React.Component<Props> {
+  render() { return null; }
+}
+`;
+    const caller = `import React from 'react';
+import Header from '/Foo';
+const el = <Header name="Alice" count={42} />;
+`;
+    const result = await run(text, { 'caller.tsx': caller });
+    expect(result).toContain('count: number');
+    // The already-typed member must not be duplicated or altered.
+    expect(result).toContain('name: string');
+    expect(result).not.toMatch(/name:.*name:/s);
+  });
+
+  it('leaves Props alone when there are no call sites to infer from', async () => {
+    const text = `import React from 'react';
+type Props = { name: any };
+export default class Header extends React.Component<Props> {
+  render() { return null; }
+}
+`;
+    const result = await run(text);
+    // No evidence → nothing to narrow → no change.
+    expect(result).toBeUndefined();
+  });
+
+  it('unions conflicting types when patching from multiple call sites', async () => {
+    const text = `import React from 'react';
+type Props = { value: any };
+export default class Header extends React.Component<Props> {
+  render() { return null; }
+}
+`;
+    const caller = `import React from 'react';
+import Header from '/Foo';
+const a = <Header value="hello" />;
+const b = <Header value={42} />;
+`;
+    const result = await run(text, { 'caller.tsx': caller });
+    expect(result).toContain('value: string | number');
+  });
+
+  it('uses anyAlias when patching and inference falls back to any', async () => {
+    const text = `import React from 'react';
+type Props = { data: any };
+export default class Header extends React.Component<Props> {
+  render() { return null; }
+}
+`;
+    const caller = `import React from 'react';
+import Header from '/Foo';
+declare const x: any;
+const el = <Header data={x} />;
+`;
+    const result = await run(text, { 'caller.tsx': caller }, { anyAlias: '$TSFixMe' });
+    // all-any evidence → nothing improved → no change
+    expect(result).toBeUndefined();
+  });
+
+  it('leaves a function-typed any member as any instead of emitting unsafe types when patching', async () => {
+    const text = `import React from 'react';
+type Props = { name: any; onClick: any };
+export default class Header extends React.Component<Props> {
+  render() { return null; }
+}
+`;
+    const caller = `import React from 'react';
+import Header from '/Foo';
+const handleClick = (id: string) => id.length;
+const el = <Header name="Alice" onClick={handleClick} />;
+`;
+    const result = await run(text, { 'caller.tsx': caller });
+    // The simple attribute is narrowed...
+    expect(result).toContain('name: string');
+    // ...but the function-typed attribute is left as `any` rather than spliced
+    // in as raw text (which could be truncated/invalid). No function type or
+    // truncation markers must appear in the output.
+    expect(result).toContain('onClick: any');
+    expect(result).not.toContain('=>');
+    expect(result).not.toContain('...');
+  });
+
+  // ---------------------------------------------------------------------------
   // Bail-outs and edge cases
   // ---------------------------------------------------------------------------
 
