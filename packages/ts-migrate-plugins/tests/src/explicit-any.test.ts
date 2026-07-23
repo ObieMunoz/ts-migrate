@@ -241,6 +241,210 @@ export const strip = (input: any) => input.replace(EMOJI_RE, '');
 `);
   });
 
+  it('annotates exported implicit-any variables (TS7005)', async () => {
+    const text = `export const xs = [];
+xs.push(1);
+export const grid = [[]];
+grid[0].push(1);
+export let x;
+x = 1;
+`;
+
+    const result = await explicitAnyPlugin.run(
+      await realPluginParams({
+        text,
+        compilerOptions: { strict: false, noImplicitAny: true },
+      }),
+    );
+
+    expect(result).toBe(`export const xs: any[] = [];
+xs.push(1);
+export const grid: any[][] = [[]];
+grid[0].push(1);
+export let x: any;
+x = 1;
+`);
+  });
+
+  it('annotates exported implicit-any variables with the alias', async () => {
+    const text = `export const xs = [];
+xs.push(1);
+`;
+
+    const result = await explicitAnyPlugin.run(
+      await realPluginParams({
+        options: { anyAlias: '$TSFixMe' },
+        text,
+        compilerOptions: { strict: false, noImplicitAny: true },
+      }),
+    );
+
+    expect(result).toBe(`export const xs: $TSFixMe[] = [];
+xs.push(1);
+`);
+  });
+
+  it('leaves use-site TS7005 alone when the declaration is in another file', async () => {
+    const text = `h.doThing();
+`;
+
+    const result = await explicitAnyPlugin.run(
+      await realPluginParams({
+        text,
+        compilerOptions: { strict: false, noImplicitAny: true },
+        extraFiles: { 'globals.ts': 'var h;\n' },
+      }),
+    );
+
+    expect(result).toBe(text);
+  });
+
+  it('annotates the pattern for use-site TS7005 on a binding-element declaration', async () => {
+    const text = `declare function build(): any;
+function f() {
+  let [acc] = build();
+  acc.push(1);
+  return acc;
+}
+export default f;
+`;
+
+    const params = await realPluginParams({ text });
+    const languageService = params.getLanguageService();
+    const useSite = {
+      file: params.sourceFile,
+      start: text.lastIndexOf('acc'),
+      length: 'acc'.length,
+      messageText: "Variable 'acc' implicitly has an 'any[]' type.",
+      category: ts.DiagnosticCategory.Error,
+      code: 7005,
+    };
+
+    const result = await explicitAnyPlugin.run({
+      ...params,
+      getLanguageService: () =>
+        ({
+          getSemanticDiagnostics: () => [useSite],
+          getProgram: () => languageService.getProgram(),
+        } as unknown as ts.LanguageService),
+    });
+
+    expect(result).toBe(`declare function build(): any;
+function f() {
+  let [acc]: any = build();
+  acc.push(1);
+  return acc;
+}
+export default f;
+`);
+  });
+
+  it('annotates circular returns of recursive functions (TS7023)', async () => {
+    const text = `export function fact(n: number) {
+  return n <= 1 ? 1 : n * fact(n - 1);
+}
+export const again = function repeat(n: number) {
+  return n <= 1 ? 1 : repeat(n - 1);
+};
+export const fib = (n: number) => (n <= 1 ? n : fib(n - 1) + fib(n - 2));
+`;
+
+    const result = await explicitAnyPlugin.run(
+      await realPluginParams({
+        text,
+      }),
+    );
+
+    expect(result).toBe(`export function fact(n: number): any {
+  return n <= 1 ? 1 : n * fact(n - 1);
+}
+export const again = function repeat(n: number): any {
+  return n <= 1 ? 1 : repeat(n - 1);
+};
+export const fib = (n: number): any => (n <= 1 ? n : fib(n - 1) + fib(n - 2));
+`);
+  });
+
+  it('annotates the variable for recursive unparenthesized arrows', async () => {
+    const text = `const f = n => f(n - 1);
+export default f;
+`;
+
+    const result = await explicitAnyPlugin.run(
+      await realPluginParams({
+        text,
+      }),
+    );
+
+    expect(result).toBe(`const f: any = (n: any) => f(n - 1);
+export default f;
+`);
+  });
+
+  it('annotates circular returns of recursive object members', async () => {
+    const text = `export const obj = {
+  walk(n: number) {
+    return n <= 0 ? 0 : obj.walk(n - 1);
+  },
+  climb: function (n: number) {
+    return n <= 0 ? 0 : obj.climb(n - 1);
+  },
+  ['dive'](n: number) {
+    return n <= 0 ? 0 : obj.dive(n - 1);
+  },
+};
+`;
+
+    const result = await explicitAnyPlugin.run(
+      await realPluginParams({
+        text,
+      }),
+    );
+
+    expect(result).toBe(`export const obj = {
+  walk(n: number): any {
+    return n <= 0 ? 0 : obj.walk(n - 1);
+  },
+  climb: function (n: number): any {
+    return n <= 0 ? 0 : obj.climb(n - 1);
+  },
+  ['dive'](n: number): any {
+    return n <= 0 ? 0 : obj.dive(n - 1);
+  },
+};
+`);
+  });
+
+  it('annotates circular returns of recursive class members', async () => {
+    const text = `export class Tree {
+  depth(n: number) {
+    return n <= 0 ? 0 : this.depth(n - 1);
+  }
+  get value() {
+    return this.value;
+  }
+  walk = (n: number) => (n <= 0 ? 0 : this.walk(n - 1));
+}
+`;
+
+    const result = await explicitAnyPlugin.run(
+      await realPluginParams({
+        text,
+      }),
+    );
+
+    expect(result).toBe(`export class Tree {
+  depth(n: number): any {
+    return n <= 0 ? 0 : this.depth(n - 1);
+  }
+  get value(): any {
+    return this.value;
+  }
+  walk = (n: number): any => (n <= 0 ? 0 : this.walk(n - 1));
+}
+`);
+  });
+
   it('ignores diagnostics that do not map to an annotatable node', async () => {
     const text = `function f(a, a) { return a; }`;
 
