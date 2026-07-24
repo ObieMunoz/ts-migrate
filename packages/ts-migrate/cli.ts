@@ -22,7 +22,13 @@ import {
   buildRenameRunSummary,
   writeRunSummary,
 } from './utils/runSummary';
-import { formatTypeDebtSummary, scanTypeDebt } from './utils/typeDebt';
+import {
+  FileDebt,
+  formatFileDebtCounts,
+  formatTypeDebtSummary,
+  scanTypeDebt,
+  scanTypeDebtForFiles,
+} from './utils/typeDebt';
 
 /** A recommendation report must never fail an otherwise successful run. */
 function printTypesPackageReport(
@@ -51,6 +57,44 @@ function printTypeDebtSummary(rootDir: string, folder: string): void {
   } catch (err) {
     log.warn('Skipped type debt summary:', err);
   }
+}
+
+/**
+ * A dry run's replacement for the debt summary: every file a real run would
+ * have updated, with the suppression and any counts it would then contain.
+ * Reads the would-be contents, never the disk.
+ */
+function printDryRunSummary(
+  rootDir: string,
+  folder: string,
+  updatedSourceFiles: ReadonlySet<string>,
+  fileContents: ReadonlyMap<string, string>,
+): void {
+  if (updatedSourceFiles.size === 0) {
+    log.info(`Dry run: no files would be updated in ${folder}.`);
+    return;
+  }
+
+  let debtByFile: Record<string, FileDebt> = {};
+  try {
+    debtByFile = scanTypeDebtForFiles(rootDir, [...updatedSourceFiles], fileContents).files;
+  } catch (err) {
+    log.warn('Skipped the suppression counts of the dry run summary:', err);
+  }
+
+  const lines = [
+    `Dry run: ${updatedSourceFiles.size} file(s) would be updated in ${folder} ` +
+      `(nothing was written):`,
+  ];
+  [...updatedSourceFiles]
+    .map((fileName) => path.relative(rootDir, fileName).split(path.sep).join('/'))
+    .sort()
+    .forEach((file) => {
+      const debt = debtByFile[file];
+      lines.push(debt ? `  ${file} (${formatFileDebtCounts(debt)})` : `  ${file}`);
+    });
+  lines.push('For full diffs, run without --dry-run on a clean git tree and use git diff.');
+  log.info(lines.join('\n'));
 }
 
 const version = packageVersion();
@@ -87,6 +131,9 @@ yargs
         .string('sources')
         .alias('sources', 's')
         .describe('sources', 'Path to a subset of your project to rename.')
+        .boolean('dry-run')
+        .default('dry-run', false)
+        .describe('dry-run', 'Print the rename mapping without renaming any file.')
         .string('jsonSummary')
         .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
         .example('$0 rename /frontend/foo', 'Rename all the files in /frontend/foo')
@@ -98,14 +145,15 @@ yargs
     (args) => {
       const rootDir = path.resolve(process.cwd(), args.folder);
       const { sources } = args;
-      const renamedFiles = rename({ rootDir, sources });
+      const dryRun = args['dry-run'];
+      const renamedFiles = rename({ rootDir, sources, dryRun });
       if (renamedFiles === null) {
         process.exit(-1);
       }
       if (args.jsonSummary) {
         const exitCode = writeRunSummary(
           args.jsonSummary,
-          buildRenameRunSummary({ rootDir, exitCode: 0, renamedFiles }),
+          buildRenameRunSummary({ rootDir, exitCode: 0, dryRun, renamedFiles }),
         );
         if (exitCode !== 0) process.exit(exitCode);
       }
@@ -186,6 +234,12 @@ yargs
           'typesReportFile',
           'Write the type definition recommendations to this file instead of printing them. Used by ts-migrate-full to show the report at the end of the run.',
         )
+        .boolean('dry-run')
+        .default('dry-run', false)
+        .describe(
+          'dry-run',
+          'Run every plugin pass but write nothing to disk; print the files a real run would update. Takes as long as a real run.',
+        )
         .string('jsonSummary')
         .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
         .example('migrate /frontend/foo', 'Migrate all the files in /frontend/foo')
@@ -205,9 +259,11 @@ yargs
     async (args) => {
       const rootDir = path.resolve(process.cwd(), args.folder);
       const { sources } = args;
+      const dryRun = args['dry-run'];
 
       let config: MigrateConfig;
       let typesPackageDetector: TypesPackageDetector | undefined;
+      let aliasDeclarations: { filePath: string; text: string } | null = null;
       try {
         const built = buildMigrateConfig({
           plugin: args.plugin,
@@ -225,13 +281,20 @@ yargs
         typesPackageDetector = built.typesPackageDetector;
         // Written before the program is created so the aliases resolve during
         // the run; otherwise ts-ignore would suppress every annotation added.
-        const aliasDeclarationFile = ensureAliasDeclarations({
+        // A dry run keeps the file in memory and feeds it to the program as a
+        // virtual source instead, for the same effect without the write.
+        aliasDeclarations = ensureAliasDeclarations({
           rootDir,
           anyAlias: built.anyAlias,
           anyFunctionAlias: built.anyFunctionAlias,
+          dryRun,
         });
-        if (aliasDeclarationFile) {
-          log.info(`Created ${aliasDeclarationFile} declaring the global aliases.`);
+        if (aliasDeclarations) {
+          log.info(
+            dryRun
+              ? `Dry run: would create ${aliasDeclarations.filePath} declaring the global aliases.`
+              : `Created ${aliasDeclarations.filePath} declaring the global aliases.`,
+          );
         }
       } catch (err) {
         log.error(err instanceof Error ? err.message : err);
@@ -239,20 +302,42 @@ yargs
         return;
       }
 
-      const { exitCode, updatedSourceFiles, nonMigratedFilesWithSyntaxErrors, pluginStats } =
-        await migrate({
-          rootDir,
-          config,
-          sources,
-          ambientSources: args.ambientSources,
-          maxStablePasses: args.maxStablePasses,
-          incrementalPasses: args.incrementalPasses,
-        });
+      const {
+        exitCode,
+        updatedSourceFiles,
+        updatedFileTexts,
+        nonMigratedFilesWithSyntaxErrors,
+        pluginStats,
+      } = await migrate({
+        rootDir,
+        config,
+        sources,
+        ambientSources: args.ambientSources,
+        maxStablePasses: args.maxStablePasses,
+        incrementalPasses: args.incrementalPasses,
+        dryRun,
+        virtualFiles:
+          dryRun && aliasDeclarations
+            ? [{ fileName: aliasDeclarations.filePath, text: aliasDeclarations.text }]
+            : undefined,
+      });
+
+      // The would-be state of every touched file, including the alias
+      // declarations a dry run held back, so the summaries below never
+      // depend on what reached the disk.
+      const fileContents = new Map(updatedFileTexts);
+      if (dryRun && aliasDeclarations) {
+        fileContents.set(aliasDeclarations.filePath, aliasDeclarations.text);
+      }
 
       if (typesPackageDetector) {
         printTypesPackageReport(typesPackageDetector, rootDir, args.folder, args.typesReportFile);
       }
-      printTypeDebtSummary(rootDir, args.folder);
+      if (dryRun) {
+        printDryRunSummary(rootDir, args.folder, updatedSourceFiles, fileContents);
+      } else {
+        printTypeDebtSummary(rootDir, args.folder);
+      }
 
       let finalExitCode = exitCode;
       if (args.jsonSummary) {
@@ -262,7 +347,9 @@ yargs
             command: 'migrate',
             rootDir,
             exitCode,
+            dryRun,
             updatedSourceFiles,
+            fileContents,
             nonMigratedFilesWithSyntaxErrors,
             pluginStats,
           }),
@@ -294,6 +381,12 @@ yargs
           'ambientSources',
           'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --no-ambientSources.',
         )
+        .boolean('dry-run')
+        .default('dry-run', false)
+        .describe(
+          'dry-run',
+          'Run every plugin pass but write nothing to disk; print the files a real run would update. Takes as long as a real run.',
+        )
         .string('jsonSummary')
         .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
         .example(
@@ -304,11 +397,13 @@ yargs
     async (args) => {
       const rootDir = path.resolve(process.cwd(), args.folder);
       const { sources } = args;
+      const dryRun = args['dry-run'];
 
       const {
         exitCode,
         typesPackageDetector,
         updatedSourceFiles,
+        updatedFileTexts,
         nonMigratedFilesWithSyntaxErrors,
         pluginStats,
       } = await reignore({
@@ -316,10 +411,15 @@ yargs
         sources,
         ambientSources: args.ambientSources,
         messagePrefix: args.p,
+        dryRun,
       });
 
       printTypesPackageReport(typesPackageDetector, rootDir, args.folder);
-      printTypeDebtSummary(rootDir, args.folder);
+      if (dryRun) {
+        printDryRunSummary(rootDir, args.folder, updatedSourceFiles, updatedFileTexts);
+      } else {
+        printTypeDebtSummary(rootDir, args.folder);
+      }
 
       let finalExitCode = exitCode;
       if (args.jsonSummary) {
@@ -329,7 +429,9 @@ yargs
             command: 'reignore',
             rootDir,
             exitCode,
+            dryRun,
             updatedSourceFiles,
+            fileContents: updatedFileTexts,
             nonMigratedFilesWithSyntaxErrors,
             pluginStats,
           }),

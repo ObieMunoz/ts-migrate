@@ -217,6 +217,18 @@ export default class MigrationProject {
     this.projectVersion += 1;
   }
 
+  /**
+   * Add a file that exists only in the overlay, as if it were on disk: it
+   * joins the program as a root file but is never persisted. Lets a dry run
+   * model a file the real run would create before the program starts.
+   */
+  addVirtualSourceFile(fileName: string, text: string): void {
+    const normalized = normalizeSlashes(fileName);
+    this.overlays.set(normalized, { text, version: 1 });
+    this.rootFileNames.add(normalized);
+    this.projectVersion += 1;
+  }
+
   /** File names matched by the tsconfig, whether or not they were added as root files. */
   getTsConfigFileNames(): string[] {
     return [...this.tsConfigFileNames];

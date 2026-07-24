@@ -13,6 +13,8 @@ interface ReignoreParams {
   sources?: string | string[];
   ambientSources?: boolean;
   messagePrefix?: string;
+  /** Run every pass but write nothing to disk. */
+  dryRun?: boolean;
 }
 
 interface ReignoreResult extends MigrateResult {
@@ -24,6 +26,7 @@ export default async function reignore({
   sources,
   ambientSources,
   messagePrefix,
+  dryRun,
 }: ReignoreParams): Promise<ReignoreResult> {
   const changedFiles = new Map<string, string>();
   function withChangeTracking(plugin: Plugin<unknown>): Plugin<unknown> {
@@ -59,7 +62,7 @@ export default async function reignore({
     .addPlugin(withChangeTracking(tsIgnorePlugin), { messagePrefix })
     .addPlugin(eslintFixChangedPlugin, {});
 
-  const result = await migrate({ rootDir, config, sources, ambientSources });
+  const result = await migrate({ rootDir, config, sources, ambientSources, dryRun });
 
   return { ...result, typesPackageDetector };
 }

@@ -70,19 +70,34 @@ function isDeclarationFile(fileName: string): boolean {
   return /\.d\.[cm]?ts$/.test(fileName);
 }
 
+/** Reads from the in-memory contents when present, from disk otherwise. */
+function readFileText(
+  fileName: string,
+  contents?: ReadonlyMap<string, string>,
+): string | undefined {
+  const inMemory = contents?.get(fileName);
+  if (inMemory !== undefined) return inMemory;
+  try {
+    return fs.readFileSync(fileName, 'utf-8');
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Global aliases for any, discovered from the .d.ts files the tsconfig
  * includes rather than hardcoded: any type alias declared as `any` or as a
  * function type returning `any` counts (covers the generated
  * ts-migrate-aliases.d.ts and pre-existing project declarations alike).
  */
-function discoverAliasNames(declarationFiles: string[]): string[] {
+function discoverAliasNames(
+  declarationFiles: string[],
+  contents?: ReadonlyMap<string, string>,
+): string[] {
   const names = new Set<string>();
   declarationFiles.forEach((fileName) => {
-    let text: string;
-    try {
-      text = fs.readFileSync(fileName, 'utf-8');
-    } catch {
+    const text = readFileText(fileName, contents);
+    if (text === undefined) {
       return;
     }
     const sourceFile = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest);
@@ -177,16 +192,19 @@ export function scanFileDebt(
   return debt;
 }
 
-function collectDebt(rootDir: string, sourceFiles: string[], aliasNames: string[]): TypeDebtReport {
+function collectDebt(
+  rootDir: string,
+  sourceFiles: string[],
+  aliasNames: string[],
+  contents?: ReadonlyMap<string, string>,
+): TypeDebtReport {
   const aliasNameSet = new Set(aliasNames);
 
   const totals = emptyDebt();
   const scanned: Array<{ file: string; debt: FileDebt }> = [];
   sourceFiles.forEach((fileName) => {
-    let text: string;
-    try {
-      text = fs.readFileSync(fileName, 'utf-8');
-    } catch {
+    const text = readFileText(fileName, contents);
+    if (text === undefined) {
       return;
     }
     const debt = scanFileDebt(fileName, text, aliasNameSet);
@@ -228,15 +246,39 @@ export function scanTypeDebt(rootDir: string): TypeDebtReport {
  * are still discovered from the tsconfig's declaration files so the counts
  * match scanTypeDebt for the same files. Used for run-scoped summaries of
  * the files a migration changed.
+ *
+ * `contents` overrides the disk state per file, so a dry run can scan the
+ * contents it would have written. Declaration files appearing only in
+ * `contents` still take part in alias discovery.
  */
-export function scanTypeDebtForFiles(rootDir: string, files: string[]): TypeDebtReport {
+export function scanTypeDebtForFiles(
+  rootDir: string,
+  files: string[],
+  contents?: ReadonlyMap<string, string>,
+): TypeDebtReport {
   const fileNames = projectFileNames(rootDir);
-  const aliasNames = discoverAliasNames(fileNames.filter(isDeclarationFile));
-  return collectDebt(rootDir, files.filter(isCountableSourceFile), aliasNames);
+  const declarationFiles = new Set(fileNames.filter(isDeclarationFile));
+  contents?.forEach((_, fileName) => {
+    if (isDeclarationFile(fileName)) declarationFiles.add(fileName);
+  });
+  const aliasNames = discoverAliasNames([...declarationFiles], contents);
+  return collectDebt(rootDir, files.filter(isCountableSourceFile), aliasNames, contents);
 }
 
 /** The per-file listing shows only the worst offenders; --json has them all. */
 const MAX_REPORT_FILES = 10;
+
+/** The nonzero counts of a file's debt, e.g. "2 @ts-expect-error, 1 any". */
+export function formatFileDebtCounts(debt: FileDebt): string {
+  return [
+    debt.tsExpectError > 0 ? `${debt.tsExpectError} @ts-expect-error` : '',
+    debt.tsIgnore > 0 ? `${debt.tsIgnore} @ts-ignore` : '',
+    debt.anyAlias > 0 ? `${debt.anyAlias} any-alias` : '',
+    debt.any > 0 ? `${debt.any} any` : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+}
 
 function formatCodes(debt: FileDebt): string {
   const coded = Object.values(debt.codes).reduce((sum, count) => sum + count, 0);
@@ -269,13 +311,7 @@ export function formatTypeDebtReport(report: TypeDebtReport, folder: string): st
   lines.push('', 'Per-file counts, worst first (zero-debt files omitted):');
   const entries = Object.entries(report.files);
   entries.slice(0, MAX_REPORT_FILES).forEach(([file, debt]) => {
-    const parts = [
-      debt.tsExpectError > 0 ? `${debt.tsExpectError} @ts-expect-error` : '',
-      debt.tsIgnore > 0 ? `${debt.tsIgnore} @ts-ignore` : '',
-      debt.anyAlias > 0 ? `${debt.anyAlias} any-alias` : '',
-      debt.any > 0 ? `${debt.any} any` : '',
-    ].filter(Boolean);
-    lines.push(`  ${String(debtTotal(debt)).padStart(5)}  ${file} (${parts.join(', ')})`);
+    lines.push(`  ${String(debtTotal(debt)).padStart(5)}  ${file} (${formatFileDebtCounts(debt)})`);
   });
   const remaining = entries.length - MAX_REPORT_FILES;
   if (remaining > 0) {

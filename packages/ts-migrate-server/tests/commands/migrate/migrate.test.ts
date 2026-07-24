@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import log from 'updatable-log';
-import { createDir, copyDir, deleteDir, getDirData } from '../../test-utils';
+import { createDir, copyDir, deleteDir, getDirData, hashDir } from '../../test-utils';
 import migrate, { MigrateConfig } from '../../../src/migrate';
 
 jest.mock('updatable-log', () => {
@@ -39,11 +39,98 @@ describe('migrate command', () => {
       {},
     );
 
-    const { exitCode } = await migrate({ rootDir, config });
+    const { exitCode, updatedFileTexts } = await migrate({ rootDir, config });
     fs.unlinkSync(path.resolve(rootDir, 'tsconfig.json'));
     const [rootData, outputData] = getDirData(rootDir, outputDir);
     expect(rootData).toEqual(outputData);
     expect(exitCode).toBe(0);
+    // The returned texts are the same contents the write loop persisted.
+    updatedFileTexts.forEach((text, fileName) => {
+      expect(fs.readFileSync(fileName, 'utf8')).toBe(text);
+    });
+    expect(updatedFileTexts.size).toBeGreaterThan(0);
+  });
+
+  describe('dryRun', () => {
+    it('leaves the tree byte-identical and returns the would-be contents', async () => {
+      const inputDir = path.resolve(__dirname, 'input');
+      const configDir = path.resolve(__dirname, 'config');
+      copyDir(inputDir, rootDir);
+      copyDir(configDir, rootDir);
+      const hashBefore = hashDir(rootDir);
+
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'test-plugin',
+          run({ text }) {
+            return text.replace('test string', 'updated string');
+          },
+        },
+        {},
+      );
+
+      const { exitCode, updatedSourceFiles, updatedFileTexts } = await migrate({
+        rootDir,
+        config,
+        dryRun: true,
+      });
+
+      expect(exitCode).toBe(0);
+      expect(hashDir(rootDir)).toBe(hashBefore);
+      const indexFile = path.resolve(rootDir, 'index.ts');
+      expect(updatedSourceFiles).toContain(indexFile);
+      expect(updatedFileTexts.get(indexFile)).toContain('updated string');
+      expect(fs.readFileSync(indexFile, 'utf8')).toContain('test string');
+    });
+
+    it('includes virtual files in the program without writing them', async () => {
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({ compilerOptions: { strict: true, types: [] } }),
+      );
+      fs.writeFileSync(path.resolve(rootDir, 'index.ts'), 'export const x: $TSFixMe = 1;\n');
+      const hashBefore = hashDir(rootDir);
+
+      const { config, diagnosticsByFile } = (() => {
+        const byFile = new Map<string, number[]>();
+        return {
+          diagnosticsByFile: byFile,
+          config: new MigrateConfig().addPlugin(
+            {
+              name: 'record-diagnostics',
+              run({ fileName, text, getLanguageService }) {
+                byFile.set(
+                  path.relative(rootDir, fileName),
+                  getLanguageService()
+                    .getSemanticDiagnostics(fileName)
+                    .map(({ code }) => code),
+                );
+                return text;
+              },
+            },
+            {},
+          ),
+        };
+      })();
+
+      const { exitCode } = await migrate({
+        rootDir,
+        config,
+        dryRun: true,
+        virtualFiles: [
+          {
+            fileName: path.resolve(rootDir, 'ts-migrate-aliases.d.ts'),
+            text: 'type $TSFixMe = any;\n',
+          },
+        ],
+      });
+
+      expect(exitCode).toBe(0);
+      // The alias resolves through the virtual declaration file...
+      expect(diagnosticsByFile.get('index.ts')).toEqual([]);
+      // ...which itself never reaches the disk.
+      expect(hashDir(rootDir)).toBe(hashBefore);
+    });
   });
 
   describe('sources', () => {

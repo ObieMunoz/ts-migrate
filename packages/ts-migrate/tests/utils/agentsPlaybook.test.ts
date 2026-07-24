@@ -13,5 +13,6 @@ describe('readAgentsPlaybook', () => {
     expect(playbook).toContain('ts-migrate report <folder>');
     expect(playbook).toContain('.ts-migrate-baseline.json');
     expect(playbook).toContain('--jsonSummary');
+    expect(playbook).toContain('--dry-run');
   });
 });

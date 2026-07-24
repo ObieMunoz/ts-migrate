@@ -8,11 +8,14 @@ import { replaceJSON5Strings } from '../utils/updateJSON5';
 interface RenameParams {
   rootDir: string;
   sources?: string | string[];
+  /** Print the rename mapping without touching any file. */
+  dryRun?: boolean;
 }
 
 export default function rename({
   rootDir,
   sources,
+  dryRun,
 }: RenameParams): Array<{ oldFile: string; newFile: string }> | null {
   const configFile = path.resolve(rootDir, 'tsconfig.json');
   if (!fs.existsSync(configFile)) {
@@ -47,6 +50,21 @@ export default function rename({
       return { oldFile, newFile };
     })
     .filter((result): result is { oldFile: string; newFile: string } => !!result.newFile);
+
+  if (dryRun) {
+    const mapping = toRename
+      .map(
+        ({ oldFile, newFile }) =>
+          `  ${path.relative(rootDir, oldFile)} -> ${path.relative(rootDir, newFile)}`,
+      )
+      .join('\n');
+    log.info(
+      `Dry run: ${toRename.length} JS/JSX file(s) would be renamed in ${rootDir} ` +
+        `(nothing was written):\n${mapping}`,
+    );
+    updateProjectJson(rootDir, dryRun);
+    return toRename;
+  }
 
   log.info(`Renaming ${toRename.length} JS/JSX files in ${rootDir}...`);
 
@@ -123,7 +141,7 @@ function jsFileContainsJsx(jsFileName: string): boolean {
   );
 }
 
-function updateProjectJson(rootDir: string) {
+function updateProjectJson(rootDir: string, dryRun?: boolean) {
   const projectJsonFile = path.resolve(rootDir, 'project.json');
   if (!fs.existsSync(projectJsonFile)) {
     return;
@@ -139,6 +157,13 @@ function updateProjectJson(rootDir: string) {
     }
     return undefined;
   });
+
+  if (dryRun) {
+    if (updatedText !== projectJsonText) {
+      log.info(`Dry run: would update allowedImports in ${projectJsonFile}`);
+    }
+    return;
+  }
 
   fs.writeFileSync(projectJsonFile, updatedText, 'utf-8');
   log.info(`Updated allowedImports in ${projectJsonFile}`);

@@ -37,6 +37,14 @@ for arg in "$@"; do
     --blame-ignore-revs) blame_ignore_revs=true ;;
     --version|-v) cli --version; exit ;;
     --help|-h) echo "$usage"; exit ;;
+    --dry-run)
+      # Each pipeline step works on the previous step's writes, so a dry run
+      # of the whole pipeline cannot produce a meaningful preview.
+      echo "ts-migrate-full does not support --dry-run. Preview the steps individually instead:"
+      echo "  ts-migrate rename <folder> --dry-run"
+      echo "  ts-migrate migrate <folder> --dry-run   # after a real rename"
+      exit 1
+      ;;
     *)
       if [ -z "$frontend_folder" ]; then
         frontend_folder=$arg

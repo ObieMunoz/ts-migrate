@@ -265,6 +265,43 @@ baseline automatically when counts improve, so the debt can only ratchet
 down. Accept an intentional increase with `--update-baseline`; relocate the
 file with `--baselineFile <path>`.
 
+# Previewing a run (`--dry-run`)
+
+`rename`, `migrate`, and `reignore` accept `--dry-run` to show what a run
+would touch before anything hits disk:
+
+```sh
+npx -p @obiemunoz/ts-migrate ts-migrate rename <folder> --dry-run
+```
+
+```sh
+npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --dry-run
+```
+
+`rename --dry-run` prints the full old-to-new mapping, which also surfaces
+the `.ts` vs `.tsx` decision made for each `.js` file. `migrate` and
+`reignore` print each file a real run would update, with the suppression and
+`any` counts it would then contain:
+
+```
+Dry run: 2 file(s) would be updated in frontend/foo (nothing was written):
+  src/util.ts (2 any-alias)
+  src/widget.tsx (2 @ts-expect-error)
+For full diffs, run without --dry-run on a clean git tree and use git diff.
+```
+
+Every plugin pass still executes against the in-memory project; only the
+final writes are skipped. A dry run therefore takes as long as a real run,
+and its report matches the real outcome exactly (with `--aliases`, the
+declaration file the real run would generate is modeled in memory too).
+Per-file diffs are deliberately not printed: at migration scale they are
+enormous, and git shows them better after a real run.
+
+`--dry-run` combines with `--jsonSummary` (below) for a machine-readable
+preview; the summary file is still written, with `"dryRun": true`.
+`ts-migrate-full` rejects the flag, since each of its steps builds on the
+previous step's writes; preview with the individual commands instead.
+
 # Machine-readable run summaries
 
 A script or agent driving the CLI otherwise has to scrape the progress log to
@@ -282,6 +319,7 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --jsonSummary migrate-s
   "tsMigrateVersion": "0.11.0",
   "rootDir": "/repo/frontend/foo",
   "exitCode": 0,
+  "dryRun": false,
   "changedFiles": ["src/a.ts", "src/b.ts"],
   "nonMigratedFilesWithSyntaxErrors": [],
   "plugins": [
@@ -300,7 +338,9 @@ are relative to `<folder>`. `reignore` writes the same shape; `rename` writes
 `renamedFiles` as `{"from": "src/a.js", "to": "src/a.ts"}` pairs instead of
 the migrate fields. `changedFilesTypeDebt` counts only the files this run
 changed, so a scoped or incremental run reports its own debt; the `report`
-command measures the whole project.
+command measures the whole project. `dryRun` is true when the run was a
+`--dry-run` preview: the summary then describes what a real run would have
+changed, scanned from the would-be contents rather than the disk.
 
 The file is written whenever the command runs to completion, so its
 `exitCode` field matches the process exit code. No file plus a nonzero exit
