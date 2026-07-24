@@ -220,10 +220,18 @@ function describeESLintEngine(engine: ESLintEngine): string {
  * separates "no rule matched these files" from "the config was never found",
  * and the latter is silent because each file's throw is caught per file.
  */
-function describeESLintConfig({ useFlatConfig, configFile, cwd, fromEnv }: ESLintConfigChoice) {
+function describeESLintConfig({
+  useFlatConfig,
+  configFile,
+  cwd,
+  fromEnv,
+}: ESLintConfigChoice): string {
   const why = fromEnv ? ' [ESLINT_USE_FLAT_CONFIG]' : '';
   if (!useFlatConfig) {
-    return `[eslint-fix] eslintrc config, resolved per file from ${cwd}${why}`;
+    // The eslintrc engine resolves a config per file, so there is no one file
+    // to name; where it is rooted is the useful half.
+    const found = fromEnv ? '' : ' (no eslint.config.* found from there)';
+    return `[eslint-fix] eslintrc config, rooted at ${cwd}${why}${found}`;
   }
   return `[eslint-fix] flat config: ${configFile ?? `none found from ${cwd}`}${why}`;
 }

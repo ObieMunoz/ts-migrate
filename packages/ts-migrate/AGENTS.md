@@ -64,6 +64,13 @@ docs live in this package's README.md.
    with no eslint, one below 8.0, or a flat config with an eslint below 8.57
    falls back to the ESLint bundled with ts-migrate. Pass `--no-projectEslint`
    to `migrate` or `reignore` to use the bundled one regardless.
+10. **The ESLint config is resolved from `<folder>`, not the working
+    directory**, so `ts-migrate migrate packages/app` from a repository root
+    picks up `packages/app`'s own config and falls back to one above it. The
+    config file is printed next to the engine line, for example
+    `[eslint-fix] flat config: /repo/packages/app/eslint.config.js`. If that
+    line names no file, or names one you did not expect, the lint pass is
+    running against the wrong rules.
 
 ## Recommended workflow (full migration)
 

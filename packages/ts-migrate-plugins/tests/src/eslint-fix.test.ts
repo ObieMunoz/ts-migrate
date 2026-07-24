@@ -393,11 +393,7 @@ describe('eslint-fix config resolution', () => {
 
       expect(results).toEqual([fixed]);
       expect(stdout).toContain(
-        `[eslint-fix] eslintrc config, resolved per file from ${path.join(
-          tmpDir,
-          'packages',
-          'app',
-        )}`,
+        `[eslint-fix] eslintrc config, rooted at ${path.join(tmpDir, 'packages', 'app')}`,
       );
     },
     20000,
