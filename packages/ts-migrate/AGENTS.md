@@ -68,6 +68,9 @@ Afterwards, update the project plumbing the tool deliberately does not touch:
   (tsx, ts-node). Point `package.json` `main` at output that exists.
 - Update scripts that reference old `.js` paths (mocha globs, jest patterns).
 - Teach ESLint about TypeScript (`@typescript-eslint` parser + plugin).
+- If the run created commits, consider a repo-root `.git-blame-ignore-revs`
+  so blame skips the mechanical rewrites; the run's final checklist prints
+  the SHAs and the caveats per merge workflow (see `--blame-ignore-revs`).
 
 ## Commands
 
@@ -78,6 +81,13 @@ verify with `tsc --noEmit`.
 
 - `--yes` (`-y`): skip the interactive prompts (accept defaults).
 - `--no-commit`: do not create git commits after each step.
+- `--blame-ignore-revs`: append the SHAs of the commits this run creates to a
+  `.git-blame-ignore-revs` file at the repository root so `git blame` can
+  skip the mechanical rewrites. Only useful on merge-commit workflows; with
+  squash or rebase merges those SHAs never reach the main branch, so leave
+  the flag off and add the merged commit's SHA to the file after the merge
+  instead. A successful run prints the SHAs and this guidance either way;
+  the flag is ignored with `--no-commit`.
 - `--version` (`-v`): print the ts-migrate version and exit.
 - All other flags are forwarded to the underlying `rename` and `migrate`
   commands (e.g. `--sources`, `--no-inferTypes`, `--exclude-plugin`).

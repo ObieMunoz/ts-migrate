@@ -8,6 +8,7 @@ describe('readAgentsPlaybook', () => {
     expect(playbook).toContain('-p @obiemunoz/ts-migrate');
     expect(playbook).toContain('--yes');
     expect(playbook).toContain('--no-commit');
+    expect(playbook).toContain('--blame-ignore-revs');
     expect(playbook).toContain('reignore');
   });
 });
