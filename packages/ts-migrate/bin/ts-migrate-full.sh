@@ -20,18 +20,21 @@ cli() {
   node "$cli_js" "$@"
 }
 
-usage="Usage: ts-migrate-full <folder> [--yes] [--no-commit] [rename/migrate options...]"
+usage="Usage: ts-migrate-full <folder> [--yes] [--no-commit] [--blame-ignore-revs] [rename/migrate options...]"
 
-# --yes, --no-commit, --version, and --help belong to this script; everything
-# else after the folder is forwarded to the rename and migrate commands.
+# --yes, --no-commit, --blame-ignore-revs, --version, and --help belong to
+# this script; everything else after the folder is forwarded to the rename and
+# migrate commands.
 auto_yes=false
 no_commit=false
+blame_ignore_revs=false
 frontend_folder=""
 additional_args=()
 for arg in "$@"; do
   case $arg in
     --yes|-y) auto_yes=true ;;
     --no-commit) no_commit=true ;;
+    --blame-ignore-revs) blame_ignore_revs=true ;;
     --version|-v) cli --version; exit ;;
     --help|-h) echo "$usage"; exit ;;
     *)
@@ -124,6 +127,10 @@ if [ "$auto_yes" != "true" ]; then
   fi
 fi
 
+# Full SHAs of the mechanical commits this run creates, for the blame
+# guidance at the end of the run.
+migration_commits=()
+
 function maybe_commit() {
   if [ "$no_commit" = "true" ]; then
     return
@@ -135,6 +142,7 @@ function maybe_commit() {
   if [[ `git status --porcelain .` ]]
   then
     git add . && git commit "$@"
+    migration_commits+=("$(git rev-parse HEAD)")
   fi
   cd -
 }
@@ -251,6 +259,21 @@ if [ -s "$types_report_file" ]; then
   cat "$types_report_file"
 fi
 
+# The mechanical rewrite commits are exactly what .git-blame-ignore-revs is
+# for. Writing the file is opt-in: on squash or rebase merge workflows these
+# SHAs never reach the main branch, and dangling SHAs in the file break
+# git blame repo-wide for fresh clones.
+wrote_ignore_revs=false
+if [ "$blame_ignore_revs" = "true" ] && [ ${#migration_commits[@]} -gt 0 ]; then
+  repo_root=$(git -C "$frontend_folder" rev-parse --show-toplevel)
+  ignore_revs_file="$repo_root/.git-blame-ignore-revs"
+  {
+    echo "# ts-migrate $folder_name"
+    printf '%s\n' "${migration_commits[@]}"
+  } >> "$ignore_revs_file"
+  wrote_ignore_revs=true
+fi
+
 echo "
 Remaining cleanup — the rest of your tooling doesn't know about the rename yet:
 
@@ -258,6 +281,29 @@ Remaining cleanup — the rest of your tooling doesn't know about the rename yet
 2. Add a build step (tsc) or a TS-aware runner (ts-node, tsx). If package.json
    \"main\" pointed at a renamed file, point it at build output that exists.
 3. Update scripts that reference old .js paths (mocha globs, jest patterns).
-4. Teach ESLint about TypeScript (the @typescript-eslint parser and plugin).
-5. Push your changes with \`git push\` and open a PR!
+4. Teach ESLint about TypeScript (the @typescript-eslint parser and plugin)."
+
+if [ ${#migration_commits[@]} -gt 0 ]; then
+  echo "5. Keep git blame useful. This run created mechanical rewrite commits:"
+  for sha in "${migration_commits[@]}"; do
+    git -C "$frontend_folder" --no-pager show -s --format='     %H  %s' "$sha"
+  done
+  if [ "$wrote_ignore_revs" = "true" ]; then
+    echo "   Their SHAs were appended to .git-blame-ignore-revs at the repository root.
+   Review that file and commit it together with your cleanup changes."
+  else
+    echo "   If your team merges PRs with merge commits, add those full SHAs to a
+   .git-blame-ignore-revs file at the repository root; re-running with
+   --blame-ignore-revs writes it for you. If your team squash-merges or
+   rebases, these SHAs will not exist on the main branch: add the SHA of the
+   merged commit to the file after the merge instead."
+  fi
+  echo "   Once the file is committed, \`git config blame.ignoreRevsFile .git-blame-ignore-revs\`
+   makes local git blame skip those commits; github.com applies the root file
+   automatically.
+6. Push your changes with \`git push\` and open a PR!
 "
+else
+  echo "5. Push your changes with \`git push\` and open a PR!
+"
+fi
