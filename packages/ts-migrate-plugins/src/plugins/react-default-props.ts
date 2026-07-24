@@ -19,6 +19,10 @@ const optionProperties: Properties = {
  */
 const WITH_DEFAULT_PROPS_HELPER = `WithDefaultProps`;
 
+// defaulted keys stay required, typed as the declared prop type or the default's type;
+// defaults without a declared prop are added as-is
+const WITH_DEFAULT_PROPS_DECLARATION = `type ${WITH_DEFAULT_PROPS_HELPER}<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;`;
+
 const reactDefaultPropsPlugin: Plugin<Options> = {
   name: 'react-default-props',
 
@@ -57,23 +61,27 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
     const printer = ts.createPrinter();
     const processedPropTypes = new Map<string, string>();
 
-    let shouldAddWithDefaultPropsImport = !importDeclarations.some((importDeclaration) =>
-      /WithDefaultProps/.test(importDeclaration.moduleSpecifier.getText()),
-    );
+    let shouldAddWithDefaultPropsHelper =
+      !importDeclarations.some((importDeclaration) =>
+        /WithDefaultProps/.test(importDeclaration.moduleSpecifier.getText()),
+      ) &&
+      !typeAliasDeclarations.some(
+        (typeAliasDeclaration) => typeAliasDeclaration.name.text === WITH_DEFAULT_PROPS_HELPER,
+      );
 
-    const insertWithDefaultPropsImport = () => {
-      if (shouldAddWithDefaultPropsImport) {
-        updates.push({
-          kind: 'insert',
-          index: 0,
-          text: `${printer.printNode(
-            ts.EmitHint.Unspecified,
-            getWithDefaultPropsImport(),
-            sourceFile,
-          )}\n`,
-        });
-        // it probably could be done in the better way :)
-        shouldAddWithDefaultPropsImport = false;
+    const insertWithDefaultPropsHelper = () => {
+      if (shouldAddWithDefaultPropsHelper) {
+        const lastImportDeclaration = importDeclarations[importDeclarations.length - 1];
+        updates.push(
+          lastImportDeclaration
+            ? {
+                kind: 'insert',
+                index: lastImportDeclaration.end,
+                text: `\n\n${WITH_DEFAULT_PROPS_DECLARATION}`,
+              }
+            : { kind: 'insert', index: 0, text: `${WITH_DEFAULT_PROPS_DECLARATION}\n` },
+        );
+        shouldAddWithDefaultPropsHelper = false;
       }
     };
 
@@ -101,7 +109,7 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
 
       if (alreadyHaveDefalutProps) return;
 
-      if (options.useDefaultPropsHelper) insertWithDefaultPropsImport();
+      if (options.useDefaultPropsHelper) insertWithDefaultPropsHelper();
 
       const indexOfTypeValue = ts.isIntersectionTypeNode(propsTypeAliasDeclaration.type)
         ? propsTypeAliasDeclaration.type.types.findIndex((typeEl) => ts.isTypeLiteralNode(typeEl))
@@ -351,25 +359,5 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
 
   validate: createValidate(optionProperties),
 };
-
-// the target project might not have this as an internal dependency in project.json
-// It would have to be manually added, otherwise CI will complain about it
-function getWithDefaultPropsImport() {
-  return ts.factory.createImportDeclaration(
-    undefined,
-    ts.factory.createImportClause(
-      false,
-      undefined,
-      ts.factory.createNamedImports([
-        ts.factory.createImportSpecifier(
-          false,
-          undefined,
-          ts.factory.createIdentifier('WithDefaultProps'),
-        ),
-      ]),
-    ),
-    ts.factory.createStringLiteral(':ts-utils/types/WithDefaultProps'),
-  );
-}
 
 export default reactDefaultPropsPlugin;

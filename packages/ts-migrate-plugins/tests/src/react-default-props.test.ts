@@ -1,5 +1,6 @@
+import ts from 'typescript';
 import reactDefaultPropsPlugin from '../../src/plugins/react-default-props';
-import { mockPluginParams } from '../test-utils';
+import { mockPluginParams, realPluginParams } from '../test-utils';
 
 describe('react-default-props plugin', () => {
   const options = { useDefaultPropsHelper: true };
@@ -25,8 +26,9 @@ export default ExampleComponent;`;
       mockPluginParams({ text, fileName: 'file.tsx', options }),
     );
 
-    expect(result).toBe(`import { WithDefaultProps } from ":ts-utils/types/WithDefaultProps";
-import React from 'react';
+    expect(result).toBe(`import React from 'react';
+
+type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
 
 type OwnProps = {
     test: string;
@@ -113,8 +115,9 @@ export default ExampleComponent;`;
       mockPluginParams({ text, fileName: 'file.tsx', options }),
     );
 
-    expect(result).toBe(`import { WithDefaultProps } from ":ts-utils/types/WithDefaultProps";
-import React from 'react';
+    expect(result).toBe(`import React from 'react';
+
+type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
 
 type OwnProps = {
     test: string;
@@ -154,8 +157,9 @@ export default ExampleComponent;`;
       mockPluginParams({ text, fileName: 'file.tsx', options }),
     );
 
-    expect(result).toBe(`import { WithDefaultProps } from ":ts-utils/types/WithDefaultProps";
-import React from 'react';
+    expect(result).toBe(`import React from 'react';
+
+type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
 
 type OwnProps = {
     test: string;
@@ -196,9 +200,10 @@ export default withStyles(() => ({
       mockPluginParams({ text, fileName: 'file.tsx', options }),
     );
 
-    expect(result).toBe(`import { WithDefaultProps } from ":ts-utils/types/WithDefaultProps";
-import React from 'react';
+    expect(result).toBe(`import React from 'react';
 import { withStyles, WithStylesProps } from ':dls-themes/withStyles';
+
+type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
 
 type OwnProps = {
     message?: string;
@@ -247,9 +252,10 @@ export default withStyles(() => ({
       mockPluginParams({ text, fileName: 'file.tsx', options }),
     );
 
-    expect(result).toBe(`import { WithDefaultProps } from ":ts-utils/types/WithDefaultProps";
-import React from 'react';
+    expect(result).toBe(`import React from 'react';
 import { withStyles, WithStylesProps } from ':dls-themes/withStyles';
+
+type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
 
 const defaultProps = { message: '' };
 
@@ -298,8 +304,9 @@ export default Foo;`;
       mockPluginParams({ text, fileName: 'file.tsx', options }),
     );
 
-    expect(result).toBe(`import { WithDefaultProps } from ":ts-utils/types/WithDefaultProps";
-import React from 'react';
+    expect(result).toBe(`import React from 'react';
+
+type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
 
 type OwnMyProps = {
     message: string;
@@ -345,8 +352,9 @@ export default Foo;`;
       mockPluginParams({ text, fileName: 'file.tsx', options }),
     );
 
-    expect(result).toBe(`import { WithDefaultProps } from ":ts-utils/types/WithDefaultProps";
-import React from 'react';
+    expect(result).toBe(`import React from 'react';
+
+type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
 
 type OwnMyProps = {
     message: string;
@@ -773,8 +781,9 @@ export default AddEmailWidget;
       mockPluginParams({ text, fileName: 'file.tsx', options }),
     );
 
-    expect(result).toBe(`import { WithDefaultProps } from ":ts-utils/types/WithDefaultProps";
-import React from 'react';
+    expect(result).toBe(`import React from 'react';
+
+type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
 
 const SIZES = {
   LARGE: 'large',
@@ -1011,9 +1020,10 @@ export default withStyles(({ color, responsive }) => ({
     const result = await reactDefaultPropsPlugin.run(
       mockPluginParams({ text, fileName: 'file.tsx', options }),
     );
-    expect(result).toBe(`import { WithDefaultProps } from ":ts-utils/types/WithDefaultProps";
-import React from 'react';
+    expect(result).toBe(`import React from 'react';
 import { withStyles, WithStylesProps } from ':dls-themes/withStyles';
+
+type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
 
 type Props = {
   activeRouteName?: string;
@@ -1116,8 +1126,9 @@ export default class GuestRequirements extends React.Component<Props> {
       mockPluginParams({ text, fileName: 'file.tsx', options }),
     );
 
-    expect(result).toBe(`import { WithDefaultProps } from ":ts-utils/types/WithDefaultProps";
-import React from 'react';
+    expect(result).toBe(`import React from 'react';
+
+type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
 
 type OwnProps = {
     instantBookingAllowedCategory: string;
@@ -1179,8 +1190,9 @@ export default ExampleComponent;`;
       mockPluginParams({ text, fileName: 'file.tsx', options }),
     );
 
-    expect(result).toBe(`import { WithDefaultProps } from ":ts-utils/types/WithDefaultProps";
-import React from 'react';
+    expect(result).toBe(`import React from 'react';
+
+type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
 
 export type Props = {
     test: string;
@@ -1223,8 +1235,9 @@ export default Foo;`;
       mockPluginParams({ text, fileName: 'file.tsx', options }),
     );
 
-    expect(result).toBe(`import { WithDefaultProps } from ":ts-utils/types/WithDefaultProps";
-import React from 'react';
+    expect(result).toBe(`import React from 'react';
+
+type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
 
 export type MyProps = {
     message: string;
@@ -1426,5 +1439,104 @@ class InstallmentSelector extends React.Component<Props, State> {
 }
 export default InstallmentSelector;
 `);
+  });
+
+  it('helper output typechecks without the Airbnb ts-utils module', async () => {
+    const text = `import React from 'react';
+
+type Props = {
+  test: string;
+  role?: string;
+};
+
+const defaultProps = {
+  test: '',
+  role: null,
+};
+
+function ExampleComponent({ test, role }: Props) {
+  return <React.Fragment>{test}{role}</React.Fragment>;
+}
+ExampleComponent.defaultProps = defaultProps;
+
+export default ExampleComponent;`;
+
+    const result = (await reactDefaultPropsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx', options }),
+    )) as string;
+
+    expect(result).toContain('type WithDefaultProps<P, D> =');
+    expect(result).not.toContain(':ts-utils');
+
+    const params = await realPluginParams({
+      fileName: 'file.tsx',
+      text: result,
+      compilerOptions: { jsx: ts.JsxEmit.React },
+      extraFiles: {
+        'react-stub.d.ts': `declare namespace JSX {
+  interface Element {}
+  interface IntrinsicElements { [name: string]: any; }
+}
+declare module 'react' {
+  const React: any;
+  export default React;
+}`,
+      },
+    });
+    const languageService = params.getLanguageService();
+    const diagnostics = [
+      ...languageService.getSyntacticDiagnostics(params.fileName),
+      ...languageService.getSemanticDiagnostics(params.fileName),
+    ];
+    expect(
+      diagnostics.map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')),
+    ).toEqual([]);
+  });
+
+  it('do not emit the helper again when the file already declares it', async () => {
+    const text = `import React from 'react';
+
+type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
+
+type Props = {
+  test: string;
+};
+
+const defaultProps = {
+  test: '',
+};
+
+function ExampleComponent({ test }: Props) {
+  return <React.Fragment>{test}</React.Fragment>;
+}
+ExampleComponent.defaultProps = defaultProps;
+
+export default ExampleComponent;`;
+
+    const result = (await reactDefaultPropsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx', options }),
+    )) as string;
+
+    expect(result.match(/type WithDefaultProps</g)).toHaveLength(1);
+    expect(result).toBe(`import React from 'react';
+
+type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
+
+type OwnProps = {
+    test: string;
+};
+
+const defaultProps = {
+  test: '',
+};
+
+type Props = WithDefaultProps<OwnProps, typeof defaultProps>;
+
+function ExampleComponent({ test }: Props) {
+  return <React.Fragment>{test}</React.Fragment>;
+}
+ExampleComponent.defaultProps = defaultProps;
+
+export default ExampleComponent;`);
   });
 });
