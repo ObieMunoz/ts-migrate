@@ -69,6 +69,10 @@ jobs:
               exit 0
             fi
             echo "Publish attempt ${attempt} failed"
+            # A crashed attempt leaves lerna's publish-time manifest edits in
+            # the working tree, and the next attempt would refuse to run with
+            # EUNCOMMIT until they are reset.
+            git checkout -- .
             if [ "${attempt}" -lt 3 ]; then
               sleep 30
             fi

@@ -4,6 +4,24 @@
 build config across packages and
 [lerna](https://github.com/lerna/lerna/) is used to manage versioning and publishing.
 
+## Pull request titles
+
+PRs are squash-merged, and the PR title becomes the commit message on master.
+Lerna reads master's commit messages as
+[Conventional Commits](https://conventionalcommits.org) to pick the next
+version and to write the changelogs and GitHub release notes.
+
+Title format: `type(scope): subject`, for example `feat(cli): add a --dry-run flag`.
+Allowed types: `feat`, `fix`, `perf`, `refactor`, `docs`, `style`, `test`,
+`build`, `ci`, `chore`, `revert`.
+
+Only `feat`, `fix`, and `perf` entries appear in release notes, and `feat` is
+what turns a release into a minor instead of a patch. A bare area prefix such
+as `cli: add a flag` parses as an unknown type: the release still happens, but
+the notes say "Version bump only" and the change is missing from the changelog.
+
+The `PR Title` workflow enforces the format on every pull request.
+
 ## Project structure
 
 ```
