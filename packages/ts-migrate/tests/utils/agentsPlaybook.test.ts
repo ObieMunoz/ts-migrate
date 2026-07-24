@@ -10,5 +10,7 @@ describe('readAgentsPlaybook', () => {
     expect(playbook).toContain('--no-commit');
     expect(playbook).toContain('--blame-ignore-revs');
     expect(playbook).toContain('reignore');
+    expect(playbook).toContain('ts-migrate report <folder>');
+    expect(playbook).toContain('.ts-migrate-baseline.json');
   });
 });

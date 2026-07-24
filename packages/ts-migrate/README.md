@@ -64,6 +64,8 @@ Commands:
   ts-migrate rename [options] <folder>    Rename files in folder from JS/JSX to TS/TSX
   ts-migrate migrate [options] <folder>   Fix TypeScript errors, using codemods
   ts-migrate reignore [options] <folder>  Re-run ts-ignore on a project
+  ts-migrate report [options] <folder>    Print per-file counts of suppression comments and any-type annotations
+  ts-migrate check [options] <folder>     Compare suppression and any counts against a committed baseline
   ts-migrate agents                       Print usage instructions for AI coding agents (non-interactive playbook)
 
 Options:
@@ -225,6 +227,41 @@ resolve. The report only recommends what the diagnostics prove is missing:
 
 The `Then try` line is separate because `@types` packages derived from untyped
 imports (rather than well-known globals) aren't guaranteed to exist on npm.
+
+# Measuring type debt
+
+A migration that ends with `tsc` exiting 0 says nothing about how much of the
+project ended up suppressed or typed as `any`: a run that turned every
+parameter into `$TSFixMe` passes the same bar as one that inferred everything.
+Two commands measure exactly that. Counts come from per-file ASTs, so strings
+and JSX text that merely contain the directive words are not counted, and no
+type-checker program is needed.
+
+```sh
+npx -p @obiemunoz/ts-migrate ts-migrate report <folder>
+```
+
+prints totals and per-file counts, worst file first, of:
+
+- `@ts-expect-error` and `@ts-ignore` comments, including a breakdown of the
+  suppressed error codes ts-migrate embeds in them (`TS(2304)` and so on);
+- any-alias annotations (`$TSFixMe` and friends, discovered from the aliases
+  your project's `.d.ts` files actually declare rather than hardcoded);
+- explicit `any` annotations.
+
+`--json` prints the same data for machine consumption. `migrate` and
+`reignore` end their runs with the one-paragraph totals of this report.
+
+```sh
+npx -p @obiemunoz/ts-migrate ts-migrate check <folder>
+```
+
+is the enforcement mode, meant for CI. The first run writes a per-file
+baseline to `.ts-migrate-baseline.json` in `<folder>`; commit it. Later runs
+exit nonzero if any per-file count exceeds the baseline and lower the
+baseline automatically when counts improve, so the debt can only ratchet
+down. Accept an intentional increase with `--update-baseline`; relocate the
+file with `--baselineFile <path>`.
 
 # Using `--sources` for partial migrations
 

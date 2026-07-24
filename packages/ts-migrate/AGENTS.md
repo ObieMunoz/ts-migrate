@@ -148,6 +148,28 @@ existing suppression comments, then re-adds only the ones still needed.
   (`--no-ambientSources` disables).
 - `-p`/`--messagePrefix`: customizes the comment text.
 
+Both `migrate` and `reignore` end the run by printing a one-paragraph type
+debt summary (the `report` totals for the project).
+
+### `ts-migrate report <folder> [--json]`
+
+Measures the type debt left in the project: `@ts-expect-error`/`@ts-ignore`
+comments (with the suppressed error codes ts-migrate embeds in them),
+any-alias annotations (`$TSFixMe` and friends, discovered from the aliases
+the project's `.d.ts` files declare rather than hardcoded), and explicit
+`any` annotations. Prints totals plus per-file counts, worst file first.
+Counts come from per-file ASTs, so strings and JSX text that merely contain
+the directive words are not counted. `--json` prints the same data as JSON.
+
+### `ts-migrate check <folder> [--update-baseline]`
+
+Enforcement mode of the same scanner, meant for CI. The first run writes a
+per-file baseline to `.ts-migrate-baseline.json` in `<folder>`; commit that
+file. Later runs exit nonzero if any per-file count exceeds the baseline,
+and lower the baseline automatically when counts improve. After an
+intentional increase, accept the new counts with `--update-baseline`.
+`--baselineFile <path>` overrides the baseline location.
+
 ### `ts-migrate agents`
 
 Prints this document.
@@ -156,6 +178,8 @@ Prints this document.
 
 - `migrate`/`reignore` exit `0` on success and nonzero (255) if a plugin
   errored or a file still has syntax errors after migration.
+- `check` exits `1` when a per-file count exceeds the baseline; `report` and
+  `check` exit nonzero (255) if the tsconfig cannot be read.
 - `ts-migrate-full` stops at the first failing step; the final `tsc` check
   failing means the migration did not reach a compiling state. Its failure
   message distinguishes the common causes: TS2578 (compiler version skew —
@@ -175,6 +199,13 @@ Prints this document.
 1. `npx tsc -p <folder>/tsconfig.json --noEmit` exits 0.
 2. No `.js`/`.jsx` sources remain except intentional ones (config files,
    build output).
-3. Suppression count is reasonable: `grep -rn "@ts-expect-error" <folder>/src`
-   — if most sit on globals like `require` or `describe`, environment types
-   are missing; install them and re-run `reignore` instead of editing files.
+3. Suppression count is reasonable:
+   `npx -p @obiemunoz/ts-migrate ts-migrate report <folder>` prints the
+   totals, the suppressed error codes, and the worst files. If most
+   suppressed codes are TS2304/TS2582 (globals like `require` or
+   `describe`), environment types are missing; install them and re-run
+   `reignore` instead of editing files.
+4. Optional, recommended on repos with CI:
+   `npx -p @obiemunoz/ts-migrate ts-migrate check <folder>` writes a
+   `.ts-migrate-baseline.json`; commit it and run `check` in CI so the
+   build fails when suppression or `any` counts creep back up.
