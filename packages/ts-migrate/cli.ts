@@ -28,11 +28,11 @@ import {
   updateImportPathsPlugin,
   createTypesPackageDetector,
   formatTypesPackageReport,
-  Plugin,
   TypesPackageDetector,
 } from '@obiemunoz/ts-migrate-plugins';
 import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
 import init from './commands/init';
+import reignore from './commands/reignore';
 import rename from './commands/rename';
 import readAgentsPlaybook from './utils/agentsPlaybook';
 
@@ -143,7 +143,7 @@ yargs
         .string('publicRegex')
         .string('sources')
         .alias('sources', 's')
-        .describe('sources', 'Path to a subset of your project to rename (globs are ok).')
+        .describe('sources', 'Path to a subset of your project to migrate (globs are ok).')
         .boolean('inferTypes')
         .default('inferTypes', true)
         .describe(
@@ -279,7 +279,7 @@ yargs
     },
   )
   .command(
-    'reignore <folder>',
+    'reignore [options] <folder>',
     'Re-run ts-ignore on a project',
     (cmd) =>
       cmd
@@ -291,47 +291,23 @@ yargs
             'A message to add to the ts-expect-error or ts-ignore comments that are inserted.',
         })
         .positional('folder', { type: 'string' })
+        .string('sources')
+        .alias('sources', 's')
+        .describe('sources', 'Path to a subset of your project to reignore (globs are ok).')
+        .example(
+          '$0 reignore /frontend/foo -s "bar/**/*" -s "node_modules/**/*.d.ts"',
+          'Reignore all the files in /frontend/foo/bar, accounting for ambient types from node_modules.',
+        )
         .require(['folder']),
     async (args) => {
       const rootDir = path.resolve(process.cwd(), args.folder);
+      const { sources } = args;
 
-      const changedFiles = new Map<string, string>();
-      function withChangeTracking(plugin: Plugin<unknown>): Plugin<unknown> {
-        return {
-          name: plugin.name,
-          mutationsPreserveTypes: plugin.mutationsPreserveTypes,
-          independentFiles: plugin.independentFiles,
-          async run(params) {
-            const prevText = params.text;
-            const nextText = await plugin.run(params);
-            const seen = changedFiles.has(params.fileName);
-            if (!seen && nextText != null && nextText !== prevText) {
-              changedFiles.set(params.fileName, prevText);
-            }
-            return nextText;
-          },
-        };
-      }
-      const eslintFixChangedPlugin: Plugin = {
-        name: 'eslint-fix-changed',
-        independentFiles: eslintFixPlugin.independentFiles,
-        async run(params) {
-          if (!changedFiles.has(params.fileName)) return undefined;
-          if (changedFiles.get(params.fileName) === params.text) return undefined;
-          return eslintFixPlugin.run(params);
-        },
-      };
-
-      const typesPackageDetector = createTypesPackageDetector();
-      const config = new MigrateConfig()
-        .addPlugin(withChangeTracking(stripTSIgnorePlugin), {})
-        .addPlugin(typesPackageDetector.plugin, {})
-        .addPlugin(withChangeTracking(tsIgnorePlugin), {
-          messagePrefix: args.messagePrefix,
-        })
-        .addPlugin(eslintFixChangedPlugin, {});
-
-      const { exitCode } = await migrate({ rootDir, config });
+      const { exitCode, typesPackageDetector } = await reignore({
+        rootDir,
+        sources,
+        messagePrefix: args.p,
+      });
 
       printTypesPackageReport(typesPackageDetector, rootDir, args.folder);
 
