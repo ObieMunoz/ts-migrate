@@ -2,10 +2,13 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import {
+  buildModuleDeclarations,
   collectTypesEvidence,
   createTypesEvidence,
   createTypesPackageDetector,
   formatTypesPackageReport,
+  parseModuleDeclarations,
+  renderModuleDeclarations,
   summarizeTypesEvidence,
   TypesEvidence,
 } from '../../../src/utils/typesPackages';
@@ -297,6 +300,97 @@ describe('formatTypesPackageReport', () => {
         Note: 1 more untyped import(s) omitted.
         After installing type definitions, rerun: npx -p @obiemunoz/ts-migrate ts-migrate reignore src"
     `);
+  });
+});
+
+describe('buildModuleDeclarations', () => {
+  const untypedEvidence = (...moduleNames: string[]): TypesEvidence => {
+    const evidence = createTypesEvidence();
+    collectTypesEvidence(
+      evidence,
+      'a.ts',
+      moduleNames.map((moduleName) =>
+        diagnostic(7016, `Could not find a declaration file for module '${moduleName}'.`),
+      ),
+    );
+    return evidence;
+  };
+
+  it('declares the modules with no types available', () => {
+    const rootDir = makeFixture({ 'package.json': JSON.stringify({}) });
+
+    const declarations = buildModuleDeclarations(
+      untypedEvidence('left-pad', '@acme/priv', 'lodash/fp', './relative'),
+      rootDir,
+    )!;
+
+    // The relative import is not a package; a shorthand declaration of it
+    // would declare a module nothing resolves to.
+    expect(declarations.moduleNames).toEqual(['@acme/priv', 'left-pad', 'lodash/fp']);
+    expect(declarations.filePath).toBe(path.join(rootDir, 'types', 'ts-migrate-modules.d.ts'));
+    expect(declarations.text).toContain("declare module '@acme/priv';");
+    expect(declarations.text).toContain("declare module 'lodash/fp';");
+    expect(parseModuleDeclarations(declarations.text)).toEqual(declarations.moduleNames);
+  });
+
+  it('leaves modules an installed @types package covers alone', () => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({}),
+      'node_modules/@types/lodash/package.json': JSON.stringify({ version: '4.17.7' }),
+    });
+
+    expect(buildModuleDeclarations(untypedEvidence('lodash', 'lodash/fp'), rootDir)).toBeNull();
+  });
+
+  it('returns null when there is nothing to declare', () => {
+    const rootDir = makeFixture({ 'package.json': JSON.stringify({}) });
+
+    expect(buildModuleDeclarations(createTypesEvidence(), rootDir)).toBeNull();
+  });
+
+  it('keeps earlier declarations and drops the ones that gained types', () => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({}),
+      'types/ts-migrate-modules.d.ts': renderModuleDeclarations([
+        'left-pad',
+        'now-typed',
+        'ships-types',
+      ]),
+      'node_modules/@types/now-typed/package.json': JSON.stringify({ version: '1.0.0' }),
+      'node_modules/ships-types/package.json': JSON.stringify({
+        version: '2.0.0',
+        types: 'index.d.ts',
+      }),
+    });
+
+    // A declared module stops producing TS7016, so an earlier run's entries
+    // are only in the evidence of the run that first found them.
+    const declarations = buildModuleDeclarations(untypedEvidence('another-untyped'), rootDir)!;
+
+    expect(declarations.moduleNames).toEqual(['another-untyped', 'left-pad']);
+  });
+
+  it('does not touch a declaration file it did not write', () => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({}),
+      'types/ts-migrate-modules.d.ts': "declare module 'hand-written';\n",
+    });
+
+    expect(buildModuleDeclarations(untypedEvidence('left-pad'), rootDir)).toBeNull();
+  });
+
+  it('reports the file it generated alongside the @types suggestions', () => {
+    const rootDir = makeFixture({ 'package.json': JSON.stringify({}) });
+    const evidence = untypedEvidence('left-pad');
+
+    const report = summarizeTypesEvidence(evidence, rootDir);
+    report.declared = buildModuleDeclarations(evidence, rootDir)!;
+
+    const formatted = formatTypesPackageReport(report, 'src')!;
+    expect(formatted).toContain('Try: npm install -D @types/left-pad');
+    expect(formatted).toContain(
+      '1 module with no types available is declared in types/ts-migrate-modules.d.ts',
+    );
   });
 });
 

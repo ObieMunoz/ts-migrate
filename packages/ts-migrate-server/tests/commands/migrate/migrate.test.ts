@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import ts from 'typescript';
 import log from 'updatable-log';
 import { createDir, copyDir, deleteDir, getDirData, hashDir } from '../../test-utils';
 import migrate, { MigrateConfig } from '../../../src/migrate';
@@ -130,6 +131,101 @@ describe('migrate command', () => {
       expect(diagnosticsByFile.get('index.ts')).toEqual([]);
       // ...which itself never reaches the disk.
       expect(hashDir(rootDir)).toBe(hashBefore);
+    });
+  });
+
+  describe('addGeneratedFile', () => {
+    const declarationsFile = 'types/generated.d.ts';
+    const declarationsText = "declare module 'untyped-lib';\n";
+
+    /**
+     * A plugin that generates the declaration file, followed by one recording
+     * what the program makes of the file that imports the declared module.
+     */
+    function generateAndRecord(): {
+      config: MigrateConfig;
+      diagnosticCodes: number[][];
+      programs: ts.Program[];
+    } {
+      const diagnosticCodes: number[][] = [];
+      const programs: ts.Program[] = [];
+      const config = new MigrateConfig()
+        .addPlugin(
+          {
+            name: 'generate-declarations',
+            run({ rootDir: dir, addGeneratedFile, getLanguageService }) {
+              const program = getLanguageService().getProgram();
+              if (program) programs.push(program);
+              addGeneratedFile?.(path.resolve(dir, declarationsFile), declarationsText);
+              return undefined;
+            },
+          },
+          {},
+        )
+        .addPlugin(
+          {
+            name: 'record-diagnostics',
+            run({ fileName, getLanguageService }) {
+              const languageService = getLanguageService();
+              const program = languageService.getProgram();
+              if (program) programs.push(program);
+              diagnosticCodes.push(
+                languageService.getSemanticDiagnostics(fileName).map(({ code }) => code),
+              );
+              return undefined;
+            },
+          },
+          {},
+        );
+      return { config, diagnosticCodes, programs };
+    }
+
+    beforeEach(() => {
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({ compilerOptions: { strict: true, types: [] } }),
+      );
+      fs.writeFileSync(path.resolve(rootDir, 'index.ts'), "import 'untyped-lib';\n");
+    });
+
+    it('adds the file to the program and writes it with the rest of the run', async () => {
+      const { config, diagnosticCodes } = generateAndRecord();
+
+      const { exitCode, generatedFiles } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      // The import resolves through the generated declaration instead of TS2307.
+      expect(diagnosticCodes).toEqual([[]]);
+      const filePath = path.resolve(rootDir, declarationsFile);
+      expect([...generatedFiles]).toEqual([[filePath, declarationsText]]);
+      expect(fs.readFileSync(filePath, 'utf8')).toBe(declarationsText);
+    });
+
+    it('leaves the file unwritten on a dry run', async () => {
+      const hashBefore = hashDir(rootDir);
+      const { config, diagnosticCodes } = generateAndRecord();
+
+      const { exitCode, generatedFiles } = await migrate({ rootDir, config, dryRun: true });
+
+      expect(exitCode).toBe(0);
+      expect(diagnosticCodes).toEqual([[]]);
+      expect(generatedFiles.get(path.resolve(rootDir, declarationsFile))).toBe(declarationsText);
+      expect(hashDir(rootDir)).toBe(hashBefore);
+    });
+
+    it('keeps the program when the file it would generate is already there', async () => {
+      fs.mkdirSync(path.resolve(rootDir, 'types'));
+      fs.writeFileSync(path.resolve(rootDir, declarationsFile), declarationsText);
+      const { config, diagnosticCodes, programs } = generateAndRecord();
+
+      const { exitCode } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      expect(diagnosticCodes).toEqual([[]]);
+      // Regenerating identical declarations must not cost a program rebuild:
+      // every file checked so far would lose its cached diagnostics.
+      expect(programs).toHaveLength(2);
+      expect(programs[0]).toBe(programs[1]);
     });
   });
 

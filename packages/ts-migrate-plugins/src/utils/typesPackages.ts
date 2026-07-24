@@ -414,16 +414,22 @@ export function summarizeTypesEvidence(
 
   // Several specifiers can come from one package (`lodash/fp`, `lodash/get`),
   // and one @types package would type them all.
-  const untypedPackages = new Map<string, { errorCount: number; files: Set<string>; names: Set<string> }>();
+  interface UntypedPackage {
+    errorCount: number;
+    files: Set<string>;
+    names: Set<string>;
+  }
+  const untypedPackages = new Map<string, UntypedPackage>();
   confirmedUntypedModules(evidence, rootDir).forEach(({ moduleName, module }) => {
     const packageName = typesPackageFor(moduleName);
-    let entry = untypedPackages.get(packageName);
-    if (!entry) {
-      entry = { errorCount: 0, files: new Set(), names: new Set() };
-      untypedPackages.set(packageName, entry);
-    }
+    const entry: UntypedPackage = untypedPackages.get(packageName) ?? {
+      errorCount: 0,
+      files: new Set(),
+      names: new Set(),
+    };
+    untypedPackages.set(packageName, entry);
     entry.errorCount += module.errorCount;
-    module.files.forEach((file) => entry!.files.add(file));
+    module.files.forEach((file) => entry.files.add(file));
     entry.names.add(`import '${moduleName}'`);
   });
   const untypedRecommendations = Array.from(untypedPackages.entries())

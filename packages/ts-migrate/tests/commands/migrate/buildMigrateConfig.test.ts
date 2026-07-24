@@ -100,10 +100,20 @@ describe('buildMigrateConfig', () => {
   });
 
   it('exposes every default-pipeline plugin as excludable', () => {
+    // The types package detector's two plugins hold per-run state, so they are
+    // built per command rather than listed among the static plugins.
+    const perRunPlugins = ['detect-types-packages', 'declare-untyped-modules'];
     const names = new Set(availablePlugins.map((plugin) => plugin.name));
     const defaultNames = pluginNames(buildMigrateConfig({}).config);
     defaultNames
-      .filter((name) => name !== 'detect-types-packages')
+      .filter((name) => !perRunPlugins.includes(name))
       .forEach((name) => expect(names).toContain(name));
+  });
+
+  it('drops the module declarations with --no-declareUntypedModules', () => {
+    expect(pluginNames(buildMigrateConfig({}).config)).toContain('declare-untyped-modules');
+    expect(pluginNames(buildMigrateConfig({ declareUntypedModules: false }).config)).not.toContain(
+      'declare-untyped-modules',
+    );
   });
 });

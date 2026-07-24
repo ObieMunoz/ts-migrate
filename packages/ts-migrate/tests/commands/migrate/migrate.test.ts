@@ -2,6 +2,7 @@ import { execFileSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import {
+  createTypesPackageDetector,
   tsIgnorePlugin,
   eslintFixPlugin,
   explicitAnyPlugin,
@@ -9,6 +10,7 @@ import {
   updateImportPathsPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
+  TypesPackageDetector,
 } from '@obiemunoz/ts-migrate-plugins';
 import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
 import { createGitignoreMigrationFilter } from '../../../utils/gitignore';
@@ -253,4 +255,75 @@ export const messagePropTypes = {
     );
     expect(fs.readFileSync(path.resolve(rootDir, 'dist/bundle.ts'), 'utf8')).toBe(bundleText);
   }, 10000);
+
+  describe('imports of a package that ships no type definitions', () => {
+    const sourceText = "import untyped from 'untyped-lib';\n\nexport const value = untyped;\n";
+    const declarationsFile = 'types/ts-migrate-modules.d.ts';
+
+    beforeEach(() => {
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            module: 'commonjs',
+            noEmit: true,
+            strict: true,
+            esModuleInterop: true,
+            types: [],
+          },
+          include: ['.'],
+        }),
+      );
+      fs.mkdirSync(path.resolve(rootDir, 'node_modules/untyped-lib'), { recursive: true });
+      fs.writeFileSync(
+        path.resolve(rootDir, 'node_modules/untyped-lib/package.json'),
+        JSON.stringify({ name: 'untyped-lib', version: '1.0.0', main: 'index.js' }),
+      );
+      fs.writeFileSync(
+        path.resolve(rootDir, 'node_modules/untyped-lib/index.js'),
+        'module.exports = {};\n',
+      );
+      fs.writeFileSync(path.resolve(rootDir, 'app.ts'), sourceText);
+    });
+
+    // Composed the way the migrate command wires the detector up.
+    const configWith = (detector: TypesPackageDetector, declare: boolean) => {
+      const config = new MigrateConfig().addPlugin(detector.plugin, {});
+      if (declare) config.addPlugin(detector.declarationsPlugin, {});
+      return config.addPlugin(tsIgnorePlugin, { messagePrefix: 'FIXME' });
+    };
+
+    it('declares the module instead of suppressing its imports', async () => {
+      const detector = createTypesPackageDetector();
+
+      const { exitCode, generatedFiles } = await migrate({
+        rootDir,
+        config: configWith(detector, true),
+      });
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(path.resolve(rootDir, declarationsFile), 'utf8')).toContain(
+        "declare module 'untyped-lib';",
+      );
+      expect([...generatedFiles.keys()]).toEqual([path.resolve(rootDir, declarationsFile)]);
+      expect(fs.readFileSync(path.resolve(rootDir, 'app.ts'), 'utf8')).toBe(sourceText);
+      expect(detector.summarize(rootDir).declared?.moduleNames).toEqual(['untyped-lib']);
+    }, 10000);
+
+    it('suppresses the import when the declarations are turned off', async () => {
+      const detector = createTypesPackageDetector();
+
+      const { exitCode, generatedFiles } = await migrate({
+        rootDir,
+        config: configWith(detector, false),
+      });
+
+      expect(exitCode).toBe(0);
+      expect(generatedFiles.size).toBe(0);
+      expect(fs.existsSync(path.resolve(rootDir, declarationsFile))).toBe(false);
+      expect(fs.readFileSync(path.resolve(rootDir, 'app.ts'), 'utf8')).toMatch(
+        /@ts-expect-error TS\(7016\) FIXME/,
+      );
+    }, 10000);
+  });
 });

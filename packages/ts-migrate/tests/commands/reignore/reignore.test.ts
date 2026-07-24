@@ -59,11 +59,12 @@ const alsoFine: number = 2;
     expect(pluginStats.map(({ pluginName }) => pluginName)).toEqual([
       'strip-ts-ignore',
       'detect-types-packages',
+      'declare-untyped-modules',
       'ts-ignore',
       'eslint-fix-changed',
     ]);
     expect(pluginStats[0].changedFileCount).toBe(1);
-    expect(pluginStats[2].changedFileCount).toBe(1);
+    expect(pluginStats[3].changedFileCount).toBe(1);
   }, 10000);
 
   it('dry run leaves the tree byte-identical and returns the would-be text', async () => {
