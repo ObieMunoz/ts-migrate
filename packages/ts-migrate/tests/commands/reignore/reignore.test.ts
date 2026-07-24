@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import reignore from '../../../commands/reignore';
-import { createDir, deleteDir } from '../../test-utils';
+import { createDir, deleteDir, hashDir } from '../../test-utils';
 
 jest.mock('updatable-log', () => {
   // eslint-disable-next-line global-require
@@ -63,5 +63,34 @@ const alsoFine: number = 2;
     ]);
     expect(pluginStats[0].changedFileCount).toBe(1);
     expect(pluginStats[2].changedFileCount).toBe(1);
+  }, 10000);
+
+  it('dry run leaves the tree byte-identical and returns the would-be text', async () => {
+    fs.writeFileSync(
+      path.resolve(rootDir, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { noEmit: true, strict: true }, include: ['.'] }),
+    );
+    const file = path.resolve(rootDir, 'file.ts');
+    fs.writeFileSync(
+      file,
+      `// @ts-expect-error FIXME: no longer needed
+const fine: number = 1;
+const broken: number = 'oops';
+`,
+    );
+    const hashBefore = hashDir(rootDir);
+
+    const { exitCode, updatedSourceFiles, updatedFileTexts } = await reignore({
+      rootDir,
+      messagePrefix: 'FIXME',
+      dryRun: true,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(hashDir(rootDir)).toBe(hashBefore);
+    expect([...updatedSourceFiles]).toEqual([file]);
+    const wouldBeText = updatedFileTexts.get(file);
+    expect(wouldBeText).not.toContain('no longer needed');
+    expect(wouldBeText).toMatch(/@ts-expect-error TS\(2322\) FIXME/);
   }, 10000);
 });

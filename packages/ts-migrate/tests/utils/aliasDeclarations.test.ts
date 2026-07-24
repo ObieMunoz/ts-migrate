@@ -22,10 +22,22 @@ describe('ensureAliasDeclarations', () => {
       anyAlias: '$TSFixMe',
       anyFunctionAlias: '$TSFixMeFunction',
     });
-    expect(written).toBe(generatedFile());
+    expect(written?.filePath).toBe(generatedFile());
     const text = fs.readFileSync(generatedFile(), 'utf-8');
+    expect(text).toBe(written?.text);
     expect(text).toContain('type $TSFixMe = any;');
     expect(text).toContain('type $TSFixMeFunction = (...args: any[]) => any;');
+  });
+
+  it('computes the file without writing it on a dry run', () => {
+    const written = ensureAliasDeclarations({
+      rootDir,
+      anyAlias: '$TSFixMe',
+      dryRun: true,
+    });
+    expect(written?.filePath).toBe(generatedFile());
+    expect(written?.text).toContain('type $TSFixMe = any;');
+    expect(fs.existsSync(generatedFile())).toBe(false);
   });
 
   it('returns null when no alias is requested', () => {
@@ -40,7 +52,7 @@ describe('ensureAliasDeclarations', () => {
       anyAlias: '$TSFixMe',
       anyFunctionAlias: '$TSFixMeFunction',
     });
-    const text = fs.readFileSync(written as string, 'utf-8');
+    const text = fs.readFileSync(written?.filePath as string, 'utf-8');
     expect(text).not.toContain('type $TSFixMe = any;');
     expect(text).toContain('type $TSFixMeFunction = (...args: any[]) => any;');
   });
@@ -55,7 +67,7 @@ describe('ensureAliasDeclarations', () => {
       anyAlias: '$TSFixMe',
       anyFunctionAlias: '$TSFixMeFunction',
     });
-    const text = fs.readFileSync(written as string, 'utf-8');
+    const text = fs.readFileSync(written?.filePath as string, 'utf-8');
     expect(text).toContain('type $TSFixMe = any;');
     expect(text).not.toContain('$TSFixMeFunction');
   });
@@ -108,7 +120,7 @@ describe('ensureAliasDeclarations', () => {
   it('still writes when there is no tsconfig to scan', () => {
     fs.unlinkSync(path.resolve(rootDir, 'tsconfig.json'));
     const written = ensureAliasDeclarations({ rootDir, anyAlias: '$TSFixMe' });
-    expect(written).toBe(generatedFile());
+    expect(written?.filePath).toBe(generatedFile());
     expect(fs.readFileSync(generatedFile(), 'utf-8')).toContain('type $TSFixMe = any;');
   });
 });
