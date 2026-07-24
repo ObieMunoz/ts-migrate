@@ -211,7 +211,7 @@ fi
 maybe_commit -m "[ts-migrate][$folder_name] Init tsconfig.json file" -m 'Co-authored-by: ts-migrate <>'
 
 echo "
-[Step $((step_i++)) of ${step_count}] Renaming files from JS/JSX to TS/TSX and updating project.json\...
+[Step $((step_i++)) of ${step_count}] Renaming files from JS/JSX to TS/TSX and updating project.json...
 "
 cli rename "$frontend_folder" "${additional_args[@]}"
 
