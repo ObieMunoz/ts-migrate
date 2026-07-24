@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import {
@@ -10,6 +11,7 @@ import {
   reactPropsPlugin,
 } from '@obiemunoz/ts-migrate-plugins';
 import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
+import { createGitignoreMigrationFilter } from '../../../utils/gitignore';
 import { createDir, copyDir, deleteDir, getDirData } from '../../test-utils';
 
 jest.mock('updatable-log', () => {
@@ -220,5 +222,35 @@ export const messagePropTypes = {
 `,
     );
     expect(exitCode).toBe(0);
+  }, 10000);
+
+  it('skips gitignored files via the gitignore migration filter', async () => {
+    execFileSync('git', ['init'], { cwd: rootDir, stdio: 'ignore' });
+    fs.writeFileSync(
+      path.resolve(rootDir, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { noEmit: true, strict: true }, include: ['.'] }),
+    );
+    fs.writeFileSync(path.resolve(rootDir, '.gitignore'), 'dist/\n');
+    fs.writeFileSync(path.resolve(rootDir, 'app.ts'), "const broken: number = 'oops';\n");
+    fs.mkdirSync(path.resolve(rootDir, 'dist'));
+    const bundleText = "const bundled: number = 'oops';\n";
+    fs.writeFileSync(path.resolve(rootDir, 'dist/bundle.ts'), bundleText);
+
+    // Composed the same way the migrate command wires it up.
+    const gitignoreFilter = createGitignoreMigrationFilter(rootDir);
+    const config = new MigrateConfig().addPlugin(tsIgnorePlugin, { messagePrefix: 'FIXME' });
+    const { exitCode, updatedSourceFiles } = await migrate({
+      rootDir,
+      config,
+      filterMigrationFiles: gitignoreFilter.filterMigrationFiles,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(gitignoreFilter.skippedFiles()).toEqual([path.resolve(rootDir, 'dist/bundle.ts')]);
+    expect([...updatedSourceFiles]).toEqual([path.resolve(rootDir, 'app.ts')]);
+    expect(fs.readFileSync(path.resolve(rootDir, 'app.ts'), 'utf8')).toMatch(
+      /@ts-expect-error TS\(2322\) FIXME/,
+    );
+    expect(fs.readFileSync(path.resolve(rootDir, 'dist/bundle.ts'), 'utf8')).toBe(bundleText);
   }, 10000);
 });

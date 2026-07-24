@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
+import { partitionGitignored } from './gitignore';
 
 export interface FileDebt {
   tsExpectError: number;
@@ -233,12 +234,17 @@ function isCountableSourceFile(fileName: string): boolean {
  * Scans the files of the tsconfig in rootDir for suppression comments and
  * any-type annotations. Single-file ASTs only; no type-checker program is
  * created. Declaration files are used to discover alias names but are not
- * counted. Throws if the tsconfig is missing or invalid.
+ * counted. Gitignored files are not counted either unless `gitignore` is
+ * false. Throws if the tsconfig is missing or invalid.
  */
-export function scanTypeDebt(rootDir: string): TypeDebtReport {
+export function scanTypeDebt(rootDir: string, gitignore = true): TypeDebtReport {
   const fileNames = projectFileNames(rootDir);
   const aliasNames = discoverAliasNames(fileNames.filter(isDeclarationFile));
-  return collectDebt(rootDir, fileNames.filter(isCountableSourceFile), aliasNames);
+  let countableFiles = fileNames.filter(isCountableSourceFile);
+  if (gitignore) {
+    countableFiles = partitionGitignored(rootDir, countableFiles).kept;
+  }
+  return collectDebt(rootDir, countableFiles, aliasNames);
 }
 
 /**

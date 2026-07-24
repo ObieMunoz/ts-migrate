@@ -132,6 +132,44 @@ An unknown plugin name errors and lists the valid names. Excluding
 `infer-types` is equivalent to `--no-inferTypes`. `ts-migrate-full` forwards
 the flag to the migrate step, like any other migrate option.
 
+# Gitignored files
+
+Build output often lives inside the source tree (webpack/SSR bundles, a
+`dist` next to `src`, coverage folders). A tsconfig `include` that sweeps it
+up makes every command slower and can sink the whole migration: parsing and
+type-checking thousands of generated bundles bloats the program until the
+process runs out of memory, and the plugins would annotate and suppress
+errors in files that get regenerated anyway.
+
+All commands therefore skip gitignored files by default. Git itself is asked
+(`git check-ignore`), so nested `.gitignore` files, negations, and global
+excludes behave exactly as they do for git, and tracked files are never
+skipped even when they match an ignore pattern. In detail:
+
+- `init` writes the gitignored directories present at init time into the
+  generated tsconfig's `"exclude"` (together with TypeScript's default
+  excludes, which an explicit `exclude` would otherwise replace), so the
+  project's own `tsc` skips them too.
+- `rename` leaves gitignored JS/JSX files unrenamed.
+- `migrate` and `reignore` keep gitignored files out of the program: they are
+  neither parsed, type-checked, migrated, nor suppressed. A gitignored file
+  that a migrated file imports still enters the program for type resolution,
+  and the `.d.ts` files your tsconfig includes always stay in it (gitignored
+  codegen output often declares ambient types the rest of the project needs).
+- `report` and `check` leave gitignored files uncounted.
+
+`rename`, `migrate`, and `reignore` log what they skipped, and their
+`--jsonSummary` reports the count as `skippedGitignoredFiles`. Filtering
+disables itself when the target folder is not inside a git repository or is
+itself gitignored — a scratch copy of a project inside an ignored directory
+migrates normally.
+
+Pass `--no-gitignore` to `rename`, `migrate`, `reignore`, `report`, or
+`check` to include ignored files anyway. If your existing tsconfig `include`
+matches gitignored build output, add it to `exclude` as well: ts-migrate
+skips it either way, but your own `tsc` (including the compile check at the
+end of `ts-migrate-full`) still type-checks it otherwise.
+
 # Using ts-migrate with AI agents
 
 The package ships a playbook written for AI coding agents (Claude Code, Cursor,
@@ -329,14 +367,16 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --jsonSummary migrate-s
   "changedFilesTypeDebt": {
     "aliasNames": [],
     "totals": { "tsExpectError": 3, "tsIgnore": 0, "anyAlias": 0, "any": 2, "codes": { "TS2304": 3 } }
-  }
+  },
+  "skippedGitignoredFiles": 0
 }
 ```
 
 (`plugins` lists every step of the pipeline; the example is shortened.) Paths
 are relative to `<folder>`. `reignore` writes the same shape; `rename` writes
 `renamedFiles` as `{"from": "src/a.js", "to": "src/a.ts"}` pairs instead of
-the migrate fields. `changedFilesTypeDebt` counts only the files this run
+the migrate fields. `skippedGitignoredFiles` counts the files the run left
+untouched because git ignores them (always 0 with `--no-gitignore`). `changedFilesTypeDebt` counts only the files this run
 changed, so a scoped or incremental run reports its own debt; the `report`
 command measures the whole project. `dryRun` is true when the run was a
 `--dry-run` preview: the summary then describes what a real run would have

@@ -27,6 +27,8 @@ interface CheckParams {
   folder: string;
   updateBaseline?: boolean;
   baselineFile?: string;
+  /** Skip gitignored files (default). */
+  gitignore?: boolean;
 }
 
 function toBaselineCounts(counts: BaselineCounts): BaselineCounts {
@@ -74,7 +76,13 @@ function readBaseline(baselinePath: string): Baseline {
  * Ratchet mode of the type debt scanner: exits nonzero if any per-file count
  * exceeds the committed baseline, and lowers the baseline on improvement.
  */
-export default function check({ rootDir, folder, updateBaseline, baselineFile }: CheckParams): number {
+export default function check({
+  rootDir,
+  folder,
+  updateBaseline,
+  baselineFile,
+  gitignore,
+}: CheckParams): number {
   const baselinePath = baselineFile
     ? path.resolve(process.cwd(), baselineFile)
     : path.join(rootDir, DEFAULT_BASELINE_FILE);
@@ -85,7 +93,7 @@ export default function check({ rootDir, folder, updateBaseline, baselineFile }:
   let totalDebt: number;
   let filesScanned: number;
   try {
-    const report = scanTypeDebt(rootDir);
+    const report = scanTypeDebt(rootDir, gitignore);
     current = {};
     Object.entries(report.files).forEach(([file, debt]) => {
       current[file] = toBaselineCounts(debt);

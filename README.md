@@ -28,6 +28,7 @@ Check out Airbnb's original [blog post](https://medium.com/airbnb-engineering/ts
 * Plugin internals migrated to the TypeScript 5 node factory API
 * ESLint 9 flat config support (with legacy fallback)
 * Works on plain JS projects out of the box: no local TypeScript install required, and `init` writes a migration-friendly tsconfig instead of shelling out to `tsc --init`
+* Honors `.gitignore`: build output inside the source tree (bundles, `dist`, coverage) is neither renamed, migrated, nor type-checked, and `init` excludes it in the generated tsconfig (`--no-gitignore` opts out)
 * Agent-ready: `ts-migrate agents` prints a usage playbook for AI coding agents, `ts-migrate-full --yes --no-commit` runs the whole pipeline non-interactively without touching git, `--dry-run` previews what a run would touch without writing anything, and `--jsonSummary` writes a machine-readable summary of what a run changed
 * Updated toolchain (Jest 29, modern dependencies)
 

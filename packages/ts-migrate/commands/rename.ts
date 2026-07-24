@@ -3,20 +3,29 @@ import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 import ts from 'typescript';
+import { logUnfilteredReason, partitionGitignored, sampleIgnoredPaths } from '../utils/gitignore';
 import { replaceJSON5Strings } from '../utils/updateJSON5';
 
 interface RenameParams {
   rootDir: string;
   sources?: string | string[];
+  /** Skip gitignored files (default). */
+  gitignore?: boolean;
   /** Print the rename mapping without touching any file. */
   dryRun?: boolean;
+}
+
+export interface RenameResult {
+  renamedFiles: Array<{ oldFile: string; newFile: string }>;
+  skippedGitignoredFiles: number;
 }
 
 export default function rename({
   rootDir,
   sources,
+  gitignore = true,
   dryRun,
-}: RenameParams): Array<{ oldFile: string; newFile: string }> | null {
+}: RenameParams): RenameResult | null {
   const configFile = path.resolve(rootDir, 'tsconfig.json');
   if (!fs.existsSync(configFile)) {
     log.error('Could not find tsconfig.json at', configFile);
@@ -31,9 +40,24 @@ export default function rename({
     return null;
   }
 
+  let skippedGitignoredFiles = 0;
+  if (gitignore) {
+    const partition = partitionGitignored(rootDir, jsFiles);
+    logUnfilteredReason(rootDir, partition);
+    if (partition.ignored.length > 0) {
+      skippedGitignoredFiles = partition.ignored.length;
+      log.info(
+        `Skipping ${partition.ignored.length} gitignored JS/JSX file(s) ` +
+          `(${sampleIgnoredPaths(rootDir, partition.ignored)}); they will not be renamed. ` +
+          `Pass --no-gitignore to rename them.`,
+      );
+      jsFiles = partition.kept;
+    }
+  }
+
   if (jsFiles.length === 0) {
     log.info('No JS/JSX files to rename.');
-    return [];
+    return { renamedFiles: [], skippedGitignoredFiles };
   }
 
   const toRename = jsFiles
@@ -63,7 +87,7 @@ export default function rename({
         `(nothing was written):\n${mapping}`,
     );
     updateProjectJson(rootDir, dryRun);
-    return toRename;
+    return { renamedFiles: toRename, skippedGitignoredFiles };
   }
 
   log.info(`Renaming ${toRename.length} JS/JSX files in ${rootDir}...`);
@@ -75,7 +99,7 @@ export default function rename({
   updateProjectJson(rootDir);
 
   log.info('Done.');
-  return toRename;
+  return { renamedFiles: toRename, skippedGitignoredFiles };
 }
 
 function findJSFiles(rootDir: string, configFile: string, sources?: string | string[]) {

@@ -16,6 +16,7 @@ import rename from './commands/rename';
 import report from './commands/report';
 import readAgentsPlaybook from './utils/agentsPlaybook';
 import ensureAliasDeclarations from './utils/aliasDeclarations';
+import { createGitignoreMigrationFilter } from './utils/gitignore';
 import packageVersion from './utils/packageVersion';
 import {
   buildMigrateRunSummary,
@@ -51,9 +52,9 @@ function printTypesPackageReport(
 }
 
 /** The end-of-run debt summary must never fail an otherwise successful run. */
-function printTypeDebtSummary(rootDir: string, folder: string): void {
+function printTypeDebtSummary(rootDir: string, folder: string, gitignore?: boolean): void {
   try {
-    log.info(formatTypeDebtSummary(scanTypeDebt(rootDir), folder));
+    log.info(formatTypeDebtSummary(scanTypeDebt(rootDir, gitignore), folder));
   } catch (err) {
     log.warn('Skipped type debt summary:', err);
   }
@@ -131,6 +132,9 @@ yargs
         .string('sources')
         .alias('sources', 's')
         .describe('sources', 'Path to a subset of your project to rename.')
+        .boolean('gitignore')
+        .default('gitignore', true)
+        .describe('gitignore', 'Skip gitignored files. Disable with --no-gitignore.')
         .boolean('dry-run')
         .default('dry-run', false)
         .describe('dry-run', 'Print the rename mapping without renaming any file.')
@@ -146,14 +150,20 @@ yargs
       const rootDir = path.resolve(process.cwd(), args.folder);
       const { sources } = args;
       const dryRun = args['dry-run'];
-      const renamedFiles = rename({ rootDir, sources, dryRun });
-      if (renamedFiles === null) {
+      const result = rename({ rootDir, sources, gitignore: args.gitignore, dryRun });
+      if (result === null) {
         process.exit(-1);
       }
       if (args.jsonSummary) {
         const exitCode = writeRunSummary(
           args.jsonSummary,
-          buildRenameRunSummary({ rootDir, exitCode: 0, dryRun, renamedFiles }),
+          buildRenameRunSummary({
+            rootDir,
+            exitCode: 0,
+            dryRun,
+            renamedFiles: result.renamedFiles,
+            skippedGitignoredFiles: result.skippedGitignoredFiles,
+          }),
         );
         if (exitCode !== 0) process.exit(exitCode);
       }
@@ -210,6 +220,12 @@ yargs
         .describe(
           'ambientSources',
           'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --no-ambientSources.',
+        )
+        .boolean('gitignore')
+        .default('gitignore', true)
+        .describe(
+          'gitignore',
+          'Skip gitignored files: they are neither migrated nor added to the program. Disable with --no-gitignore.',
         )
         .boolean('inferTypes')
         .default('inferTypes', true)
@@ -302,6 +318,9 @@ yargs
         return;
       }
 
+      const gitignoreFilter = args.gitignore
+        ? createGitignoreMigrationFilter(rootDir)
+        : undefined;
       const {
         exitCode,
         updatedSourceFiles,
@@ -313,6 +332,7 @@ yargs
         config,
         sources,
         ambientSources: args.ambientSources,
+        filterMigrationFiles: gitignoreFilter?.filterMigrationFiles,
         maxStablePasses: args.maxStablePasses,
         incrementalPasses: args.incrementalPasses,
         dryRun,
@@ -336,7 +356,7 @@ yargs
       if (dryRun) {
         printDryRunSummary(rootDir, args.folder, updatedSourceFiles, fileContents);
       } else {
-        printTypeDebtSummary(rootDir, args.folder);
+        printTypeDebtSummary(rootDir, args.folder, args.gitignore);
       }
 
       let finalExitCode = exitCode;
@@ -352,6 +372,7 @@ yargs
             fileContents,
             nonMigratedFilesWithSyntaxErrors,
             pluginStats,
+            skippedGitignoredFiles: gitignoreFilter?.skippedFiles().length ?? 0,
           }),
         );
       }
@@ -381,6 +402,12 @@ yargs
           'ambientSources',
           'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --no-ambientSources.',
         )
+        .boolean('gitignore')
+        .default('gitignore', true)
+        .describe(
+          'gitignore',
+          'Skip gitignored files: they are neither reignored nor added to the program. Disable with --no-gitignore.',
+        )
         .boolean('dry-run')
         .default('dry-run', false)
         .describe(
@@ -406,11 +433,13 @@ yargs
         updatedFileTexts,
         nonMigratedFilesWithSyntaxErrors,
         pluginStats,
+        skippedGitignoredFiles,
       } = await reignore({
         rootDir,
         sources,
         ambientSources: args.ambientSources,
         messagePrefix: args.p,
+        gitignore: args.gitignore,
         dryRun,
       });
 
@@ -418,7 +447,7 @@ yargs
       if (dryRun) {
         printDryRunSummary(rootDir, args.folder, updatedSourceFiles, updatedFileTexts);
       } else {
-        printTypeDebtSummary(rootDir, args.folder);
+        printTypeDebtSummary(rootDir, args.folder, args.gitignore);
       }
 
       let finalExitCode = exitCode;
@@ -434,6 +463,7 @@ yargs
             fileContents: updatedFileTexts,
             nonMigratedFilesWithSyntaxErrors,
             pluginStats,
+            skippedGitignoredFiles,
           }),
         );
       }
@@ -450,12 +480,17 @@ yargs
         .boolean('json')
         .default('json', false)
         .describe('json', 'Print the report as JSON for machine consumption.')
+        .boolean('gitignore')
+        .default('gitignore', true)
+        .describe('gitignore', 'Leave gitignored files uncounted. Disable with --no-gitignore.')
         .example('$0 report /frontend/foo', 'Report the type debt of /frontend/foo')
         .example('$0 report /frontend/foo --json', 'Same counts as JSON')
         .require(['folder']),
     (args) => {
       const rootDir = path.resolve(process.cwd(), args.folder);
-      process.exit(report({ rootDir, folder: args.folder, json: args.json }));
+      process.exit(
+        report({ rootDir, folder: args.folder, json: args.json, gitignore: args.gitignore }),
+      );
     },
   )
   .command(
@@ -475,6 +510,9 @@ yargs
           'baselineFile',
           'Path of the baseline JSON. Defaults to .ts-migrate-baseline.json in <folder>.',
         )
+        .boolean('gitignore')
+        .default('gitignore', true)
+        .describe('gitignore', 'Leave gitignored files uncounted. Disable with --no-gitignore.')
         .example(
           '$0 check /frontend/foo',
           'Exit nonzero if any per-file count exceeds the baseline; lower the baseline on improvement',
@@ -492,6 +530,7 @@ yargs
           folder: args.folder,
           updateBaseline: args['update-baseline'],
           baselineFile: args.baselineFile,
+          gitignore: args.gitignore,
         }),
       );
     },

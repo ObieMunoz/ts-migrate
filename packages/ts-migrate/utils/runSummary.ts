@@ -22,6 +22,8 @@ interface RunSummaryBase {
 export interface RenameRunSummary extends RunSummaryBase {
   command: 'rename';
   renamedFiles: Array<{ from: string; to: string }>;
+  /** Files left untouched because git ignores them (0 with --no-gitignore). */
+  skippedGitignoredFiles: number;
 }
 
 export interface MigrateRunSummary extends RunSummaryBase {
@@ -31,6 +33,8 @@ export interface MigrateRunSummary extends RunSummaryBase {
   plugins: Array<{ name: string; changedFileCount: number }>;
   /** Debt now present in the changed files; null if the post-run scan failed. */
   changedFilesTypeDebt: { aliasNames: string[]; totals: FileDebt } | null;
+  /** Files left untouched because git ignores them (0 with --no-gitignore). */
+  skippedGitignoredFiles: number;
 }
 
 export type RunSummary = RenameRunSummary | MigrateRunSummary;
@@ -44,6 +48,7 @@ export function buildRenameRunSummary(params: {
   exitCode: number;
   dryRun?: boolean;
   renamedFiles: Array<{ oldFile: string; newFile: string }>;
+  skippedGitignoredFiles?: number;
 }): RenameRunSummary {
   const { rootDir, exitCode, renamedFiles } = params;
   return {
@@ -58,6 +63,7 @@ export function buildRenameRunSummary(params: {
         to: relativeTo(rootDir, newFile),
       }))
       .sort((a, b) => (a.from < b.from ? -1 : 1)),
+    skippedGitignoredFiles: params.skippedGitignoredFiles ?? 0,
   };
 }
 
@@ -71,6 +77,7 @@ export function buildMigrateRunSummary(params: {
   fileContents?: ReadonlyMap<string, string>;
   nonMigratedFilesWithSyntaxErrors: string[];
   pluginStats: MigrateResult['pluginStats'];
+  skippedGitignoredFiles?: number;
 }): MigrateRunSummary {
   const { command, rootDir, exitCode, updatedSourceFiles, pluginStats } = params;
 
@@ -98,6 +105,7 @@ export function buildMigrateRunSummary(params: {
       changedFileCount,
     })),
     changedFilesTypeDebt,
+    skippedGitignoredFiles: params.skippedGitignoredFiles ?? 0,
   };
 }
 

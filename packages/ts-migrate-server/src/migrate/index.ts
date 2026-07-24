@@ -20,6 +20,15 @@ interface MigrateParams {
    * program so the ambient types they declare still resolve. Default true.
    */
   ambientSources?: boolean;
+  /**
+   * Restricts which files take part in the migration. Receives the root file
+   * names the program would otherwise start from (absolute paths) and returns
+   * the subset to keep; the rest never join the program, so they are neither
+   * parsed nor edited. A dropped file that a kept file imports still enters
+   * the program through module resolution. Declaration files are exempt from
+   * the filter: the ambient types they declare must stay resolvable.
+   */
+  filterMigrationFiles?: (fileNames: string[]) => string[];
   lintConfig?: LintConfig;
   maxStablePasses?: number;
   incrementalPasses?: boolean;
@@ -63,6 +72,7 @@ export default async function migrate({
   config,
   sources,
   ambientSources = true,
+  filterMigrationFiles,
   lintConfig,
   maxStablePasses = 5,
   incrementalPasses = true,
@@ -95,10 +105,6 @@ export default async function migrate({
     skipAddingFilesFromTsConfig: sources !== undefined,
   });
 
-  if (virtualFiles) {
-    virtualFiles.forEach(({ fileName, text }) => project.addVirtualSourceFile(fileName, text));
-  }
-
   // If we passed in our own sources, let's add them to the project.
   // If not, let's just get all the sources in the project.
   if (sources) {
@@ -118,6 +124,22 @@ export default async function migrate({
       }
     }
     project.addSourceFilesByPaths(sources);
+  }
+
+  // Runs before the first program is created, once every on-disk root is
+  // registered. Virtual files join afterwards: they model files this run
+  // itself creates, which no filter should drop.
+  if (filterMigrationFiles) {
+    project.retainRootFiles((rootFiles) => {
+      const isDeclaration = (fileName: string) => /\.d\.[cm]?ts$/.test(fileName);
+      const declarationFiles = rootFiles.filter(isDeclaration);
+      const candidates = rootFiles.filter((fileName) => !isDeclaration(fileName));
+      return [...declarationFiles, ...filterMigrationFiles(candidates)];
+    });
+  }
+
+  if (virtualFiles) {
+    virtualFiles.forEach(({ fileName, text }) => project.addVirtualSourceFile(fileName, text));
   }
 
   log.info(`Initialized tsserver project in ${serverInitTimer.elapsedStr()}.`);
