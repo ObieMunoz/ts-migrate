@@ -13,10 +13,13 @@ import { createValidate, Properties } from '../utils/validateOptions';
  * alone.
  *
  * By default the extension is dropped (`./foo.js` -> `./foo`). When the
- * importing file belongs to an ESM package (`"type": "module"`), where
- * extensionless relative imports are an error, the specifier keeps a `.js`
- * extension instead (`./foo.jsx` -> `./foo.js`). The `extension` option
- * overrides the detection.
+ * importing file is ESM, where extensionless relative imports are an error,
+ * the specifier keeps a `.js` extension instead (`./foo.jsx` -> `./foo.js`).
+ * A file is ESM either by its own `.mts`/`.mjs` extension or by belonging to a
+ * `"type": "module"` package. The `extension` option overrides the detection.
+ *
+ * `.mjs`/`.cjs` specifiers are left alone: `.mts`/`.cts` emit those same
+ * extensions, so the specifier still names the file that ships.
  */
 type Options = {
   extension?: 'omit' | 'js';
@@ -31,7 +34,8 @@ const updateImportPathsPlugin: Plugin<Options> = {
 
   run({ fileName, sourceFile, text, options }) {
     const importerDir = path.dirname(fileName);
-    const extension = options.extension ?? (isEsmPackageDir(importerDir) ? 'js' : 'omit');
+    const isEsm = ESM_EXTENSION_REGEX.test(fileName) || isEsmPackageDir(importerDir);
+    const extension = options.extension ?? (isEsm ? 'js' : 'omit');
 
     const updates: SourceTextUpdate[] = [];
     collectModuleSpecifiers(sourceFile).forEach((literal) => {
@@ -58,6 +62,9 @@ const renamedExtensions: Record<string, string[]> = {
   '.js': ['.ts', '.tsx'],
   '.jsx': ['.tsx', '.ts'],
 };
+
+// ESM whatever the enclosing package says.
+const ESM_EXTENSION_REGEX = /\.m[jt]s$/;
 
 function renamedSpecifier(
   specifier: string,
