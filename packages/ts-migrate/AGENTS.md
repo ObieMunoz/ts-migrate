@@ -120,8 +120,10 @@ with `@ts-expect-error` so the project compiles.
   `--exclude-plugin ts-ignore --exclude-plugin strip-ts-ignore`; pass
   `--exclude-plugin eslint-fix` to keep lint-autofix churn out of the diff.
   Excluding `infer-types` is equivalent to `--no-inferTypes`.
-- `--aliases tsfixme`: use `$TSFixMe` instead of `any` (only if the project
-  defines that global alias).
+- `--aliases tsfixme`: use `$TSFixMe`/`$TSFixMeFunction` instead of plain
+  `any`. If the project does not already declare those globals, the migration
+  writes them to `ts-migrate-aliases.d.ts` in `<folder>` so the output still
+  compiles.
 
 ### `ts-migrate reignore <folder> [flags]`
 

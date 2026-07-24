@@ -290,7 +290,7 @@ Yes. The output is a starting point, not a finish line. That being said, two thi
 
 > What is `$TSFixMe`?
 
-An Airbnb convention this fork inherited: an alias for `any` (`type $TSFixMe = any;`, plus `$TSFixMeFunction` for function signatures). It made the follow-up work easy to grep for in their codebase. It's opt-in here with `--aliases tsfixme`; the default is plain `any`, because the alias only compiles if your project defines it as a global type.
+An Airbnb convention this fork inherited: an alias for `any` (`type $TSFixMe = any;`, plus `$TSFixMeFunction` for function signatures). It made the follow-up work easy to grep for in their codebase. It's opt-in here with `--aliases tsfixme`; the default is plain `any`. When the flag is on, `migrate` writes the global declarations to a `ts-migrate-aliases.d.ts` in the migrated folder, unless your project already declares them somewhere the tsconfig includes.
 
 > Does it work with ESLint 9 and flat configs?
 

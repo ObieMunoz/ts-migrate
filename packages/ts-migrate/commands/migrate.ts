@@ -48,10 +48,9 @@ export const availablePlugins = [
 interface BuildMigrateConfigParams {
   plugin?: string;
   excludePlugins?: string[];
-  // Not yet declared in the yargs builder, so these arrive untyped from argv.
-  aliases?: unknown;
-  typeMap?: unknown;
-  useDefaultPropsHelper?: unknown;
+  aliases?: string;
+  typeMap?: string;
+  useDefaultPropsHelper?: boolean;
   defaultAccessibility?: 'private' | 'protected' | 'public';
   privateRegex?: string;
   protectedRegex?: string;
@@ -62,6 +61,8 @@ interface BuildMigrateConfigParams {
 interface MigrateCommandConfig {
   config: MigrateConfig;
   typesPackageDetector?: TypesPackageDetector;
+  anyAlias?: string;
+  anyFunctionAlias?: string;
 }
 
 /**
@@ -93,13 +94,26 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
       throw new Error(`Could not find a plugin named ${params.plugin}.`);
     }
     if (plugin === jsDocPlugin) {
-      const typeMap = typeof params.typeMap === 'string' ? JSON.parse(params.typeMap) : undefined;
-      return { config: new MigrateConfig().addPlugin(jsDocPlugin, { anyAlias, typeMap }) };
+      let typeMap;
+      try {
+        typeMap = params.typeMap ? JSON.parse(params.typeMap) : undefined;
+      } catch (err) {
+        throw new Error(`--typeMap must be valid JSON: ${(err as Error).message}`);
+      }
+      return {
+        config: new MigrateConfig().addPlugin(jsDocPlugin, { anyAlias, typeMap }),
+        anyAlias,
+        anyFunctionAlias,
+      };
     }
-    return { config: new MigrateConfig().addPlugin(plugin, { anyAlias, anyFunctionAlias }) };
+    return {
+      config: new MigrateConfig().addPlugin(plugin, { anyAlias, anyFunctionAlias }),
+      anyAlias,
+      anyFunctionAlias,
+    };
   }
 
-  const useDefaultPropsHelper = params.useDefaultPropsHelper === 'true';
+  const useDefaultPropsHelper = params.useDefaultPropsHelper ?? false;
 
   const { defaultAccessibility, privateRegex, protectedRegex, publicRegex } = params;
 
@@ -164,5 +178,5 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     config.plugins = config.plugins.filter(({ plugin }) => !excluded.has(plugin.name));
   }
 
-  return { config, typesPackageDetector };
+  return { config, typesPackageDetector, anyAlias, anyFunctionAlias };
 }
