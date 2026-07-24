@@ -32,6 +32,8 @@ export interface RenameRunSummary extends RunSummaryBase {
 export interface MigrateRunSummary extends RunSummaryBase {
   command: 'migrate' | 'reignore';
   changedFiles: string[];
+  /** Declaration files the run generated (e.g. the untyped module declarations). */
+  generatedFiles: string[];
   nonMigratedFilesWithSyntaxErrors: string[];
   plugins: Array<{ name: string; changedFileCount: number }>;
   /** Debt now present in the changed files; null if the post-run scan failed. */
@@ -93,6 +95,7 @@ export function buildMigrateRunSummary(params: {
   fileContents?: ReadonlyMap<string, string>;
   nonMigratedFilesWithSyntaxErrors: string[];
   pluginStats: MigrateResult['pluginStats'];
+  generatedFiles?: ReadonlyMap<string, string>;
   skippedGitignoredFiles?: number;
   skippedBootstrapFiles?: BootstrapFile[];
 }): MigrateRunSummary {
@@ -114,6 +117,9 @@ export function buildMigrateRunSummary(params: {
     exitCode,
     dryRun: params.dryRun ?? false,
     changedFiles: [...updatedSourceFiles].map((fileName) => relativeTo(rootDir, fileName)).sort(),
+    generatedFiles: [...(params.generatedFiles?.keys() ?? [])]
+      .map((fileName) => relativeTo(rootDir, fileName))
+      .sort(),
     nonMigratedFilesWithSyntaxErrors: params.nonMigratedFilesWithSyntaxErrors
       .map((fileName) => relativeTo(rootDir, fileName))
       .sort(),

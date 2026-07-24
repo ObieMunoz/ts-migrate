@@ -8,6 +8,17 @@ export interface PluginParams<TPluginOptions> {
   text: string;
   sourceFile: ts.SourceFile;
   getLanguageService: () => ts.LanguageService;
+  /**
+   * Adds a declaration file to the program and to the files the run writes at
+   * the end (nothing is written on a dry run). Lets a plugin declare types the
+   * later plugins should then see resolve.
+   *
+   * The program is rebuilt on the next language service call, so every checked
+   * file loses its cached diagnostics: call this once for the whole run, from
+   * a pass of its own, rather than once per file. Passing the text a previous
+   * run already wrote is a no-op.
+   */
+  addGeneratedFile?: (fileName: string, text: string) => void;
 }
 
 export type PluginResult = string | void;

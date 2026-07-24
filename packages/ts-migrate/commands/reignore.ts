@@ -26,6 +26,8 @@ interface ReignoreParams {
   bootstrap?: boolean;
   /** Lint with the project's own ESLint when it is usable (default). */
   projectEslint?: boolean;
+  /** Declare modules with no types available instead of suppressing their imports (default). */
+  declareUntypedModules?: boolean;
   /** Run every pass but write nothing to disk. */
   dryRun?: boolean;
 }
@@ -44,6 +46,7 @@ export default async function reignore({
   gitignore = true,
   bootstrap = true,
   projectEslint,
+  declareUntypedModules = true,
   dryRun,
 }: ReignoreParams): Promise<ReignoreResult> {
   const changedFiles = new Map<string, string>();
@@ -76,7 +79,11 @@ export default async function reignore({
   const typesPackageDetector = createTypesPackageDetector();
   const config = new MigrateConfig()
     .addPlugin(withChangeTracking(stripTSIgnorePlugin), {})
-    .addPlugin(typesPackageDetector.plugin, {})
+    .addPlugin(typesPackageDetector.plugin, {});
+  if (declareUntypedModules) {
+    config.addPlugin(typesPackageDetector.declarationsPlugin, {});
+  }
+  config
     .addPlugin(withChangeTracking(tsIgnorePlugin), { messagePrefix })
     .addPlugin(eslintFixChangedPlugin, { projectEslint });
 

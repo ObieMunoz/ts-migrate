@@ -4,6 +4,7 @@ import updateImportPathsPlugin from '../../src/plugins/update-import-paths';
 
 const fixturesDir = path.resolve(__dirname, '../fixtures/update-import-paths');
 const entryFile = path.join(fixturesDir, 'src', 'entry.ts');
+const mtsEntryFile = path.join(fixturesDir, 'src', 'entry.mts');
 const esmEntryFile = path.join(fixturesDir, 'esm', 'src', 'entry.ts');
 
 describe('update-import-paths plugin', () => {
@@ -69,6 +70,34 @@ import Widget from './Widget.jsx';
 
     const result = await updateImportPathsPlugin.run(
       mockPluginParams({ text, fileName: entryFile, options: { extension: 'js' } }),
+    );
+
+    expect(result).toBe(`import foo from './foo.js';
+import Widget from './Widget.js';
+`);
+  });
+
+  it('leaves .mjs and .cjs specifiers of renamed files alone', async () => {
+    const text = `import task from './task.mjs';
+import helper from './helper.cjs';
+const lazy = () => import('./task.mjs');
+const required = require('./helper.cjs');
+`;
+
+    const result = await updateImportPathsPlugin.run(
+      mockPluginParams({ text, fileName: entryFile }),
+    );
+
+    expect(result).toBe(text);
+  });
+
+  it('keeps a .js extension in a .mts file outside an ESM package', async () => {
+    const text = `import foo from './foo.js';
+import Widget from './Widget.jsx';
+`;
+
+    const result = await updateImportPathsPlugin.run(
+      mockPluginParams({ text, fileName: mtsEntryFile }),
     );
 
     expect(result).toBe(`import foo from './foo.js';

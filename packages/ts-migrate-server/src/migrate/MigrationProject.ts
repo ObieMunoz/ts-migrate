@@ -236,13 +236,24 @@ export default class MigrationProject {
   /**
    * Add a file that exists only in the overlay, as if it were on disk: it
    * joins the program as a root file but is never persisted. Lets a dry run
-   * model a file the real run would create before the program starts.
+   * model a file the real run would create before the program starts, and a
+   * plugin add a declaration file the rest of the run then sees.
    */
   addVirtualSourceFile(fileName: string, text: string): void {
     const normalized = normalizeSlashes(fileName);
-    this.overlays.set(normalized, { text, version: 1 });
+    const previousVersion = this.overlays.get(normalized)?.version ?? 0;
+    this.overlays.set(normalized, { text, version: previousVersion + 1 });
     this.rootFileNames.add(normalized);
     this.projectVersion += 1;
+  }
+
+  /** The text the project reads for a file: the overlay if it has one, otherwise the disk. */
+  getFileText(fileName: string): string | undefined {
+    return this.readFile(fileName);
+  }
+
+  hasRootFile(fileName: string): boolean {
+    return this.rootFileNames.has(normalizeSlashes(fileName));
   }
 
   /** File names matched by the tsconfig, whether or not they were added as root files. */

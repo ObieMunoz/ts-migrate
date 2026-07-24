@@ -26,6 +26,7 @@ import { combineFileFilters, createBootstrapMigrationFilter } from './utils/boot
 import { createGitignoreMigrationFilter } from './utils/gitignore';
 import packageVersion from './utils/packageVersion';
 import { describeTypeScript, typeScriptWarning } from './utils/resolveTypeScript';
+import isIncludedByTsConfig from './utils/tsConfigIncludes';
 import {
   buildMigrateRunSummary,
   buildRenameRunSummary,
@@ -84,6 +85,36 @@ function printTypesPackageReport(
   } catch (err) {
     log.warn('Skipped type definition recommendations:', err);
   }
+}
+
+/**
+ * Names the declaration files the run generated. A generated file the tsconfig
+ * does not match is in effect for the migration and nothing after it, so the
+ * errors it resolved come back on the next `tsc` run.
+ */
+function printGeneratedFiles(
+  rootDir: string,
+  generatedFiles: ReadonlyMap<string, string>,
+  dryRun: boolean,
+): void {
+  generatedFiles.forEach((_text, filePath) => {
+    log.info(
+      dryRun
+        ? `Dry run: would write the generated declarations to ${filePath}.`
+        : `Wrote the generated declarations to ${filePath}.`,
+    );
+    if (dryRun) return;
+    try {
+      if (!isIncludedByTsConfig(rootDir, filePath)) {
+        log.warn(
+          `${filePath} is not matched by tsconfig.json, so its declarations only applied to ` +
+            'this run. Add it to "include" or "files" to keep them.',
+        );
+      }
+    } catch (err) {
+      log.warn('Skipped checking whether tsconfig.json includes the generated declarations:', err);
+    }
+  });
 }
 
 /** The end-of-run debt summary must never fail an otherwise successful run. */
@@ -302,6 +333,12 @@ yargs
           'incrementalPasses',
           'Revisit only files affected by the previous pass when repeating plugins. Disable with --no-incrementalPasses.',
         )
+        .boolean('declareUntypedModules')
+        .default('declareUntypedModules', true)
+        .describe(
+          'declareUntypedModules',
+          'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. Disable with --no-declareUntypedModules.',
+        )
         .string('typescript')
         .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
         .string('typesReportFile')
@@ -353,6 +390,7 @@ yargs
           publicRegex: args.publicRegex,
           inferTypes: args.inferTypes,
           projectEslint: args.projectEslint,
+          declareUntypedModules: args.declareUntypedModules,
         });
         config = built.config;
         typesPackageDetector = built.typesPackageDetector;
@@ -391,6 +429,7 @@ yargs
         updatedFileTexts,
         nonMigratedFilesWithSyntaxErrors,
         pluginStats,
+        generatedFiles,
       } = await migrate({
         rootDir,
         config,
@@ -414,6 +453,7 @@ yargs
         fileContents.set(aliasDeclarations.filePath, aliasDeclarations.text);
       }
 
+      printGeneratedFiles(rootDir, generatedFiles, dryRun);
       if (typesPackageDetector) {
         printTypesPackageReport(typesPackageDetector, rootDir, args.folder, args.typesReportFile);
       }
@@ -436,6 +476,7 @@ yargs
             fileContents,
             nonMigratedFilesWithSyntaxErrors,
             pluginStats,
+            generatedFiles,
             skippedGitignoredFiles: gitignoreFilter?.skippedFiles().length ?? 0,
             skippedBootstrapFiles: bootstrapFilter?.skippedFiles() ?? [],
           }),
@@ -482,6 +523,12 @@ yargs
         .boolean('projectEslint')
         .default('projectEslint', true)
         .describe('projectEslint', PROJECT_ESLINT_FLAG_DESCRIPTION)
+        .boolean('declareUntypedModules')
+        .default('declareUntypedModules', true)
+        .describe(
+          'declareUntypedModules',
+          'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. Disable with --no-declareUntypedModules.',
+        )
         .string('typescript')
         .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
         .boolean('dry-run')
@@ -510,6 +557,7 @@ yargs
         updatedFileTexts,
         nonMigratedFilesWithSyntaxErrors,
         pluginStats,
+        generatedFiles,
         skippedGitignoredFiles,
         skippedBootstrapFiles,
       } = await reignore({
@@ -520,9 +568,11 @@ yargs
         gitignore: args.gitignore,
         bootstrap: args.bootstrap,
         projectEslint: args.projectEslint,
+        declareUntypedModules: args.declareUntypedModules,
         dryRun,
       });
 
+      printGeneratedFiles(rootDir, generatedFiles, dryRun);
       printTypesPackageReport(typesPackageDetector, rootDir, args.folder);
       if (dryRun) {
         printDryRunSummary(rootDir, args.folder, updatedSourceFiles, updatedFileTexts);
@@ -543,6 +593,7 @@ yargs
             fileContents: updatedFileTexts,
             nonMigratedFilesWithSyntaxErrors,
             pluginStats,
+            generatedFiles,
             skippedGitignoredFiles,
             skippedBootstrapFiles,
           }),

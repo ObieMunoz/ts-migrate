@@ -37,11 +37,10 @@ export interface BootstrapPartition {
   shared: SharedBootstrapImport[];
 }
 
-// The extension is stripped before matching names so the .cjs/.mjs support
-// of the rename command can reuse the table when it arrives.
 const JS_EXTENSION_REGEX = /\.[cm]?jsx?$/;
 
-function isKnownConfigName(file: string): boolean {
+/** Names a build tool loads by convention, whatever the JS extension. */
+export function isKnownConfigName(file: string): boolean {
   const base = path.basename(file).toLowerCase();
   if (!JS_EXTENSION_REGEX.test(base)) return false;
   const name = base.replace(JS_EXTENSION_REGEX, '');

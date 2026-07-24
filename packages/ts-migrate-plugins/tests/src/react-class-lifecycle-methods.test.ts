@@ -38,6 +38,122 @@ class Foo extends React.Component<FooProps, FooState> {
 `);
   });
 
+  it('annotates UNSAFE_ lifecycle methods', async () => {
+    const text = `import React from 'react';
+
+type FooProps = {};
+type FooState = {};
+
+class Foo extends React.Component<FooProps, FooState> {
+  UNSAFE_componentWillReceiveProps(nextProps, nextContext) {}
+  UNSAFE_componentWillUpdate(nextProps, nextState, nextContext) {}
+  render() {}
+}
+`;
+
+    const result = await reactClassLifecycleMethodsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx' }),
+    );
+
+    expect(result).toBe(`import React from 'react';
+
+type FooProps = {};
+type FooState = {};
+
+class Foo extends React.Component<FooProps, FooState> {
+  UNSAFE_componentWillReceiveProps(nextProps: FooProps, nextContext: any) {}
+  UNSAFE_componentWillUpdate(nextProps: FooProps, nextState: FooState, nextContext: any) {}
+  render() {}
+}
+`);
+  });
+
+  it('annotates getSnapshotBeforeUpdate', async () => {
+    const text = `import React from 'react';
+
+type FooProps = {};
+type FooState = {};
+
+class Foo extends React.Component<FooProps, FooState> {
+  getSnapshotBeforeUpdate(prevProps, prevState) {}
+  render() {}
+}
+`;
+
+    const result = await reactClassLifecycleMethodsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx' }),
+    );
+
+    expect(result).toBe(`import React from 'react';
+
+type FooProps = {};
+type FooState = {};
+
+class Foo extends React.Component<FooProps, FooState> {
+  getSnapshotBeforeUpdate(prevProps: FooProps, prevState: FooState) {}
+  render() {}
+}
+`);
+  });
+
+  it('annotates static getDerivedStateFromProps', async () => {
+    const text = `import React from 'react';
+
+type FooProps = {};
+type FooState = {};
+
+class Foo extends React.Component<FooProps, FooState> {
+  static getDerivedStateFromProps(nextProps, prevState) {}
+  render() {}
+}
+`;
+
+    const result = await reactClassLifecycleMethodsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx' }),
+    );
+
+    expect(result).toBe(`import React from 'react';
+
+type FooProps = {};
+type FooState = {};
+
+class Foo extends React.Component<FooProps, FooState> {
+  static getDerivedStateFromProps(nextProps: FooProps, prevState: FooState) {}
+  render() {}
+}
+`);
+  });
+
+  it('skips static params typed by a class type parameter', async () => {
+    const text = `import React from 'react';
+
+type FooProps<T> = { item: T };
+type FooState = {};
+
+class Foo<T> extends React.Component<FooProps<T>, FooState> {
+  static getDerivedStateFromProps(nextProps, prevState) {}
+  componentDidUpdate(prevProps, prevState) {}
+  render() {}
+}
+`;
+
+    const result = await reactClassLifecycleMethodsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx' }),
+    );
+
+    expect(result).toBe(`import React from 'react';
+
+type FooProps<T> = { item: T };
+type FooState = {};
+
+class Foo<T> extends React.Component<FooProps<T>, FooState> {
+  static getDerivedStateFromProps(nextProps, prevState: FooState) {}
+  componentDidUpdate(prevProps: FooProps<T>, prevState: FooState) {}
+  render() {}
+}
+`);
+  });
+
   it('handles multiple components in the same file', async () => {
     const text = `import React from 'react';
 
