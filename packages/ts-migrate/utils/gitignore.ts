@@ -122,12 +122,21 @@ export function partitionGitignored(rootDir: string, files: string[]): Gitignore
 
 /**
  * The gitignored directories inside rootDir, as sorted rootDir-relative
- * paths with forward slashes. Whole ignored trees collapse to their topmost
- * directory (`git status --ignored` semantics); individually ignored files
+ * paths with forward slashes. Only directories that themselves match an
+ * ignore pattern are reported (`--ignored=matching`): a directory that
+ * merely contains nothing but ignored entries at the moment of the call
+ * must not be treated as permanently ignorable. Individually ignored files
  * are not reported. Empty without git or a repository.
  */
 export function listGitignoredDirectories(rootDir: string): string[] {
-  const status = runGit(rootDir, ['status', '--porcelain=v1', '-z', '--ignored', '--', '.']);
+  const status = runGit(rootDir, [
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--ignored=matching',
+    '--',
+    '.',
+  ]);
   if (!status || status.status !== 0) {
     return [];
   }

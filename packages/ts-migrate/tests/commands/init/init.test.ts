@@ -73,6 +73,24 @@ describe('init command', () => {
     ]);
   });
 
+  it('excludes only directories matching an ignore pattern, never a parent that merely contains them', () => {
+    execFileSync('git', ['init'], { cwd: rootDir, stdio: 'ignore' });
+    fs.writeFileSync(path.join(rootDir, '.gitignore'), 'dist/\n');
+    // src/frontend holds nothing but ignored output right now; git status
+    // would collapse it, but new source files could appear there any day.
+    fs.mkdirSync(path.join(rootDir, 'src/frontend/dist/express'), { recursive: true });
+    fs.writeFileSync(path.join(rootDir, 'src/frontend/dist/express/bundle.js'), '');
+
+    init({ rootDir, isExtendedConfig: false });
+
+    expect(readConfig(rootDir).exclude).toEqual([
+      'node_modules',
+      'bower_components',
+      'jspm_packages',
+      'src/frontend/dist',
+    ]);
+  });
+
   it('uses nodenext module settings when package.json declares an ESM package', () => {
     fs.writeFileSync(path.join(rootDir, 'package.json'), JSON.stringify({ type: 'module' }));
 
