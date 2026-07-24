@@ -80,16 +80,6 @@ export default async function migrate({
   virtualFiles,
 }: MigrateParams): Promise<MigrateResult> {
   let exitCode = 0;
-  log.info(`TypeScript version: ${ts.version}`);
-  const projectTsVersion = projectTypeScriptVersion(rootDir);
-  if (projectTsVersion && projectTsVersion.split('.')[0] !== ts.version.split('.')[0]) {
-    log.warn(
-      `This project has typescript ${projectTsVersion} installed, but ts-migrate resolved ` +
-        `TypeScript ${ts.version}; the suppressions added here may not match what the ` +
-        `project's own tsc reports.`,
-    );
-  }
-
   const serverInitTimer = new PerfTimer();
 
   // Normalize sources to be an array of full paths.
@@ -351,20 +341,6 @@ export default async function migrate({
   }));
 
   return { updatedSourceFiles, updatedFileTexts, exitCode, nonMigratedFilesWithSyntaxErrors, pluginStats };
-}
-
-// An explicit ancestor walk rather than require.resolve: resolve's global
-// fallbacks (NODE_PATH, global installs) can name a typescript the project
-// itself would never load.
-function projectTypeScriptVersion(rootDir: string): string | undefined {
-  for (let dir = path.resolve(rootDir); ; dir = path.dirname(dir)) {
-    try {
-      const packageJsonPath = path.join(dir, 'node_modules', 'typescript', 'package.json');
-      return JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')).version;
-    } catch {
-      if (path.dirname(dir) === dir) return undefined;
-    }
-  }
 }
 
 function getSourceFilesToMigrate(project: MigrationProject) {
