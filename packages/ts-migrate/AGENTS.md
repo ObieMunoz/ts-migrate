@@ -91,6 +91,9 @@ verify with `tsc --noEmit`.
 - `--version` (`-v`): print the ts-migrate version and exit.
 - All other flags are forwarded to the underlying `rename` and `migrate`
   commands (e.g. `--sources`, `--no-inferTypes`, `--exclude-plugin`).
+  Exception: `--dry-run` is rejected here, because each pipeline step builds
+  on the previous step's writes; preview with the individual commands
+  instead.
 
 ### `ts-migrate init <folder>` / `ts-migrate init:extended <folder>`
 
@@ -104,8 +107,10 @@ writes a config extending a shared base instead.
 ### `ts-migrate rename <folder> [-s <glob>]`
 
 Renames `.js`/`.jsx` to `.ts`/`.tsx` (JSX content detected per file).
-`--jsonSummary <file>` writes the old and new path of every renamed file as
-JSON (see "Machine-readable summaries" below).
+`--dry-run` prints the full old-to-new mapping (surfacing each `.ts` vs
+`.tsx` decision) and renames nothing. `--jsonSummary <file>` writes the old
+and new path of every renamed file as JSON (see "Machine-readable
+summaries" below).
 
 ### `ts-migrate migrate <folder> [flags]`
 
@@ -136,6 +141,12 @@ with `@ts-expect-error` so the project compiles.
   `any`. If the project does not already declare those globals, the migration
   writes them to `ts-migrate-aliases.d.ts` in `<folder>` so the output still
   compiles.
+- `--dry-run`: run every plugin pass but write nothing to disk. Prints each
+  file a real run would update, with the suppression and `any` counts it
+  would then contain. The report matches a real run exactly (with
+  `--aliases`, the declaration file is modeled in memory), and the run takes
+  as long as a real one. Diffs are not printed; run for real on a clean git
+  tree and use `git diff`.
 - `--jsonSummary <file>`: write a JSON summary of the run to `<file>`: the
   changed files, per-plugin change counts, and the suppression and `any`
   counts in the changed files (see "Machine-readable summaries" below).
@@ -152,6 +163,7 @@ existing suppression comments, then re-adds only the ones still needed.
   files from the tsconfig are kept automatically here too
   (`--no-ambientSources` disables).
 - `-p`/`--messagePrefix`: customizes the comment text.
+- `--dry-run`: same preview behavior as `migrate`.
 - `--jsonSummary <file>`: same machine-readable summary as `migrate`.
 
 Both `migrate` and `reignore` end the run by printing a one-paragraph type
@@ -185,8 +197,11 @@ Prints this document.
 
 `rename`, `migrate`, and `reignore` accept `--jsonSummary <file>` and write a
 JSON summary of the run there; stdout stays human-oriented. Common fields:
-`command`, `tsMigrateVersion`, `rootDir`, `exitCode`. Paths in the summary are
-relative to `<folder>`. Per command:
+`command`, `tsMigrateVersion`, `rootDir`, `exitCode`, `dryRun`. Paths in the
+summary are relative to `<folder>`. When `dryRun` is true the summary
+describes what a real run would have changed (nothing was written except the
+summary file itself); combining `--dry-run` with `--jsonSummary` is the
+machine-readable preview. Per command:
 
 - `rename`: `renamedFiles` as `{"from": "src/a.js", "to": "src/a.ts"}` pairs.
 - `migrate` and `reignore`: `changedFiles` (every file the run modified),
