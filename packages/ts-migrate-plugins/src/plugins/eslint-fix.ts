@@ -144,7 +144,8 @@ function resolveESLintEngine(
 
   const refuse = (reason: string) => useBundled({ refused: { version: project.version, reason } });
 
-  if (Number.parseInt(project.version, 10) < MIN_PROJECT_MAJOR) {
+  const major = Number.parseInt(project.version, 10);
+  if (!Number.isInteger(major) || major < MIN_PROJECT_MAJOR) {
     return refuse(`below the ESLint ${MIN_PROJECT_MAJOR} floor ts-migrate can load`);
   }
 
