@@ -123,7 +123,7 @@ yargs
         .default('useDefaultPropsHelper', false)
         .describe(
           'useDefaultPropsHelper',
-          'Type React defaultProps with the WithDefaultProps helper. Requires the project to provide the :ts-utils/types/WithDefaultProps module.',
+          'Type React defaultProps with a WithDefaultProps helper type. The helper is generated into each migrated file, so no extra module is required.',
         )
         .string('privateRegex')
         .string('protectedRegex')
