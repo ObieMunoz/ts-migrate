@@ -144,7 +144,11 @@ skips build output and keeps the build's own files JavaScript.
 
 ### `ts-migrate rename <folder> [-s <glob>]`
 
-Renames `.js`/`.jsx` to `.ts`/`.tsx` (JSX content detected per file).
+Renames `.js`/`.jsx` to `.ts`/`.tsx` (JSX content detected per file), and
+`.mjs`/`.cjs` to `.mts`/`.cts`. A `.mjs`/`.cjs` file keeps its extension
+when a build tool loads it by name (`postcss.config.cjs`,
+`eslint.config.mjs`, `.prettierrc.cjs`) or when it holds JSX, which
+`.mts`/`.cts` cannot; both cases are logged with the file and the reason.
 Gitignored files are skipped (`--no-gitignore` renames them too). Build
 system files are kept as JavaScript with a log line naming each file and
 its evidence (`--no-bootstrap` renames them too; a tsconfig `exclude`
