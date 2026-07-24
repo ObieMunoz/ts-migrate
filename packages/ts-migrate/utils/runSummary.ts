@@ -1,0 +1,109 @@
+import fs from 'fs';
+import path from 'path';
+import log from 'updatable-log';
+
+import { MigrateResult } from '@obiemunoz/ts-migrate-server';
+import packageVersion from './packageVersion';
+import { FileDebt, scanTypeDebtForFiles } from './typeDebt';
+
+/**
+ * The file --jsonSummary writes. All paths are rootDir-relative with forward
+ * slashes; lists are sorted so identical runs produce identical files.
+ */
+interface RunSummaryBase {
+  command: 'rename' | 'migrate' | 'reignore';
+  tsMigrateVersion: string;
+  rootDir: string;
+  exitCode: number;
+}
+
+export interface RenameRunSummary extends RunSummaryBase {
+  command: 'rename';
+  renamedFiles: Array<{ from: string; to: string }>;
+}
+
+export interface MigrateRunSummary extends RunSummaryBase {
+  command: 'migrate' | 'reignore';
+  changedFiles: string[];
+  nonMigratedFilesWithSyntaxErrors: string[];
+  plugins: Array<{ name: string; changedFileCount: number }>;
+  /** Debt now present in the changed files; null if the post-run scan failed. */
+  changedFilesTypeDebt: { aliasNames: string[]; totals: FileDebt } | null;
+}
+
+export type RunSummary = RenameRunSummary | MigrateRunSummary;
+
+function relativeTo(rootDir: string, fileName: string): string {
+  return path.relative(rootDir, fileName).split(path.sep).join('/');
+}
+
+export function buildRenameRunSummary(params: {
+  rootDir: string;
+  exitCode: number;
+  renamedFiles: Array<{ oldFile: string; newFile: string }>;
+}): RenameRunSummary {
+  const { rootDir, exitCode, renamedFiles } = params;
+  return {
+    command: 'rename',
+    tsMigrateVersion: packageVersion(),
+    rootDir,
+    exitCode,
+    renamedFiles: renamedFiles
+      .map(({ oldFile, newFile }) => ({
+        from: relativeTo(rootDir, oldFile),
+        to: relativeTo(rootDir, newFile),
+      }))
+      .sort((a, b) => (a.from < b.from ? -1 : 1)),
+  };
+}
+
+export function buildMigrateRunSummary(params: {
+  command: 'migrate' | 'reignore';
+  rootDir: string;
+  exitCode: number;
+  updatedSourceFiles: ReadonlySet<string>;
+  nonMigratedFilesWithSyntaxErrors: string[];
+  pluginStats: MigrateResult['pluginStats'];
+}): MigrateRunSummary {
+  const { command, rootDir, exitCode, updatedSourceFiles, pluginStats } = params;
+
+  // A summary of a successful run must still be written if this scan throws.
+  let changedFilesTypeDebt: MigrateRunSummary['changedFilesTypeDebt'] = null;
+  try {
+    const debt = scanTypeDebtForFiles(rootDir, [...updatedSourceFiles]);
+    changedFilesTypeDebt = { aliasNames: debt.aliasNames, totals: debt.totals };
+  } catch (err) {
+    log.warn('Skipped the type debt scan of the changed files:', err);
+  }
+
+  return {
+    command,
+    tsMigrateVersion: packageVersion(),
+    rootDir,
+    exitCode,
+    changedFiles: [...updatedSourceFiles].map((fileName) => relativeTo(rootDir, fileName)).sort(),
+    nonMigratedFilesWithSyntaxErrors: params.nonMigratedFilesWithSyntaxErrors
+      .map((fileName) => relativeTo(rootDir, fileName))
+      .sort(),
+    plugins: pluginStats.map(({ pluginName, changedFileCount }) => ({
+      name: pluginName,
+      changedFileCount,
+    })),
+    changedFilesTypeDebt,
+  };
+}
+
+/**
+ * Writes the summary and returns the exit code the process should use: the
+ * summary's own exitCode, forced nonzero when the file cannot be written. A
+ * caller that asked for the summary must not see success without the file.
+ */
+export function writeRunSummary(filePath: string, summary: RunSummary): number {
+  try {
+    fs.writeFileSync(filePath, `${JSON.stringify(summary, null, 2)}\n`);
+    return summary.exitCode;
+  } catch (err) {
+    log.error(`Failed to write the --jsonSummary file ${filePath}:`, err);
+    return summary.exitCode || 1;
+  }
+}

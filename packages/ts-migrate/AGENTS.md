@@ -104,6 +104,8 @@ writes a config extending a shared base instead.
 ### `ts-migrate rename <folder> [-s <glob>]`
 
 Renames `.js`/`.jsx` to `.ts`/`.tsx` (JSX content detected per file).
+`--jsonSummary <file>` writes the old and new path of every renamed file as
+JSON (see "Machine-readable summaries" below).
 
 ### `ts-migrate migrate <folder> [flags]`
 
@@ -134,6 +136,9 @@ with `@ts-expect-error` so the project compiles.
   `any`. If the project does not already declare those globals, the migration
   writes them to `ts-migrate-aliases.d.ts` in `<folder>` so the output still
   compiles.
+- `--jsonSummary <file>`: write a JSON summary of the run to `<file>`: the
+  changed files, per-plugin change counts, and the suppression and `any`
+  counts in the changed files (see "Machine-readable summaries" below).
 
 ### `ts-migrate reignore <folder> [flags]`
 
@@ -147,6 +152,7 @@ existing suppression comments, then re-adds only the ones still needed.
   files from the tsconfig are kept automatically here too
   (`--no-ambientSources` disables).
 - `-p`/`--messagePrefix`: customizes the comment text.
+- `--jsonSummary <file>`: same machine-readable summary as `migrate`.
 
 Both `migrate` and `reignore` end the run by printing a one-paragraph type
 debt summary (the `report` totals for the project).
@@ -174,6 +180,36 @@ intentional increase, accept the new counts with `--update-baseline`.
 ### `ts-migrate agents`
 
 Prints this document.
+
+## Machine-readable summaries (`--jsonSummary`)
+
+`rename`, `migrate`, and `reignore` accept `--jsonSummary <file>` and write a
+JSON summary of the run there; stdout stays human-oriented. Common fields:
+`command`, `tsMigrateVersion`, `rootDir`, `exitCode`. Paths in the summary are
+relative to `<folder>`. Per command:
+
+- `rename`: `renamedFiles` as `{"from": "src/a.js", "to": "src/a.ts"}` pairs.
+- `migrate` and `reignore`: `changedFiles` (every file the run modified),
+  `nonMigratedFilesWithSyntaxErrors` (files that will keep failing `tsc` and
+  that re-running cannot fix), `plugins` (`{"name", "changedFileCount"}` per
+  pipeline step, in order), and `changedFilesTypeDebt` (the suppression,
+  any-alias, and `any` totals now present in the changed files, with the
+  suppressed error codes; `null` if that scan failed).
+
+How to read a run from the outside:
+
+- Exit `0` and the file exists: success; the summary is the source of truth
+  for what changed.
+- Nonzero exit and the file exists: the run completed with errors; the file's
+  `exitCode` field matches the process exit code.
+- Nonzero exit and no file: the command failed before running (bad flags,
+  missing tsconfig.json), or the summary file itself could not be written.
+
+The debt counts are scoped to this run's changed files; project-wide counts
+come from `report --json`. `ts-migrate-full` forwards extra flags to both its
+rename and migrate steps, so a `--jsonSummary` passed there is written by
+rename and then overwritten by migrate; run the commands individually when you
+need both summaries.
 
 ## Exit codes and failure modes
 

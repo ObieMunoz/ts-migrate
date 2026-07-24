@@ -5,6 +5,7 @@ import {
   formatTypeDebtReport,
   formatTypeDebtSummary,
   scanTypeDebt,
+  scanTypeDebtForFiles,
 } from '../../../utils/typeDebt';
 import { createDir, deleteDir } from '../../test-utils';
 
@@ -104,6 +105,31 @@ describe('type debt scanner', () => {
       any: 4,
       codes: { TS2304: 1, TS2322: 1 },
     });
+  });
+
+  it('scans only the given files while discovering aliases from the tsconfig', () => {
+    writeProject(rootDir);
+
+    const debt = scanTypeDebtForFiles(rootDir, [path.join(rootDir, 'src', 'a.ts')]);
+
+    expect(debt.filesScanned).toBe(1);
+    expect(debt.aliasNames).toEqual(['$TSFixMe', '$TSFixMeFunction']);
+    expect(Object.keys(debt.files)).toEqual(['src/a.ts']);
+    expect(debt.totals).toEqual({
+      tsExpectError: 1,
+      tsIgnore: 1,
+      anyAlias: 2,
+      any: 3,
+      codes: { TS2304: 1 },
+    });
+
+    // Declaration files in the list are alias context, never counted.
+    const withDeclaration = scanTypeDebtForFiles(rootDir, [
+      path.join(rootDir, 'ts-migrate-aliases.d.ts'),
+      path.join(rootDir, 'src', 'b.tsx'),
+    ]);
+    expect(withDeclaration.filesScanned).toBe(1);
+    expect(Object.keys(withDeclaration.files)).toEqual(['src/b.tsx']);
   });
 
   it('discovers alias names from project declarations instead of hardcoding them', () => {
