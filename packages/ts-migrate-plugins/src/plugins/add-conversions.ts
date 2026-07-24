@@ -12,6 +12,13 @@ const supportedDiagnostics = new Set([
   2339,
   // TS2571: Object is of type 'unknown'.
   2571,
+  // TS7015: Element implicitly has an 'any' type because index expression is not of type 'number'.
+  7015,
+  // TS7017: Element implicitly has an 'any' type because type '{0}' has no index signature.
+  7017,
+  // TS7053: Element implicitly has an 'any' type because expression of type '{0}' can't be used
+  // to index type '{1}'.
+  7053,
   // TS18046: '{0}' is of type 'unknown'. (TS 4.4+ successor to TS2571.)
   18046,
 ]);
@@ -20,14 +27,17 @@ const addConversionsPlugin: Plugin<Options> = {
   name: 'add-conversions',
 
   run({ fileName, sourceFile, options, getLanguageService }) {
+    const languageService = getLanguageService();
+
     // Filter out diagnostics we care about.
-    const diags = getLanguageService()
+    const diags = languageService
       .getSemanticDiagnostics(fileName)
       .filter(isDiagnosticWithLinePosition)
       .filter((diag) => supportedDiagnostics.has(diag.code));
 
+    const checker = languageService.getProgram()?.getTypeChecker();
     const updates = new UpdateTracker(sourceFile);
-    ts.transform(sourceFile, [addConversionsTransformerFactory(updates, diags, options)]);
+    ts.transform(sourceFile, [addConversionsTransformerFactory(updates, diags, options, checker)]);
     return updates.apply();
   },
 
@@ -37,52 +47,76 @@ const addConversionsPlugin: Plugin<Options> = {
 export default addConversionsPlugin;
 
 const addConversionsTransformerFactory =
-  (updates: UpdateTracker, diags: ts.DiagnosticWithLocation[], { anyAlias }: Options) =>
+  (
+    updates: UpdateTracker,
+    diags: ts.DiagnosticWithLocation[],
+    { anyAlias }: Options,
+    checker: ts.TypeChecker | undefined,
+  ) =>
   (context: ts.TransformationContext) => {
     const { factory } = context;
     const anyType = anyAlias
       ? factory.createTypeReferenceNode(anyAlias)
       : factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
 
-    let nodesToConvert: Set<ts.Node>;
+    let nodesToConvert: Map<ts.Node, ts.TypeNode>;
     let replaceRegions: ReplaceRegion[];
     return (file: ts.SourceFile) => {
-      nodesToConvert = new Set(
-        diags
-          .map((diag) => {
-            const token = getTokenAtPosition(file, diag.start);
-            switch (diag.code) {
-              case 2339:
-                if (!ts.isPropertyAccessExpression(token.parent)) {
-                  return null;
-                }
-                return token.parent.expression;
-
-              case 2571:
-              case 18046:
-                return token;
-
-              default:
-                // Should be impossible.
-                return null;
-            }
-          })
-          .filter((node): node is ts.Expression => node !== null),
-      );
-      replaceRegions = computeReplaceRegions(nodesToConvert);
+      nodesToConvert = new Map();
+      diags.forEach((diag) => {
+        const conversion = getConversion(file, diag);
+        if (conversion) {
+          nodesToConvert.set(conversion.node, conversion.type);
+        }
+      });
+      replaceRegions = computeReplaceRegions(nodesToConvert.keys());
       visit(file);
       return file;
     };
 
+    function getConversion(file: ts.SourceFile, diag: ts.DiagnosticWithLocation): Conversion | null {
+      const token = getTokenAtPosition(file, diag.start);
+      switch (diag.code) {
+        case 2339:
+        case 7017:
+          if (!ts.isPropertyAccessExpression(token.parent)) {
+            return null;
+          }
+          return { node: token.parent.expression, type: anyType };
+
+        case 2571:
+        case 18046:
+          return { node: token, type: anyType };
+
+        case 7015:
+        case 7053: {
+          const access = findElementAccess(file, token, diag);
+          if (!access) {
+            return null;
+          }
+          // Casting the key keeps the element checkable and its value type
+          // intact; casting the object away is the fallback.
+          const keyType = checker && indexKeyType(access, checker, factory);
+          return keyType
+            ? { node: access.argumentExpression, type: keyType }
+            : { node: access.expression, type: anyType };
+        }
+
+        default:
+          // Should be impossible.
+          return null;
+      }
+    }
+
     function visit(origNode: ts.Node): ts.Node | undefined {
-      const needsConversion = nodesToConvert.has(origNode);
+      const conversionType = nodesToConvert.get(origNode);
       let node = ts.visitEachChild(origNode, visit, context);
-      if (node === origNode && !needsConversion) {
+      if (node === origNode && !conversionType) {
         return origNode;
       }
 
-      if (needsConversion) {
-        node = factory.createAsExpression(node as ts.Expression, anyType);
+      if (conversionType) {
+        node = factory.createAsExpression(node as ts.Expression, conversionType);
       }
 
       if (shouldReplace(node) && !inReplaceRegion(origNode)) {
@@ -162,6 +196,8 @@ const addConversionsTransformerFactory =
     }
   };
 
+type Conversion = { node: ts.Node; type: ts.TypeNode };
+
 type ReplaceRegion = { owner: ts.Node; pos: number; end: number };
 
 /**
@@ -170,9 +206,9 @@ type ReplaceRegion = { owner: ts.Node; pos: number; end: number };
  * record their own replacement — nested text updates duplicate parts of the
  * enclosing range — so their changes bubble up into the owner's replacement.
  */
-function computeReplaceRegions(conversions: Set<ts.Node>): ReplaceRegion[] {
+function computeReplaceRegions(conversions: Iterable<ts.Node>): ReplaceRegion[] {
   const regions: ReplaceRegion[] = [];
-  conversions.forEach((conversion) => {
+  Array.from(conversions).forEach((conversion) => {
     const region = findReplaceRegion(conversion);
     if (
       region &&
@@ -244,4 +280,148 @@ function shouldReplace(node: ts.Node): boolean {
 
 function isStatement(node: ts.Node): node is ts.Statement {
   return ts.SyntaxKind.FirstStatement <= node.kind && node.kind <= ts.SyntaxKind.LastStatement;
+}
+
+/**
+ * Finds the element access an implicit-any index diagnostic reports on.
+ * TS7053 spans the whole access, TS7015 spans only the index expression.
+ */
+function findElementAccess(
+  file: ts.SourceFile,
+  token: ts.Node,
+  diag: ts.DiagnosticWithLocation,
+): ts.ElementAccessExpression | null {
+  const end = diag.start + diag.length;
+  let node: ts.Node = token;
+  while (node.parent && node.getStart(file) === diag.start && node.getEnd() < end) {
+    node = node.parent;
+  }
+  if (node.getStart(file) !== diag.start || node.getEnd() !== end) {
+    return null;
+  }
+  if (diag.code !== 7015) {
+    return ts.isElementAccessExpression(node) ? node : null;
+  }
+  const { parent } = node;
+  return parent && ts.isElementAccessExpression(parent) && parent.argumentExpression === node
+    ? parent
+    : null;
+}
+
+/** How a key participates in `keyof`: as a string, numeric or symbol literal. */
+type KeyKind = 'string' | 'number' | 'symbol';
+
+/**
+ * Builds `keyof typeof obj` for an element access, or returns null when that
+ * assertion would not check: an object a type query cannot name, an open type
+ * (index signature), no visible properties, properties that do not share one
+ * value type, or a key type that does not overlap the property names.
+ */
+function indexKeyType(
+  access: ts.ElementAccessExpression,
+  checker: ts.TypeChecker,
+  factory: ts.NodeFactory,
+): ts.TypeNode | null {
+  const entityName = toEntityName(access.expression, factory);
+  const symbol = entityName && checker.getSymbolAtLocation(access.expression);
+  if (!entityName || !symbol) {
+    return null;
+  }
+
+  // The type query names the symbol's declared type, so gate on that rather
+  // than on the narrowed type at the access.
+  const objectType = checker.getTypeOfSymbol(
+    symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol,
+  );
+  if (!(objectType.flags & ts.TypeFlags.Object) || checker.getIndexInfosOfType(objectType).length) {
+    return null;
+  }
+
+  const properties = checker.getPropertiesOfType(objectType).filter(isVisibleToKeyof);
+  if (!properties.length) {
+    return null;
+  }
+  // Indexing by the whole key union reads a union of the value types and writes
+  // their intersection. Only one shared value type leaves both unchanged, so
+  // anything the implicit any allowed still checks.
+  const valueType = checker.getTypeOfSymbol(properties[0]);
+  if (properties.some((property) => checker.getTypeOfSymbol(property) !== valueType)) {
+    return null;
+  }
+
+  const keyKinds = new Set(properties.map(propertyKeyKind));
+  const indexKinds = keyKindsOfType(checker.getTypeAtLocation(access.argumentExpression));
+  if (!indexKinds || !indexKinds.size) {
+    return null;
+  }
+  // The assertion checks when every property name fits the index type, or when
+  // every index constituent matches some property name.
+  if (!isSubset(keyKinds, indexKinds) && !isSubset(indexKinds, keyKinds)) {
+    return null;
+  }
+
+  return factory.createTypeOperatorNode(
+    ts.SyntaxKind.KeyOfKeyword,
+    factory.createTypeQueryNode(entityName),
+  );
+}
+
+/** Rewrites an object expression as the entity name of a `typeof` query. */
+function toEntityName(expression: ts.Expression, factory: ts.NodeFactory): ts.EntityName | null {
+  if (ts.isIdentifier(expression)) {
+    return factory.createIdentifier(expression.text);
+  }
+  if (
+    ts.isPropertyAccessExpression(expression) &&
+    !expression.questionDotToken &&
+    ts.isIdentifier(expression.name)
+  ) {
+    const left = toEntityName(expression.expression, factory);
+    return left && factory.createQualifiedName(left, factory.createIdentifier(expression.name.text));
+  }
+  return null;
+}
+
+function propertyKeyKind(property: ts.Symbol): KeyKind {
+  const name = String(property.escapedName);
+  // Unique symbol keys are escaped as `__@name@id`.
+  if (name.startsWith('__@')) {
+    return 'symbol';
+  }
+  return `${Number(name)}` === name ? 'number' : 'string';
+}
+
+/** `keyof` skips private and protected members, which the property list keeps. */
+function isVisibleToKeyof(property: ts.Symbol): boolean {
+  return (
+    !String(property.escapedName).startsWith('#') &&
+    !(property.declarations ?? []).some(
+      (declaration) =>
+        (ts.getCombinedModifierFlags(declaration as ts.Declaration) &
+          (ts.ModifierFlags.Private | ts.ModifierFlags.Protected)) !==
+        0,
+    )
+  );
+}
+
+function keyKindsOfType(type: ts.Type): Set<KeyKind> | null {
+  const kinds = (type.isUnion() ? type.types : [type]).map(keyKindOfType);
+  return kinds.includes(null) ? null : new Set(kinds as KeyKind[]);
+}
+
+function keyKindOfType(type: ts.Type): KeyKind | null {
+  if (type.flags & ts.TypeFlags.StringLike) {
+    return 'string';
+  }
+  if (type.flags & ts.TypeFlags.NumberLike) {
+    return 'number';
+  }
+  if (type.flags & ts.TypeFlags.ESSymbolLike) {
+    return 'symbol';
+  }
+  return null;
+}
+
+function isSubset(subset: Set<KeyKind>, superset: Set<KeyKind>): boolean {
+  return Array.from(subset).every((kind) => superset.has(kind));
 }
