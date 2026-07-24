@@ -5,6 +5,7 @@ import log from 'updatable-log';
 import ts from 'typescript';
 import {
   BootstrapFile,
+  isKnownConfigName,
   logApplicationEntries,
   logSharedBootstrapImports,
   partitionBootstrapFiles,
@@ -23,10 +24,17 @@ interface RenameParams {
   dryRun?: boolean;
 }
 
+export interface SkippedRename {
+  file: string;
+  /** Human-readable evidence, with rootDir-relative paths. */
+  reason: string;
+}
+
 export interface RenameResult {
   renamedFiles: Array<{ oldFile: string; newFile: string }>;
   skippedGitignoredFiles: number;
   skippedBootstrapFiles: BootstrapFile[];
+  skippedModuleFiles: SkippedRename[];
 }
 
 export default function rename({
@@ -88,9 +96,15 @@ export default function rename({
 
   if (jsFiles.length === 0) {
     log.info('No JS/JSX files to rename.');
-    return { renamedFiles: [], skippedGitignoredFiles, skippedBootstrapFiles };
+    return {
+      renamedFiles: [],
+      skippedGitignoredFiles,
+      skippedBootstrapFiles,
+      skippedModuleFiles: [],
+    };
   }
 
+  const skippedModuleFiles: SkippedRename[] = [];
   const toRename = jsFiles
     .map((oldFile) => {
       let newFile: string | undefined;
@@ -100,11 +114,29 @@ export default function rename({
         newFile = oldFile.replace(/\.js$/, '.tsx');
       } else if (oldFile.endsWith('.js')) {
         newFile = oldFile.replace(/\.js$/, '.ts');
+      } else if (path.extname(oldFile) in moduleExtensions) {
+        const target = moduleRenameTarget(oldFile);
+        if ('newFile' in target) {
+          newFile = target.newFile;
+        } else {
+          skippedModuleFiles.push({ file: oldFile, reason: target.reason });
+        }
       }
 
       return { oldFile, newFile };
     })
     .filter((result): result is { oldFile: string; newFile: string } => !!result.newFile);
+
+  if (skippedModuleFiles.length > 0) {
+    const lines = skippedModuleFiles.map(
+      ({ file, reason }) =>
+        `  ${path.relative(rootDir, file).split(path.sep).join('/')} (${reason})`,
+    );
+    log.info(
+      `Keeping ${skippedModuleFiles.length} .mjs/.cjs file(s) at their current extension:\n` +
+        `${lines.join('\n')}`,
+    );
+  }
 
   if (dryRun) {
     const mapping = toRename
@@ -118,7 +150,12 @@ export default function rename({
         `(nothing was written):\n${mapping}`,
     );
     updateProjectJson(rootDir, dryRun);
-    return { renamedFiles: toRename, skippedGitignoredFiles, skippedBootstrapFiles };
+    return {
+      renamedFiles: toRename,
+      skippedGitignoredFiles,
+      skippedBootstrapFiles,
+      skippedModuleFiles,
+    };
   }
 
   log.info(`Renaming ${toRename.length} JS/JSX files in ${rootDir}...`);
@@ -130,7 +167,12 @@ export default function rename({
   updateProjectJson(rootDir);
 
   log.info('Done.');
-  return { renamedFiles: toRename, skippedGitignoredFiles, skippedBootstrapFiles };
+  return {
+    renamedFiles: toRename,
+    skippedGitignoredFiles,
+    skippedBootstrapFiles,
+    skippedModuleFiles,
+  };
 }
 
 function findJSFiles(rootDir: string, configFile: string, sources?: string | string[]) {
@@ -182,7 +224,28 @@ function findJSFiles(rootDir: string, configFile: string, sources?: string | str
     );
   }
 
-  return fileNames.filter((fileName) => /\.jsx?$/.test(fileName));
+  return fileNames.filter((fileName) => JS_EXTENSION_REGEX.test(fileName));
+}
+
+const JS_EXTENSION_REGEX = /\.(jsx?|[cm]js)$/;
+
+const moduleExtensions: Record<string, string> = { '.mjs': '.mts', '.cjs': '.cts' };
+
+/**
+ * The TypeScript extension a .mjs/.cjs file renames to, or the reason it keeps
+ * the one it has: build tools load config files by their exact name, and
+ * neither .mts nor .cts is a JSX-enabled extension.
+ */
+function moduleRenameTarget(oldFile: string): { newFile: string } | { reason: string } {
+  const oldExtension = path.extname(oldFile);
+  const newExtension = moduleExtensions[oldExtension];
+  if (isKnownConfigName(oldFile)) {
+    return { reason: `config file loaded by name, which ${newExtension} would break` };
+  }
+  if (jsFileContainsJsx(oldFile)) {
+    return { reason: `contains JSX, which ${newExtension} cannot hold` };
+  }
+  return { newFile: oldFile.slice(0, -oldExtension.length) + newExtension };
 }
 
 /**
@@ -207,8 +270,8 @@ function updateProjectJson(rootDir: string, dryRun?: boolean) {
     const isAllowedImport =
       keyPath.length === 2 && keyPath[0] === 'allowedImports' && typeof keyPath[1] === 'number';
     const isLayout = keyPath.length === 1 && keyPath[0] === 'layout';
-    if ((isAllowedImport || isLayout) && /\.jsx?$/.test(value)) {
-      return value.replace(/\.js(x?)$/, '.ts$1');
+    if ((isAllowedImport || isLayout) && JS_EXTENSION_REGEX.test(value)) {
+      return value.replace(/\.([cm]?)js(x?)$/, '.$1ts$2');
     }
     return undefined;
   });
