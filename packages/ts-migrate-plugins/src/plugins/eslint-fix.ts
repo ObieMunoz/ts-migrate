@@ -68,7 +68,11 @@ interface ESLintEngine {
   module: ESLintModule;
   /** Decided once, so every worker lints with the same engine and config. */
   useFlatConfig: boolean;
-  /** A project copy that was found and not used, and why. */
+  /**
+   * A project copy that was found and not used. The reason is a verb phrase
+   * about that copy, so it reads after both "eslint 7.32.0, which ..." and
+   * "This project's eslint 7.32.0 ...".
+   */
   refused?: { version: string; reason: string };
   /** The bundled engine was asked for by name, so nothing is a compromise. */
   optedOut?: boolean;
@@ -146,7 +150,7 @@ function resolveESLintEngine(
 
   const major = Number.parseInt(project.version, 10);
   if (!Number.isInteger(major) || major < MIN_PROJECT_MAJOR) {
-    return refuse(`below the ESLint ${MIN_PROJECT_MAJOR} floor ts-migrate can load`);
+    return refuse(`is below the ESLint ${MIN_PROJECT_MAJOR} floor ts-migrate can load`);
   }
 
   let projectModule: ESLintModule;
@@ -185,7 +189,7 @@ function describeESLintEngine(engine: ESLintEngine): string {
   if (engine.optedOut) {
     why = '--no-projectEslint';
   } else if (engine.refused) {
-    why = `project has eslint ${engine.refused.version}, ${engine.refused.reason}`;
+    why = `project has eslint ${engine.refused.version}, which ${engine.refused.reason}`;
   }
   return `[eslint-fix] ESLint ${engine.version} (bundled with ts-migrate; ${why})`;
 }
@@ -204,10 +208,10 @@ async function createESLint(rootDir: string, useProjectESLint: boolean): Promise
   console.log(describeESLintEngine(engine));
   if (engine.refused) {
     console.warn(
-      `[eslint-fix] This project has eslint ${engine.refused.version} installed, which is ` +
-        `${engine.refused.reason}; linting with the ESLint ${engine.version} bundled with ` +
-        'ts-migrate instead. Rules and plugins pinned to the project ESLint can fail under ' +
-        'it, and files whose rules throw come back unfixed.',
+      `[eslint-fix] This project's eslint ${engine.refused.version} ${engine.refused.reason}; ` +
+        `linting with the ESLint ${engine.version} bundled with ts-migrate instead. Rules and ` +
+        'plugins pinned to the project ESLint can fail under it, and files whose rules throw ' +
+        'come back unfixed.',
     );
   }
 

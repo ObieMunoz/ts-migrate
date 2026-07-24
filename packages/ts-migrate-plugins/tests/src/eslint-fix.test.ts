@@ -105,7 +105,7 @@ const bundledESLintDir = () => packageDir('eslint');
 const bundledESLintVersion = () =>
   JSON.parse(fs.readFileSync(path.join(bundledESLintDir(), 'package.json'), 'utf8')).version;
 
-type ProjectESLint = 'v8' | { version: string };
+type ProjectESLint = 'v8' | { version: string; broken?: boolean };
 
 // Git will not track a directory named node_modules, so a fixture keeps the
 // packages its config needs in `deps` and they are installed on the way in.
@@ -128,7 +128,11 @@ function installProjectDependencies(tmpDir: string, projectESLint?: ProjectESLin
     path.join(eslintDir, 'package.json'),
     JSON.stringify({ name: 'eslint', version: projectESLint.version, main: 'index.js' }),
   );
-  fs.writeFileSync(path.join(eslintDir, 'index.js'), STUB_ENGINE_SOURCE);
+  fs.writeFileSync(
+    path.join(eslintDir, 'index.js'),
+    // A half-installed copy: the manifest is there, loading it is not.
+    projectESLint.broken ? "require('a-dependency-that-is-not-installed');\n" : STUB_ENGINE_SOURCE,
+  );
 }
 
 interface RunOptions {
@@ -384,9 +388,25 @@ describe('eslint-fix engine selection', () => {
       expect(results).toEqual([fixed, fixed]);
       expect(stdout).toContain(
         `[eslint-fix] ESLint ${bundledESLintVersion()} (bundled with ts-migrate; ` +
-          'project has eslint 7.32.0, below the ESLint 8 floor ts-migrate can load)',
+          'project has eslint 7.32.0, which is below the ESLint 8 floor ts-migrate can load)',
       );
-      expect(stderr.match(/This project has eslint 7\.32\.0 installed/g)).toHaveLength(1);
+      expect(stderr.match(/This project's eslint 7\.32\.0 is below/g)).toHaveLength(1);
+    },
+    20000,
+  );
+
+  it(
+    'falls back to the bundled engine when the project ESLint will not load',
+    () => {
+      const { results, stdout, stderr } = runInFixture(
+        'eslint-legacy',
+        [{ fileName: 'Foo.js', text: unfixed }],
+        { projectESLint: { version: '9.39.0', broken: true } },
+      );
+
+      expect(results).toEqual([fixed]);
+      expect(stdout).toContain('project has eslint 9.39.0, which could not be loaded');
+      expect(stderr).toContain("This project's eslint 9.39.0 could not be loaded");
     },
     20000,
   );
@@ -416,7 +436,8 @@ describe('eslint-fix engine selection', () => {
 
       expect(results).toEqual([fixed]);
       expect(stdout).toContain(
-        'project has eslint 8.30.0, predates flat config support in the ESLint public API (8.57)',
+        'project has eslint 8.30.0, which predates flat config support in the ESLint public API ' +
+          '(8.57)',
       );
     },
     20000,
