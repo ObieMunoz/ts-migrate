@@ -56,12 +56,12 @@ $ npx -p @obiemunoz/ts-migrate ts-migrate --help
 Usage: ts-migrate <command> [options]
 
 Commands:
-  ts-migrate init <folder>               Initialize tsconfig.json file in <folder>
-  ts-migrate init:extended <folder>      Initialize tsconfig.json file in <folder>
-  ts-migrate rename [options] <folder>   Rename files in folder from JS/JSX to TS/TSX
-  ts-migrate migrate [options] <folder>  Fix TypeScript errors, using codemods
-  ts-migrate reignore <folder>           Re-run ts-ignore on a project
-  ts-migrate agents                      Print usage instructions for AI coding agents (non-interactive playbook)
+  ts-migrate init <folder>                Initialize tsconfig.json file in <folder>
+  ts-migrate init:extended <folder>       Initialize tsconfig.json file in <folder>
+  ts-migrate rename [options] <folder>    Rename files in folder from JS/JSX to TS/TSX
+  ts-migrate migrate [options] <folder>   Fix TypeScript errors, using codemods
+  ts-migrate reignore [options] <folder>  Re-run ts-ignore on a project
+  ts-migrate agents                       Print usage instructions for AI coding agents (non-interactive playbook)
 
 Options:
   -h, --help  Show help  [boolean]
@@ -78,7 +78,7 @@ Examples:
 AI coding agents: run `npx -p @obiemunoz/ts-migrate ts-migrate agents` for the full non-interactive usage playbook.
 ```
 
-The `rename` and `migrate` commands accept a `--sources` (or `-s`) flag. This flag
+The `rename`, `migrate`, and `reignore` commands accept a `--sources` (or `-s`) flag. This flag
 accepts a relative path to a subset of your project as a string (glob patterns are
 allowed). When this flag is used, ts-migrate ignores your project's default source
 files in favor of the ones you've listed. It is effectively the same as replacing
@@ -153,6 +153,10 @@ For the second option we created a re-ignore script, which will fully automate t
 
 Usage: `npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>`.
 
+If only part of the project was migrated with `--sources`, pass the same flags
+here so reignore stays inside that subset instead of churning suppressions in
+directories the migration never touched.
+
 # Type definition recommendations
 
 Many of the errors ts-migrate suppresses aren't really problems with your code —
@@ -218,6 +222,16 @@ npx -p @obiemunoz/ts-migrate ts-migrate-full /path/to/your/project \
   --sources "node_modules/**/*.d.ts"
 ```
 
+The same scoping applies to a follow-up `reignore` on a repo migrated one
+directory at a time. Pass the same globs so it only strips and re-adds
+suppressions in the directories you have migrated so far:
+
+```sh
+npx -p @obiemunoz/ts-migrate ts-migrate reignore /path/to/your/project \
+  --sources "some/components/**/*" \
+  --sources "node_modules/**/*.d.ts"
+```
+
 # After the migration
 
 The tool's contract is narrow on purpose: when it finishes, `tsc` compiles your project with zero errors. It does not touch your package.json scripts, your test runner config, or your lint setup, and those still point at a world of `.js` files that no longer exists. When I ran the full pipeline against a plain CommonJS library as a smoke test, the migration itself was clean, and the test suite still wouldn't run until the project plumbing caught up. Expect to do these afterwards:
@@ -225,7 +239,7 @@ The tool's contract is narrow on purpose: when it finishes, `tsc` compiles your 
 1. **Give the project a way to produce JS again.** Add a build step (`tsc`) or a TS-aware runner (ts-node, tsx). If package.json `main` pointed at a renamed file, point it at build output that actually exists.
 2. **Update scripts that reference old `.js` paths.** A mocha glob like `test/*.js` now matches nothing. Same idea for jest patterns and docs generators.
 3. **Teach ESLint about TypeScript.** Until the `@typescript-eslint` parser and plugin are in place, `eslint .` will either fail to parse `.ts` files or find no files at all. The eslint-fix step of the migration uses your project's own ESLint, so it skips unparseable files too until this is done.
-4. **Install missing `@types` packages, then re-run reignore.** `npm i -D @types/node` plus the types for your test runner, then `npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>` to drop the suppression comments you no longer need.
+4. **Install missing `@types` packages, then re-run reignore.** `npm i -D @types/node` plus the types for your test runner, then `npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>` to drop the suppression comments you no longer need. If the migration was scoped with `--sources`, pass the same flags to reignore so it only touches that subset.
 
 Honestly, item 4 is worth doing before you migrate at all. With the environment types in place, globals like `require` and `describe` resolve to real types instead of a wall of suppressed "Cannot find name" errors.
 

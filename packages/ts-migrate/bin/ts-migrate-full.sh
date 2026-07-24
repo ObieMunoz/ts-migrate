@@ -28,6 +28,22 @@ if [ -z "$frontend_folder" ]; then
 fi
 folder_name=$(basename "$frontend_folder")
 
+# A scoped run must be reignored with the same scope, so the reignore hint
+# printed on failure repeats the --sources flags this run was invoked with.
+reignore_cmd="npx -p @obiemunoz/ts-migrate ts-migrate reignore \"$frontend_folder\""
+sources_value_pending=false
+for arg in "${additional_args[@]}"; do
+  if [ "$sources_value_pending" = "true" ]; then
+    reignore_cmd+=" --sources \"$arg\""
+    sources_value_pending=false
+    continue
+  fi
+  case $arg in
+    --sources=*|-s=*) reignore_cmd+=" --sources \"${arg#*=}\"" ;;
+    --sources|-s) sources_value_pending=true ;;
+  esac
+done
+
 # Resolve this script's real location (following the symlinks npm/npx create
 # in .bin) so the bundled CLI is found regardless of the working directory.
 script_source=${BASH_SOURCE[0]:-$0}
@@ -207,7 +223,7 @@ The TypeScript check failed. What the errors above usually mean:
   between the project and ts-migrate (the migration log prints a warning when
   it detects one). Align the versions, make sure tsconfig.json pins a \"types\"
   array, then strip and re-add the suppressions with:
-    npx -p @obiemunoz/ts-migrate ts-migrate reignore \"$frontend_folder\"
+    $reignore_cmd
 - Syntax errors (TS1xxx) in generated or third-party .d.ts files: those files
   are outside the migration's control (the migration log lists them). Fix or
   regenerate them, or exclude them in tsconfig.json — re-running the migration

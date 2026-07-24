@@ -51,7 +51,8 @@ npm i -D @types/jest
 #    e.g. "jest" — the report says so when it applies.
 
 # 3. Re-run reignore: it strips every suppression the new types resolve and
-#    prints an updated recommendations report.
+#    prints an updated recommendations report. If step 1 was scoped with
+#    --sources, repeat the same flags here.
 npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>
 
 # 4. Verify:
@@ -108,12 +109,17 @@ with `@ts-expect-error` so the project compiles.
 - `--aliases tsfixme`: use `$TSFixMe` instead of `any` (only if the project
   defines that global alias).
 
-### `ts-migrate reignore <folder> [-p <prefix>]`
+### `ts-migrate reignore <folder> [flags]`
 
 For an already-TypeScript project that stopped compiling (dependency
 upgrades, new types) or right after installing `@types` packages: strips all
 existing suppression comments, then re-adds only the ones still needed.
-`-p`/`--messagePrefix` customizes the comment text.
+
+- `--sources <glob>` (`-s`, repeatable): reignore only a subset. On a repo
+  migrated one directory at a time, pass the same globs as the scoped
+  migrate (including the `node_modules/**/*.d.ts` re-include) so files
+  outside the subset are left untouched.
+- `-p`/`--messagePrefix`: customizes the comment text.
 
 ### `ts-migrate agents`
 
