@@ -509,7 +509,7 @@ const DECLARE_MODULE = /^declare module '([^']+)';$/;
 /** Where the generated shorthand module declarations live, relative to the migration root. */
 export const MODULE_DECLARATIONS_FILE = 'types/ts-migrate-modules.d.ts';
 
-export function moduleDeclarationsPath(rootDir: string): string {
+function moduleDeclarationsPath(rootDir: string): string {
   return path.join(rootDir, ...MODULE_DECLARATIONS_FILE.split('/'));
 }
 
@@ -634,13 +634,13 @@ export function createTypesPackageDetector(): TypesPackageDetector {
   let declarationsRun = false;
   const declarationsPlugin: Plugin<unknown> = {
     name: 'declare-untyped-modules',
-    mutationsPreserveTypes: true,
     run({ rootDir, addGeneratedFile }) {
       // One file's worth of work for the whole run: the evidence covers every
       // file already, and generating the declarations again per file would
       // invalidate the program each time.
-      if (declarationsRun || !addGeneratedFile) return undefined;
+      if (declarationsRun) return undefined;
       declarationsRun = true;
+      if (!addGeneratedFile) return undefined;
       declared = buildModuleDeclarations(evidence, rootDir);
       if (declared) addGeneratedFile(declared.filePath, declared.text);
       return undefined;
