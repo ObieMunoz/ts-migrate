@@ -3,6 +3,7 @@ import {
   eslintFixPlugin,
   stripTSIgnorePlugin,
   tsIgnorePlugin,
+  EslintFixOptions,
   Plugin,
   TypesPackageDetector,
 } from '@obiemunoz/ts-migrate-plugins';
@@ -23,6 +24,8 @@ interface ReignoreParams {
   gitignore?: boolean;
   /** Skip build system files (default). */
   bootstrap?: boolean;
+  /** Lint with the project's own ESLint when it is usable (default). */
+  projectEslint?: boolean;
   /** Run every pass but write nothing to disk. */
   dryRun?: boolean;
 }
@@ -40,6 +43,7 @@ export default async function reignore({
   messagePrefix,
   gitignore = true,
   bootstrap = true,
+  projectEslint,
   dryRun,
 }: ReignoreParams): Promise<ReignoreResult> {
   const changedFiles = new Map<string, string>();
@@ -59,7 +63,7 @@ export default async function reignore({
       },
     };
   }
-  const eslintFixChangedPlugin: Plugin = {
+  const eslintFixChangedPlugin: Plugin<EslintFixOptions> = {
     name: 'eslint-fix-changed',
     independentFiles: eslintFixPlugin.independentFiles,
     async run(params) {
@@ -74,7 +78,7 @@ export default async function reignore({
     .addPlugin(withChangeTracking(stripTSIgnorePlugin), {})
     .addPlugin(typesPackageDetector.plugin, {})
     .addPlugin(withChangeTracking(tsIgnorePlugin), { messagePrefix })
-    .addPlugin(eslintFixChangedPlugin, {});
+    .addPlugin(eslintFixChangedPlugin, { projectEslint });
 
   const gitignoreFilter = gitignore ? createGitignoreMigrationFilter(rootDir) : undefined;
   const bootstrapFilter = bootstrap ? createBootstrapMigrationFilter(rootDir) : undefined;

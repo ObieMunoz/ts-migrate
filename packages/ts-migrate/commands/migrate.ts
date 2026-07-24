@@ -56,6 +56,7 @@ interface BuildMigrateConfigParams {
   protectedRegex?: string;
   publicRegex?: string;
   inferTypes?: boolean;
+  projectEslint?: boolean;
 }
 
 interface MigrateCommandConfig {
@@ -82,6 +83,8 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     );
   }
 
+  const eslintFixOptions = { projectEslint: params.projectEslint };
+
   const airbnbAnyAlias = '$TSFixMe';
   const airbnbAnyFunctionAlias = '$TSFixMeFunction';
   // by default, we're not going to use any aliases in ts-migrate
@@ -107,7 +110,10 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
       };
     }
     return {
-      config: new MigrateConfig().addPlugin(plugin, { anyAlias, anyFunctionAlias }),
+      config: new MigrateConfig().addPlugin(
+        plugin,
+        plugin === eslintFixPlugin ? eslintFixOptions : { anyAlias, anyFunctionAlias },
+      ),
       anyAlias,
       anyFunctionAlias,
     };
@@ -165,13 +171,13 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     .addPlugin(addConversionsPlugin, { anyAlias })
     // We need to run eslint-fix before ts-ignore because formatting may affect where
     // the errors are that need to get ignored.
-    .addPlugin(eslintFixPlugin, {})
+    .addPlugin(eslintFixPlugin, eslintFixOptions)
     // Recommends @types packages from the diagnostics ts-ignore is about
     // to suppress, so it must run before they are hidden.
     .addPlugin(typesPackageDetector.plugin, {})
     .addPlugin(tsIgnorePlugin, {})
     // We need to run eslint-fix again after ts-ignore to fix up formatting.
-    .addPlugin(eslintFixPlugin, {});
+    .addPlugin(eslintFixPlugin, eslintFixOptions);
 
   if (excludePlugins.length > 0) {
     const excluded = new Set(excludePlugins);
