@@ -79,11 +79,13 @@ const availablePlugins = [
   updateImportPathsPlugin,
 ];
 
+const version = packageVersion();
+
 // eslint-disable-next-line @typescript-eslint/no-unused-expressions
 yargs
   .scriptName('ts-migrate')
-  .version(packageVersion())
-  .usage('Usage: $0 <command> [options]')
+  .version(version)
+  .usage(`ts-migrate v${version}\n\nUsage: $0 <command> [options]`)
   .command(
     'init <folder>',
     'Initialize tsconfig.json file in <folder>',
