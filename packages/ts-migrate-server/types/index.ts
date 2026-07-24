@@ -19,6 +19,17 @@ export interface PluginParams<TPluginOptions> {
    * run already wrote is a no-op.
    */
   addGeneratedFile?: (fileName: string, text: string) => void;
+  /**
+   * Runs `use` with `fileName` reading as `text`, then restores the file's real
+   * content. Lets a plugin type-check a candidate edit against the run's
+   * already-warm program instead of building a throwaway one for it.
+   *
+   * Both the swap and the rollback invalidate the program, so each call costs
+   * two re-syncs: make every query a candidate needs inside one call. Absent
+   * for `independentFiles` plugins, whose runs overlap and so would observe
+   * each other's scratch text.
+   */
+  withScratchText?: <T>(fileName: string, text: string, use: () => T) => T;
 }
 
 export type PluginResult = string | void;

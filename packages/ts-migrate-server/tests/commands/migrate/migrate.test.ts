@@ -706,6 +706,127 @@ describe('migrate command', () => {
     });
   });
 
+  describe('withScratchText', () => {
+    const textInProgram = (getLanguageService: () => ts.LanguageService, fileName: string) =>
+      getLanguageService().getProgram()?.getSourceFile(fileName)?.text;
+
+    beforeEach(() => {
+      const configDir = path.resolve(__dirname, 'config');
+      copyDir(configDir, rootDir);
+      fs.writeFileSync(path.resolve(rootDir, 'a.ts'), 'export const a = 1;\n');
+    });
+
+    it('shows the scratch text to the language service, then restores the real text', async () => {
+      const seen: (string | undefined)[] = [];
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'scratch',
+          run({ fileName, text, getLanguageService, withScratchText }) {
+            if (!withScratchText) throw new Error('withScratchText was not provided');
+            seen.push(textInProgram(getLanguageService, fileName));
+            withScratchText(fileName, 'export const a = 2;\n', () => {
+              seen.push(textInProgram(getLanguageService, fileName));
+            });
+            seen.push(textInProgram(getLanguageService, fileName));
+            return text;
+          },
+        },
+        {},
+      );
+
+      const { exitCode } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      expect(seen).toEqual([
+        'export const a = 1;\n',
+        'export const a = 2;\n',
+        'export const a = 1;\n',
+      ]);
+    });
+
+    it('restores the real text when the callback throws', async () => {
+      let restored: string | undefined;
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'scratch-throws',
+          run({ fileName, text, getLanguageService, withScratchText }) {
+            if (!withScratchText) throw new Error('withScratchText was not provided');
+            expect(() =>
+              withScratchText(fileName, 'export const a = 2;\n', () => {
+                throw new Error('boom');
+              }),
+            ).toThrow('boom');
+            restored = textInProgram(getLanguageService, fileName);
+            return text;
+          },
+        },
+        {},
+      );
+
+      const { exitCode } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      expect(restored).toBe('export const a = 1;\n');
+    });
+
+    it('does not let a rolled-back scratch version shadow a later edit', async () => {
+      let observed: string | undefined;
+      const config = new MigrateConfig()
+        .addPlugin(
+          {
+            name: 'scratch-then-edit',
+            run({ fileName, getLanguageService, withScratchText }) {
+              if (!withScratchText) throw new Error('withScratchText was not provided');
+              // Leaves the registry's newest entry for the file at the scratch
+              // version: the program is built inside the scope and nothing
+              // queries it again before the edit below lands.
+              withScratchText(fileName, 'export const a = 99;\n', () => {
+                textInProgram(getLanguageService, fileName);
+              });
+              return 'export const a = 3;\n';
+            },
+          },
+          {},
+        )
+        .addPlugin(
+          {
+            name: 'observe',
+            run({ fileName, text, getLanguageService }) {
+              observed = textInProgram(getLanguageService, fileName);
+              return text;
+            },
+          },
+          {},
+        );
+
+      const { exitCode } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      // Reusing a version for different text would serve the scratch text here.
+      expect(observed).toBe('export const a = 3;\n');
+    });
+
+    it('is withheld from independentFiles plugins, whose runs overlap', async () => {
+      let provided: unknown = 'unset';
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'independent',
+          independentFiles: true,
+          run({ text, withScratchText }) {
+            provided = withScratchText;
+            return text;
+          },
+        },
+        {},
+      );
+
+      const { exitCode } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      expect(provided).toBeUndefined();
+    });
+  });
+
   describe('independentFiles', () => {
     // A plugin that yields once mid-run and records how many of its run()
     // calls were in flight together.

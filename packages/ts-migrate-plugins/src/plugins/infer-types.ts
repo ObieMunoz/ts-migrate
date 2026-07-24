@@ -46,7 +46,7 @@ interface TextChange {
 const inferTypesPlugin: Plugin = {
   name: 'infer-types',
 
-  run({ fileName, text, getLanguageService }, lintConfig?: LintConfig) {
+  run({ fileName, text, getLanguageService, withScratchText }, lintConfig?: LintConfig) {
     const languageService = getLanguageService();
     const projectOptions = languageService.getProgram()?.getCompilerOptions() ?? {};
     // Under noImplicitAny every inferable location is a semantic error
@@ -55,10 +55,15 @@ const inferTypesPlugin: Plugin = {
     // every call) that the code-fix pass performs internally anyway, so the
     // pass itself is the cheapest gate.
     const noImplicitAny = projectOptions.noImplicitAny ?? projectOptions.strict ?? false;
+    // Doubles as the validation baseline below: these are this file's
+    // diagnostics before any annotation, which is exactly what the candidate
+    // gets diffed against.
+    let projectDiagnostics: readonly ts.Diagnostic[] | undefined;
     if (noImplicitAny) {
-      const hasInferableDiagnostics = languageService
-        .getSemanticDiagnostics(fileName)
-        .some((diagnostic) => inferableDiagnosticCodes.has(diagnostic.code));
+      projectDiagnostics = languageService.getSemanticDiagnostics(fileName);
+      const hasInferableDiagnostics = projectDiagnostics.some((diagnostic) =>
+        inferableDiagnosticCodes.has(diagnostic.code),
+      );
       if (!hasInferableDiagnostics) {
         return undefined;
       }
@@ -83,8 +88,11 @@ const inferTypesPlugin: Plugin = {
 
       const program = languageService.getProgram();
       const compilerOptions = getValidationOptions(program ? program.getCompilerOptions() : {});
+      const validation = withScratchText
+        ? projectValidation(fileName, languageService, withScratchText, projectDiagnostics)
+        : singleFileValidation(fileName, text, compilerOptions);
 
-      return withBodyWins(fileName, text, changes, compilerOptions, formatSettings);
+      return withBodyWins(fileName, text, changes, compilerOptions, formatSettings, validation);
     } catch (e) {
       if (e instanceof Error) {
         console.error('Error occurred in infer-types plugin: ', e.message);
@@ -96,23 +104,91 @@ const inferTypesPlugin: Plugin = {
 
 export default inferTypesPlugin;
 
+/**
+ * Type-checks a candidate version of the file under migration.
+ *
+ * `withText` holds the candidate text in place only for the duration of the
+ * callback, so `baselineErrors` — the file's diagnostics before any annotation
+ * — must be read outside one, where the file still reads as its real text.
+ */
+interface Validation {
+  withText<T>(content: string, use: (service: ts.LanguageService) => T): T;
+  baselineErrors(): ts.Diagnostic[];
+}
+
+/**
+ * Validates on the run's own program by swapping the candidate text into it.
+ * Reuses a warm program rather than building one per candidate, which for a
+ * single file costs the same whatever the project's size: the default libs and
+ * the automatic `@types` graph get re-walked either way.
+ *
+ * The wider program is not a wider check: only this file's diagnostics are
+ * read, and because the check is differential, whatever the extra files
+ * contribute appears in the baseline and the candidate alike.
+ */
+function projectValidation(
+  fileName: string,
+  languageService: ts.LanguageService,
+  withScratchText: <T>(fileName: string, text: string, use: () => T) => T,
+  projectDiagnostics: readonly ts.Diagnostic[] | undefined,
+): Validation {
+  let baseline: ts.Diagnostic[] | undefined;
+  return {
+    withText: (content, use) => withScratchText(fileName, content, () => use(languageService)),
+    baselineErrors: () => {
+      // Under noImplicitAny the gate already paid for these.
+      baseline ??= errorsOf(projectDiagnostics ?? languageService.getSemanticDiagnostics(fileName));
+      return baseline;
+    },
+  };
+}
+
+/** Fallback for a runner that predates `withScratchText`. */
+function singleFileValidation(
+  fileName: string,
+  text: string,
+  compilerOptions: ts.CompilerOptions,
+): Validation {
+  let baseline: ts.Diagnostic[] | undefined;
+  return {
+    withText: (content, use) => use(createFileLanguageService(fileName, content, compilerOptions)),
+    baselineErrors: () => {
+      baseline ??= errorsOf(
+        createFileLanguageService(fileName, text, compilerOptions).getSemanticDiagnostics(fileName),
+      );
+      return baseline;
+    },
+  };
+}
+
+function errorsOf(diagnostics: readonly ts.Diagnostic[]): ts.Diagnostic[] {
+  return diagnostics.filter((d) => d.category === ts.DiagnosticCategory.Error);
+}
+
 function withBodyWins(
   fileName: string,
   text: string,
   changes: TextChange[],
   compilerOptions: ts.CompilerOptions,
   formatSettings: ts.FormatCodeSettings,
+  validation: Validation,
 ): string | undefined {
-  const baseline = createFileLanguageService(fileName, text, compilerOptions);
   const candidateText = applyTextChanges(text, changes);
-  const candidate = createFileLanguageService(fileName, candidateText, compilerOptions);
-
-  const newErrors = findNewErrors(baseline, candidate, changes, fileName);
+  const candidateErrors = validation.withText(candidateText, (candidate) =>
+    errorsOf(candidate.getSemanticDiagnostics(fileName)),
+  );
+  // A clean candidate is new-error-free whatever the baseline says, so the
+  // baseline is never checked for one.
+  const newErrors =
+    candidateErrors.length === 0
+      ? []
+      : findNewErrors(candidateErrors, validation.baselineErrors(), changes);
   if (newErrors.length === 0) {
     return candidateText;
   }
 
-  const originalSource = getSourceFileOrThrow(baseline, fileName);
+  // Only walked for positions and enclosing scopes, so a parse is enough.
+  const originalSource = parseSourceFile(fileName, text, compilerOptions);
 
   const changesByFunction = new Map<ts.Node | null, TextChange[]>();
   changes.forEach((change) => {
@@ -126,20 +202,14 @@ function withBodyWins(
   });
 
   const annotatedFns = new Set(changesByFunction.keys());
-  const contested = attributeErrors(
-    newErrors,
-    candidate,
-    fileName,
-    changes,
-    originalSource,
-    annotatedFns,
+  const contested = validation.withText(candidateText, (candidate) =>
+    attributeErrors(newErrors, candidate, fileName, changes, originalSource, annotatedFns),
   );
 
   // Hide call sites of contested functions from the inference engine so
   // their annotations are recomputed from body evidence alone.
   const bodyOnlyChanges = inferBodyOnly(
     [...contested].filter((fn): fn is ts.Node => fn != null && changesByFunction.has(fn)),
-    baseline,
     fileName,
     text,
     compilerOptions,
@@ -179,20 +249,25 @@ function withBodyWins(
   // dispatch inferred too narrowly from heterogeneous calls), only that
   // parameter's annotation is dropped.
   let finalText = reassembled ? applyTextChanges(text, finalChanges) : candidateText;
-  const finalService = reassembled
-    ? createFileLanguageService(fileName, finalText, compilerOptions)
-    : candidate;
-  const finalErrors = reassembled
-    ? findNewErrors(baseline, finalService, finalChanges, fileName)
-    : newErrors;
-  const dropped = collectBodyConflictDrops(
-    finalErrors,
-    finalService,
-    fileName,
-    finalChanges,
-    originalSource,
-    annotatedFns,
-  );
+  // Read out here: inside the scope below the file reads as finalText.
+  const baselineErrors = reassembled ? validation.baselineErrors() : undefined;
+  const dropped = validation.withText(finalText, (finalService) => {
+    const finalErrors = baselineErrors
+      ? findNewErrors(
+          errorsOf(finalService.getSemanticDiagnostics(fileName)),
+          baselineErrors,
+          finalChanges,
+        )
+      : newErrors;
+    return collectBodyConflictDrops(
+      finalErrors,
+      finalService,
+      fileName,
+      finalChanges,
+      originalSource,
+      annotatedFns,
+    );
+  });
   if (dropped.size > 0) {
     finalChanges = finalChanges.filter((change) => !dropped.has(change));
     if (isNoOp(finalChanges)) {
@@ -369,7 +444,6 @@ function replaceNoEvidenceTypes(annotation: string, rewriteUndefinedArrays: bool
 
 function inferBodyOnly(
   contestedFunctions: ts.Node[],
-  baseline: ts.LanguageService,
   fileName: string,
   text: string,
   compilerOptions: ts.CompilerOptions,
@@ -380,6 +454,11 @@ function inferBodyOnly(
   if (contestedFunctions.length === 0) {
     return bodyOnlyChanges;
   }
+
+  // Single-file rather than the run's program throughout: hiding outside call
+  // sites is the whole point here, and it keeps the reference search off every
+  // other file in the project.
+  const baseline = createFileLanguageService(fileName, text, compilerOptions);
 
   // In-file call sites are hidden by renaming the references; cross-file call
   // sites are already invisible to the single-file decoy service.
@@ -533,24 +612,18 @@ function nodeSpanning(source: ts.SourceFile, start: number, end: number): ts.Nod
   return result;
 }
 
+// Candidate errors with no counterpart at the same code and mapped position in
+// the baseline. Errors the annotations did not cause — including any the
+// program contributes to both sides — cancel out here.
 function findNewErrors(
-  baseline: ts.LanguageService,
-  candidate: ts.LanguageService,
+  candidateErrors: ts.Diagnostic[],
+  baselineErrors: ts.Diagnostic[],
   changes: TextChange[],
-  fileName: string,
 ): ts.Diagnostic[] {
-  const isError = (d: ts.Diagnostic) => d.category === ts.DiagnosticCategory.Error;
-  // Checked first: a clean candidate never type-checks the baseline (the
-  // baseline service stays lazy until its first query).
-  const candidateErrors = candidate.getSemanticDiagnostics(fileName).filter(isError);
-  if (candidateErrors.length === 0) {
-    return [];
-  }
   const baselineKeys = new Set(
-    baseline
-      .getSemanticDiagnostics(fileName)
-      .filter(isError)
-      .map((d) => `${d.code}:${d.start == null ? '' : toCandidatePos(d.start, changes)}`),
+    baselineErrors.map(
+      (d) => `${d.code}:${d.start == null ? '' : toCandidatePos(d.start, changes)}`,
+    ),
   );
   return candidateErrors.filter(
     (d) => !baselineKeys.has(`${d.code}:${d.start == null ? '' : d.start}`),
@@ -674,13 +747,17 @@ function isNoOp(changes: TextChange[]): boolean {
   return changes.every((change) => change.length === 0 && /^[()]$/.test(change.text));
 }
 
-function getSourceFileOrThrow(service: ts.LanguageService, fileName: string): ts.SourceFile {
-  const program = service.getProgram();
-  const source = program && program.getSourceFile(fileName);
-  if (!source) {
-    throw new Error(`Failed to load source file: ${fileName}`);
-  }
-  return source;
+function parseSourceFile(
+  fileName: string,
+  text: string,
+  compilerOptions: ts.CompilerOptions,
+): ts.SourceFile {
+  return ts.createSourceFile(
+    fileName,
+    text,
+    compilerOptions.target ?? ts.ScriptTarget.Latest,
+    /* setParentNodes */ true,
+  );
 }
 
 // Parsed and bound dependency files (default libs, node_modules, the import

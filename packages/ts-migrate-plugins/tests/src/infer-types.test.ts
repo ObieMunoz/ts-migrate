@@ -510,4 +510,81 @@ getItem('abc');
 }
 `);
   });
+
+  // Every case above validates candidates on the runner's own program through
+  // the scratch overlay. A runner that predates it gets a single-file program
+  // per candidate instead, which has to reach the same verdicts: these cover
+  // the branches where the two could disagree.
+  describe('single-file fallback validation', () => {
+    const fallbackParams = (text: string) => realPluginParams({ text, scratchText: false });
+
+    it('annotates from call sites', async () => {
+      const result = await inferTypesPlugin.run(
+        await fallbackParams(`function add(a, b) {
+  return a + b;
+}
+add(1, 2);
+`),
+      );
+
+      expect(result).toBe(`function add(a: number, b: number) {
+  return a + b;
+}
+add(1, 2);
+`);
+    });
+
+    it('recomputes a contested annotation from body evidence alone', async () => {
+      const result = await inferTypesPlugin.run(
+        await fallbackParams(`function greet(name) {
+  return name.toUpperCase();
+}
+greet('bob');
+greet(42);
+`),
+      );
+
+      expect(result).toBe(`function greet(name: string) {
+  return name.toUpperCase();
+}
+greet('bob');
+greet(42);
+`);
+    });
+
+    it('drops only the parameter whose inferred type its own body contradicts', async () => {
+      const result = await inferTypesPlugin.run(
+        await fallbackParams(`const load = () => (dispatch) => {
+  dispatch({ type: 'LOAD' });
+};
+const save = () => (dispatch, api) => {
+  dispatch(load());
+  dispatch({ type: 'SAVE', payload: 1 });
+  api({ method: 'GET', url: '/x' });
+};
+`),
+      );
+
+      expect(result).toBe(`const load = () => (dispatch: (arg0: { type: string; }) => void) => {
+  dispatch({ type: 'LOAD' });
+};
+const save = () => (dispatch, api: (arg0: { method: string; url: string; }) => void) => {
+  dispatch(load());
+  dispatch({ type: 'SAVE', payload: 1 });
+  api({ method: 'GET', url: '/x' });
+};
+`);
+    });
+
+    it('leaves parameters alone when inference falls back to any', async () => {
+      const result = await inferTypesPlugin.run(
+        await fallbackParams(`function noInfo(mystery) {
+  return mystery;
+}
+`),
+      );
+
+      expect(result).toBeUndefined();
+    });
+  });
 });

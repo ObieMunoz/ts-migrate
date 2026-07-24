@@ -73,6 +73,8 @@ export async function realPluginParams<TOptions = unknown>(params: {
   options?: TOptions;
   compilerOptions?: ts.CompilerOptions;
   extraFiles?: { [fileName: string]: string };
+  /** Set false to model a runner that predates the scratch overlay. */
+  scratchText?: boolean;
 }): Promise<PluginParams<TOptions>> {
   const {
     fileName = 'file.ts',
@@ -80,6 +82,7 @@ export async function realPluginParams<TOptions = unknown>(params: {
     options = {},
     compilerOptions,
     extraFiles = {},
+    scratchText = true,
   } = params;
 
   // In-memory language service: only the test files live in memory; default
@@ -93,10 +96,15 @@ export async function realPluginParams<TOptions = unknown>(params: {
     ),
   ]);
 
+  // Bumped, never reused: the document registry reuses a cached source file on
+  // a version match without comparing content.
+  const versions = new Map<string, number>();
+  const bumpVersion = (name: string) => versions.set(name, (versions.get(name) ?? 0) + 1);
+
   const serviceHost: ts.LanguageServiceHost = {
     getCompilationSettings: () => resolvedOptions,
     getScriptFileNames: () => Array.from(files.keys()),
-    getScriptVersion: () => '0',
+    getScriptVersion: (name) => String(versions.get(name) ?? 0),
     getScriptSnapshot: (name) => {
       const contents = files.get(name) ?? ts.sys.readFile(name);
       return contents !== undefined ? ts.ScriptSnapshot.fromString(contents) : undefined;
@@ -121,5 +129,28 @@ export async function realPluginParams<TOptions = unknown>(params: {
     text,
     sourceFile,
     getLanguageService: () => languageService,
+    ...(scratchText
+      ? {
+          withScratchText: <T>(
+            scratchFileName: string,
+            candidateText: string,
+            use: () => T,
+          ): T => {
+            const previous = files.get(scratchFileName);
+            files.set(scratchFileName, candidateText);
+            bumpVersion(scratchFileName);
+            try {
+              return use();
+            } finally {
+              if (previous !== undefined) {
+                files.set(scratchFileName, previous);
+              } else {
+                files.delete(scratchFileName);
+              }
+              bumpVersion(scratchFileName);
+            }
+          },
+        }
+      : undefined),
   };
 }

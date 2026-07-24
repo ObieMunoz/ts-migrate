@@ -223,6 +223,17 @@ export default async function migrate({
             options: pluginOptions,
             getLanguageService,
             addGeneratedFile,
+            // Overlapping runs would see each other's scratch text as the real
+            // file, so this stays off for plugins whose files run concurrently.
+            ...(plugin.independentFiles
+              ? undefined
+              : {
+                  withScratchText: <T>(
+                    scratchFileName: string,
+                    scratchText: string,
+                    use: () => T,
+                  ) => project.withScratchText(scratchFileName, scratchText, use),
+                }),
           };
           try {
             const newText = await plugin.run(params, lintConfig);
