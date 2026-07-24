@@ -34,6 +34,10 @@ describe('run summary', () => {
           newFile: path.join(rootDir, 'src', 'a.tsx'),
         },
       ],
+      skippedBootstrapFiles: [
+        { file: path.join(rootDir, 'scripts', 'build.js'), reason: 'run with node' },
+        { file: path.join(rootDir, 'config', 'paths.js'), reason: 'required by webpack.config.js' },
+      ],
     });
 
     expect(summary.command).toBe('rename');
@@ -44,6 +48,10 @@ describe('run summary', () => {
     expect(summary.renamedFiles).toEqual([
       { from: 'src/a.jsx', to: 'src/a.tsx' },
       { from: 'src/z.js', to: 'src/z.ts' },
+    ]);
+    expect(summary.skippedBootstrapFiles).toEqual([
+      { file: 'config/paths.js', reason: 'required by webpack.config.js' },
+      { file: 'scripts/build.js', reason: 'run with node' },
     ]);
   });
 

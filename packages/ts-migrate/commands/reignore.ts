@@ -7,6 +7,11 @@ import {
   TypesPackageDetector,
 } from '@obiemunoz/ts-migrate-plugins';
 import { migrate, MigrateConfig, MigrateResult } from '@obiemunoz/ts-migrate-server';
+import {
+  BootstrapFile,
+  combineFileFilters,
+  createBootstrapMigrationFilter,
+} from '../utils/bootstrapFiles';
 import { createGitignoreMigrationFilter } from '../utils/gitignore';
 
 interface ReignoreParams {
@@ -16,6 +21,8 @@ interface ReignoreParams {
   messagePrefix?: string;
   /** Skip gitignored files (default). */
   gitignore?: boolean;
+  /** Skip build system files (default). */
+  bootstrap?: boolean;
   /** Run every pass but write nothing to disk. */
   dryRun?: boolean;
 }
@@ -23,6 +30,7 @@ interface ReignoreParams {
 interface ReignoreResult extends MigrateResult {
   typesPackageDetector: TypesPackageDetector;
   skippedGitignoredFiles: number;
+  skippedBootstrapFiles: BootstrapFile[];
 }
 
 export default async function reignore({
@@ -31,6 +39,7 @@ export default async function reignore({
   ambientSources,
   messagePrefix,
   gitignore = true,
+  bootstrap = true,
   dryRun,
 }: ReignoreParams): Promise<ReignoreResult> {
   const changedFiles = new Map<string, string>();
@@ -68,12 +77,13 @@ export default async function reignore({
     .addPlugin(eslintFixChangedPlugin, {});
 
   const gitignoreFilter = gitignore ? createGitignoreMigrationFilter(rootDir) : undefined;
+  const bootstrapFilter = bootstrap ? createBootstrapMigrationFilter(rootDir) : undefined;
   const result = await migrate({
     rootDir,
     config,
     sources,
     ambientSources,
-    filterMigrationFiles: gitignoreFilter?.filterMigrationFiles,
+    filterMigrationFiles: combineFileFilters([gitignoreFilter, bootstrapFilter]),
     dryRun,
   });
 
@@ -81,5 +91,6 @@ export default async function reignore({
     ...result,
     typesPackageDetector,
     skippedGitignoredFiles: gitignoreFilter ? gitignoreFilter.skippedFiles().length : 0,
+    skippedBootstrapFiles: bootstrapFilter ? bootstrapFilter.skippedFiles() : [],
   };
 }

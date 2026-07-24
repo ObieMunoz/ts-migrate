@@ -3,6 +3,12 @@ import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 import ts from 'typescript';
+import {
+  BootstrapFile,
+  logApplicationEntries,
+  logSharedBootstrapImports,
+  partitionBootstrapFiles,
+} from '../utils/bootstrapFiles';
 import { logUnfilteredReason, partitionGitignored, sampleIgnoredPaths } from '../utils/gitignore';
 import { replaceJSON5Strings } from '../utils/updateJSON5';
 
@@ -11,6 +17,8 @@ interface RenameParams {
   sources?: string | string[];
   /** Skip gitignored files (default). */
   gitignore?: boolean;
+  /** Skip build system files (default). */
+  bootstrap?: boolean;
   /** Print the rename mapping without touching any file. */
   dryRun?: boolean;
 }
@@ -18,12 +26,14 @@ interface RenameParams {
 export interface RenameResult {
   renamedFiles: Array<{ oldFile: string; newFile: string }>;
   skippedGitignoredFiles: number;
+  skippedBootstrapFiles: BootstrapFile[];
 }
 
 export default function rename({
   rootDir,
   sources,
   gitignore = true,
+  bootstrap = true,
   dryRun,
 }: RenameParams): RenameResult | null {
   const configFile = path.resolve(rootDir, 'tsconfig.json');
@@ -55,9 +65,30 @@ export default function rename({
     }
   }
 
+  let skippedBootstrapFiles: BootstrapFile[] = [];
+  if (bootstrap) {
+    const partition = partitionBootstrapFiles(rootDir, jsFiles, { detectSharedImporters: true });
+    logApplicationEntries(rootDir, partition.applicationEntries);
+    if (partition.bootstrap.length > 0) {
+      skippedBootstrapFiles = partition.bootstrap;
+      const lines = partition.bootstrap.map(
+        ({ file, reason }) =>
+          `  ${path.relative(rootDir, file).split(path.sep).join('/')} (${reason})`,
+      );
+      log.info(
+        `Keeping ${partition.bootstrap.length} build system file(s) as JavaScript so the ` +
+          `build still boots under plain Node:\n${lines.join('\n')}\n` +
+          `Pass --no-bootstrap to rename them too, or add a file to the tsconfig "exclude" ` +
+          `to keep it out of every run.`,
+      );
+      jsFiles = partition.kept;
+    }
+    logSharedBootstrapImports(rootDir, partition.shared);
+  }
+
   if (jsFiles.length === 0) {
     log.info('No JS/JSX files to rename.');
-    return { renamedFiles: [], skippedGitignoredFiles };
+    return { renamedFiles: [], skippedGitignoredFiles, skippedBootstrapFiles };
   }
 
   const toRename = jsFiles
@@ -87,7 +118,7 @@ export default function rename({
         `(nothing was written):\n${mapping}`,
     );
     updateProjectJson(rootDir, dryRun);
-    return { renamedFiles: toRename, skippedGitignoredFiles };
+    return { renamedFiles: toRename, skippedGitignoredFiles, skippedBootstrapFiles };
   }
 
   log.info(`Renaming ${toRename.length} JS/JSX files in ${rootDir}...`);
@@ -99,7 +130,7 @@ export default function rename({
   updateProjectJson(rootDir);
 
   log.info('Done.');
-  return { renamedFiles: toRename, skippedGitignoredFiles };
+  return { renamedFiles: toRename, skippedGitignoredFiles, skippedBootstrapFiles };
 }
 
 function findJSFiles(rootDir: string, configFile: string, sources?: string | string[]) {

@@ -170,6 +170,44 @@ matches gitignored build output, add it to `exclude` as well: ts-migrate
 skips it either way, but your own `tsc` (including the compile check at the
 end of `ts-migrate-full`) still type-checks it otherwise.
 
+# Build system files
+
+A JavaScript project's build tooling runs under plain Node before any
+compile step exists: webpack loads `webpack.config.js` with `require`, npm
+scripts run `node scripts/build.js`, Babel reads `babel.config.js`, test
+runners load `jest.config.js` or `karma.conf.js`. Renaming those files to
+`.ts` kills the build at its entry point, and no later step repairs it:
+webpack cannot compile the very config it needs in order to start compiling.
+
+`rename`, `migrate`, and `reignore` therefore keep build system files in
+JavaScript by default, and `init` writes the detected files into the
+generated `"exclude"` so the project's own `tsc` and editors skip them too.
+Detection, in order of confidence:
+
+- Known config names next to a package.json: `*.config.js`, `*.conf.js`,
+  `gulpfile.js`, `Gruntfile.js`, and the `.*rc.js` family.
+- Paths a package.json script runs with `node`, as in
+  `"build": "node scripts/build.js"`. (`main` and `bin` are not evidence:
+  after a migration those should point at build output.)
+- Files the detected ones reach through relative `require()`/`import`
+  literals, so `webpack.config.js` keeps `config/paths.js` with it. Dynamic
+  requires are not followed; use the tsconfig `exclude` for those.
+
+Each run logs every kept file with its evidence, and `--jsonSummary` reports
+them as `skippedBootstrapFiles` with path and reason. Two overrides exist:
+`--no-bootstrap` renames and migrates them anyway (use it when the project
+already loads TypeScript configs through ts-node or tsx), and a tsconfig
+`exclude` entry keeps a specific file out of every run.
+
+Two safeguards bound the detection. A detected file whose require tree spans
+more than half the project (and more than eight files) is treated as an
+application entry, not build tooling: `"start": "node server.js"` names the
+application itself, so only `server.js` stays JavaScript and its require
+tree migrates normally (point the script at your build output afterwards).
+And when application code imports a kept file, the file still stays
+JavaScript but the run warns, naming both sides; enable `allowJs` or split
+the shared module if the TypeScript side needs it.
+
 # Using ts-migrate with AI agents
 
 The package ships a playbook written for AI coding agents (Claude Code, Cursor,
@@ -368,7 +406,10 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --jsonSummary migrate-s
     "aliasNames": [],
     "totals": { "tsExpectError": 3, "tsIgnore": 0, "anyAlias": 0, "any": 2, "codes": { "TS2304": 3 } }
   },
-  "skippedGitignoredFiles": 0
+  "skippedGitignoredFiles": 0,
+  "skippedBootstrapFiles": [
+    { "file": "webpack.config.js", "reason": "config file next to a package.json" }
+  ]
 }
 ```
 
@@ -376,7 +417,10 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --jsonSummary migrate-s
 are relative to `<folder>`. `reignore` writes the same shape; `rename` writes
 `renamedFiles` as `{"from": "src/a.js", "to": "src/a.ts"}` pairs instead of
 the migrate fields. `skippedGitignoredFiles` counts the files the run left
-untouched because git ignores them (always 0 with `--no-gitignore`). `changedFilesTypeDebt` counts only the files this run
+untouched because git ignores them (always 0 with `--no-gitignore`).
+`skippedBootstrapFiles` lists the build system files the run kept as
+JavaScript, each with its detection evidence (always empty with
+`--no-bootstrap`). `changedFilesTypeDebt` counts only the files this run
 changed, so a scoped or incremental run reports its own debt; the `report`
 command measures the whole project. `dryRun` is true when the run was a
 `--dry-run` preview: the summary then describes what a real run would have
