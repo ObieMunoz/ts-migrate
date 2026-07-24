@@ -26,29 +26,46 @@ const FLAT_CONFIG_FILENAMES = [
   'eslint.config.cts',
 ];
 
-// Whether a flat config (`eslint.config.*`) is discoverable from `cwd` upward.
+// The flat config (`eslint.config.*`) discoverable from `dir` upward, if any.
 // ESLint 9 always defaults to flat config, so we detect it to fall back to the
 // legacy `.eslintrc` engine when absent.
-function hasFlatConfig(cwd: string): boolean {
-  let dir = cwd;
-  while (true) {
-    if (FLAT_CONFIG_FILENAMES.some((name) => fs.existsSync(path.join(dir, name)))) {
-      return true;
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) {
-      return false;
-    }
-    dir = parent;
+function findFlatConfig(dir: string): string | undefined {
+  for (let current = path.resolve(dir); ; current = path.dirname(current)) {
+    const found = FLAT_CONFIG_FILENAMES.map((name) => path.join(current, name)).find((file) =>
+      fs.existsSync(file),
+    );
+    if (found) return found;
+    if (path.dirname(current) === current) return undefined;
   }
 }
 
-// Respect an explicit ESLINT_USE_FLAT_CONFIG override if set; otherwise pick
-// flat vs. legacy based on whether a flat config file exists.
-function shouldUseFlatConfig(): boolean {
-  return process.env.ESLINT_USE_FLAT_CONFIG != null
-    ? process.env.ESLINT_USE_FLAT_CONFIG !== 'false'
-    : hasFlatConfig(process.cwd());
+/** Which config governs the run, and where the engine resolves it from. */
+interface ESLintConfigChoice {
+  useFlatConfig: boolean;
+  /** The flat config discovery found, when it found one. */
+  configFile?: string;
+  /** What the engine is given as its `cwd`: the project being migrated. */
+  cwd: string;
+  /** Set when ESLINT_USE_FLAT_CONFIG decided rather than discovery. */
+  fromEnv: boolean;
+}
+
+/**
+ * The migration root is the project, and `process.cwd()` need not be inside it
+ * (`ts-migrate migrate packages/app` from a repository root). Discovery starts
+ * at the root so a config under it is visible, and the engine is rooted there
+ * too, since flat config lookup starts at the engine's `cwd`. The walk from
+ * the working directory stays as a fallback for a root that sits outside it.
+ */
+function resolveESLintConfig(rootDir: string): ESLintConfigChoice {
+  const configFile = findFlatConfig(rootDir) ?? findFlatConfig(process.cwd());
+  const override = process.env.ESLINT_USE_FLAT_CONFIG;
+  return {
+    useFlatConfig: override != null ? override !== 'false' : configFile != null,
+    configFile,
+    cwd: path.resolve(rootDir),
+    fromEnv: override != null,
+  };
 }
 
 /**
@@ -67,7 +84,7 @@ interface ESLintEngine {
   source: 'project' | 'bundled';
   module: ESLintModule;
   /** Decided once, so every worker lints with the same engine and config. */
-  useFlatConfig: boolean;
+  config: ESLintConfigChoice;
   /**
    * A project copy that was found and not used. The reason is a verb phrase
    * about that copy, so it reads after both "eslint 7.32.0, which ..." and
@@ -78,7 +95,11 @@ interface ESLintEngine {
   optedOut?: boolean;
 }
 
-type ESLintConstructor = new (options: { fix: boolean; ignore: boolean }) => AnyESLint;
+type ESLintConstructor = new (options: {
+  fix: boolean;
+  ignore: boolean;
+  cwd: string;
+}) => AnyESLint;
 
 interface ESLintModule {
   /** 8.57 and later. Chooses the flat-config or the eslintrc engine. */
@@ -130,14 +151,14 @@ function findBundledESLint(): { entryPath: string; version: string } {
 function resolveESLintEngine(
   rootDir: string,
   useProjectESLint: boolean,
-  useFlatConfig: boolean,
+  config: ESLintConfigChoice,
 ): ESLintEngine {
   const bundled = findBundledESLint();
   const useBundled = (extra: Partial<ESLintEngine> = {}): ESLintEngine => ({
     ...bundled,
     source: 'bundled',
     module: require(bundled.entryPath),
-    useFlatConfig,
+    config,
     ...extra,
   });
 
@@ -164,7 +185,7 @@ function resolveESLintEngine(
     if (typeof projectModule.ESLint !== 'function') {
       return refuse('exports neither loadESLint nor an ESLint class');
     }
-    if (useFlatConfig) {
+    if (config.useFlatConfig) {
       // 8.0 through 8.56 reach flat config only through
       // eslint/use-at-your-own-risk, which is not an API to hold a migration to.
       return refuse('predates flat config support in the ESLint public API (8.57)');
@@ -176,7 +197,7 @@ function resolveESLintEngine(
     version: project.version,
     source: 'project',
     module: projectModule,
-    useFlatConfig,
+    config,
   };
 }
 
@@ -194,6 +215,19 @@ function describeESLintEngine(engine: ESLintEngine): string {
   return `[eslint-fix] ESLint ${engine.version} (bundled with ts-migrate; ${why})`;
 }
 
+/**
+ * The second banner line: which config lints. Without it nothing in the output
+ * separates "no rule matched these files" from "the config was never found",
+ * and the latter is silent because each file's throw is caught per file.
+ */
+function describeESLintConfig({ useFlatConfig, configFile, cwd, fromEnv }: ESLintConfigChoice) {
+  const why = fromEnv ? ' [ESLINT_USE_FLAT_CONFIG]' : '';
+  if (!useFlatConfig) {
+    return `[eslint-fix] eslintrc config, resolved per file from ${cwd}${why}`;
+  }
+  return `[eslint-fix] flat config: ${configFile ?? `none found from ${cwd}`}${why}`;
+}
+
 // Lazily create one ESLint instance, shared across all files in a run.
 // (`jiti`, a dependency, is what lets ESLint load a TypeScript `eslint.config.ts`.)
 let eslintPromise: Promise<AnyESLint> | undefined;
@@ -201,11 +235,12 @@ let eslintPromise: Promise<AnyESLint> | undefined;
 let resolvedEngine: ESLintEngine | undefined;
 
 async function createESLint(rootDir: string, useProjectESLint: boolean): Promise<AnyESLint> {
-  const useFlatConfig = shouldUseFlatConfig();
-  const engine = resolveESLintEngine(rootDir, useProjectESLint, useFlatConfig);
+  const config = resolveESLintConfig(rootDir);
+  const engine = resolveESLintEngine(rootDir, useProjectESLint, config);
   resolvedEngine = engine;
 
   console.log(describeESLintEngine(engine));
+  console.log(describeESLintConfig(config));
   if (engine.refused) {
     console.warn(
       `[eslint-fix] This project's eslint ${engine.refused.version} ${engine.refused.reason}; ` +
@@ -219,9 +254,13 @@ async function createESLint(rootDir: string, useProjectESLint: boolean): Promise
     fix: true,
     // Set ignore to false so we can lint in `tmp` for testing.
     ignore: false,
+    // Flat config lookup, ignore file lookup, and relative paths inside the
+    // config all start here, so it has to be the project, not wherever the
+    // command was typed.
+    cwd: config.cwd,
   };
   if (typeof engine.module.loadESLint === 'function') {
-    const ESLintClass = await engine.module.loadESLint({ useFlatConfig });
+    const ESLintClass = await engine.module.loadESLint({ useFlatConfig: config.useFlatConfig });
     return new ESLintClass(options);
   }
   return new (engine.module.ESLint as ESLintConstructor)(options);
@@ -345,7 +384,7 @@ const eslintModule = require(workerData.eslintPath);
 let cliPromise;
 function getCli() {
   if (!cliPromise) {
-    const options = { fix: true, ignore: false };
+    const options = { fix: true, ignore: false, cwd: workerData.cwd };
     cliPromise = workerData.useLoadESLint
       ? eslintModule
           .loadESLint({ useFlatConfig: workerData.useFlatConfig })
@@ -424,8 +463,10 @@ function failPool(error: Error): void {
 }
 
 function spawnWorker(): Worker {
-  // A job only reaches the pool after getESLint resolved, so the engine the
-  // main thread lints with is the one workers are handed.
+  // A job only reaches the pool after getESLint resolved, so the engine and
+  // config the main thread lints with are what workers are handed. A worker
+  // that resolved a different config would make a file's fix depend on which
+  // route it took.
   if (!resolvedEngine) {
     throw new Error('eslint-fix: no ESLint engine has been resolved yet');
   }
@@ -435,7 +476,8 @@ function spawnWorker(): Worker {
       eslintPath: resolvedEngine.entryPath,
       useLoadESLint: typeof resolvedEngine.module.loadESLint === 'function',
       typeScriptDir: typeScriptPackageDir(),
-      useFlatConfig: resolvedEngine.useFlatConfig,
+      useFlatConfig: resolvedEngine.config.useFlatConfig,
+      cwd: resolvedEngine.config.cwd,
     },
   });
   worker.on('message', (result: WorkerResult) => {
@@ -615,9 +657,9 @@ const eslintFixPlugin: Plugin<Options> = {
     }
     pendingLintCalls += 1;
     try {
-      // rootDir is where the project's ESLint is searched for. It is on every
-      // plugin's params; the fallback is for a direct caller that omits it,
-      // and matches the root the flat-config detection above uses.
+      // rootDir is the project: where its ESLint is searched for, and where
+      // its config is resolved from. It is on every plugin's params; the
+      // fallback is for a direct caller that omits it.
       const cli = await getESLint(rootDir ?? process.cwd(), options?.projectEslint !== false);
       const newText = await lintFile(cli, fileName, text);
       lastFixedText.set(fileName, newText);
