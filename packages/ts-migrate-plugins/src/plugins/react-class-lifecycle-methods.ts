@@ -40,8 +40,20 @@ const reactLifecycleMethodAnnotations: { [method: string]: AnnotationKind[] } = 
   // componentWillReceiveProps?(nextProps: Readonly<P>, nextContext: any): void;
   componentWillReceiveProps: [AnnotationKind.Props, AnnotationKind.Context],
 
+  // UNSAFE_componentWillReceiveProps?(nextProps: Readonly<P>, nextContext: any): void;
+  UNSAFE_componentWillReceiveProps: [AnnotationKind.Props, AnnotationKind.Context],
+
   // componentWillUpdate?(nextProps: Readonly<P>, nextState: Readonly<S>, nextContext: any): void;
   componentWillUpdate: [AnnotationKind.Props, AnnotationKind.State, AnnotationKind.Context],
+
+  // UNSAFE_componentWillUpdate?(nextProps: Readonly<P>, nextState: Readonly<S>, nextContext: any): void;
+  UNSAFE_componentWillUpdate: [AnnotationKind.Props, AnnotationKind.State, AnnotationKind.Context],
+
+  // getSnapshotBeforeUpdate?(prevProps: Readonly<P>, prevState: Readonly<S>): SS | null;
+  getSnapshotBeforeUpdate: [AnnotationKind.Props, AnnotationKind.State],
+
+  // static getDerivedStateFromProps?(nextProps: Readonly<P>, prevState: S): Partial<S> | null;
+  getDerivedStateFromProps: [AnnotationKind.Props, AnnotationKind.State],
 };
 
 function updateParameterType(parameter: ts.ParameterDeclaration, type: ts.TypeNode | undefined) {
