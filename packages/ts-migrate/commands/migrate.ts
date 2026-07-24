@@ -56,6 +56,7 @@ interface BuildMigrateConfigParams {
   protectedRegex?: string;
   publicRegex?: string;
   inferTypes?: boolean;
+  declareUntypedModules?: boolean;
 }
 
 interface MigrateCommandConfig {
@@ -168,7 +169,13 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     .addPlugin(eslintFixPlugin, {})
     // Recommends @types packages from the diagnostics ts-ignore is about
     // to suppress, so it must run before they are hidden.
-    .addPlugin(typesPackageDetector.plugin, {})
+    .addPlugin(typesPackageDetector.plugin, {});
+  if (params.declareUntypedModules ?? true) {
+    // Declares the modules with no types available, so their imports resolve
+    // for ts-ignore below instead of being suppressed one by one.
+    config.addPlugin(typesPackageDetector.declarationsPlugin, {});
+  }
+  config
     .addPlugin(tsIgnorePlugin, {})
     // We need to run eslint-fix again after ts-ignore to fix up formatting.
     .addPlugin(eslintFixPlugin, {});
