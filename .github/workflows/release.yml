@@ -75,21 +75,23 @@ jobs:
           done
           exit 1
 
+      # Each package is checked at its own manifest version, not the lerna.json
+      # version: a bump driven only by private-package changes moves lerna.json
+      # ahead of the public manifests.
       - name: Verify published versions
         run: |
-          version=$(node -p "require('./lerna.json').version")
           for manifest in packages/*/package.json; do
-            name=$(node -p "const p = require('./${manifest}'); p.private ? '' : p.name")
-            if [ -z "${name}" ]; then
+            target=$(node -p "const p = require('./${manifest}'); p.private ? '' : p.name + '@' + p.version")
+            if [ -z "${target}" ]; then
               continue
             fi
             for attempt in 1 2 3; do
-              if npm view "${name}@${version}" version > /dev/null; then
-                echo "${name}@${version} is on the registry"
+              if npm view "${target}" version > /dev/null; then
+                echo "${target} is on the registry"
                 continue 2
               fi
               sleep 10
             done
-            echo "${name}@${version} is missing from the registry"
+            echo "${target} is missing from the registry"
             exit 1
           done
