@@ -20,7 +20,9 @@ export default Foo;
 
     expect(result).toBe(`import React from 'react';
 
-type State = $TSFixMe;
+type State = {
+    loading: $TSFixMe;
+};
 
 class Foo extends React.Component<object, State> {
   render() {
@@ -103,7 +105,9 @@ export default Foo;
 
     expect(result).toBe(`import React from 'react';
 
-type BarState = $TSFixMe;
+type BarState = {
+    loading: $TSFixMe;
+};
 
 class Bar extends React.Component<object, BarState> {
   render() {
@@ -111,7 +115,9 @@ class Bar extends React.Component<object, BarState> {
   }
 }
 
-type FooState = $TSFixMe;
+type FooState = {
+    loading: $TSFixMe;
+};
 
 class Foo extends React.Component<object, FooState> {
   render() {
@@ -147,7 +153,9 @@ export default Foo;
 
 type MyProps = { message: string };
 
-type MyState = $TSFixMe;
+type MyState = {
+    loading: $TSFixMe;
+};
 
 class Foo extends React.Component<MyProps, MyState> {
   render() {
