@@ -16,6 +16,7 @@ import rename from './commands/rename';
 import report from './commands/report';
 import readAgentsPlaybook from './utils/agentsPlaybook';
 import ensureAliasDeclarations from './utils/aliasDeclarations';
+import { createGitignoreMigrationFilter } from './utils/gitignore';
 import packageVersion from './utils/packageVersion';
 import {
   buildMigrateRunSummary,
@@ -220,6 +221,12 @@ yargs
           'ambientSources',
           'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --no-ambientSources.',
         )
+        .boolean('gitignore')
+        .default('gitignore', true)
+        .describe(
+          'gitignore',
+          'Skip gitignored files: they are neither migrated nor added to the program. Disable with --no-gitignore.',
+        )
         .boolean('inferTypes')
         .default('inferTypes', true)
         .describe(
@@ -311,6 +318,9 @@ yargs
         return;
       }
 
+      const gitignoreFilter = args.gitignore
+        ? createGitignoreMigrationFilter(rootDir)
+        : undefined;
       const {
         exitCode,
         updatedSourceFiles,
@@ -322,6 +332,7 @@ yargs
         config,
         sources,
         ambientSources: args.ambientSources,
+        filterMigrationFiles: gitignoreFilter?.filterMigrationFiles,
         maxStablePasses: args.maxStablePasses,
         incrementalPasses: args.incrementalPasses,
         dryRun,
@@ -361,6 +372,7 @@ yargs
             fileContents,
             nonMigratedFilesWithSyntaxErrors,
             pluginStats,
+            skippedGitignoredFiles: gitignoreFilter?.skippedFiles().length ?? 0,
           }),
         );
       }
@@ -390,6 +402,12 @@ yargs
           'ambientSources',
           'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --no-ambientSources.',
         )
+        .boolean('gitignore')
+        .default('gitignore', true)
+        .describe(
+          'gitignore',
+          'Skip gitignored files: they are neither reignored nor added to the program. Disable with --no-gitignore.',
+        )
         .boolean('dry-run')
         .default('dry-run', false)
         .describe(
@@ -415,11 +433,13 @@ yargs
         updatedFileTexts,
         nonMigratedFilesWithSyntaxErrors,
         pluginStats,
+        skippedGitignoredFiles,
       } = await reignore({
         rootDir,
         sources,
         ambientSources: args.ambientSources,
         messagePrefix: args.p,
+        gitignore: args.gitignore,
         dryRun,
       });
 
@@ -443,6 +463,7 @@ yargs
             fileContents: updatedFileTexts,
             nonMigratedFilesWithSyntaxErrors,
             pluginStats,
+            skippedGitignoredFiles,
           }),
         );
       }

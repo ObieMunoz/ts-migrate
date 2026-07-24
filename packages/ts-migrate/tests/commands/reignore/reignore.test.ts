@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import reignore from '../../../commands/reignore';
@@ -92,5 +93,31 @@ const broken: number = 'oops';
     const wouldBeText = updatedFileTexts.get(file);
     expect(wouldBeText).not.toContain('no longer needed');
     expect(wouldBeText).toMatch(/@ts-expect-error TS\(2322\) FIXME/);
+  }, 10000);
+
+  it('leaves gitignored files unsuppressed and counts them', async () => {
+    execFileSync('git', ['init'], { cwd: rootDir, stdio: 'ignore' });
+    fs.writeFileSync(
+      path.resolve(rootDir, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { noEmit: true, strict: true }, include: ['.'] }),
+    );
+    fs.writeFileSync(path.resolve(rootDir, '.gitignore'), 'generated/\n');
+    fs.mkdirSync(path.resolve(rootDir, 'generated'));
+    fs.writeFileSync(path.resolve(rootDir, 'src.ts'), "const broken: number = 'oops';\n");
+    const generatedText = "const alsoBroken: number = 'oops';\n";
+    fs.writeFileSync(path.resolve(rootDir, 'generated/file.ts'), generatedText);
+
+    const { exitCode, updatedSourceFiles, skippedGitignoredFiles } = await reignore({
+      rootDir,
+      messagePrefix: 'FIXME',
+    });
+
+    expect(exitCode).toBe(0);
+    expect(skippedGitignoredFiles).toBe(1);
+    expect([...updatedSourceFiles]).toEqual([path.resolve(rootDir, 'src.ts')]);
+    expect(fs.readFileSync(path.resolve(rootDir, 'src.ts'), 'utf8')).toMatch(
+      /@ts-expect-error TS\(2322\) FIXME/,
+    );
+    expect(fs.readFileSync(path.resolve(rootDir, 'generated/file.ts'), 'utf8')).toBe(generatedText);
   }, 10000);
 });
