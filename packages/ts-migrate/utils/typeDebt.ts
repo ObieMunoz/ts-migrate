@@ -220,6 +220,9 @@ export function scanTypeDebt(rootDir: string): TypeDebtReport {
   return { rootDir, filesScanned: sourceFiles.length, aliasNames, totals, files };
 }
 
+/** The per-file listing shows only the worst offenders; --json has them all. */
+const MAX_REPORT_FILES = 10;
+
 function formatCodes(debt: FileDebt): string {
   const coded = Object.values(debt.codes).reduce((sum, count) => sum + count, 0);
   const uncoded = debt.tsExpectError + debt.tsIgnore - coded;
@@ -249,7 +252,8 @@ export function formatTypeDebtReport(report: TypeDebtReport, folder: string): st
   }
 
   lines.push('', 'Per-file counts, worst first (zero-debt files omitted):');
-  Object.entries(report.files).forEach(([file, debt]) => {
+  const entries = Object.entries(report.files);
+  entries.slice(0, MAX_REPORT_FILES).forEach(([file, debt]) => {
     const parts = [
       debt.tsExpectError > 0 ? `${debt.tsExpectError} @ts-expect-error` : '',
       debt.tsIgnore > 0 ? `${debt.tsIgnore} @ts-ignore` : '',
@@ -258,6 +262,13 @@ export function formatTypeDebtReport(report: TypeDebtReport, folder: string): st
     ].filter(Boolean);
     lines.push(`  ${String(debtTotal(debt)).padStart(5)}  ${file} (${parts.join(', ')})`);
   });
+  const remaining = entries.length - MAX_REPORT_FILES;
+  if (remaining > 0) {
+    lines.push(
+      `  ...and ${remaining} more ${remaining === 1 ? 'file' : 'files'} with debt. ` +
+        `Re-run with --json for the complete per-file list.`,
+    );
+  }
 
   return lines.join('\n');
 }

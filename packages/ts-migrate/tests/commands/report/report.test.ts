@@ -147,6 +147,26 @@ describe('type debt scanner', () => {
     expect(summary).toContain('ts-migrate report frontend/foo');
   });
 
+  it('lists only the 10 worst files and counts the rest', () => {
+    const files: Record<string, string> = { 'tsconfig.json': '{ "compilerOptions": {} }' };
+    for (let i = 1; i <= 12; i += 1) {
+      const name = `debt-${String(i).padStart(2, '0')}.ts`;
+      files[name] = 'export const v: any = 1;\n';
+    }
+    writeFiles(rootDir, files);
+
+    const debt = scanTypeDebt(rootDir);
+    expect(Object.keys(debt.files)).toHaveLength(12);
+
+    const reportText = formatTypeDebtReport(debt, 'foo');
+    expect(reportText).toContain('debt-10.ts');
+    expect(reportText).not.toContain('debt-11.ts');
+    expect(reportText).not.toContain('debt-12.ts');
+    expect(reportText).toContain(
+      '...and 2 more files with debt. Re-run with --json for the complete per-file list.',
+    );
+  });
+
   it('reports no debt for a clean project', () => {
     writeFiles(rootDir, {
       'tsconfig.json': '{ "compilerOptions": {} }',

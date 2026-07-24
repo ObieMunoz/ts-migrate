@@ -157,9 +157,10 @@ Measures the type debt left in the project: `@ts-expect-error`/`@ts-ignore`
 comments (with the suppressed error codes ts-migrate embeds in them),
 any-alias annotations (`$TSFixMe` and friends, discovered from the aliases
 the project's `.d.ts` files declare rather than hardcoded), and explicit
-`any` annotations. Prints totals plus per-file counts, worst file first.
-Counts come from per-file ASTs, so strings and JSX text that merely contain
-the directive words are not counted. `--json` prints the same data as JSON.
+`any` annotations. Prints totals plus the 10 worst files and how many more
+have debt. Counts come from per-file ASTs, so strings and JSX text that
+merely contain the directive words are not counted. `--json` prints the
+same data as JSON, with every file listed.
 
 ### `ts-migrate check <folder> [--update-baseline]`
 

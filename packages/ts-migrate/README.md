@@ -241,7 +241,8 @@ type-checker program is needed.
 npx -p @obiemunoz/ts-migrate ts-migrate report <folder>
 ```
 
-prints totals and per-file counts, worst file first, of:
+prints totals and per-file counts (the 10 worst files, plus how many more
+have debt) of:
 
 - `@ts-expect-error` and `@ts-ignore` comments, including a breakdown of the
   suppressed error codes ts-migrate embeds in them (`TS(2304)` and so on);
@@ -249,8 +250,9 @@ prints totals and per-file counts, worst file first, of:
   your project's `.d.ts` files actually declare rather than hardcoded);
 - explicit `any` annotations.
 
-`--json` prints the same data for machine consumption. `migrate` and
-`reignore` end their runs with the one-paragraph totals of this report.
+`--json` prints the same data for machine consumption, with every file
+listed. `migrate` and `reignore` end their runs with the one-paragraph
+totals of this report.
 
 ```sh
 npx -p @obiemunoz/ts-migrate ts-migrate check <folder>
