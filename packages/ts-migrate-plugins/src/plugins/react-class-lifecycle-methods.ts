@@ -56,6 +56,34 @@ const reactLifecycleMethodAnnotations: { [method: string]: AnnotationKind[] } = 
   getDerivedStateFromProps: [AnnotationKind.Props, AnnotationKind.State],
 };
 
+function isStatic(member: ts.MethodDeclaration) {
+  return (
+    member.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword) ?? false
+  );
+}
+
+// Static members cannot reference class type parameters (TS2302).
+function referencesTypeParameter(type: ts.TypeNode, typeParameterNames: Set<string>) {
+  if (typeParameterNames.size === 0) return false;
+
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (found) return;
+    if (
+      ts.isTypeReferenceNode(node) &&
+      ts.isIdentifier(node.typeName) &&
+      typeParameterNames.has(node.typeName.text)
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(type);
+
+  return found;
+}
+
 function updateParameterType(parameter: ts.ParameterDeclaration, type: ts.TypeNode | undefined) {
   return ts.factory.updateParameterDeclaration(
     parameter,
@@ -89,6 +117,9 @@ function annotateReactComponentLifecycleMethods(
         [AnnotationKind.State]: stateType,
         [AnnotationKind.Context]: ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
       };
+      const typeParameterNames = new Set(
+        (statement.typeParameters || []).map((typeParameter) => typeParameter.name.text),
+      );
 
       statement.members.forEach((member) => {
         if (
@@ -110,6 +141,7 @@ function annotateReactComponentLifecycleMethods(
           reactLifecycleMethodAnnotations[member.name.text] != null
         ) {
           const annotations = reactLifecycleMethodAnnotations[member.name.text];
+          const skipTypeParameters = isStatic(member);
 
           let didUpdateParameters = false;
           const parametersToPrint: ts.ParameterDeclaration[] = [...member.parameters];
@@ -117,7 +149,11 @@ function annotateReactComponentLifecycleMethods(
           for (let i = 0; i < member.parameters.length; i += 1) {
             const parameter = member.parameters[i];
             const annotation = annotationToType[annotations[i]];
-            if (annotation != null && (parameter.type == null || force)) {
+            if (
+              annotation != null &&
+              (parameter.type == null || force) &&
+              !(skipTypeParameters && referencesTypeParameter(annotation, typeParameterNames))
+            ) {
               const updatedParameter = updateParameterType(parameter, annotation);
               parametersToPrint[i] = updatedParameter;
               didUpdateParameters = true;

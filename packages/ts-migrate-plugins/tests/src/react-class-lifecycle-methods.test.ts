@@ -124,6 +124,36 @@ class Foo extends React.Component<FooProps, FooState> {
 `);
   });
 
+  it('skips static params typed by a class type parameter', async () => {
+    const text = `import React from 'react';
+
+type FooProps<T> = { item: T };
+type FooState = {};
+
+class Foo<T> extends React.Component<FooProps<T>, FooState> {
+  static getDerivedStateFromProps(nextProps, prevState) {}
+  componentDidUpdate(prevProps, prevState) {}
+  render() {}
+}
+`;
+
+    const result = await reactClassLifecycleMethodsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx' }),
+    );
+
+    expect(result).toBe(`import React from 'react';
+
+type FooProps<T> = { item: T };
+type FooState = {};
+
+class Foo<T> extends React.Component<FooProps<T>, FooState> {
+  static getDerivedStateFromProps(nextProps, prevState: FooState) {}
+  componentDidUpdate(prevProps: FooProps<T>, prevState: FooState) {}
+  render() {}
+}
+`);
+  });
+
   it('handles multiple components in the same file', async () => {
     const text = `import React from 'react';
 
