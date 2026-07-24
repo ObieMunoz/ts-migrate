@@ -155,7 +155,7 @@ yargs
   )
   .command(
     'rename [options] <folder>',
-    'Rename files in folder from JS/JSX to TS/TSX',
+    'Rename files in folder from JavaScript to TypeScript',
     (cmd) =>
       cmd
         .positional('folder', { type: 'string' })
@@ -621,10 +621,10 @@ yargs
     '$0 init:extended frontend/foo',
     'Create extended from the base tsconfig.json file at frontend/foo/tsconfig.json',
   )
-  .example('$0 rename frontend/foo', 'Rename files in frontend/foo from JS/JSX to TS/TSX')
+  .example('$0 rename frontend/foo', 'Rename files in frontend/foo from JavaScript to TypeScript')
   .example(
     '$0 rename frontend/foo --s "bar/baz"',
-    'Rename files in frontend/foo/bar/baz from JS/JSX to TS/TSX',
+    'Rename files in frontend/foo/bar/baz from JavaScript to TypeScript',
   )
   .example('$0 agents', 'Print the agent playbook')
   .epilogue(

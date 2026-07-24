@@ -209,11 +209,11 @@ fi
 maybe_commit -m "[ts-migrate][$folder_name] Init tsconfig.json file" -m 'Co-authored-by: ts-migrate <>'
 
 echo "
-[Step $((step_i++)) of ${step_count}] Renaming files from JS/JSX to TS/TSX and updating project.json\...
+[Step $((step_i++)) of ${step_count}] Renaming files from JavaScript to TypeScript and updating project.json\...
 "
 cli rename "$frontend_folder" "${additional_args[@]}"
 
-maybe_commit -m "[ts-migrate][$folder_name] Rename files from JS/JSX to TS/TSX" -m 'Co-authored-by: ts-migrate <>'
+maybe_commit -m "[ts-migrate][$folder_name] Rename files from JavaScript to TypeScript" -m 'Co-authored-by: ts-migrate <>'
 
 echo "
 [Step $((step_i++)) of ${step_count}] Fixing TypeScript errors...

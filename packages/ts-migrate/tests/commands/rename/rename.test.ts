@@ -70,7 +70,7 @@ describe('rename command', () => {
 
     const infoMessages = infoSpy.mock.calls.map((call) => call.join(' '));
     expect(infoMessages).toContainEqual(
-      expect.stringContaining('9 JS/JSX file(s) would be renamed'),
+      expect.stringContaining('9 JavaScript file(s) would be renamed'),
     );
     // The mapping surfaces each .ts vs .tsx decision.
     expect(infoMessages).toContainEqual(expect.stringContaining('file-1.js -> file-1.ts'));
@@ -114,7 +114,7 @@ describe('rename command', () => {
       expect(fs.existsSync(path.resolve(rootDir, 'dist/bundle.ts'))).toBe(false);
       const infoMessages = infoSpy.mock.calls.map((call) => call.join(' '));
       expect(infoMessages).toContainEqual(
-        expect.stringContaining('Skipping 1 gitignored JS/JSX file(s) (dist/bundle.js)'),
+        expect.stringContaining('Skipping 1 gitignored JavaScript file(s) (dist/bundle.js)'),
       );
       infoSpy.mockRestore();
     });

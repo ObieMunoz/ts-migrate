@@ -101,7 +101,7 @@ Afterwards, update the project plumbing the tool deliberately does not touch:
 
 ### `ts-migrate-full <folder> [flags]`
 
-Runs the whole pipeline: init tsconfig → rename JS/JSX to TS/TSX → migrate →
+Runs the whole pipeline: init tsconfig → rename JavaScript to TypeScript → migrate →
 verify with `tsc --noEmit`.
 
 - `--yes` (`-y`): skip the interactive prompts (accept defaults).
@@ -257,7 +257,10 @@ describes what a real run would have changed (nothing was written except the
 summary file itself); combining `--dry-run` with `--jsonSummary` is the
 machine-readable preview. Per command:
 
-- `rename`: `renamedFiles` as `{"from": "src/a.js", "to": "src/a.ts"}` pairs.
+- `rename`: `renamedFiles` as `{"from": "src/a.js", "to": "src/a.ts"}` pairs,
+  and `skippedModuleFiles`, the `.mjs`/`.cjs` files kept at their extension
+  as `{"file", "reason"}` pairs (config files a tool loads by name, and
+  files holding JSX; no flag empties this list).
 - `migrate` and `reignore`: `changedFiles` (every file the run modified),
   `nonMigratedFilesWithSyntaxErrors` (files that will keep failing `tsc` and
   that re-running cannot fix), `plugins` (`{"name", "changedFileCount"}` per
@@ -302,7 +305,7 @@ need both summaries.
 - "eslint-fix skipped / could not parse" warnings are expected until the
   project's ESLint understands TypeScript; the migration is still valid.
 - `rename` exits nonzero if `<folder>` has no `tsconfig.json` — run `init`
-  first (`ts-migrate-full` does). A run that reports "No JS/JSX files to
+  first (`ts-migrate-full` does). A run that reports "No JavaScript files to
   rename." succeeded but matched nothing: `<folder>` probably points at the
   wrong directory (e.g. a monorepo root instead of the package).
 

@@ -61,7 +61,7 @@ Usage: ts-migrate <command> [options]
 Commands:
   ts-migrate init <folder>                Initialize tsconfig.json file in <folder>
   ts-migrate init:extended <folder>       Initialize tsconfig.json file in <folder>
-  ts-migrate rename [options] <folder>    Rename files in folder from JS/JSX to TS/TSX
+  ts-migrate rename [options] <folder>    Rename files in folder from JavaScript to TypeScript
   ts-migrate migrate [options] <folder>   Fix TypeScript errors, using codemods
   ts-migrate reignore [options] <folder>  Re-run ts-ignore on a project
   ts-migrate report [options] <folder>    Print per-file counts of suppression comments and any-type annotations
@@ -77,8 +77,8 @@ Examples:
   ts-migrate migrate --help                     Show help for the migrate command
   ts-migrate init frontend/foo                  Create tsconfig.json file at frontend/foo/tsconfig.json
   ts-migrate init:extended frontend/foo         Create extended from the base tsconfig.json file at frontend/foo/tsconfig.json
-  ts-migrate rename frontend/foo                Rename files in frontend/foo from JS/JSX to TS/TSX
-  ts-migrate rename frontend/foo --s "bar/baz"  Rename files in frontend/foo/bar/baz from JS/JSX to TS/TSX
+  ts-migrate rename frontend/foo                Rename files in frontend/foo from JavaScript to TypeScript
+  ts-migrate rename frontend/foo --s "bar/baz"  Rename files in frontend/foo/bar/baz from JavaScript to TypeScript
   ts-migrate agents                             Print the agent playbook
 
 AI coding agents: run `npx -p @obiemunoz/ts-migrate ts-migrate agents` for the full non-interactive usage playbook.
@@ -192,7 +192,7 @@ skipped even when they match an ignore pattern. In detail:
   generated tsconfig's `"exclude"` (together with TypeScript's default
   excludes, which an explicit `exclude` would otherwise replace), so the
   project's own `tsc` skips them too.
-- `rename` leaves gitignored JS/JSX files unrenamed.
+- `rename` leaves gitignored JavaScript files unrenamed.
 - `migrate` and `reignore` keep gitignored files out of the program: they are
   neither parsed, type-checked, migrated, nor suppressed. A gitignored file
   that a migrated file imports still enters the program for type resolution,
@@ -482,7 +482,9 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --jsonSummary migrate-s
 (`plugins` lists every step of the pipeline; the example is shortened.) Paths
 are relative to `<folder>`. `reignore` writes the same shape; `rename` writes
 `renamedFiles` as `{"from": "src/a.js", "to": "src/a.ts"}` pairs instead of
-the migrate fields. `skippedGitignoredFiles` counts the files the run left
+the migrate fields, plus `skippedModuleFiles` for the `.mjs`/`.cjs` files it
+kept at their extension, each with its reason (no flag empties that list).
+`skippedGitignoredFiles` counts the files the run left
 untouched because git ignores them (always 0 with `--no-gitignore`).
 `skippedBootstrapFiles` lists the build system files the run kept as
 JavaScript, each with its detection evidence (always empty with

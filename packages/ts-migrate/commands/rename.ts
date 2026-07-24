@@ -65,7 +65,7 @@ export default function rename({
     if (partition.ignored.length > 0) {
       skippedGitignoredFiles = partition.ignored.length;
       log.info(
-        `Skipping ${partition.ignored.length} gitignored JS/JSX file(s) ` +
+        `Skipping ${partition.ignored.length} gitignored JavaScript file(s) ` +
           `(${sampleIgnoredPaths(rootDir, partition.ignored)}); they will not be renamed. ` +
           `Pass --no-gitignore to rename them.`,
       );
@@ -95,7 +95,7 @@ export default function rename({
   }
 
   if (jsFiles.length === 0) {
-    log.info('No JS/JSX files to rename.');
+    log.info('No JavaScript files to rename.');
     return {
       renamedFiles: [],
       skippedGitignoredFiles,
@@ -146,7 +146,7 @@ export default function rename({
       )
       .join('\n');
     log.info(
-      `Dry run: ${toRename.length} JS/JSX file(s) would be renamed in ${rootDir} ` +
+      `Dry run: ${toRename.length} JavaScript file(s) would be renamed in ${rootDir} ` +
         `(nothing was written):\n${mapping}`,
     );
     updateProjectJson(rootDir, dryRun);
@@ -158,7 +158,7 @@ export default function rename({
     };
   }
 
-  log.info(`Renaming ${toRename.length} JS/JSX files in ${rootDir}...`);
+  log.info(`Renaming ${toRename.length} JavaScript files in ${rootDir}...`);
 
   toRename.forEach(({ oldFile, newFile }) => {
     fs.renameSync(oldFile, newFile);
@@ -204,7 +204,7 @@ function findJSFiles(rootDir: string, configFile: string, sources?: string | str
       ...config,
       compilerOptions: {
         ...config.compilerOptions,
-        // Force JS/JSX files to be included
+        // Force JavaScript files to be included
         allowJs: true,
       },
       include,
