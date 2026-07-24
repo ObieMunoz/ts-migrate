@@ -40,11 +40,10 @@ Please note that it may take a long time to do a full migration.
 You can also migrate individual parts of a project by specifying a subset of sources:
 
 ```sh
-# Specify the project root, list the subset to migrate, and include any global
-# types that the migrator may need to know about.
+# Specify the project root and list the subset to migrate. Ambient declaration
+# files from your tsconfig stay in the program automatically.
 npx -p @obiemunoz/ts-migrate ts-migrate-full <folder> \
-  --sources="relative/path/to/subset/**/*" \
-  --sources="node_modules/**/*.d.ts"
+  --sources="relative/path/to/subset/**/*"
 ```
 
 Or, you can run individual CLI commands (the help text lists them by bin name —
@@ -214,12 +213,14 @@ npx -p @obiemunoz/ts-migrate ts-migrate-full /path/to/your/project --sources "so
 npx -p @obiemunoz/ts-migrate ts-migrate rename /path/to/your/project -s "some/components/**/*"
 ```
 
-Because your project's default sources are ignored when `--sources` is used, it's a good idea to specify any ambient type files your project uses as well. Otherwise, `ts-migrate` might mark unidentifiable globals as type errors, even when they aren't. For example, re-including ambient types from your node_modules folder looks like this:
+When `--sources` is used, the tsconfig `include` no longer decides what gets migrated, but the ambient declaration files it matches (`vite-env.d.ts`, `react-app-env.d.ts`, a custom `globals.d.ts`) are kept in the program so the globals they declare still resolve instead of turning into bogus suppressions. The run logs which files it retained. Pass `--no-ambientSources` to opt out and build the program from exactly the sources you list.
+
+`@types` packages are loaded through the tsconfig `types` array regardless of sources. The one case that still needs a manual re-include is a package that ships unimported global declarations outside `@types`:
 
 ```sh
 npx -p @obiemunoz/ts-migrate ts-migrate-full /path/to/your/project \
   --sources "some/components/**/*" \
-  --sources "node_modules/**/*.d.ts"
+  --sources "node_modules/some-package/globals.d.ts"
 ```
 
 The same scoping applies to a follow-up `reignore` on a repo migrated one
@@ -228,8 +229,7 @@ suppressions in the directories you have migrated so far:
 
 ```sh
 npx -p @obiemunoz/ts-migrate ts-migrate reignore /path/to/your/project \
-  --sources "some/components/**/*" \
-  --sources "node_modules/**/*.d.ts"
+  --sources "some/components/**/*"
 ```
 
 # After the migration

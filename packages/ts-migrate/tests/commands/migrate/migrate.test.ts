@@ -94,6 +94,48 @@ export const value = util;
     expect(exitCode).toBe(0);
   }, 10000);
 
+  describe('sources-scoped migration with ambient declaration files', () => {
+    const sourceText = 'export const version: string = __APP_VERSION__;\n';
+
+    beforeEach(() => {
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({ compilerOptions: { strict: true, noEmit: true, types: [] } }),
+      );
+      fs.writeFileSync(
+        path.resolve(rootDir, 'vite-env.d.ts'),
+        'declare const __APP_VERSION__: string;\n',
+      );
+      fs.mkdirSync(path.resolve(rootDir, 'feature'));
+      fs.writeFileSync(path.resolve(rootDir, 'feature/index.ts'), sourceText);
+    });
+
+    it('adds no suppressions for globals the retained ambient files declare', async () => {
+      const config = new MigrateConfig().addPlugin(tsIgnorePlugin, { messagePrefix: 'FIXME' });
+
+      const { exitCode } = await migrate({ rootDir, config, sources: 'feature/**/*' });
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(path.resolve(rootDir, 'feature/index.ts'), 'utf8')).toBe(sourceText);
+    }, 10000);
+
+    it('suppresses the now-unresolvable global with ambientSources disabled', async () => {
+      const config = new MigrateConfig().addPlugin(tsIgnorePlugin, { messagePrefix: 'FIXME' });
+
+      const { exitCode } = await migrate({
+        rootDir,
+        config,
+        sources: 'feature/**/*',
+        ambientSources: false,
+      });
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(path.resolve(rootDir, 'feature/index.ts'), 'utf8')).toMatch(
+        /@ts-expect-error TS\(2304\) FIXME/,
+      );
+    }, 10000);
+  });
+
   it('converts imported propTypes to a structural props type', async () => {
     const inputDir = path.resolve(__dirname, 'input');
     copyDir(inputDir, rootDir);

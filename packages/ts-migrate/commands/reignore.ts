@@ -11,6 +11,7 @@ import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
 interface ReignoreParams {
   rootDir: string;
   sources?: string | string[];
+  ambientSources?: boolean;
   messagePrefix?: string;
 }
 
@@ -22,6 +23,7 @@ interface ReignoreResult {
 export default async function reignore({
   rootDir,
   sources,
+  ambientSources,
   messagePrefix,
 }: ReignoreParams): Promise<ReignoreResult> {
   const changedFiles = new Map<string, string>();
@@ -58,7 +60,7 @@ export default async function reignore({
     .addPlugin(withChangeTracking(tsIgnorePlugin), { messagePrefix })
     .addPlugin(eslintFixChangedPlugin, {});
 
-  const { exitCode } = await migrate({ rootDir, config, sources });
+  const { exitCode } = await migrate({ rootDir, config, sources, ambientSources });
 
   return { exitCode, typesPackageDetector };
 }
