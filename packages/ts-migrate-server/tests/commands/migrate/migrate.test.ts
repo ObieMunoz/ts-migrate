@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import log from 'updatable-log';
 import { createDir, copyDir, deleteDir, getDirData } from '../../test-utils';
 import migrate, { MigrateConfig } from '../../../src/migrate';
 
@@ -109,6 +110,78 @@ describe('migrate command', () => {
         path.relative(rootDir, filePath),
       );
       expect(pathsRelativeToOutputDir).toEqual(['index.ts']);
+    });
+  });
+
+  describe('ambient declaration files', () => {
+    beforeEach(() => {
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({ compilerOptions: { strict: true, types: [] } }),
+      );
+      fs.writeFileSync(
+        path.resolve(rootDir, 'vite-env.d.ts'),
+        'declare const __APP_VERSION__: string;\n',
+      );
+      fs.mkdirSync(path.resolve(rootDir, 'feature'));
+      fs.writeFileSync(
+        path.resolve(rootDir, 'feature/index.ts'),
+        'export const version: string = __APP_VERSION__;\n',
+      );
+    });
+
+    // Records each visited file's semantic diagnostic codes without editing.
+    const recordDiagnosticsConfig = () => {
+      const diagnosticsByFile = new Map<string, number[]>();
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'record-diagnostics',
+          run({ fileName, text, getLanguageService }) {
+            diagnosticsByFile.set(
+              path.relative(rootDir, fileName),
+              getLanguageService()
+                .getSemanticDiagnostics(fileName)
+                .map(({ code }) => code),
+            );
+            return text;
+          },
+        },
+        {},
+      );
+      return { config, diagnosticsByFile };
+    };
+
+    it('keeps the tsconfig .d.ts files in the program for a sources-scoped run', async () => {
+      const { config, diagnosticsByFile } = recordDiagnosticsConfig();
+      const infoSpy = jest.spyOn(log, 'info');
+
+      const { exitCode } = await migrate({ rootDir, config, sources: 'feature/**/*' });
+
+      expect(exitCode).toBe(0);
+      // The ambient global resolves, and the retained .d.ts is context only,
+      // not part of the migration set.
+      expect(diagnosticsByFile.get(path.join('feature', 'index.ts'))).toEqual([]);
+      expect(Array.from(diagnosticsByFile.keys())).toEqual([path.join('feature', 'index.ts')]);
+      const infoMessages = infoSpy.mock.calls.map((call) => call.join(' '));
+      expect(infoMessages).toContainEqual(
+        expect.stringContaining('Retaining 1 ambient declaration file(s) from tsconfig.json'),
+      );
+      expect(infoMessages).toContainEqual(expect.stringContaining('vite-env.d.ts'));
+      infoSpy.mockRestore();
+    });
+
+    it('drops the tsconfig .d.ts files when ambientSources is disabled', async () => {
+      const { config, diagnosticsByFile } = recordDiagnosticsConfig();
+
+      const { exitCode } = await migrate({
+        rootDir,
+        config,
+        sources: 'feature/**/*',
+        ambientSources: false,
+      });
+
+      expect(exitCode).toBe(0);
+      expect(diagnosticsByFile.get(path.join('feature', 'index.ts'))).toContain(2304);
     });
   });
 

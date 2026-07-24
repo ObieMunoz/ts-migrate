@@ -99,8 +99,11 @@ annotates remaining implicit `any`s, and suppresses residual compiler errors
 with `@ts-expect-error` so the project compiles.
 
 - `--sources <glob>` (`-s`, repeatable): migrate only a subset. Quote globs.
-  Because this overrides the tsconfig `include`, also re-include ambient
-  types: `-s "src/foo/**/*" -s "node_modules/**/*.d.ts"`.
+  Ambient `.d.ts` files matched by the tsconfig `include` (vite-env.d.ts,
+  custom globals) are kept in the program automatically; pass
+  `--no-ambientSources` to disable that. The rare package that ships
+  unimported globals outside `@types` still needs a manual re-include,
+  e.g. `-s "node_modules/some-package/globals.d.ts"`.
 - `--no-inferTypes`: skip type inference and annotate plain `any`. Much
   faster; use on very large projects or when annotation quality is secondary.
 - `--maxStablePasses <n>` (default 5): cap the repeat passes of the
@@ -117,8 +120,9 @@ existing suppression comments, then re-adds only the ones still needed.
 
 - `--sources <glob>` (`-s`, repeatable): reignore only a subset. On a repo
   migrated one directory at a time, pass the same globs as the scoped
-  migrate (including the `node_modules/**/*.d.ts` re-include) so files
-  outside the subset are left untouched.
+  migrate so files outside the subset are left untouched. Ambient `.d.ts`
+  files from the tsconfig are kept automatically here too
+  (`--no-ambientSources` disables).
 - `-p`/`--messagePrefix`: customizes the comment text.
 
 ### `ts-migrate agents`

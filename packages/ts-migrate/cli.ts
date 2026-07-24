@@ -144,6 +144,12 @@ yargs
         .string('sources')
         .alias('sources', 's')
         .describe('sources', 'Path to a subset of your project to migrate (globs are ok).')
+        .boolean('ambientSources')
+        .default('ambientSources', true)
+        .describe(
+          'ambientSources',
+          'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --no-ambientSources.',
+        )
         .boolean('inferTypes')
         .default('inferTypes', true)
         .describe(
@@ -169,8 +175,8 @@ yargs
         )
         .example('migrate /frontend/foo', 'Migrate all the files in /frontend/foo')
         .example(
-          '$0 migrate /frontend/foo -s "bar/**/*" -s "node_modules/**/*.d.ts"',
-          'Migrate all the files in /frontend/foo/bar, accounting for ambient types from node_modules.',
+          '$0 migrate /frontend/foo -s "bar/**/*"',
+          'Migrate all the files in /frontend/foo/bar. Ambient .d.ts files from the tsconfig stay in the program.',
         )
         .example(
           '$0 migrate /frontend/foo --plugin jsdoc',
@@ -267,6 +273,7 @@ yargs
         rootDir,
         config,
         sources,
+        ambientSources: args.ambientSources,
         maxStablePasses: args.maxStablePasses,
         incrementalPasses: args.incrementalPasses,
       });
@@ -294,9 +301,15 @@ yargs
         .string('sources')
         .alias('sources', 's')
         .describe('sources', 'Path to a subset of your project to reignore (globs are ok).')
+        .boolean('ambientSources')
+        .default('ambientSources', true)
+        .describe(
+          'ambientSources',
+          'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --no-ambientSources.',
+        )
         .example(
-          '$0 reignore /frontend/foo -s "bar/**/*" -s "node_modules/**/*.d.ts"',
-          'Reignore all the files in /frontend/foo/bar, accounting for ambient types from node_modules.',
+          '$0 reignore /frontend/foo -s "bar/**/*"',
+          'Reignore all the files in /frontend/foo/bar. Ambient .d.ts files from the tsconfig stay in the program.',
         )
         .require(['folder']),
     async (args) => {
@@ -306,6 +319,7 @@ yargs
       const { exitCode, typesPackageDetector } = await reignore({
         rootDir,
         sources,
+        ambientSources: args.ambientSources,
         messagePrefix: args.p,
       });
 

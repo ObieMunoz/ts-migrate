@@ -14,6 +14,11 @@ interface MigrateParams {
   tsConfigDir?: string;
   config: MigrateConfig;
   sources?: string | string[];
+  /**
+   * When sources are provided, keep the tsconfig's `.d.ts` files in the
+   * program so the ambient types they declare still resolve. Default true.
+   */
+  ambientSources?: boolean;
   lintConfig?: LintConfig;
   maxStablePasses?: number;
   incrementalPasses?: boolean;
@@ -35,6 +40,7 @@ export default async function migrate({
   tsConfigDir = rootDir,
   config,
   sources,
+  ambientSources = true,
   lintConfig,
   maxStablePasses = 5,
   incrementalPasses = true,
@@ -68,6 +74,21 @@ export default async function migrate({
   // If we passed in our own sources, let's add them to the project.
   // If not, let's just get all the sources in the project.
   if (sources) {
+    // Manual sources replace the tsconfig include, which would drop ambient
+    // declaration files and turn resolvable globals into bogus suppressions,
+    // so the include's .d.ts entries stay in the program unless opted out.
+    if (ambientSources) {
+      const ambientFiles = project
+        .getTsConfigFileNames()
+        .filter((fileName) => fileName.endsWith('.d.ts'));
+      if (ambientFiles.length > 0) {
+        project.addSourceFilesByPaths(ambientFiles);
+        log.info(
+          `Retaining ${ambientFiles.length} ambient declaration file(s) from tsconfig.json: ` +
+            `${ambientFiles.map((fileName) => path.relative(rootDir, fileName)).join(', ')}.`,
+        );
+      }
+    }
     project.addSourceFilesByPaths(sources);
   }
 

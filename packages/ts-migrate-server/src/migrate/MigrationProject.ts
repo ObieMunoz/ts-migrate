@@ -73,6 +73,8 @@ const createCachedModuleResolutionHost = (currentDirectory: string): CachedModul
 export default class MigrationProject {
   private readonly compilerOptions: ts.CompilerOptions;
 
+  private readonly tsConfigFileNames: string[];
+
   private readonly rootFileNames: Set<string>;
 
   private readonly overlays = new Map<string, FileOverlay>();
@@ -104,9 +106,8 @@ export default class MigrationProject {
     }
 
     this.compilerOptions = parsedConfig.options;
-    this.rootFileNames = new Set(
-      skipAddingFilesFromTsConfig ? [] : parsedConfig.fileNames.map(normalizeSlashes),
-    );
+    this.tsConfigFileNames = parsedConfig.fileNames.map(normalizeSlashes);
+    this.rootFileNames = new Set(skipAddingFilesFromTsConfig ? [] : this.tsConfigFileNames);
 
     const currentDirectory = path.dirname(tsConfigFilePath);
     const getCanonicalFileName = ts.sys.useCaseSensitiveFileNames
@@ -214,6 +215,11 @@ export default class MigrationProject {
       }
     });
     this.projectVersion += 1;
+  }
+
+  /** File names matched by the tsconfig, whether or not they were added as root files. */
+  getTsConfigFileNames(): string[] {
+    return [...this.tsConfigFileNames];
   }
 
   getLanguageService(): ts.LanguageService {
