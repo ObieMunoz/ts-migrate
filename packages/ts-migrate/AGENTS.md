@@ -32,7 +32,15 @@ docs live in this package's README.md.
    into the generated tsconfig's `exclude`. Runs log what they skipped. If a
    migration seems to miss files, check whether git ignores them; pass
    `--no-gitignore` to include them deliberately.
-6. **Requirements:** Node >= 18.18. TypeScript 5.x or 6.x if the target
+6. **Build system files stay JavaScript by default.** Configs and scripts
+   that must keep running under plain Node (`webpack.config.js`,
+   `jest.config.js`, paths run via `node scripts/build.js`, and the files
+   they require) are kept out of rename and migrate so the build still
+   boots; `init` writes them into the generated tsconfig's `exclude`. Runs
+   log every kept file with its evidence. Pass `--no-bootstrap` to convert
+   them anyway, e.g. when the project loads TypeScript configs through
+   ts-node or tsx.
+7. **Requirements:** Node >= 18.18. TypeScript 5.x or 6.x if the target
    project has TypeScript installed; if it has none, ts-migrate falls back to
    its own bundled compiler and plain JS projects work out of the box.
 
@@ -108,19 +116,22 @@ exists). Installed `@types` packages are pinned in a `types` array so that
 TypeScript 5 (which loads `node_modules/@types` automatically) and
 TypeScript 6 (which does not) check the project identically; add new
 `@types` packages to that array after installing them. Gitignored
-directories present at init time land in the config's `exclude` (together
-with TypeScript's defaults, which an explicit `exclude` would otherwise
-replace) so the project's own `tsc` skips build output too. `init:extended`
-writes a config extending a shared base instead.
+directories and detected build system files present at init time land in
+the config's `exclude` (together with TypeScript's defaults, which an
+explicit `exclude` would otherwise replace) so the project's own `tsc`
+skips build output and keeps the build's own files JavaScript.
+`init:extended` writes a config extending a shared base instead.
 
 ### `ts-migrate rename <folder> [-s <glob>]`
 
 Renames `.js`/`.jsx` to `.ts`/`.tsx` (JSX content detected per file).
-Gitignored files are skipped (`--no-gitignore` renames them too).
-`--dry-run` prints the full old-to-new mapping (surfacing each `.ts` vs
-`.tsx` decision) and renames nothing. `--jsonSummary <file>` writes the old
-and new path of every renamed file as JSON (see "Machine-readable
-summaries" below).
+Gitignored files are skipped (`--no-gitignore` renames them too). Build
+system files are kept as JavaScript with a log line naming each file and
+its evidence (`--no-bootstrap` renames them too; a tsconfig `exclude`
+entry keeps a specific file out for good). `--dry-run` prints the full
+old-to-new mapping (surfacing each `.ts` vs `.tsx` decision) and renames
+nothing. `--jsonSummary <file>` writes the old and new path of every
+renamed file as JSON (see "Machine-readable summaries" below).
 
 ### `ts-migrate migrate <folder> [flags]`
 
@@ -139,6 +150,9 @@ with `@ts-expect-error` so the project compiles.
   out of the program entirely (neither parsed nor edited; files imported by
   migrated code and the tsconfig's `.d.ts` files stay in for type
   resolution).
+- `--no-bootstrap`: also migrate build system files. By default they are
+  kept out of the program the same way, so they stay JavaScript even under
+  a hand-written tsconfig with `allowJs`.
 - `--no-inferTypes`: skip type inference and annotate plain `any`. Much
   faster; use on very large projects or when annotation quality is secondary.
 - `--maxStablePasses <n>` (default 5): cap the repeat passes of the
@@ -178,6 +192,7 @@ existing suppression comments, then re-adds only the ones still needed.
   (`--no-ambientSources` disables).
 - `-p`/`--messagePrefix`: customizes the comment text.
 - `--no-gitignore`: same behavior as in `migrate`.
+- `--no-bootstrap`: same behavior as in `migrate`.
 - `--dry-run`: same preview behavior as `migrate`.
 - `--jsonSummary <file>`: same machine-readable summary as `migrate`.
 
@@ -227,7 +242,9 @@ machine-readable preview. Per command:
   any-alias, and `any` totals now present in the changed files, with the
   suppressed error codes; `null` if that scan failed).
 - All three also report `skippedGitignoredFiles`, the number of files the
-  run left untouched because git ignores them (0 with `--no-gitignore`).
+  run left untouched because git ignores them (0 with `--no-gitignore`),
+  and `skippedBootstrapFiles`, the build system files kept as JavaScript
+  as `{"file", "reason"}` pairs (empty with `--no-bootstrap`).
 
 How to read a run from the outside:
 
@@ -267,8 +284,10 @@ need both summaries.
 ## Verifying a migration
 
 1. `npx tsc -p <folder>/tsconfig.json --noEmit` exits 0.
-2. No `.js`/`.jsx` sources remain except intentional ones (config files,
-   build output).
+2. No `.js`/`.jsx` sources remain except intentional ones: gitignored build
+   output and the build system files the run kept, both named in the run
+   logs and in `--jsonSummary`. A stray `.js` file outside those lists
+   usually means the tsconfig selection missed it.
 3. Suppression count is reasonable:
    `npx -p @obiemunoz/ts-migrate ts-migrate report <folder>` prints the
    totals, the suppressed error codes, and the worst files. If most
