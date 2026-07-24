@@ -1,0 +1,13 @@
+{
+  "root": true,
+  "parserOptions": {
+    "ecmaVersion": 2021,
+    "sourceType": "module"
+  },
+  "plugins": ["legacy"],
+  "rules": {
+    "legacy/uses-old-api": "error",
+    "semi": ["error", "always"],
+    "eol-last": ["error", "always"]
+  }
+}
