@@ -87,6 +87,12 @@ npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>
 npx tsc -p <folder>/tsconfig.json --noEmit   # must exit 0
 ```
 
+A run may also add `types/ts-migrate-modules.d.ts`, declaring the imported
+packages that ship no type definitions. Commit it: without it those imports
+are errors again. Delete a line from it once that package has real types
+(a later run drops the entry on its own), and never add hand-written
+declarations to it — ts-migrate rewrites the file.
+
 Afterwards, update the project plumbing the tool deliberately does not touch:
 
 - Add a way to produce/run JS again: a `tsc` build step or a TS-aware runner
@@ -183,6 +189,14 @@ with `@ts-expect-error` so the project compiles.
   `any`. If the project does not already declare those globals, the migration
   writes them to `ts-migrate-aliases.d.ts` in `<folder>` so the output still
   compiles.
+- `--no-declareUntypedModules`: suppress every import of a package that ships
+  no type definitions, instead of declaring those packages once in
+  `types/ts-migrate-modules.d.ts`. By default the run generates that file
+  (only for packages the compiler reported as untyped), so those imports stay
+  checkable imports typed `any` rather than N `@ts-expect-error` comments.
+  Entries are kept across runs and dropped once their types resolve, so
+  installing a real `@types` package retires one. A file at that path that
+  ts-migrate did not write is never touched.
 - `--dry-run`: run every plugin pass but write nothing to disk. Prints each
   file a real run would update, with the suppression and `any` counts it
   would then contain. The report matches a real run exactly (with
@@ -209,6 +223,7 @@ existing suppression comments, then re-adds only the ones still needed.
 - `-p`/`--messagePrefix`: customizes the comment text.
 - `--no-gitignore`: same behavior as in `migrate`.
 - `--no-bootstrap`: same behavior as in `migrate`.
+- `--no-declareUntypedModules`: same behavior as in `migrate`.
 - `--dry-run`: same preview behavior as `migrate`.
 - `--jsonSummary <file>`: same machine-readable summary as `migrate`.
 - `--typescript <path>`: same compiler override as `migrate`. A scoped
@@ -255,6 +270,8 @@ machine-readable preview. Per command:
 
 - `rename`: `renamedFiles` as `{"from": "src/a.js", "to": "src/a.ts"}` pairs.
 - `migrate` and `reignore`: `changedFiles` (every file the run modified),
+  `generatedFiles` (declaration files the run wrote itself, e.g.
+  `types/ts-migrate-modules.d.ts`, which are new files rather than edits),
   `nonMigratedFilesWithSyntaxErrors` (files that will keep failing `tsc` and
   that re-running cannot fix), `plugins` (`{"name", "changedFileCount"}` per
   pipeline step, in order), and `changedFilesTypeDebt` (the suppression,
