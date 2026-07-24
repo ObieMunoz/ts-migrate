@@ -95,8 +95,8 @@ function printGeneratedFiles(
   generatedFiles.forEach((_text, filePath) => {
     log.info(
       dryRun
-        ? `Dry run: would create ${filePath} declaring the modules with no types available.`
-        : `Created ${filePath} declaring the modules with no types available.`,
+        ? `Dry run: would write the generated declarations to ${filePath}.`
+        : `Wrote the generated declarations to ${filePath}.`,
     );
     if (dryRun) return;
     try {

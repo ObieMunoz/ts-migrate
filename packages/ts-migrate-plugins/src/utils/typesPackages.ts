@@ -534,15 +534,21 @@ export function renderModuleDeclarations(moduleNames: string[]): string {
     '// here so their imports are `any` instead of an error at every import site.',
     '// Install the types when a package has them and delete its line; ts-migrate',
     '// drops entries whose types it can resolve the next time it runs.',
-    ...declarations.map((moduleName) => `declare module '${moduleName}';`),
+    ...(declarations.length === 0
+      ? ['// Every module this file declared now has types. Safe to delete.']
+      : declarations.map((moduleName) => `declare module '${moduleName}';`)),
     '',
   ].join('\n');
 }
 
 /**
- * Whether the modules of this specifier's package now have type definitions,
- * making its declaration stale. A shorthand declaration shadows the real
- * types, so the stale entry has to go or the package stays `any` forever.
+ * Whether the specifier's package now has type definitions, making its
+ * declaration stale. A shorthand declaration shadows the real types, so the
+ * stale entry has to go or the package stays `any` forever.
+ *
+ * The whole package counts, subpaths included: a subpath the installed types
+ * turn out not to cover goes back to being a suppressed import, which is the
+ * visible failure. Keeping the declaration would be the silent one.
  */
 function moduleHasTypes(rootDir: string, moduleName: string): boolean {
   if (findInstalledPackage(rootDir, typesPackageFor(moduleName))) return true;
@@ -559,8 +565,11 @@ export interface ModuleDeclarations {
 /**
  * Builds the declaration file for every module with no types available: the
  * ones this run found, plus the ones an earlier run declared and that still
- * have no types. Returns null when there is nothing to declare, or when a file
- * ts-migrate did not write already sits at that path.
+ * have no types. Once every entry has types the file is emptied rather than
+ * left alone, since its declarations would shadow the types that replaced them.
+ *
+ * Returns null when there is nothing to declare and no file to clear, or when
+ * a file ts-migrate did not write already sits at that path.
  */
 export function buildModuleDeclarations(
   evidence: TypesEvidence,
@@ -580,7 +589,7 @@ export function buildModuleDeclarations(
   const moduleNames = [...new Set([...previous, ...found])]
     .filter((moduleName) => !moduleHasTypes(rootDir, moduleName))
     .sort();
-  if (moduleNames.length === 0) return null;
+  if (moduleNames.length === 0 && previous.length === 0) return null;
 
   return { filePath, text: renderModuleDeclarations(moduleNames), moduleNames };
 }
@@ -683,12 +692,18 @@ export function formatTypesPackageReport(
     const verb = report.missing.length > 0 ? 'Then try' : 'Try';
     lines.push(`  ${verb}: ${install} ${report.untyped.map((rec) => rec.packageName).join(' ')}`);
   }
-  if (report.declared) {
+  const declaredCount = report.declared?.moduleNames.length;
+  if (declaredCount) {
     lines.push(
-      `  ${pluralize(report.declared.moduleNames.length, 'module')} with no types available ` +
-        `${report.declared.moduleNames.length === 1 ? 'is' : 'are'} declared in ` +
+      `  ${pluralize(declaredCount, 'module')} with no types available ` +
+        `${declaredCount === 1 ? 'is' : 'are'} declared in ` +
         `${MODULE_DECLARATIONS_FILE}, so their imports are \`any\` rather than a suppression at ` +
         'every import site. Delete a module from that file once its types are installed.',
+    );
+  } else if (report.declared) {
+    lines.push(
+      `  Every module ${MODULE_DECLARATIONS_FILE} declared now has types, so the file is empty ` +
+        'and can be deleted.',
     );
   }
   if (report.typesPinned && (report.missing.length > 0 || report.untyped.length > 0)) {

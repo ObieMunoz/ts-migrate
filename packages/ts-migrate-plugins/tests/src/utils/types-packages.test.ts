@@ -370,6 +370,26 @@ describe('buildModuleDeclarations', () => {
     expect(declarations.moduleNames).toEqual(['another-untyped', 'left-pad']);
   });
 
+  it('empties the file once every module it declared has types', () => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({}),
+      'types/ts-migrate-modules.d.ts': renderModuleDeclarations(['now-typed']),
+      'node_modules/@types/now-typed/package.json': JSON.stringify({ version: '1.0.0' }),
+    });
+
+    // Leaving the file alone would keep its declarations shadowing the types
+    // that replaced them, so it is rewritten empty rather than skipped.
+    const declarations = buildModuleDeclarations(createTypesEvidence(), rootDir)!;
+
+    expect(declarations.moduleNames).toEqual([]);
+    expect(declarations.text).not.toContain('declare module');
+    expect(parseModuleDeclarations(declarations.text)).toEqual([]);
+
+    const report = summarizeTypesEvidence(createTypesEvidence(), rootDir);
+    report.declared = declarations;
+    expect(formatTypesPackageReport(report, 'src')).toContain('now has types, so the file is empty');
+  });
+
   it('does not touch a declaration file it did not write', () => {
     const rootDir = makeFixture({
       'package.json': JSON.stringify({}),
