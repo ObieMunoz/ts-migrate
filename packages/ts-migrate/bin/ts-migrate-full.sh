@@ -2,8 +2,28 @@
 
 set -e
 
-# --yes and --no-commit belong to this script; everything else after the
-# folder is forwarded to the rename and migrate commands.
+# Resolve this script's real location (following the symlinks npm/npx create
+# in .bin) so the bundled CLI is found regardless of the working directory.
+script_source=${BASH_SOURCE[0]:-$0}
+while [ -L "$script_source" ]; do
+  script_dir=$(cd -P "$(dirname "$script_source")" >/dev/null 2>&1 && pwd)
+  script_source=$(readlink "$script_source")
+  case $script_source in
+    /*) ;;
+    *) script_source=$script_dir/$script_source ;;
+  esac
+done
+script_dir=$(cd -P "$(dirname "$script_source")" >/dev/null 2>&1 && pwd)
+cli_js="$script_dir/../build/cli.js"
+
+cli() {
+  node "$cli_js" "$@"
+}
+
+usage="Usage: ts-migrate-full <folder> [--yes] [--no-commit] [rename/migrate options...]"
+
+# --yes, --no-commit, --version, and --help belong to this script; everything
+# else after the folder is forwarded to the rename and migrate commands.
 auto_yes=false
 no_commit=false
 frontend_folder=""
@@ -12,6 +32,8 @@ for arg in "$@"; do
   case $arg in
     --yes|-y) auto_yes=true ;;
     --no-commit) no_commit=true ;;
+    --version|-v) cli --version; exit ;;
+    --help|-h) echo "$usage"; exit ;;
     *)
       if [ -z "$frontend_folder" ]; then
         frontend_folder=$arg
@@ -23,7 +45,7 @@ for arg in "$@"; do
 done
 
 if [ -z "$frontend_folder" ]; then
-  echo "Usage: ts-migrate-full <folder> [--yes] [--no-commit] [rename/migrate options...]"
+  echo "$usage"
   exit 1
 fi
 folder_name=$(basename "$frontend_folder")
@@ -43,24 +65,6 @@ for arg in "${additional_args[@]}"; do
     --sources|-s) sources_value_pending=true ;;
   esac
 done
-
-# Resolve this script's real location (following the symlinks npm/npx create
-# in .bin) so the bundled CLI is found regardless of the working directory.
-script_source=${BASH_SOURCE[0]:-$0}
-while [ -L "$script_source" ]; do
-  script_dir=$(cd -P "$(dirname "$script_source")" >/dev/null 2>&1 && pwd)
-  script_source=$(readlink "$script_source")
-  case $script_source in
-    /*) ;;
-    *) script_source=$script_dir/$script_source ;;
-  esac
-done
-script_dir=$(cd -P "$(dirname "$script_source")" >/dev/null 2>&1 && pwd)
-cli_js="$script_dir/../build/cli.js"
-
-cli() {
-  node "$cli_js" "$@"
-}
 
 step_i=1
 step_count=4

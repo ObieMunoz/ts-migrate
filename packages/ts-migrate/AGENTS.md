@@ -12,6 +12,9 @@ docs live in this package's README.md.
    package (TypeScript 4 era) instead of this fork. Either install
    `@obiemunoz/ts-migrate` as a devDependency first, or pass `-p` on every npx
    call: `npx -p @obiemunoz/ts-migrate ts-migrate-full <folder>`.
+   `ts-migrate --version` (or `-v`) prints the installed version; the upstream
+   CLI has no version flag and errors, so this is a quick check for which
+   package npx fetched.
 2. **`ts-migrate-full` prompts before starting.** Pass `--yes` to skip the
    prompts. Without `--yes` and without stdin, the run exits nonzero before
    doing anything.
@@ -75,6 +78,7 @@ verify with `tsc --noEmit`.
 
 - `--yes` (`-y`): skip the interactive prompts (accept defaults).
 - `--no-commit`: do not create git commits after each step.
+- `--version` (`-v`): print the ts-migrate version and exit.
 - All other flags are forwarded to the underlying `rename` and `migrate`
   commands (e.g. `--sources`, `--no-inferTypes`).
 

@@ -63,7 +63,8 @@ Commands:
   ts-migrate agents                       Print usage instructions for AI coding agents (non-interactive playbook)
 
 Options:
-  -h, --help  Show help  [boolean]
+  -h, --help     Show help  [boolean]
+  -v, --version  Show version number  [boolean]
 
 Examples:
   ts-migrate --help                             Show help
