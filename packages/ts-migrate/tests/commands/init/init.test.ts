@@ -91,6 +91,53 @@ describe('init command', () => {
     ]);
   });
 
+  it('excludes detected build system files so they stay JavaScript', () => {
+    fs.writeFileSync(
+      path.join(rootDir, 'package.json'),
+      JSON.stringify({ scripts: { build: 'node scripts/build.js' } }),
+    );
+    fs.writeFileSync(
+      path.join(rootDir, 'webpack.config.js'),
+      "const paths = require('./config/paths');\n",
+    );
+    fs.mkdirSync(path.join(rootDir, 'config'), { recursive: true });
+    fs.writeFileSync(path.join(rootDir, 'config/paths.js'), 'module.exports = {};\n');
+    fs.mkdirSync(path.join(rootDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(rootDir, 'scripts/build.js'), "require('../webpack.config');\n");
+    fs.mkdirSync(path.join(rootDir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(rootDir, 'src/app.js'), '');
+
+    init({ rootDir, isExtendedConfig: false });
+
+    expect(readConfig(rootDir).exclude).toEqual([
+      'node_modules',
+      'bower_components',
+      'jspm_packages',
+      'config/paths.js',
+      'scripts/build.js',
+      'webpack.config.js',
+    ]);
+  });
+
+  it('lists gitignored directories and build system files in one exclude', () => {
+    execFileSync('git', ['init'], { cwd: rootDir, stdio: 'ignore' });
+    fs.writeFileSync(path.join(rootDir, '.gitignore'), 'dist/\n');
+    fs.mkdirSync(path.join(rootDir, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(rootDir, 'dist/bundle.js'), '');
+    fs.writeFileSync(path.join(rootDir, 'package.json'), '{}');
+    fs.writeFileSync(path.join(rootDir, 'jest.config.js'), 'module.exports = {};\n');
+
+    init({ rootDir, isExtendedConfig: false });
+
+    expect(readConfig(rootDir).exclude).toEqual([
+      'node_modules',
+      'bower_components',
+      'jspm_packages',
+      'dist',
+      'jest.config.js',
+    ]);
+  });
+
   it('uses nodenext module settings when package.json declares an ESM package', () => {
     fs.writeFileSync(path.join(rootDir, 'package.json'), JSON.stringify({ type: 'module' }));
 

@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
-import { listGitignoredDirectories } from '../utils/gitignore';
+import { logApplicationEntries, partitionBootstrapFiles } from '../utils/bootstrapFiles';
+import { listGitignoredDirectories, partitionGitignored } from '../utils/gitignore';
 
 interface InitParams {
   rootDir: string;
@@ -57,6 +58,46 @@ function installedTypesPackages(rootDir: string): string[] {
   return [...names].sort();
 }
 
+// No tsconfig exists yet, so the bootstrap detection candidates come from a
+// walk of rootDir mirroring the selection rename will make: dot-prefixed
+// names are invisible to the tsconfig include matcher and stay out.
+function findJsFiles(rootDir: string, skippedDirectories: string[]): string[] {
+  const skippedNames = new Set(['node_modules', 'bower_components', 'jspm_packages']);
+  const skippedPaths = new Set(skippedDirectories.map((dir) => path.resolve(rootDir, dir)));
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entries.forEach((entry) => {
+      if (entry.name.startsWith('.')) return;
+      const entryPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!skippedNames.has(entry.name) && !skippedPaths.has(entryPath)) walk(entryPath);
+      } else if (entry.isFile() && /\.jsx?$/.test(entry.name)) {
+        files.push(entryPath);
+      }
+    });
+  };
+  walk(path.resolve(rootDir));
+  return files;
+}
+
+function detectBootstrapFiles(rootDir: string, ignoredDirectories: string[]): string[] {
+  const candidates = partitionGitignored(
+    rootDir,
+    findJsFiles(rootDir, ignoredDirectories),
+  ).kept;
+  const partition = partitionBootstrapFiles(rootDir, candidates);
+  logApplicationEntries(rootDir, partition.applicationEntries);
+  return partition.bootstrap
+    .map(({ file }) => path.relative(rootDir, file).split(path.sep).join('/'))
+    .sort();
+}
+
 // Written directly instead of shelling out to `npx tsc --init`: in a project
 // without a local typescript install, npx resolves the npm placeholder
 // package named `tsc` and the command fails. Recent `tsc --init` output is
@@ -95,19 +136,30 @@ function defaultConfig(rootDir: string): string {
       : '';
 
   // An explicit "exclude" replaces TypeScript's built-in one, so its entries
-  // come along whenever gitignored directories are added.
+  // come along whenever gitignored directories or bootstrap files are added.
   const defaultExcludes = ['node_modules', 'bower_components', 'jspm_packages'];
   const ignoredDirectories = listGitignoredDirectories(rootDir).filter(
     (dir) => !defaultExcludes.includes(dir),
   );
-  const excludeField =
+  const bootstrapFiles = detectBootstrapFiles(rootDir, ignoredDirectories);
+  const excludeComments = [
     ignoredDirectories.length > 0
-      ? `,
+      ? `
   // Gitignored directories present at init time, so generated output is
   // neither type-checked nor migrated. Imports reaching into them still
-  // resolve.
-  "exclude": [${[...defaultExcludes, ...ignoredDirectories]
-    .map((dir) => `"${dir}"`)
+  // resolve.`
+      : '',
+    bootstrapFiles.length > 0
+      ? `
+  // Build system files (configs and scripts run with node) present at init
+  // time, kept as JavaScript so the build still boots.`
+      : '',
+  ].join('');
+  const excludeField =
+    ignoredDirectories.length > 0 || bootstrapFiles.length > 0
+      ? `,${excludeComments}
+  "exclude": [${[...defaultExcludes, ...ignoredDirectories, ...bootstrapFiles]
+    .map((entry) => `"${entry}"`)
     .join(', ')}]`
       : '';
 
