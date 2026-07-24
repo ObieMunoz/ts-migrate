@@ -108,7 +108,7 @@ function isModulePathCallee(expression: ts.LeftHandSideExpression): boolean {
   return false;
 }
 
-function collectModuleSpecifiers(sourceFile: ts.SourceFile): ts.StringLiteralLike[] {
+export function collectModuleSpecifiers(sourceFile: ts.SourceFile): ts.StringLiteralLike[] {
   const literals: ts.StringLiteralLike[] = [];
   const visit = (node: ts.Node) => {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {

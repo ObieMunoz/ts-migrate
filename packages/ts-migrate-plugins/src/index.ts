@@ -17,7 +17,9 @@ import reactPropsPlugin from './plugins/react-props';
 import reactShapePlugin from './plugins/react-shape';
 import stripTSIgnorePlugin from './plugins/strip-ts-ignore';
 import tsIgnorePlugin from './plugins/ts-ignore';
-import updateImportPathsPlugin from './plugins/update-import-paths';
+import updateImportPathsPlugin, {
+  collectModuleSpecifiers,
+} from './plugins/update-import-paths';
 import updateSourceText, {
   SourceTextUpdate as SourceTextUpdateType,
 } from './utils/updateSourceText';
@@ -55,4 +57,9 @@ export {
   updateImportPathsPlugin,
 };
 
-export { updateSourceText, createTypesPackageDetector, formatTypesPackageReport };
+export {
+  updateSourceText,
+  createTypesPackageDetector,
+  formatTypesPackageReport,
+  collectModuleSpecifiers,
+};
