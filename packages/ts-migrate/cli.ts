@@ -35,6 +35,7 @@ import init from './commands/init';
 import reignore from './commands/reignore';
 import rename from './commands/rename';
 import readAgentsPlaybook from './utils/agentsPlaybook';
+import packageVersion from './utils/packageVersion';
 
 /** A recommendation report must never fail an otherwise successful run. */
 function printTypesPackageReport(
@@ -78,11 +79,13 @@ const availablePlugins = [
   updateImportPathsPlugin,
 ];
 
+const version = packageVersion();
+
 // eslint-disable-next-line @typescript-eslint/no-unused-expressions
 yargs
   .scriptName('ts-migrate')
-  .version(false)
-  .usage('Usage: $0 <command> [options]')
+  .version(version)
+  .usage(`ts-migrate v${version}\n\nUsage: $0 <command> [options]`)
   .command(
     'init <folder>',
     'Initialize tsconfig.json file in <folder>',
@@ -356,6 +359,7 @@ yargs
   .demandCommand(1, 'Must provide a command.')
   .help('h')
   .alias('h', 'help')
+  .alias('v', 'version')
   .alias('i', 'init')
   .alias('m', 'migrate')
   .alias('rn', 'rename')

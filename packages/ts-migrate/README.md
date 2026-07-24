@@ -52,6 +52,8 @@ prefix with your runner: `npx ts-migrate ...` or `pnpm ts-migrate ...`):
 ```
 $ npx -p @obiemunoz/ts-migrate ts-migrate --help
 
+ts-migrate v0.11.0
+
 Usage: ts-migrate <command> [options]
 
 Commands:
@@ -63,7 +65,8 @@ Commands:
   ts-migrate agents                       Print usage instructions for AI coding agents (non-interactive playbook)
 
 Options:
-  -h, --help  Show help  [boolean]
+  -h, --help     Show help  [boolean]
+  -v, --version  Show version number  [boolean]
 
 Examples:
   ts-migrate --help                             Show help
