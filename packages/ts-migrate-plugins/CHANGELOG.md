@@ -3,6 +3,29 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.13.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.12.1...v0.13.0) (2026-07-24)
+
+
+### Bug Fixes
+
+* **eslint-fix:** run the project's ESLint instead of the bundled copy ([#137](https://github.com/ObieMunoz/ts-migrate/issues/137)) ([19f4701](https://github.com/ObieMunoz/ts-migrate/commit/19f4701ebf72f5670380a83bfd8328980f864da9))
+
+
+### Features
+
+* **cli:** handle .mjs and .cjs files in rename ([#140](https://github.com/ObieMunoz/ts-migrate/issues/140)) ([1f25141](https://github.com/ObieMunoz/ts-migrate/commit/1f25141dff832dd163326a8943c6f7382f480687))
+* **cli:** run the project's TypeScript instead of the one npx resolves ([#129](https://github.com/ObieMunoz/ts-migrate/issues/129)) ([2f9872b](https://github.com/ObieMunoz/ts-migrate/commit/2f9872b6b57f506cd7461e3bc1058c4de2351bc0))
+* **cli:** skip build system files by default ([#128](https://github.com/ObieMunoz/ts-migrate/issues/128)) ([2792827](https://github.com/ObieMunoz/ts-migrate/commit/2792827dc60b384341aa2766cafdba59df2c460b))
+* **plugins:** annotate the newer React class lifecycle methods ([#131](https://github.com/ObieMunoz/ts-migrate/issues/131)) ([08e5583](https://github.com/ObieMunoz/ts-migrate/commit/08e558388a37aa31ce9b078755695c036d5018c8))
+* **plugins:** declare modules with no type definitions available ([#139](https://github.com/ObieMunoz/ts-migrate/issues/139)) ([eaf2a5d](https://github.com/ObieMunoz/ts-migrate/commit/eaf2a5d9efafd88a34021edd3df1d8112574f66b))
+* **plugins:** repair implicit-any index access in add-conversions ([#141](https://github.com/ObieMunoz/ts-migrate/issues/141)) ([ee6a2d3](https://github.com/ObieMunoz/ts-migrate/commit/ee6a2d3826eb93ccd568cfebbb47dbfc59e40376))
+* **ts-migrate-plugins:** derive the react-class-state State type from state usage ([#142](https://github.com/ObieMunoz/ts-migrate/issues/142)) ([3b3fa7e](https://github.com/ObieMunoz/ts-migrate/commit/3b3fa7e17b77660e9d0cae0373bcd91d3738dba7))
+* **ts-migrate-plugins:** map instanceOf, exact, elementType, and more oneOf shapes ([#130](https://github.com/ObieMunoz/ts-migrate/issues/130)) ([9390365](https://github.com/ObieMunoz/ts-migrate/commit/93903656244f25b2c5a2ab1f12955695d0328475))
+
+
+
+
+
 ## [0.12.1](https://github.com/ObieMunoz/ts-migrate/compare/v0.12.0...v0.12.1) (2026-07-24)
 
 **Note:** Version bump only for package @obiemunoz/ts-migrate-plugins
