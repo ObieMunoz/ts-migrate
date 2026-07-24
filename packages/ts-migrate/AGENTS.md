@@ -80,7 +80,7 @@ verify with `tsc --noEmit`.
 - `--no-commit`: do not create git commits after each step.
 - `--version` (`-v`): print the ts-migrate version and exit.
 - All other flags are forwarded to the underlying `rename` and `migrate`
-  commands (e.g. `--sources`, `--no-inferTypes`).
+  commands (e.g. `--sources`, `--no-inferTypes`, `--exclude-plugin`).
 
 ### `ts-migrate init <folder>` / `ts-migrate init:extended <folder>`
 
@@ -113,6 +113,13 @@ with `@ts-expect-error` so the project compiles.
 - `--maxStablePasses <n>` (default 5): cap the repeat passes of the
   inference stage.
 - `--plugin <name>`: run a single plugin instead of the pipeline.
+- `--exclude-plugin <name>` (repeatable): run the default pipeline without the
+  named plugin; every occurrence is removed (`eslint-fix` runs twice). Unknown
+  names error and list the valid ones. For a staged migration that surfaces
+  residual errors for manual fixing instead of suppressing them, pass
+  `--exclude-plugin ts-ignore --exclude-plugin strip-ts-ignore`; pass
+  `--exclude-plugin eslint-fix` to keep lint-autofix churn out of the diff.
+  Excluding `infer-types` is equivalent to `--no-inferTypes`.
 - `--aliases tsfixme`: use `$TSFixMe` instead of `any` (only if the project
   defines that global alias).
 

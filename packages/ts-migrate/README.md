@@ -108,6 +108,26 @@ the most expensive part of a migration:
   only the files affected by the previous pass's changes (as computed from the
   import graph).
 
+Individual steps of the default pipeline can be skipped with
+`--exclude-plugin <name>` (repeatable, validated against the same plugin names
+as `--plugin`; see `migrate --help` for the list). Every occurrence of the name
+is removed: excluding `eslint-fix` drops both the lint pass before `ts-ignore`
+and the one after it. Common uses:
+
+```sh
+# Staged migration: leave residual compiler errors visible for manual fixing
+# instead of suppressing them with @ts-expect-error comments.
+npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> \
+  --exclude-plugin ts-ignore --exclude-plugin strip-ts-ignore
+
+# Keep lint-autofix churn out of the migration diff (and skip two lint passes).
+npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --exclude-plugin eslint-fix
+```
+
+An unknown plugin name errors and lists the valid names. Excluding
+`infer-types` is equivalent to `--no-inferTypes`. `ts-migrate-full` forwards
+the flag to the migrate step, like any other migrate option.
+
 # Using ts-migrate with AI agents
 
 The package ships a playbook written for AI coding agents (Claude Code, Cursor,
