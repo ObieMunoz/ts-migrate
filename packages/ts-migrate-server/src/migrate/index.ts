@@ -22,11 +22,27 @@ interface MigrateParams {
   lintConfig?: LintConfig;
   maxStablePasses?: number;
   incrementalPasses?: boolean;
+  /**
+   * Run every plugin pass but write nothing to disk. The would-be contents
+   * are still returned in updatedFileTexts.
+   */
+  dryRun?: boolean;
+  /**
+   * Files added to the program in memory only, as if they were on disk.
+   * Lets a dry run model files the real run would create before starting
+   * (e.g. the generated alias declarations). Never written.
+   */
+  virtualFiles?: Array<{ fileName: string; text: string }>;
 }
 
 export interface MigrateResult {
   exitCode: number;
   updatedSourceFiles: Set<string>;
+  /**
+   * The final text of every file in updatedSourceFiles. On a dry run this is
+   * the only place the would-be contents exist.
+   */
+  updatedFileTexts: Map<string, string>;
   /**
    * Program files with syntax errors that no plugin can edit (declaration
    * files, files outside the migration set). They will fail any tsc run
@@ -49,6 +65,8 @@ export default async function migrate({
   lintConfig,
   maxStablePasses = 5,
   incrementalPasses = true,
+  dryRun = false,
+  virtualFiles,
 }: MigrateParams): Promise<MigrateResult> {
   let exitCode = 0;
   log.info(`TypeScript version: ${ts.version}`);
@@ -75,6 +93,10 @@ export default async function migrate({
     tsConfigFilePath,
     skipAddingFilesFromTsConfig: sources !== undefined,
   });
+
+  if (virtualFiles) {
+    virtualFiles.forEach(({ fileName, text }) => project.addVirtualSourceFile(fileName, text));
+  }
 
   // If we passed in our own sources, let's add them to the project.
   // If not, let's just get all the sources in the project.
@@ -273,25 +295,32 @@ export default async function migrate({
     });
   }
 
-  const writeTimer = new PerfTimer();
-
-  log.info(`Writing ${updatedSourceFiles.size} updated file(s)...`);
-  const writes = [];
+  const updatedFileTexts = new Map<string, string>();
   // eslint-disable-next-line no-restricted-syntax
   for (const fileName of updatedSourceFiles) {
-    const sourceFile = project.getSourceFileOrThrow(fileName);
-    writes.push(fs.promises.writeFile(sourceFile.fileName, sourceFile.text));
+    updatedFileTexts.set(fileName, project.getSourceFileOrThrow(fileName).text);
   }
-  await Promise.all(writes);
 
-  log.info(`Wrote ${updatedSourceFiles.size} updated file(s) in ${writeTimer.elapsedStr()}.`);
+  if (dryRun) {
+    log.info(`Dry run: ${updatedSourceFiles.size} updated file(s) not written.`);
+  } else {
+    const writeTimer = new PerfTimer();
+    log.info(`Writing ${updatedSourceFiles.size} updated file(s)...`);
+    const writes = [];
+    // eslint-disable-next-line no-restricted-syntax
+    for (const [fileName, text] of updatedFileTexts) {
+      writes.push(fs.promises.writeFile(fileName, text));
+    }
+    await Promise.all(writes);
+    log.info(`Wrote ${updatedSourceFiles.size} updated file(s) in ${writeTimer.elapsedStr()}.`);
+  }
 
   const pluginStats = config.plugins.map(({ plugin }, i) => ({
     pluginName: plugin.name,
     changedFileCount: changedFilesByPlugin[i].size,
   }));
 
-  return { updatedSourceFiles, exitCode, nonMigratedFilesWithSyntaxErrors, pluginStats };
+  return { updatedSourceFiles, updatedFileTexts, exitCode, nonMigratedFilesWithSyntaxErrors, pluginStats };
 }
 
 // An explicit ancestor walk rather than require.resolve: resolve's global
