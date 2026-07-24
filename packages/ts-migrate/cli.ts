@@ -8,13 +8,16 @@ import yargs from 'yargs';
 
 import { formatTypesPackageReport, TypesPackageDetector } from '@obiemunoz/ts-migrate-plugins';
 import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
+import check from './commands/check';
 import init from './commands/init';
 import buildMigrateConfig, { availablePlugins } from './commands/migrate';
 import reignore from './commands/reignore';
 import rename from './commands/rename';
+import report from './commands/report';
 import readAgentsPlaybook from './utils/agentsPlaybook';
 import ensureAliasDeclarations from './utils/aliasDeclarations';
 import packageVersion from './utils/packageVersion';
+import { formatTypeDebtSummary, scanTypeDebt } from './utils/typeDebt';
 
 /** A recommendation report must never fail an otherwise successful run. */
 function printTypesPackageReport(
@@ -24,15 +27,24 @@ function printTypesPackageReport(
   reportFile?: string,
 ): void {
   try {
-    const report = formatTypesPackageReport(detector.summarize(rootDir), folder);
-    if (!report) return;
+    const reportText = formatTypesPackageReport(detector.summarize(rootDir), folder);
+    if (!reportText) return;
     if (reportFile) {
-      fs.writeFileSync(reportFile, `${report}\n`);
+      fs.writeFileSync(reportFile, `${reportText}\n`);
     } else {
-      log.info(report);
+      log.info(reportText);
     }
   } catch (err) {
     log.warn('Skipped type definition recommendations:', err);
+  }
+}
+
+/** The end-of-run debt summary must never fail an otherwise successful run. */
+function printTypeDebtSummary(rootDir: string, folder: string): void {
+  try {
+    log.info(formatTypeDebtSummary(scanTypeDebt(rootDir), folder));
+  } catch (err) {
+    log.warn('Skipped type debt summary:', err);
   }
 }
 
@@ -223,6 +235,7 @@ yargs
       if (typesPackageDetector) {
         printTypesPackageReport(typesPackageDetector, rootDir, args.folder, args.typesReportFile);
       }
+      printTypeDebtSummary(rootDir, args.folder);
 
       process.exit(exitCode);
     },
@@ -266,8 +279,64 @@ yargs
       });
 
       printTypesPackageReport(typesPackageDetector, rootDir, args.folder);
+      printTypeDebtSummary(rootDir, args.folder);
 
       process.exit(exitCode);
+    },
+  )
+  .command(
+    'report [options] <folder>',
+    'Print per-file counts of suppression comments and any-type annotations',
+    (cmd) =>
+      cmd
+        .positional('folder', { type: 'string' })
+        .boolean('json')
+        .default('json', false)
+        .describe('json', 'Print the report as JSON for machine consumption.')
+        .example('$0 report /frontend/foo', 'Report the type debt of /frontend/foo')
+        .example('$0 report /frontend/foo --json', 'Same counts as JSON')
+        .require(['folder']),
+    (args) => {
+      const rootDir = path.resolve(process.cwd(), args.folder);
+      process.exit(report({ rootDir, folder: args.folder, json: args.json }));
+    },
+  )
+  .command(
+    'check [options] <folder>',
+    'Compare suppression and any counts against a committed baseline',
+    (cmd) =>
+      cmd
+        .positional('folder', { type: 'string' })
+        .boolean('update-baseline')
+        .default('update-baseline', false)
+        .describe(
+          'update-baseline',
+          'Accept the current counts as the new baseline, even if they grew.',
+        )
+        .string('baselineFile')
+        .describe(
+          'baselineFile',
+          'Path of the baseline JSON. Defaults to .ts-migrate-baseline.json in <folder>.',
+        )
+        .example(
+          '$0 check /frontend/foo',
+          'Exit nonzero if any per-file count exceeds the baseline; lower the baseline on improvement',
+        )
+        .example(
+          '$0 check /frontend/foo --update-baseline',
+          'Accept the current counts as the new baseline',
+        )
+        .require(['folder']),
+    (args) => {
+      const rootDir = path.resolve(process.cwd(), args.folder);
+      process.exit(
+        check({
+          rootDir,
+          folder: args.folder,
+          updateBaseline: args['update-baseline'],
+          baselineFile: args.baselineFile,
+        }),
+      );
     },
   )
   .command(
