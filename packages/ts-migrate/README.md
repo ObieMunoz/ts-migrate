@@ -95,8 +95,11 @@ The `migrate` command starts by running the
 [update-import-paths](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/update-import-paths.ts)
 plugin: relative imports that still name the pre-rename file, like
 `import foo from './foo.js'` or `'./foo.jsx'`, are re-pointed at the renamed
-`.ts`/`.tsx` file (the extension is dropped, or kept as `.js` inside an ESM
-package). Imports whose target still exists on disk are left alone.
+`.ts`/`.tsx` file (the extension is dropped, or kept as `.js` when the
+importing file is ESM, either by its own `.mts` extension or by its package's
+`"type": "module"`). Imports whose target still exists on disk are left alone,
+as are `./foo.mjs` and `./foo.cjs` imports: `.mts` and `.cts` emit those same
+extensions, so the import already names the file that ships.
 
 The `migrate` command also accepts flags controlling the type-inference stage,
 the most expensive part of a migration:
@@ -246,6 +249,30 @@ tree migrates normally (point the script at your build output afterwards).
 And when application code imports a kept file, the file still stays
 JavaScript but the run warns, naming both sides; enable `allowJs` or split
 the shared module if the TypeScript side needs it.
+
+# .mjs and .cjs files
+
+Node projects mix extensions: a `"type": "module"` package carries `.cjs`
+shims, and a CommonJS package carries `.mjs` scripts. `rename` converts
+`.mjs` to `.mts` and `.cjs` to `.cts`, which keep the module system the
+original extension pinned and emit back to `.mjs` and `.cjs`. Relative
+imports naming those files therefore stay correct and `migrate` leaves them
+untouched.
+
+Two kinds of file keep the extension they have:
+
+- Configs a build tool loads by exact name, such as `postcss.config.cjs`,
+  `eslint.config.mjs`, and the `.*rc.cjs` family. The tool looks for that
+  filename and would not find a `.cts` or `.mts` one. This holds even under
+  `--no-bootstrap`, which renames build system files that have a working
+  `.ts` spelling.
+- Files holding JSX. TypeScript has no JSX-enabled counterpart to `.mts` or
+  `.cts` (there is no `.mtsx`), so the rename would turn valid JSX into
+  syntax errors.
+
+Both are logged with the file and the reason. To migrate one anyway, give it
+a `.js` extension first and set the module system through the enclosing
+package's `"type"`.
 
 # Using ts-migrate with AI agents
 
