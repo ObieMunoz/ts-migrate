@@ -218,6 +218,22 @@ export default class MigrationProject {
   }
 
   /**
+   * Drop every root file the filter does not return. Only meaningful before
+   * the first program is created (dropped roots are then never parsed); a
+   * dropped file can still re-enter the program as a dependency of the
+   * remaining roots.
+   */
+  retainRootFiles(filter: (fileNames: string[]) => string[]): void {
+    const keep = new Set(filter(Array.from(this.rootFileNames)));
+    Array.from(this.rootFileNames).forEach((fileName) => {
+      if (!keep.has(fileName)) {
+        this.rootFileNames.delete(fileName);
+      }
+    });
+    this.projectVersion += 1;
+  }
+
+  /**
    * Add a file that exists only in the overlay, as if it were on disk: it
    * joins the program as a root file but is never persisted. Lets a dry run
    * model a file the real run would create before the program starts.

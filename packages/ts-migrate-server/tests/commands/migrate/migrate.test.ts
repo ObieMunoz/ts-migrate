@@ -805,4 +805,65 @@ describe('migrate command', () => {
     expect(rootData).toEqual(outputData);
     expect(exitCode).toBe(0);
   });
+
+  describe('filterMigrationFiles', () => {
+    it('keeps filtered files out of the migration and the program, except as dependencies', async () => {
+      const writeFile = (relPath: string, text: string) =>
+        fs.writeFileSync(path.resolve(rootDir, relPath), text);
+      writeFile(
+        'tsconfig.json',
+        JSON.stringify({
+          compilerOptions: { strict: true, noEmit: true, module: 'commonjs', target: 'es2019' },
+          include: ['./**/*'],
+        }),
+      );
+      writeFile('globals.d.ts', 'declare type AppGlobal = string;\n');
+      writeFile('app.ts', "import { gen } from './generated';\nconst x: AppGlobal = gen;\nexport default x;\n");
+      writeFile('generated.ts', "export const gen = 'g';\n");
+      writeFile('unreferenced.ts', 'export const unused = 1;\n');
+
+      const filterReceived: string[][] = [];
+      const visited: string[] = [];
+      let importedSourceFile: unknown;
+      let unreferencedSourceFile: unknown;
+      let appDiagnostics: unknown[] = [];
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'recording-plugin',
+          run({ fileName, getLanguageService }) {
+            visited.push(path.basename(fileName));
+            const program = getLanguageService().getProgram()!;
+            importedSourceFile = program.getSourceFile(path.resolve(rootDir, 'generated.ts'));
+            unreferencedSourceFile = program.getSourceFile(path.resolve(rootDir, 'unreferenced.ts'));
+            appDiagnostics = getLanguageService().getSemanticDiagnostics(fileName);
+            return undefined;
+          },
+        },
+        {},
+      );
+
+      const { exitCode } = await migrate({
+        rootDir,
+        config,
+        filterMigrationFiles: (fileNames) => {
+          filterReceived.push(fileNames.map((fileName) => path.basename(fileName)));
+          return fileNames.filter(
+            (fileName) => !/generated\.ts$|unreferenced\.ts$/.test(fileName),
+          );
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      // The filter sees every non-declaration root exactly once.
+      expect(filterReceived).toHaveLength(1);
+      expect(filterReceived[0].sort()).toEqual(['app.ts', 'generated.ts', 'unreferenced.ts']);
+      // Only the kept file is migrated.
+      expect(visited).toEqual(['app.ts']);
+      // A dropped file that a kept file imports is still resolvable...
+      expect(importedSourceFile).toBeDefined();
+      expect(appDiagnostics).toEqual([]);
+      // ...while a dropped, unreferenced file is never parsed into the program.
+      expect(unreferencedSourceFile).toBeUndefined();
+    });
+  });
 });
