@@ -16,6 +16,7 @@ import rename from './commands/rename';
 import report from './commands/report';
 import readAgentsPlaybook from './utils/agentsPlaybook';
 import ensureAliasDeclarations from './utils/aliasDeclarations';
+import { combineFileFilters, createBootstrapMigrationFilter } from './utils/bootstrapFiles';
 import { createGitignoreMigrationFilter } from './utils/gitignore';
 import packageVersion from './utils/packageVersion';
 import {
@@ -135,6 +136,12 @@ yargs
         .boolean('gitignore')
         .default('gitignore', true)
         .describe('gitignore', 'Skip gitignored files. Disable with --no-gitignore.')
+        .boolean('bootstrap')
+        .default('bootstrap', true)
+        .describe(
+          'bootstrap',
+          'Keep build system files (configs and node-run scripts) as JavaScript so the build still boots. Disable with --no-bootstrap.',
+        )
         .boolean('dry-run')
         .default('dry-run', false)
         .describe('dry-run', 'Print the rename mapping without renaming any file.')
@@ -150,7 +157,13 @@ yargs
       const rootDir = path.resolve(process.cwd(), args.folder);
       const { sources } = args;
       const dryRun = args['dry-run'];
-      const result = rename({ rootDir, sources, gitignore: args.gitignore, dryRun });
+      const result = rename({
+        rootDir,
+        sources,
+        gitignore: args.gitignore,
+        bootstrap: args.bootstrap,
+        dryRun,
+      });
       if (result === null) {
         process.exit(-1);
       }
@@ -163,6 +176,7 @@ yargs
             dryRun,
             renamedFiles: result.renamedFiles,
             skippedGitignoredFiles: result.skippedGitignoredFiles,
+            skippedBootstrapFiles: result.skippedBootstrapFiles,
           }),
         );
         if (exitCode !== 0) process.exit(exitCode);
@@ -226,6 +240,12 @@ yargs
         .describe(
           'gitignore',
           'Skip gitignored files: they are neither migrated nor added to the program. Disable with --no-gitignore.',
+        )
+        .boolean('bootstrap')
+        .default('bootstrap', true)
+        .describe(
+          'bootstrap',
+          'Skip build system files (configs and node-run scripts): they are neither migrated nor added to the program. Disable with --no-bootstrap.',
         )
         .boolean('inferTypes')
         .default('inferTypes', true)
@@ -321,6 +341,9 @@ yargs
       const gitignoreFilter = args.gitignore
         ? createGitignoreMigrationFilter(rootDir)
         : undefined;
+      const bootstrapFilter = args.bootstrap
+        ? createBootstrapMigrationFilter(rootDir)
+        : undefined;
       const {
         exitCode,
         updatedSourceFiles,
@@ -332,7 +355,7 @@ yargs
         config,
         sources,
         ambientSources: args.ambientSources,
-        filterMigrationFiles: gitignoreFilter?.filterMigrationFiles,
+        filterMigrationFiles: combineFileFilters([gitignoreFilter, bootstrapFilter]),
         maxStablePasses: args.maxStablePasses,
         incrementalPasses: args.incrementalPasses,
         dryRun,
@@ -373,6 +396,7 @@ yargs
             nonMigratedFilesWithSyntaxErrors,
             pluginStats,
             skippedGitignoredFiles: gitignoreFilter?.skippedFiles().length ?? 0,
+            skippedBootstrapFiles: bootstrapFilter?.skippedFiles() ?? [],
           }),
         );
       }
@@ -408,6 +432,12 @@ yargs
           'gitignore',
           'Skip gitignored files: they are neither reignored nor added to the program. Disable with --no-gitignore.',
         )
+        .boolean('bootstrap')
+        .default('bootstrap', true)
+        .describe(
+          'bootstrap',
+          'Skip build system files (configs and node-run scripts): they are neither reignored nor added to the program. Disable with --no-bootstrap.',
+        )
         .boolean('dry-run')
         .default('dry-run', false)
         .describe(
@@ -434,12 +464,14 @@ yargs
         nonMigratedFilesWithSyntaxErrors,
         pluginStats,
         skippedGitignoredFiles,
+        skippedBootstrapFiles,
       } = await reignore({
         rootDir,
         sources,
         ambientSources: args.ambientSources,
         messagePrefix: args.p,
         gitignore: args.gitignore,
+        bootstrap: args.bootstrap,
         dryRun,
       });
 
@@ -464,6 +496,7 @@ yargs
             nonMigratedFilesWithSyntaxErrors,
             pluginStats,
             skippedGitignoredFiles,
+            skippedBootstrapFiles,
           }),
         );
       }

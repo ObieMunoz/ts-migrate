@@ -3,6 +3,7 @@ import path from 'path';
 import log from 'updatable-log';
 
 import { MigrateResult } from '@obiemunoz/ts-migrate-server';
+import { BootstrapFile } from './bootstrapFiles';
 import packageVersion from './packageVersion';
 import { FileDebt, scanTypeDebtForFiles } from './typeDebt';
 
@@ -24,6 +25,8 @@ export interface RenameRunSummary extends RunSummaryBase {
   renamedFiles: Array<{ from: string; to: string }>;
   /** Files left untouched because git ignores them (0 with --no-gitignore). */
   skippedGitignoredFiles: number;
+  /** Build system files kept as JavaScript, with the detection evidence (empty with --no-bootstrap). */
+  skippedBootstrapFiles: Array<{ file: string; reason: string }>;
 }
 
 export interface MigrateRunSummary extends RunSummaryBase {
@@ -35,6 +38,8 @@ export interface MigrateRunSummary extends RunSummaryBase {
   changedFilesTypeDebt: { aliasNames: string[]; totals: FileDebt } | null;
   /** Files left untouched because git ignores them (0 with --no-gitignore). */
   skippedGitignoredFiles: number;
+  /** Build system files kept as JavaScript, with the detection evidence (empty with --no-bootstrap). */
+  skippedBootstrapFiles: Array<{ file: string; reason: string }>;
 }
 
 export type RunSummary = RenameRunSummary | MigrateRunSummary;
@@ -43,12 +48,22 @@ function relativeTo(rootDir: string, fileName: string): string {
   return path.relative(rootDir, fileName).split(path.sep).join('/');
 }
 
+function summarizeBootstrapFiles(
+  rootDir: string,
+  skipped: BootstrapFile[] = [],
+): Array<{ file: string; reason: string }> {
+  return skipped
+    .map(({ file, reason }) => ({ file: relativeTo(rootDir, file), reason }))
+    .sort((a, b) => (a.file < b.file ? -1 : 1));
+}
+
 export function buildRenameRunSummary(params: {
   rootDir: string;
   exitCode: number;
   dryRun?: boolean;
   renamedFiles: Array<{ oldFile: string; newFile: string }>;
   skippedGitignoredFiles?: number;
+  skippedBootstrapFiles?: BootstrapFile[];
 }): RenameRunSummary {
   const { rootDir, exitCode, renamedFiles } = params;
   return {
@@ -64,6 +79,7 @@ export function buildRenameRunSummary(params: {
       }))
       .sort((a, b) => (a.from < b.from ? -1 : 1)),
     skippedGitignoredFiles: params.skippedGitignoredFiles ?? 0,
+    skippedBootstrapFiles: summarizeBootstrapFiles(rootDir, params.skippedBootstrapFiles),
   };
 }
 
@@ -78,6 +94,7 @@ export function buildMigrateRunSummary(params: {
   nonMigratedFilesWithSyntaxErrors: string[];
   pluginStats: MigrateResult['pluginStats'];
   skippedGitignoredFiles?: number;
+  skippedBootstrapFiles?: BootstrapFile[];
 }): MigrateRunSummary {
   const { command, rootDir, exitCode, updatedSourceFiles, pluginStats } = params;
 
@@ -106,6 +123,7 @@ export function buildMigrateRunSummary(params: {
     })),
     changedFilesTypeDebt,
     skippedGitignoredFiles: params.skippedGitignoredFiles ?? 0,
+    skippedBootstrapFiles: summarizeBootstrapFiles(rootDir, params.skippedBootstrapFiles),
   };
 }
 

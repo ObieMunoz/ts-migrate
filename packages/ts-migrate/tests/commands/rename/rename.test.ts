@@ -127,4 +127,79 @@ describe('rename command', () => {
       expect(fs.existsSync(path.resolve(rootDir, 'dist/bundle.ts'))).toBe(true);
     });
   });
+
+  describe('build system files', () => {
+    const setUpBootstrapProject = () => {
+      const writeFile = (relPath: string, text: string) => {
+        const filePath = path.resolve(rootDir, relPath);
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, text);
+      };
+      writeFile('tsconfig.json', JSON.stringify({ include: ['./**/*'] }));
+      writeFile('package.json', JSON.stringify({ scripts: { build: 'node scripts/build.js' } }));
+      writeFile('webpack.config.js', "const paths = require('./config/paths');\n");
+      writeFile('config/paths.js', 'module.exports = {};\n');
+      writeFile('scripts/build.js', "require('../webpack.config');\n");
+      writeFile('src/app.js', 'const a = 1;\n');
+    };
+
+    it('keeps them as JavaScript by default', () => {
+      setUpBootstrapProject();
+      const infoSpy = jest.spyOn(log, 'info');
+
+      const result = rename({ rootDir });
+
+      expect(sortedRelativeTo(rootDir, result?.renamedFiles ?? null)).toEqual([
+        { oldFile: `src${path.sep}app.js`, newFile: `src${path.sep}app.ts` },
+      ]);
+      expect(fs.existsSync(path.resolve(rootDir, 'webpack.config.js'))).toBe(true);
+      expect(fs.existsSync(path.resolve(rootDir, 'config/paths.js'))).toBe(true);
+      expect(fs.existsSync(path.resolve(rootDir, 'scripts/build.js'))).toBe(true);
+      expect(
+        result?.skippedBootstrapFiles
+          .map(({ file, reason }) => ({ file: path.relative(rootDir, file), reason }))
+          .sort((a, b) => (a.file < b.file ? -1 : 1)),
+      ).toEqual([
+        { file: `config${path.sep}paths.js`, reason: 'required by webpack.config.js' },
+        {
+          file: `scripts${path.sep}build.js`,
+          reason: 'run with node by the "build" script in package.json',
+        },
+        { file: 'webpack.config.js', reason: 'config file next to a package.json' },
+      ]);
+      const infoMessages = infoSpy.mock.calls.map((call) => call.join(' '));
+      expect(infoMessages).toContainEqual(
+        expect.stringContaining('Keeping 3 build system file(s) as JavaScript'),
+      );
+      expect(infoMessages).toContainEqual(expect.stringContaining('--no-bootstrap'));
+      infoSpy.mockRestore();
+    });
+
+    it('renames them with bootstrap disabled', () => {
+      setUpBootstrapProject();
+
+      const result = rename({ rootDir, bootstrap: false });
+
+      expect(sortedRelativeTo(rootDir, result?.renamedFiles ?? null)).toEqual([
+        { oldFile: `config${path.sep}paths.js`, newFile: `config${path.sep}paths.ts` },
+        { oldFile: `scripts${path.sep}build.js`, newFile: `scripts${path.sep}build.ts` },
+        { oldFile: `src${path.sep}app.js`, newFile: `src${path.sep}app.ts` },
+        { oldFile: 'webpack.config.js', newFile: 'webpack.config.ts' },
+      ]);
+      expect(result?.skippedBootstrapFiles).toEqual([]);
+    });
+
+    it('honors a tsconfig exclude entry as the per-file override', () => {
+      setUpBootstrapProject();
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({ include: ['./**/*'], exclude: ['src/app.js'] }),
+      );
+
+      const result = rename({ rootDir });
+
+      expect(result?.renamedFiles).toEqual([]);
+      expect(fs.existsSync(path.resolve(rootDir, 'src/app.js'))).toBe(true);
+    });
+  });
 });
