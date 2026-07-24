@@ -3,6 +3,20 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.12.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.11.1...v0.12.0) (2026-07-24)
+
+
+### Features
+
+* **cli:** add repeatable --exclude-plugin for the default pipeline ([#94](https://github.com/ObieMunoz/ts-migrate/issues/94)) ([758af61](https://github.com/ObieMunoz/ts-migrate/commit/758af61d6d120a9465557711fba90211a6fc8118))
+* **cli:** add report and check commands for suppression and any counts ([#105](https://github.com/ObieMunoz/ts-migrate/issues/105)) ([1a4d4e5](https://github.com/ObieMunoz/ts-migrate/commit/1a4d4e52fed0aed15aa4cc91381c32c5d4557021)), closes [#73](https://github.com/ObieMunoz/ts-migrate/issues/73)
+* **migrate:** retain ambient .d.ts files when --sources is used ([#90](https://github.com/ObieMunoz/ts-migrate/issues/90)) ([9aa9d55](https://github.com/ObieMunoz/ts-migrate/commit/9aa9d55c5e77fb522ebaa94c45f3f6639c276e71))
+* **ts-migrate:** add --version and -v to the CLI and ts-migrate-full ([#93](https://github.com/ObieMunoz/ts-migrate/issues/93)) ([8b65214](https://github.com/ObieMunoz/ts-migrate/commit/8b65214b54d64f990335ad3329c05b893667ff19))
+
+
+
+
+
 ## [0.11.1](https://github.com/ObieMunoz/ts-migrate/compare/v0.11.0...v0.11.1) (2026-07-24)
 
 **Note:** Version bump only for package ts-migrate
