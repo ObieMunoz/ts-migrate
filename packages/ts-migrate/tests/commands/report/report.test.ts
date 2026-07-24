@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import report from '../../../commands/report';
@@ -105,6 +106,23 @@ describe('type debt scanner', () => {
       any: 4,
       codes: { TS2304: 1, TS2322: 1 },
     });
+  });
+
+  it('leaves gitignored files uncounted unless gitignore is disabled', () => {
+    writeProject(rootDir);
+    execFileSync('git', ['init'], { cwd: rootDir, stdio: 'ignore' });
+    writeFiles(rootDir, {
+      '.gitignore': 'dist/\n',
+      'dist/bundle.ts': 'export const b: any = 1;\n',
+    });
+
+    const debt = scanTypeDebt(rootDir);
+    expect(debt.filesScanned).toBe(3);
+    expect(Object.keys(debt.files)).toEqual(['src/a.ts', 'src/b.tsx']);
+
+    const unfiltered = scanTypeDebt(rootDir, false);
+    expect(unfiltered.filesScanned).toBe(4);
+    expect(Object.keys(unfiltered.files)).toContain('dist/bundle.ts');
   });
 
   it('scans only the given files while discovering aliases from the tsconfig', () => {

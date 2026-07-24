@@ -5,12 +5,14 @@ interface ReportParams {
   rootDir: string;
   folder: string;
   json?: boolean;
+  /** Skip gitignored files (default). */
+  gitignore?: boolean;
 }
 
-export default function report({ rootDir, folder, json }: ReportParams): number {
+export default function report({ rootDir, folder, json, gitignore }: ReportParams): number {
   let debt;
   try {
-    debt = scanTypeDebt(rootDir);
+    debt = scanTypeDebt(rootDir, gitignore);
   } catch (err) {
     log.error(err instanceof Error ? err.message : err);
     return -1;

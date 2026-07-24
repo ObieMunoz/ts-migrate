@@ -52,9 +52,9 @@ function printTypesPackageReport(
 }
 
 /** The end-of-run debt summary must never fail an otherwise successful run. */
-function printTypeDebtSummary(rootDir: string, folder: string): void {
+function printTypeDebtSummary(rootDir: string, folder: string, gitignore?: boolean): void {
   try {
-    log.info(formatTypeDebtSummary(scanTypeDebt(rootDir), folder));
+    log.info(formatTypeDebtSummary(scanTypeDebt(rootDir, gitignore), folder));
   } catch (err) {
     log.warn('Skipped type debt summary:', err);
   }
@@ -356,7 +356,7 @@ yargs
       if (dryRun) {
         printDryRunSummary(rootDir, args.folder, updatedSourceFiles, fileContents);
       } else {
-        printTypeDebtSummary(rootDir, args.folder);
+        printTypeDebtSummary(rootDir, args.folder, args.gitignore);
       }
 
       let finalExitCode = exitCode;
@@ -447,7 +447,7 @@ yargs
       if (dryRun) {
         printDryRunSummary(rootDir, args.folder, updatedSourceFiles, updatedFileTexts);
       } else {
-        printTypeDebtSummary(rootDir, args.folder);
+        printTypeDebtSummary(rootDir, args.folder, args.gitignore);
       }
 
       let finalExitCode = exitCode;
@@ -480,12 +480,17 @@ yargs
         .boolean('json')
         .default('json', false)
         .describe('json', 'Print the report as JSON for machine consumption.')
+        .boolean('gitignore')
+        .default('gitignore', true)
+        .describe('gitignore', 'Leave gitignored files uncounted. Disable with --no-gitignore.')
         .example('$0 report /frontend/foo', 'Report the type debt of /frontend/foo')
         .example('$0 report /frontend/foo --json', 'Same counts as JSON')
         .require(['folder']),
     (args) => {
       const rootDir = path.resolve(process.cwd(), args.folder);
-      process.exit(report({ rootDir, folder: args.folder, json: args.json }));
+      process.exit(
+        report({ rootDir, folder: args.folder, json: args.json, gitignore: args.gitignore }),
+      );
     },
   )
   .command(
@@ -505,6 +510,9 @@ yargs
           'baselineFile',
           'Path of the baseline JSON. Defaults to .ts-migrate-baseline.json in <folder>.',
         )
+        .boolean('gitignore')
+        .default('gitignore', true)
+        .describe('gitignore', 'Leave gitignored files uncounted. Disable with --no-gitignore.')
         .example(
           '$0 check /frontend/foo',
           'Exit nonzero if any per-file count exceeds the baseline; lower the baseline on improvement',
@@ -522,6 +530,7 @@ yargs
           folder: args.folder,
           updateBaseline: args['update-baseline'],
           baselineFile: args.baselineFile,
+          gitignore: args.gitignore,
         }),
       );
     },
