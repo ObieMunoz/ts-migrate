@@ -24,7 +24,7 @@ interface MigrateParams {
   incrementalPasses?: boolean;
 }
 
-interface MigrateResult {
+export interface MigrateResult {
   exitCode: number;
   updatedSourceFiles: Set<string>;
   /**
@@ -33,6 +33,11 @@ interface MigrateResult {
    * over this project until fixed, regenerated, or excluded.
    */
   nonMigratedFilesWithSyntaxErrors: string[];
+  /**
+   * One entry per configured plugin, in pipeline order, with the number of
+   * distinct files that plugin changed across all passes.
+   */
+  pluginStats: Array<{ pluginName: string; changedFileCount: number }>;
 }
 
 export default async function migrate({
@@ -97,6 +102,7 @@ export default async function migrate({
   log.info('Start...');
   const pluginsTimer = new PerfTimer();
   const updatedSourceFiles = new Set<string>();
+  const changedFilesByPlugin = config.plugins.map(() => new Set<string>());
   const originalSourceFilesToMigrate = new Set<string>(
     getSourceFilesToMigrate(project).map((file) => file.fileName),
   );
@@ -171,6 +177,7 @@ export default async function migrate({
                 project.updateSourceFile(fileName, newText);
               }
               updatedSourceFiles.add(sourceFile.fileName);
+              changedFilesByPlugin[i].add(fileName);
               changedInPass = true;
               changedThisPass.add(fileName);
             }
@@ -279,7 +286,12 @@ export default async function migrate({
 
   log.info(`Wrote ${updatedSourceFiles.size} updated file(s) in ${writeTimer.elapsedStr()}.`);
 
-  return { updatedSourceFiles, exitCode, nonMigratedFilesWithSyntaxErrors };
+  const pluginStats = config.plugins.map(({ plugin }, i) => ({
+    pluginName: plugin.name,
+    changedFileCount: changedFilesByPlugin[i].size,
+  }));
+
+  return { updatedSourceFiles, exitCode, nonMigratedFilesWithSyntaxErrors, pluginStats };
 }
 
 // An explicit ancestor walk rather than require.resolve: resolve's global

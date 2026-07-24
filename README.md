@@ -28,7 +28,7 @@ Check out Airbnb's original [blog post](https://medium.com/airbnb-engineering/ts
 * Plugin internals migrated to the TypeScript 5 node factory API
 * ESLint 9 flat config support (with legacy fallback)
 * Works on plain JS projects out of the box: no local TypeScript install required, and `init` writes a migration-friendly tsconfig instead of shelling out to `tsc --init`
-* Agent-ready: `ts-migrate agents` prints a usage playbook for AI coding agents, and `ts-migrate-full --yes --no-commit` runs the whole pipeline non-interactively without touching git
+* Agent-ready: `ts-migrate agents` prints a usage playbook for AI coding agents, `ts-migrate-full --yes --no-commit` runs the whole pipeline non-interactively without touching git, and `--jsonSummary` writes a machine-readable summary of what a run changed
 * Updated toolchain (Jest 29, modern dependencies)
 
 Upstream airbnb/ts-migrate has been unmaintained since 2022; this fork exists to keep the tool working on current TypeScript.

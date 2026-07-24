@@ -39,16 +39,29 @@ const alsoFine: number = 2;
 `;
     fs.writeFileSync(path.resolve(rootDir, 'untouched/file.ts'), untouchedText);
 
-    const { exitCode } = await reignore({
-      rootDir,
-      sources: 'migrated/**/*',
-      messagePrefix: 'FIXME',
-    });
+    const { exitCode, updatedSourceFiles, nonMigratedFilesWithSyntaxErrors, pluginStats } =
+      await reignore({
+        rootDir,
+        sources: 'migrated/**/*',
+        messagePrefix: 'FIXME',
+      });
 
     expect(exitCode).toBe(0);
     const migratedText = fs.readFileSync(path.resolve(rootDir, 'migrated/file.ts'), 'utf8');
     expect(migratedText).not.toContain('no longer needed');
     expect(migratedText).toMatch(/@ts-expect-error TS\(2322\) FIXME/);
     expect(fs.readFileSync(path.resolve(rootDir, 'untouched/file.ts'), 'utf8')).toBe(untouchedText);
+
+    // The migrate result fields pass through for the --jsonSummary flag.
+    expect([...updatedSourceFiles]).toEqual([path.resolve(rootDir, 'migrated/file.ts')]);
+    expect(nonMigratedFilesWithSyntaxErrors).toEqual([]);
+    expect(pluginStats.map(({ pluginName }) => pluginName)).toEqual([
+      'strip-ts-ignore',
+      'detect-types-packages',
+      'ts-ignore',
+      'eslint-fix-changed',
+    ]);
+    expect(pluginStats[0].changedFileCount).toBe(1);
+    expect(pluginStats[2].changedFileCount).toBe(1);
   }, 10000);
 });

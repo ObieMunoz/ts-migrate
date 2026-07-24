@@ -177,20 +177,7 @@ export function scanFileDebt(
   return debt;
 }
 
-/**
- * Scans the files of the tsconfig in rootDir for suppression comments and
- * any-type annotations. Single-file ASTs only; no type-checker program is
- * created. Declaration files are used to discover alias names but are not
- * counted. Throws if the tsconfig is missing or invalid.
- */
-export function scanTypeDebt(rootDir: string): TypeDebtReport {
-  const fileNames = projectFileNames(rootDir);
-  const declarationFiles = fileNames.filter(isDeclarationFile);
-  const sourceFiles = fileNames.filter(
-    (fileName) => !isDeclarationFile(fileName) && /\.[cm]?[jt]sx?$/.test(fileName),
-  );
-
-  const aliasNames = discoverAliasNames(declarationFiles);
+function collectDebt(rootDir: string, sourceFiles: string[], aliasNames: string[]): TypeDebtReport {
   const aliasNameSet = new Set(aliasNames);
 
   const totals = emptyDebt();
@@ -218,6 +205,34 @@ export function scanTypeDebt(rootDir: string): TypeDebtReport {
   });
 
   return { rootDir, filesScanned: sourceFiles.length, aliasNames, totals, files };
+}
+
+function isCountableSourceFile(fileName: string): boolean {
+  return !isDeclarationFile(fileName) && /\.[cm]?[jt]sx?$/.test(fileName);
+}
+
+/**
+ * Scans the files of the tsconfig in rootDir for suppression comments and
+ * any-type annotations. Single-file ASTs only; no type-checker program is
+ * created. Declaration files are used to discover alias names but are not
+ * counted. Throws if the tsconfig is missing or invalid.
+ */
+export function scanTypeDebt(rootDir: string): TypeDebtReport {
+  const fileNames = projectFileNames(rootDir);
+  const aliasNames = discoverAliasNames(fileNames.filter(isDeclarationFile));
+  return collectDebt(rootDir, fileNames.filter(isCountableSourceFile), aliasNames);
+}
+
+/**
+ * The same scan restricted to the given files (absolute paths). Alias names
+ * are still discovered from the tsconfig's declaration files so the counts
+ * match scanTypeDebt for the same files. Used for run-scoped summaries of
+ * the files a migration changed.
+ */
+export function scanTypeDebtForFiles(rootDir: string, files: string[]): TypeDebtReport {
+  const fileNames = projectFileNames(rootDir);
+  const aliasNames = discoverAliasNames(fileNames.filter(isDeclarationFile));
+  return collectDebt(rootDir, files.filter(isCountableSourceFile), aliasNames);
 }
 
 /** The per-file listing shows only the worst offenders; --json has them all. */

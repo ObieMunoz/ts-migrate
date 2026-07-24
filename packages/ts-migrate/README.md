@@ -265,6 +265,51 @@ baseline automatically when counts improve, so the debt can only ratchet
 down. Accept an intentional increase with `--update-baseline`; relocate the
 file with `--baselineFile <path>`.
 
+# Machine-readable run summaries
+
+A script or agent driving the CLI otherwise has to scrape the progress log to
+learn what a run did. The `rename`, `migrate`, and `reignore` commands accept
+a `--jsonSummary <file>` flag that writes a JSON summary of the run to a file
+(a file rather than stdout, which stays reserved for the progress log):
+
+```sh
+npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --jsonSummary migrate-summary.json
+```
+
+```json
+{
+  "command": "migrate",
+  "tsMigrateVersion": "0.11.0",
+  "rootDir": "/repo/frontend/foo",
+  "exitCode": 0,
+  "changedFiles": ["src/a.ts", "src/b.ts"],
+  "nonMigratedFilesWithSyntaxErrors": [],
+  "plugins": [
+    { "name": "infer-types", "changedFileCount": 2 },
+    { "name": "ts-ignore", "changedFileCount": 1 }
+  ],
+  "changedFilesTypeDebt": {
+    "aliasNames": [],
+    "totals": { "tsExpectError": 3, "tsIgnore": 0, "anyAlias": 0, "any": 2, "codes": { "TS2304": 3 } }
+  }
+}
+```
+
+(`plugins` lists every step of the pipeline; the example is shortened.) Paths
+are relative to `<folder>`. `reignore` writes the same shape; `rename` writes
+`renamedFiles` as `{"from": "src/a.js", "to": "src/a.ts"}` pairs instead of
+the migrate fields. `changedFilesTypeDebt` counts only the files this run
+changed, so a scoped or incremental run reports its own debt; the `report`
+command measures the whole project.
+
+The file is written whenever the command runs to completion, so its
+`exitCode` field matches the process exit code. No file plus a nonzero exit
+means the command failed before running (bad flags, missing tsconfig.json).
+If the summary file itself cannot be written, the command exits nonzero.
+`ts-migrate-full` forwards extra flags to both its rename and migrate steps,
+so a `--jsonSummary` passed there ends up holding the migrate summary; run
+the commands individually when you need both.
+
 # Using `--sources` for partial migrations
 
 There are times in which migrating an entire project is too large a change. The `--sources` flag (or `-s` for short) allows you to run `ts-migrate` on a subset of your project by providing a set of sources to override the defaults specified in your tsconfig. `--sources` takes a relative path from the root of your project. It accepts globs, but remember to wrap any globs with quotes.

@@ -6,7 +6,7 @@ import {
   Plugin,
   TypesPackageDetector,
 } from '@obiemunoz/ts-migrate-plugins';
-import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
+import { migrate, MigrateConfig, MigrateResult } from '@obiemunoz/ts-migrate-server';
 
 interface ReignoreParams {
   rootDir: string;
@@ -15,8 +15,7 @@ interface ReignoreParams {
   messagePrefix?: string;
 }
 
-interface ReignoreResult {
-  exitCode: number;
+interface ReignoreResult extends MigrateResult {
   typesPackageDetector: TypesPackageDetector;
 }
 
@@ -60,7 +59,7 @@ export default async function reignore({
     .addPlugin(withChangeTracking(tsIgnorePlugin), { messagePrefix })
     .addPlugin(eslintFixChangedPlugin, {});
 
-  const { exitCode } = await migrate({ rootDir, config, sources, ambientSources });
+  const result = await migrate({ rootDir, config, sources, ambientSources });
 
-  return { exitCode, typesPackageDetector };
+  return { ...result, typesPackageDetector };
 }

@@ -596,6 +596,45 @@ describe('migrate command', () => {
     });
   });
 
+  describe('pluginStats', () => {
+    it('counts distinct changed files per plugin in pipeline order', async () => {
+      const configDir = path.resolve(__dirname, 'config');
+      copyDir(configDir, rootDir);
+      fs.writeFileSync(path.resolve(rootDir, 'a.ts'), 'x');
+      fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 1;\n');
+
+      const config = new MigrateConfig()
+        .addPlugin(
+          {
+            name: 'grow-a',
+            run({ fileName, text }) {
+              return fileName.endsWith('a.ts') && text.length < 3 ? `${text}x` : text;
+            },
+          },
+          {},
+          { repeatUntilStable: true },
+        )
+        .addPlugin(
+          {
+            name: 'noop',
+            run({ text }) {
+              return text;
+            },
+          },
+          {},
+        );
+
+      const { exitCode, pluginStats } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      // grow-a changed a.ts on two passes; the file counts once.
+      expect(pluginStats).toEqual([
+        { pluginName: 'grow-a', changedFileCount: 1 },
+        { pluginName: 'noop', changedFileCount: 0 },
+      ]);
+    });
+  });
+
   it('Migrates project with two plugins', async () => {
     const inputDir = path.resolve(__dirname, 'input');
     const outputDir = path.resolve(__dirname, 'output_two');

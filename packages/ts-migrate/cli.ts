@@ -17,6 +17,11 @@ import report from './commands/report';
 import readAgentsPlaybook from './utils/agentsPlaybook';
 import ensureAliasDeclarations from './utils/aliasDeclarations';
 import packageVersion from './utils/packageVersion';
+import {
+  buildMigrateRunSummary,
+  buildRenameRunSummary,
+  writeRunSummary,
+} from './utils/runSummary';
 import { formatTypeDebtSummary, scanTypeDebt } from './utils/typeDebt';
 
 /** A recommendation report must never fail an otherwise successful run. */
@@ -82,6 +87,8 @@ yargs
         .string('sources')
         .alias('sources', 's')
         .describe('sources', 'Path to a subset of your project to rename.')
+        .string('jsonSummary')
+        .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
         .example('$0 rename /frontend/foo', 'Rename all the files in /frontend/foo')
         .example(
           '$0 rename /frontend/foo -s "bar/**/*"',
@@ -94,6 +101,13 @@ yargs
       const renamedFiles = rename({ rootDir, sources });
       if (renamedFiles === null) {
         process.exit(-1);
+      }
+      if (args.jsonSummary) {
+        const exitCode = writeRunSummary(
+          args.jsonSummary,
+          buildRenameRunSummary({ rootDir, exitCode: 0, renamedFiles }),
+        );
+        if (exitCode !== 0) process.exit(exitCode);
       }
     },
   )
@@ -172,6 +186,8 @@ yargs
           'typesReportFile',
           'Write the type definition recommendations to this file instead of printing them. Used by ts-migrate-full to show the report at the end of the run.',
         )
+        .string('jsonSummary')
+        .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
         .example('migrate /frontend/foo', 'Migrate all the files in /frontend/foo')
         .example(
           '$0 migrate /frontend/foo -s "bar/**/*"',
@@ -223,21 +239,37 @@ yargs
         return;
       }
 
-      const { exitCode } = await migrate({
-        rootDir,
-        config,
-        sources,
-        ambientSources: args.ambientSources,
-        maxStablePasses: args.maxStablePasses,
-        incrementalPasses: args.incrementalPasses,
-      });
+      const { exitCode, updatedSourceFiles, nonMigratedFilesWithSyntaxErrors, pluginStats } =
+        await migrate({
+          rootDir,
+          config,
+          sources,
+          ambientSources: args.ambientSources,
+          maxStablePasses: args.maxStablePasses,
+          incrementalPasses: args.incrementalPasses,
+        });
 
       if (typesPackageDetector) {
         printTypesPackageReport(typesPackageDetector, rootDir, args.folder, args.typesReportFile);
       }
       printTypeDebtSummary(rootDir, args.folder);
 
-      process.exit(exitCode);
+      let finalExitCode = exitCode;
+      if (args.jsonSummary) {
+        finalExitCode = writeRunSummary(
+          args.jsonSummary,
+          buildMigrateRunSummary({
+            command: 'migrate',
+            rootDir,
+            exitCode,
+            updatedSourceFiles,
+            nonMigratedFilesWithSyntaxErrors,
+            pluginStats,
+          }),
+        );
+      }
+
+      process.exit(finalExitCode);
     },
   )
   .command(
@@ -262,6 +294,8 @@ yargs
           'ambientSources',
           'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --no-ambientSources.',
         )
+        .string('jsonSummary')
+        .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
         .example(
           '$0 reignore /frontend/foo -s "bar/**/*"',
           'Reignore all the files in /frontend/foo/bar. Ambient .d.ts files from the tsconfig stay in the program.',
@@ -271,7 +305,13 @@ yargs
       const rootDir = path.resolve(process.cwd(), args.folder);
       const { sources } = args;
 
-      const { exitCode, typesPackageDetector } = await reignore({
+      const {
+        exitCode,
+        typesPackageDetector,
+        updatedSourceFiles,
+        nonMigratedFilesWithSyntaxErrors,
+        pluginStats,
+      } = await reignore({
         rootDir,
         sources,
         ambientSources: args.ambientSources,
@@ -281,7 +321,22 @@ yargs
       printTypesPackageReport(typesPackageDetector, rootDir, args.folder);
       printTypeDebtSummary(rootDir, args.folder);
 
-      process.exit(exitCode);
+      let finalExitCode = exitCode;
+      if (args.jsonSummary) {
+        finalExitCode = writeRunSummary(
+          args.jsonSummary,
+          buildMigrateRunSummary({
+            command: 'reignore',
+            rootDir,
+            exitCode,
+            updatedSourceFiles,
+            nonMigratedFilesWithSyntaxErrors,
+            pluginStats,
+          }),
+        );
+      }
+
+      process.exit(finalExitCode);
     },
   )
   .command(
