@@ -26,7 +26,13 @@ docs live in this package's README.md.
    by annotating what it can prove and suppressing the rest with
    `@ts-expect-error` comments and `any`. Do not try to hand-fix every
    suppression; follow the workflow below to eliminate the bulk of them.
-5. **Requirements:** Node >= 18.18. TypeScript 5.x or 6.x if the target
+5. **Gitignored files are skipped by default.** Build output inside the
+   source tree (bundles, `dist`, coverage) is neither renamed, migrated,
+   type-checked, nor counted; `init` also writes the gitignored directories
+   into the generated tsconfig's `exclude`. Runs log what they skipped. If a
+   migration seems to miss files, check whether git ignores them; pass
+   `--no-gitignore` to include them deliberately.
+6. **Requirements:** Node >= 18.18. TypeScript 5.x or 6.x if the target
    project has TypeScript installed; if it has none, ts-migrate falls back to
    its own bundled compiler and plain JS projects work out of the box.
 
@@ -101,12 +107,16 @@ Writes a migration-friendly `tsconfig.json` in `<folder>` (no-op if one
 exists). Installed `@types` packages are pinned in a `types` array so that
 TypeScript 5 (which loads `node_modules/@types` automatically) and
 TypeScript 6 (which does not) check the project identically; add new
-`@types` packages to that array after installing them. `init:extended`
+`@types` packages to that array after installing them. Gitignored
+directories present at init time land in the config's `exclude` (together
+with TypeScript's defaults, which an explicit `exclude` would otherwise
+replace) so the project's own `tsc` skips build output too. `init:extended`
 writes a config extending a shared base instead.
 
 ### `ts-migrate rename <folder> [-s <glob>]`
 
 Renames `.js`/`.jsx` to `.ts`/`.tsx` (JSX content detected per file).
+Gitignored files are skipped (`--no-gitignore` renames them too).
 `--dry-run` prints the full old-to-new mapping (surfacing each `.ts` vs
 `.tsx` decision) and renames nothing. `--jsonSummary <file>` writes the old
 and new path of every renamed file as JSON (see "Machine-readable
@@ -125,6 +135,10 @@ with `@ts-expect-error` so the project compiles.
   `--no-ambientSources` to disable that. The rare package that ships
   unimported globals outside `@types` still needs a manual re-include,
   e.g. `-s "node_modules/some-package/globals.d.ts"`.
+- `--no-gitignore`: also migrate gitignored files. By default they are kept
+  out of the program entirely (neither parsed nor edited; files imported by
+  migrated code and the tsconfig's `.d.ts` files stay in for type
+  resolution).
 - `--no-inferTypes`: skip type inference and annotate plain `any`. Much
   faster; use on very large projects or when annotation quality is secondary.
 - `--maxStablePasses <n>` (default 5): cap the repeat passes of the
@@ -163,6 +177,7 @@ existing suppression comments, then re-adds only the ones still needed.
   files from the tsconfig are kept automatically here too
   (`--no-ambientSources` disables).
 - `-p`/`--messagePrefix`: customizes the comment text.
+- `--no-gitignore`: same behavior as in `migrate`.
 - `--dry-run`: same preview behavior as `migrate`.
 - `--jsonSummary <file>`: same machine-readable summary as `migrate`.
 
@@ -177,8 +192,9 @@ any-alias annotations (`$TSFixMe` and friends, discovered from the aliases
 the project's `.d.ts` files declare rather than hardcoded), and explicit
 `any` annotations. Prints totals plus the 10 worst files and how many more
 have debt. Counts come from per-file ASTs, so strings and JSX text that
-merely contain the directive words are not counted. `--json` prints the
-same data as JSON, with every file listed.
+merely contain the directive words are not counted. Gitignored files are
+not counted (`--no-gitignore` counts them; same flag on `check`). `--json`
+prints the same data as JSON, with every file listed.
 
 ### `ts-migrate check <folder> [--update-baseline]`
 
@@ -210,6 +226,8 @@ machine-readable preview. Per command:
   pipeline step, in order), and `changedFilesTypeDebt` (the suppression,
   any-alias, and `any` totals now present in the changed files, with the
   suppressed error codes; `null` if that scan failed).
+- All three also report `skippedGitignoredFiles`, the number of files the
+  run left untouched because git ignores them (0 with `--no-gitignore`).
 
 How to read a run from the outside:
 
