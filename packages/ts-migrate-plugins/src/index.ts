@@ -26,6 +26,7 @@ import updateSourceText, {
 import {
   createTypesPackageDetector,
   formatTypesPackageReport,
+  MODULE_DECLARATIONS_FILE,
   TypesPackageDetector as TypesPackageDetectorType,
   TypesPackageReport as TypesPackageReportType,
 } from './utils/typesPackages';
@@ -62,4 +63,5 @@ export {
   createTypesPackageDetector,
   formatTypesPackageReport,
   collectModuleSpecifiers,
+  MODULE_DECLARATIONS_FILE,
 };

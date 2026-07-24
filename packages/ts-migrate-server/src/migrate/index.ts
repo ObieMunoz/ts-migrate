@@ -64,6 +64,12 @@ export interface MigrateResult {
    * distinct files that plugin changed across all passes.
    */
   pluginStats: Array<{ pluginName: string; changedFileCount: number }>;
+  /**
+   * Declaration files plugins generated during the run, with their contents.
+   * Written like the updated files, so on a dry run this is the only place
+   * they exist.
+   */
+  generatedFiles: Map<string, string>;
 }
 
 export default async function migrate({
@@ -136,6 +142,14 @@ export default async function migrate({
 
   log.info('Start...');
   const pluginsTimer = new PerfTimer();
+  const generatedFiles = new Map<string, string>();
+  const addGeneratedFile = (fileName: string, text: string) => {
+    generatedFiles.set(fileName, text);
+    // Adding a file invalidates the program, so regenerating what a previous
+    // run already wrote (and the tsconfig already includes) costs no rebuild.
+    if (project.hasRootFile(fileName) && project.getFileText(fileName) === text) return;
+    project.addVirtualSourceFile(fileName, text);
+  };
   const updatedSourceFiles = new Set<string>();
   const changedFilesByPlugin = config.plugins.map(() => new Set<string>());
   const originalSourceFilesToMigrate = new Set<string>(
@@ -208,6 +222,7 @@ export default async function migrate({
             text: sourceFile.text,
             options: pluginOptions,
             getLanguageService,
+            addGeneratedFile,
           };
           try {
             const newText = await plugin.run(params, lintConfig);
@@ -331,6 +346,14 @@ export default async function migrate({
     for (const [fileName, text] of updatedFileTexts) {
       writes.push(fs.promises.writeFile(fileName, text));
     }
+    // eslint-disable-next-line no-restricted-syntax
+    for (const [fileName, text] of generatedFiles) {
+      writes.push(
+        fs.promises
+          .mkdir(path.dirname(fileName), { recursive: true })
+          .then(() => fs.promises.writeFile(fileName, text)),
+      );
+    }
     await Promise.all(writes);
     log.info(`Wrote ${updatedSourceFiles.size} updated file(s) in ${writeTimer.elapsedStr()}.`);
   }
@@ -340,7 +363,14 @@ export default async function migrate({
     changedFileCount: changedFilesByPlugin[i].size,
   }));
 
-  return { updatedSourceFiles, updatedFileTexts, exitCode, nonMigratedFilesWithSyntaxErrors, pluginStats };
+  return {
+    updatedSourceFiles,
+    updatedFileTexts,
+    exitCode,
+    nonMigratedFilesWithSyntaxErrors,
+    pluginStats,
+    generatedFiles,
+  };
 }
 
 function getSourceFilesToMigrate(project: MigrationProject) {

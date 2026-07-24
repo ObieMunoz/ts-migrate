@@ -23,6 +23,8 @@ interface ReignoreParams {
   gitignore?: boolean;
   /** Skip build system files (default). */
   bootstrap?: boolean;
+  /** Declare modules with no types available instead of suppressing their imports (default). */
+  declareUntypedModules?: boolean;
   /** Run every pass but write nothing to disk. */
   dryRun?: boolean;
 }
@@ -40,6 +42,7 @@ export default async function reignore({
   messagePrefix,
   gitignore = true,
   bootstrap = true,
+  declareUntypedModules = true,
   dryRun,
 }: ReignoreParams): Promise<ReignoreResult> {
   const changedFiles = new Map<string, string>();
@@ -72,7 +75,11 @@ export default async function reignore({
   const typesPackageDetector = createTypesPackageDetector();
   const config = new MigrateConfig()
     .addPlugin(withChangeTracking(stripTSIgnorePlugin), {})
-    .addPlugin(typesPackageDetector.plugin, {})
+    .addPlugin(typesPackageDetector.plugin, {});
+  if (declareUntypedModules) {
+    config.addPlugin(typesPackageDetector.declarationsPlugin, {});
+  }
+  config
     .addPlugin(withChangeTracking(tsIgnorePlugin), { messagePrefix })
     .addPlugin(eslintFixChangedPlugin, {});
 
