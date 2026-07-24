@@ -63,7 +63,7 @@ const renamedExtensions: Record<string, string[]> = {
   '.jsx': ['.tsx', '.ts'],
 };
 
-// ESM whatever the enclosing package says.
+// Extensions that make a file ESM whatever the enclosing package says.
 const ESM_EXTENSION_REGEX = /\.m[jt]s$/;
 
 function renamedSpecifier(

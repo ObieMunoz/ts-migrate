@@ -26,7 +26,7 @@ interface RenameParams {
 
 export interface SkippedRename {
   file: string;
-  /** Human-readable evidence, with rootDir-relative paths. */
+  /** Human-readable explanation of why the file kept its extension. */
   reason: string;
 }
 
