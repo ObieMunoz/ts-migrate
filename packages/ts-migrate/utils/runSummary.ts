@@ -27,6 +27,8 @@ export interface RenameRunSummary extends RunSummaryBase {
   skippedGitignoredFiles: number;
   /** Build system files kept as JavaScript, with the detection evidence (empty with --no-bootstrap). */
   skippedBootstrapFiles: Array<{ file: string; reason: string }>;
+  /** .mjs/.cjs files kept at their extension, with the reason (never emptied by a flag). */
+  skippedModuleFiles: Array<{ file: string; reason: string }>;
 }
 
 export interface MigrateRunSummary extends RunSummaryBase {
@@ -48,9 +50,9 @@ function relativeTo(rootDir: string, fileName: string): string {
   return path.relative(rootDir, fileName).split(path.sep).join('/');
 }
 
-function summarizeBootstrapFiles(
+function summarizeSkippedFiles(
   rootDir: string,
-  skipped: BootstrapFile[] = [],
+  skipped: Array<{ file: string; reason: string }> = [],
 ): Array<{ file: string; reason: string }> {
   return skipped
     .map(({ file, reason }) => ({ file: relativeTo(rootDir, file), reason }))
@@ -64,6 +66,7 @@ export function buildRenameRunSummary(params: {
   renamedFiles: Array<{ oldFile: string; newFile: string }>;
   skippedGitignoredFiles?: number;
   skippedBootstrapFiles?: BootstrapFile[];
+  skippedModuleFiles?: Array<{ file: string; reason: string }>;
 }): RenameRunSummary {
   const { rootDir, exitCode, renamedFiles } = params;
   return {
@@ -79,7 +82,8 @@ export function buildRenameRunSummary(params: {
       }))
       .sort((a, b) => (a.from < b.from ? -1 : 1)),
     skippedGitignoredFiles: params.skippedGitignoredFiles ?? 0,
-    skippedBootstrapFiles: summarizeBootstrapFiles(rootDir, params.skippedBootstrapFiles),
+    skippedBootstrapFiles: summarizeSkippedFiles(rootDir, params.skippedBootstrapFiles),
+    skippedModuleFiles: summarizeSkippedFiles(rootDir, params.skippedModuleFiles),
   };
 }
 
@@ -123,7 +127,7 @@ export function buildMigrateRunSummary(params: {
     })),
     changedFilesTypeDebt,
     skippedGitignoredFiles: params.skippedGitignoredFiles ?? 0,
-    skippedBootstrapFiles: summarizeBootstrapFiles(rootDir, params.skippedBootstrapFiles),
+    skippedBootstrapFiles: summarizeSkippedFiles(rootDir, params.skippedBootstrapFiles),
   };
 }
 

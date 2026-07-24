@@ -206,6 +206,7 @@ yargs
             renamedFiles: result.renamedFiles,
             skippedGitignoredFiles: result.skippedGitignoredFiles,
             skippedBootstrapFiles: result.skippedBootstrapFiles,
+            skippedModuleFiles: result.skippedModuleFiles,
           }),
         );
         if (exitCode !== 0) process.exit(exitCode);

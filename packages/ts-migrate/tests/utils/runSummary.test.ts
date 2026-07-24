@@ -38,6 +38,10 @@ describe('run summary', () => {
         { file: path.join(rootDir, 'scripts', 'build.js'), reason: 'run with node' },
         { file: path.join(rootDir, 'config', 'paths.js'), reason: 'required by webpack.config.js' },
       ],
+      skippedModuleFiles: [
+        { file: path.join(rootDir, 'src', 'Widget.mjs'), reason: 'contains JSX' },
+        { file: path.join(rootDir, 'postcss.config.cjs'), reason: 'config file loaded by name' },
+      ],
     });
 
     expect(summary.command).toBe('rename');
@@ -52,6 +56,10 @@ describe('run summary', () => {
     expect(summary.skippedBootstrapFiles).toEqual([
       { file: 'config/paths.js', reason: 'required by webpack.config.js' },
       { file: 'scripts/build.js', reason: 'run with node' },
+    ]);
+    expect(summary.skippedModuleFiles).toEqual([
+      { file: 'postcss.config.cjs', reason: 'config file loaded by name' },
+      { file: 'src/Widget.mjs', reason: 'contains JSX' },
     ]);
   });
 
