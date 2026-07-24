@@ -5,7 +5,10 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 
 ## [0.12.1](https://github.com/ObieMunoz/ts-migrate/compare/v0.12.0...v0.12.1) (2026-07-24)
 
-**Note:** Version bump only for package @obiemunoz/ts-migrate
+
+### Features
+
+* **cli:** skip gitignored files by default ([#118](https://github.com/ObieMunoz/ts-migrate/issues/118)) ([9fa8a85](https://github.com/ObieMunoz/ts-migrate/commit/9fa8a8597487dfea3e10b0e5f9e3ed3328ed92c4))
 
 
 
@@ -16,9 +19,13 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 
 ### Features
 
+* **cli:** add --dry-run to rename, migrate, and reignore ([#111](https://github.com/ObieMunoz/ts-migrate/issues/111)) ([25dfc68](https://github.com/ObieMunoz/ts-migrate/commit/25dfc68fb5fa8b6edaa9febf96bb9d657b9fb3fc))
 * **cli:** add repeatable --exclude-plugin for the default pipeline ([#94](https://github.com/ObieMunoz/ts-migrate/issues/94)) ([758af61](https://github.com/ObieMunoz/ts-migrate/commit/758af61d6d120a9465557711fba90211a6fc8118))
 * **cli:** add report and check commands for suppression and any counts ([#105](https://github.com/ObieMunoz/ts-migrate/issues/105)) ([1a4d4e5](https://github.com/ObieMunoz/ts-migrate/commit/1a4d4e52fed0aed15aa4cc91381c32c5d4557021)), closes [#73](https://github.com/ObieMunoz/ts-migrate/issues/73)
+* **cli:** cap the report per-file listing at the 10 worst files ([#106](https://github.com/ObieMunoz/ts-migrate/issues/106)) ([2a199ec](https://github.com/ObieMunoz/ts-migrate/commit/2a199ec2ae0f5642b0bfa63f9fb3ef8ef7044fa4))
+* **cli:** write a machine-readable run summary with --jsonSummary ([#108](https://github.com/ObieMunoz/ts-migrate/issues/108)) ([ce3d91d](https://github.com/ObieMunoz/ts-migrate/commit/ce3d91deb6e661d8e66a1fc34cc48c29aac1fc66))
 * **migrate:** retain ambient .d.ts files when --sources is used ([#90](https://github.com/ObieMunoz/ts-migrate/issues/90)) ([9aa9d55](https://github.com/ObieMunoz/ts-migrate/commit/9aa9d55c5e77fb522ebaa94c45f3f6639c276e71))
+* **server:** show progress during long plugin passes ([#112](https://github.com/ObieMunoz/ts-migrate/issues/112)) ([a6ece3d](https://github.com/ObieMunoz/ts-migrate/commit/a6ece3df1bfc47f70eb6dedfea297ec88d6a4c85))
 * **ts-migrate:** add --version and -v to the CLI and ts-migrate-full ([#93](https://github.com/ObieMunoz/ts-migrate/issues/93)) ([8b65214](https://github.com/ObieMunoz/ts-migrate/commit/8b65214b54d64f990335ad3329c05b893667ff19))
 
 
