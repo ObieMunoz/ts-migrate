@@ -15,7 +15,10 @@ const hasGlobMagic = (pattern: string): boolean => /[*?{}[\]]/.test(pattern);
 
 const SCRIPT_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'];
 
-const normalizeSlashes = (fileName: string): string => fileName.split(path.sep).join('/');
+const normalizeSlashes =
+  path.sep === '/'
+    ? (fileName: string): string => fileName
+    : (fileName: string): string => fileName.split(path.sep).join('/');
 
 interface CachedModuleResolutionHost extends ts.ModuleResolutionHost {
   fileExists(fileName: string): boolean;
@@ -78,6 +81,14 @@ export default class MigrationProject {
   private readonly rootFileNames: Set<string>;
 
   private readonly overlays = new Map<string, FileOverlay>();
+
+  /**
+   * Highest version ever handed out per file. The document registry reuses a
+   * cached source file on a version match without comparing content, so a
+   * version must never be reissued for different text — which a plain
+   * "previous + 1" would do after a scratch overlay is rolled back.
+   */
+  private readonly latestVersions = new Map<string, number>();
 
   private readonly languageService: ts.LanguageService;
 
@@ -241,10 +252,44 @@ export default class MigrationProject {
    */
   addVirtualSourceFile(fileName: string, text: string): void {
     const normalized = normalizeSlashes(fileName);
-    const previousVersion = this.overlays.get(normalized)?.version ?? 0;
-    this.overlays.set(normalized, { text, version: previousVersion + 1 });
+    this.overlays.set(normalized, { text, version: this.nextVersion(normalized) });
     this.rootFileNames.add(normalized);
     this.projectVersion += 1;
+  }
+
+  /**
+   * Runs `use` with `fileName` reading as `text`, then restores the file's real
+   * content. Lets a plugin type-check a candidate edit against this project's
+   * already-warm program instead of building a throwaway one for it.
+   *
+   * Both the swap and the rollback invalidate the program, so each call costs
+   * two re-syncs: make every query a candidate needs inside one call. `use`
+   * must be synchronous — an overlapping caller would observe the scratch text
+   * as if it were the file's real content.
+   */
+  withScratchText<T>(fileName: string, text: string, use: () => T): T {
+    const normalized = normalizeSlashes(fileName);
+    const previous = this.overlays.get(normalized);
+    this.overlays.set(normalized, { text, version: this.nextVersion(normalized) });
+    this.projectVersion += 1;
+    try {
+      return use();
+    } finally {
+      // Restoring the previous version (rather than a fresh one) is what lets
+      // the registry hand back the source file it already has for that text.
+      if (previous) {
+        this.overlays.set(normalized, previous);
+      } else {
+        this.overlays.delete(normalized);
+      }
+      this.projectVersion += 1;
+    }
+  }
+
+  private nextVersion(normalizedFileName: string): number {
+    const version = (this.latestVersions.get(normalizedFileName) ?? 0) + 1;
+    this.latestVersions.set(normalizedFileName, version);
+    return version;
   }
 
   /** The text the project reads for a file: the overlay if it has one, otherwise the disk. */
@@ -299,8 +344,7 @@ export default class MigrationProject {
 
   updateSourceFile(fileName: string, text: string): void {
     const normalized = normalizeSlashes(fileName);
-    const previousVersion = this.overlays.get(normalized)?.version ?? 0;
-    this.overlays.set(normalized, { text, version: previousVersion + 1 });
+    this.overlays.set(normalized, { text, version: this.nextVersion(normalized) });
     this.projectVersion += 1;
   }
 
