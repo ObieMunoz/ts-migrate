@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
+import { listGitignoredDirectories } from '../utils/gitignore';
 
 interface InitParams {
   rootDir: string;
@@ -93,6 +94,23 @@ function defaultConfig(rootDir: string): string {
     "types": [${typesPackages.map((name) => `"${name}"`).join(', ')}]`
       : '';
 
+  // An explicit "exclude" replaces TypeScript's built-in one, so its entries
+  // come along whenever gitignored directories are added.
+  const defaultExcludes = ['node_modules', 'bower_components', 'jspm_packages'];
+  const ignoredDirectories = listGitignoredDirectories(rootDir).filter(
+    (dir) => !defaultExcludes.includes(dir),
+  );
+  const excludeField =
+    ignoredDirectories.length > 0
+      ? `,
+  // Gitignored directories present at init time, so generated output is
+  // neither type-checked nor migrated. Imports reaching into them still
+  // resolve.
+  "exclude": [${[...defaultExcludes, ...ignoredDirectories]
+    .map((dir) => `"${dir}"`)
+    .join(', ')}]`
+      : '';
+
   return `{
   // Created by ts-migrate. A starting point for a migrated project;
   // adjust as your codebase needs (see the ts-migrate README FAQ).
@@ -107,7 +125,7 @@ function defaultConfig(rootDir: string): string {
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "skipLibCheck": true${typesField}
-  }
+  }${excludeField}
 }
 `;
 }

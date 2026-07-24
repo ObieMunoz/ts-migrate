@@ -120,6 +120,44 @@ export function partitionGitignored(rootDir: string, files: string[]): Gitignore
   return { kept, ignored };
 }
 
+/**
+ * The gitignored directories inside rootDir, as sorted rootDir-relative
+ * paths with forward slashes. Whole ignored trees collapse to their topmost
+ * directory (`git status --ignored` semantics); individually ignored files
+ * are not reported. Empty without git or a repository.
+ */
+export function listGitignoredDirectories(rootDir: string): string[] {
+  const status = runGit(rootDir, ['status', '--porcelain=v1', '-z', '--ignored', '--', '.']);
+  if (!status || status.status !== 0) {
+    return [];
+  }
+  const toplevelResult = runGit(rootDir, ['rev-parse', '--show-toplevel']);
+  if (!toplevelResult || toplevelResult.status !== 0) {
+    return [];
+  }
+  const toplevel = toplevelResult.stdout.trim();
+  let realRootDir: string;
+  try {
+    realRootDir = fs.realpathSync(rootDir);
+  } catch {
+    realRootDir = path.resolve(rootDir);
+  }
+
+  const directories = new Set<string>();
+  status.stdout.split('\0').forEach((entry) => {
+    // Porcelain v1 paths are toplevel-relative regardless of the cwd.
+    if (!entry.startsWith('!! ') || !entry.endsWith('/')) {
+      return;
+    }
+    const resolved = path.resolve(toplevel, entry.slice(3));
+    if (resolved === realRootDir || !isUnder(realRootDir, resolved)) {
+      return;
+    }
+    directories.add(path.relative(realRootDir, resolved).split(path.sep).join('/'));
+  });
+  return [...directories].sort();
+}
+
 /** Up to max rootDir-relative sample paths, for log messages about a partition. */
 export function sampleIgnoredPaths(
   rootDir: string,

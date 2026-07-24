@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -47,6 +48,29 @@ describe('init command', () => {
     // freshly-converted CommonJS project with suppressions.
     expect(config.compilerOptions.types).toBeUndefined();
     expect(config.compilerOptions.verbatimModuleSyntax).toBeUndefined();
+    // No git repository here, so the built-in exclude defaults stay implicit.
+    expect(config.exclude).toBeUndefined();
+  });
+
+  it('excludes gitignored directories, keeping the defaults an explicit exclude replaces', () => {
+    execFileSync('git', ['init'], { cwd: rootDir, stdio: 'ignore' });
+    fs.writeFileSync(path.join(rootDir, '.gitignore'), 'dist/\ncoverage/\n');
+    fs.mkdirSync(path.join(rootDir, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(rootDir, 'dist/bundle.js'), '');
+    fs.mkdirSync(path.join(rootDir, 'coverage'), { recursive: true });
+    fs.writeFileSync(path.join(rootDir, 'coverage/lcov.info'), '');
+    fs.mkdirSync(path.join(rootDir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(rootDir, 'src/app.js'), '');
+
+    init({ rootDir, isExtendedConfig: false });
+
+    expect(readConfig(rootDir).exclude).toEqual([
+      'node_modules',
+      'bower_components',
+      'jspm_packages',
+      'coverage',
+      'dist',
+    ]);
   });
 
   it('uses nodenext module settings when package.json declares an ESM package', () => {
