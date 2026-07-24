@@ -683,6 +683,53 @@ describe('migrate command', () => {
     });
   });
 
+  describe('pass progress', () => {
+    it('logs occasional counter lines during a slow non-TTY pass', async () => {
+      const configDir = path.resolve(__dirname, 'config');
+      copyDir(configDir, rootDir);
+      fs.writeFileSync(path.resolve(rootDir, 'a.ts'), 'export const a = 1;\n');
+      fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 2;\n');
+      fs.writeFileSync(path.resolve(rootDir, 'c.ts'), 'export const c = 3;\n');
+
+      const infoSpy = jest.spyOn(log, 'info');
+      const updateSpy = jest.spyOn(log, 'update');
+      let fakeNow = 0;
+      const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => fakeNow);
+      const stdout = process.stdout as { isTTY?: boolean };
+      const originalIsTTY = stdout.isTTY;
+      stdout.isTTY = false;
+
+      try {
+        const config = new MigrateConfig().addPlugin(
+          {
+            name: 'slow-plugin',
+            run({ text }) {
+              fakeNow += 11_000;
+              return text;
+            },
+          },
+          {},
+        );
+
+        const { exitCode } = await migrate({ rootDir, config });
+
+        expect(exitCode).toBe(0);
+        const counterLines = infoSpy.mock.calls
+          .map((call) => call.join(' '))
+          .filter((message) => /^\[slow-plugin\] \d+\/\d+ /.test(message));
+        // One line per elapsed interval, naming where the pass currently is;
+        // nothing per file, nothing through the in-place updater.
+        expect(counterLines).toEqual(['[slow-plugin] 2/3 b.ts', '[slow-plugin] 3/3 c.ts']);
+        expect(updateSpy).not.toHaveBeenCalled();
+      } finally {
+        stdout.isTTY = originalIsTTY;
+        nowSpy.mockRestore();
+        infoSpy.mockRestore();
+        updateSpy.mockRestore();
+      }
+    });
+  });
+
   describe('pluginStats', () => {
     it('counts distinct changed files per plugin in pipeline order', async () => {
       const configDir = path.resolve(__dirname, 'config');

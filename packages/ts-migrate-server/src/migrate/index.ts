@@ -6,6 +6,7 @@ import log from 'updatable-log';
 import MigrateConfig from './MigrateConfig';
 import MigrationProject from './MigrationProject';
 import computeDirtyFiles from './dirtyFiles';
+import PassProgress from '../utils/PassProgress';
 import PerfTimer from '../utils/PerfTimer';
 import { PluginParams, LintConfig } from '../../types';
 
@@ -165,6 +166,12 @@ export default async function migrate({
             (dirtyFilesThisPass === null || dirtyFilesThisPass.has(fileName)),
         );
 
+        const progress = new PassProgress({
+          prefix: pluginLogPrefix,
+          total: sourceFiles.length,
+          showCurrentFile: !plugin.independentFiles,
+        });
+
         // A plugin whose edits never change any file's types can run its whole
         // pass against one program: holding its overlay writes until the pass
         // ends keeps the checker warm across files rather than rebuilding it
@@ -176,9 +183,9 @@ export default async function migrate({
         // eslint-disable-next-line no-loop-func
         const runPluginOnFile = async (sourceFile: ts.SourceFile) => {
           const { fileName } = sourceFile;
-          // const fileTimer = new PerfTimer();
           const relFile = path.relative(rootDir, sourceFile.fileName);
           const fileLogPrefix = `${pluginLogPrefix}[${relFile}]`;
+          progress.fileStarted(relFile);
 
           const getLanguageService = () => project.getLanguageService();
 
@@ -207,7 +214,7 @@ export default async function migrate({
             log.error(`${fileLogPrefix} Error:\n`, pluginErr);
             exitCode = -1;
           }
-          // log.info(`${fileLogPrefix} Finished in ${fileTimer.elapsedStr()}.`);
+          progress.fileFinished();
         };
 
         if (plugin.independentFiles) {
@@ -219,6 +226,7 @@ export default async function migrate({
             await runPluginOnFile(sourceFile);
           }
         }
+        progress.finish();
 
         for (const { fileName, text } of deferredWrites) {
           project.updateSourceFile(fileName, text);
