@@ -11,13 +11,15 @@ import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptio
 
 type Options = AnyAliasOptions;
 
+// `undefined` is the absence of evidence, `any` is evidence that the member
+// holds anything, such as a null initializer or two conflicting writes.
 type DerivedType =
+  | { kind: 'any' }
   | { kind: 'keyword'; keyword: ts.KeywordTypeSyntaxKind }
   | { kind: 'array'; element: DerivedType | undefined };
 
 type StateMember = {
   type: DerivedType | undefined;
-  hasValue: boolean;
   numInitializers: number;
 };
 
@@ -85,12 +87,24 @@ const reactClassStatePlugin: Plugin<Options> = {
         options.anyAlias != null
           ? ts.factory.createTypeReferenceNode(options.anyAlias, undefined)
           : ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
+      const stateTypeNode = createStateTypeNode(evidence, createAnyType);
       const newStateType = ts.factory.createTypeAliasDeclaration(
         undefined,
         stateTypeName,
         undefined,
-        createStateTypeNode(evidence, createAnyType),
+        stateTypeNode,
       );
+
+      // The type a `state = {...}` property infers on its own shadows the state
+      // type parameter at every this.state read.
+      const stateProperty = classDeclaration.members.find(isStateProperty);
+      if (stateProperty && !stateProperty.type && ts.isTypeLiteralNode(stateTypeNode)) {
+        updates.push({
+          kind: 'insert',
+          index: (stateProperty.exclamationToken || stateProperty.name).end,
+          text: `: ${stateTypeName}`,
+        });
+      }
 
       updates.push({
         kind: 'insert',
@@ -134,7 +148,7 @@ function collectStateEvidence(classDeclaration: ts.ClassDeclaration): StateEvide
   const getMember = (name: string): StateMember => {
     let member = evidence.members.get(name);
     if (!member) {
-      member = { type: undefined, hasValue: false, numInitializers: 0 };
+      member = { type: undefined, numInitializers: 0 };
       evidence.members.set(name, member);
     }
     return member;
@@ -158,8 +172,7 @@ function collectStateEvidence(classDeclaration: ts.ClassDeclaration): StateEvide
 
       const type = ts.isPropertyAssignment(property) ? deriveType(property.initializer) : undefined;
       const member = getMember(name);
-      member.type = member.hasValue ? mergeTypes(member.type, type) : type;
-      member.hasValue = true;
+      member.type = mergeTypes(member.type, type);
       if (isInitializer) {
         member.numInitializers += 1;
       }
@@ -296,7 +309,7 @@ function createStateTypeNode(
   }
 
   const createTypeNode = (type: DerivedType | undefined): ts.TypeNode => {
-    if (type === undefined) {
+    if (type === undefined || type.kind === 'any') {
       return createAnyType();
     }
     return type.kind === 'array'
@@ -336,8 +349,14 @@ function deriveType(expression: ts.Expression): DerivedType | undefined {
     case ts.SyntaxKind.NoSubstitutionTemplateLiteral:
     case ts.SyntaxKind.TemplateExpression:
       return { kind: 'keyword', keyword: ts.SyntaxKind.StringKeyword };
+    case ts.SyntaxKind.NullKeyword:
+      return { kind: 'any' };
     default:
       break;
+  }
+
+  if (ts.isIdentifier(expression) && expression.text === 'undefined') {
+    return { kind: 'any' };
   }
 
   if (
@@ -364,9 +383,8 @@ function mergeTypes(
   a: DerivedType | undefined,
   b: DerivedType | undefined,
 ): DerivedType | undefined {
-  if (a === undefined || b === undefined) {
-    return undefined;
-  }
+  if (a === undefined) return b;
+  if (b === undefined) return a;
 
   if (a.kind === 'array' && b.kind === 'array') {
     return { kind: 'array', element: mergeTypes(a.element, b.element) };
@@ -376,7 +394,7 @@ function mergeTypes(
     return a;
   }
 
-  return undefined;
+  return { kind: 'any' };
 }
 
 function forEachReturnedExpression(body: ts.Block, callback: (node: ts.Expression) => void) {
