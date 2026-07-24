@@ -66,6 +66,39 @@ describe('buildMigrateConfig', () => {
     );
   });
 
+  it('threads the tsfixme aliases through the pipeline and the result', () => {
+    const { config, anyAlias, anyFunctionAlias } = buildMigrateConfig({ aliases: 'tsfixme' });
+    expect(anyAlias).toBe('$TSFixMe');
+    expect(anyFunctionAlias).toBe('$TSFixMeFunction');
+    const explicitAny = config.plugins.find(({ plugin }) => plugin.name === 'explicit-any');
+    expect((explicitAny?.options as { anyAlias?: string }).anyAlias).toBe('$TSFixMe');
+  });
+
+  it('resolves no aliases by default', () => {
+    const { config, anyAlias, anyFunctionAlias } = buildMigrateConfig({});
+    expect(anyAlias).toBeUndefined();
+    expect(anyFunctionAlias).toBeUndefined();
+    const explicitAny = config.plugins.find(({ plugin }) => plugin.name === 'explicit-any');
+    expect((explicitAny?.options as { anyAlias?: string }).anyAlias).toBeUndefined();
+  });
+
+  it('passes useDefaultPropsHelper through as a boolean, defaulting to false', () => {
+    const defaultPropsOptions = (params: Parameters<typeof buildMigrateConfig>[0]) =>
+      buildMigrateConfig(params).config.plugins.find(
+        ({ plugin }) => plugin.name === 'react-default-props',
+      )?.options as { useDefaultPropsHelper?: boolean };
+    expect(defaultPropsOptions({ useDefaultPropsHelper: true }).useDefaultPropsHelper).toBe(true);
+    expect(defaultPropsOptions({}).useDefaultPropsHelper).toBe(false);
+  });
+
+  it('parses --typeMap JSON for the jsdoc plugin and rejects invalid JSON', () => {
+    const { config } = buildMigrateConfig({ plugin: 'jsdoc', typeMap: '{"Object":"any"}' });
+    expect((config.plugins[0].options as { typeMap?: unknown }).typeMap).toEqual({ Object: 'any' });
+    expect(() => buildMigrateConfig({ plugin: 'jsdoc', typeMap: '{oops' })).toThrow(
+      /--typeMap must be valid JSON/,
+    );
+  });
+
   it('exposes every default-pipeline plugin as excludable', () => {
     const names = new Set(availablePlugins.map((plugin) => plugin.name));
     const defaultNames = pluginNames(buildMigrateConfig({}).config);

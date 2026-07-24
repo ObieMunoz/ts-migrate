@@ -13,6 +13,7 @@ import buildMigrateConfig, { availablePlugins } from './commands/migrate';
 import reignore from './commands/reignore';
 import rename from './commands/rename';
 import readAgentsPlaybook from './utils/agentsPlaybook';
+import ensureAliasDeclarations from './utils/aliasDeclarations';
 import packageVersion from './utils/packageVersion';
 
 /** A recommendation report must never fail an otherwise successful run. */
@@ -107,6 +108,23 @@ yargs
           'Skip a plugin of the default pipeline. Repeat the flag to skip several. Excluding infer-types is equivalent to --no-inferTypes.',
         )
         .conflicts('plugin', 'exclude-plugin')
+        .string('aliases')
+        .choices('aliases', ['tsfixme'] as const)
+        .describe(
+          'aliases',
+          'Annotate with the $TSFixMe/$TSFixMeFunction aliases instead of plain any. The ambient declarations are generated if the project does not already declare them.',
+        )
+        .string('typeMap')
+        .describe(
+          'typeMap',
+          'JSON object mapping JSDoc types to TypeScript types, used with --plugin jsdoc.',
+        )
+        .boolean('useDefaultPropsHelper')
+        .default('useDefaultPropsHelper', false)
+        .describe(
+          'useDefaultPropsHelper',
+          'Type React defaultProps with the WithDefaultProps helper. Requires the project to provide the :ts-utils/types/WithDefaultProps module.',
+        )
         .string('privateRegex')
         .string('protectedRegex')
         .string('publicRegex')
@@ -163,7 +181,7 @@ yargs
       let config: MigrateConfig;
       let typesPackageDetector: TypesPackageDetector | undefined;
       try {
-        ({ config, typesPackageDetector } = buildMigrateConfig({
+        const built = buildMigrateConfig({
           plugin: args.plugin,
           excludePlugins: ([] as string[]).concat(args['exclude-plugin'] ?? []),
           aliases: args.aliases,
@@ -174,7 +192,19 @@ yargs
           protectedRegex: args.protectedRegex,
           publicRegex: args.publicRegex,
           inferTypes: args.inferTypes,
-        }));
+        });
+        config = built.config;
+        typesPackageDetector = built.typesPackageDetector;
+        // Written before the program is created so the aliases resolve during
+        // the run; otherwise ts-ignore would suppress every annotation added.
+        const aliasDeclarationFile = ensureAliasDeclarations({
+          rootDir,
+          anyAlias: built.anyAlias,
+          anyFunctionAlias: built.anyFunctionAlias,
+        });
+        if (aliasDeclarationFile) {
+          log.info(`Created ${aliasDeclarationFile} declaring the global aliases.`);
+        }
       } catch (err) {
         log.error(err instanceof Error ? err.message : err);
         process.exit(1);
