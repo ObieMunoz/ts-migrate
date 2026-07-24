@@ -39,6 +39,7 @@ describe('run summary', () => {
     expect(summary.command).toBe('rename');
     expect(summary.rootDir).toBe(rootDir);
     expect(summary.exitCode).toBe(0);
+    expect(summary.dryRun).toBe(false);
     expect(summary.tsMigrateVersion).toMatch(/^\d+\.\d+\.\d+/);
     expect(summary.renamedFiles).toEqual([
       { from: 'src/a.jsx', to: 'src/a.tsx' },
@@ -80,6 +81,37 @@ describe('run summary', () => {
       { name: 'eslint-fix', changedFileCount: 0 },
     ]);
     // untouched.ts has an explicit any, but the debt is run-scoped.
+    expect(summary.changedFilesTypeDebt).toEqual({
+      aliasNames: ['$TSFixMe'],
+      totals: { tsExpectError: 1, tsIgnore: 0, anyAlias: 1, any: 0, codes: { TS2304: 1 } },
+    });
+  });
+
+  it('scans the provided contents instead of the disk for a dry run', () => {
+    fs.writeFileSync(path.join(rootDir, 'tsconfig.json'), '{ "compilerOptions": {} }');
+    // On disk the file is clean; the dry run would have written debt into it.
+    fs.writeFileSync(path.join(rootDir, 'changed.ts'), 'export const x = 1;\n');
+    const aliasFile = path.join(rootDir, 'ts-migrate-aliases.d.ts');
+
+    const summary = buildMigrateRunSummary({
+      command: 'migrate',
+      rootDir,
+      exitCode: 0,
+      dryRun: true,
+      updatedSourceFiles: new Set([path.join(rootDir, 'changed.ts')]),
+      fileContents: new Map([
+        [
+          path.join(rootDir, 'changed.ts'),
+          '// @ts-expect-error TS(2304) FIXME\nfoo();\nexport const x: $TSFixMe = 1;\n',
+        ],
+        // Would be created by the run; exists only in memory.
+        [aliasFile, 'type $TSFixMe = any;\n'],
+      ]),
+      nonMigratedFilesWithSyntaxErrors: [],
+      pluginStats: [],
+    });
+
+    expect(summary.dryRun).toBe(true);
     expect(summary.changedFilesTypeDebt).toEqual({
       aliasNames: ['$TSFixMe'],
       totals: { tsExpectError: 1, tsIgnore: 0, anyAlias: 1, any: 0, codes: { TS2304: 1 } },

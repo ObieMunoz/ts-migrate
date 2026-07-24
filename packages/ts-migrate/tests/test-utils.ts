@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import glob from 'glob';
 import path from 'path';
@@ -45,6 +46,25 @@ export function copyDir(srcDir: string, destDir: string) {
 export function deleteDir(dir: string) {
   assertDirExists(dir);
   fs.rmSync(dir, { recursive: true, force: true });
+}
+
+/**
+ * A digest over every file's path and raw bytes under dir, for asserting that
+ * a dry run left the tree byte-identical.
+ */
+export function hashDir(dir: string): string {
+  assertDirExists(dir);
+  const hash = crypto.createHash('sha256');
+  glob
+    .sync(`${dir}/**/*`, { nodir: true, dot: true })
+    .sort()
+    .forEach((file) => {
+      hash.update(path.relative(dir, file));
+      hash.update('\0');
+      hash.update(fs.readFileSync(file));
+      hash.update('\0');
+    });
+  return hash.digest('hex');
 }
 
 export function getDirData(dir1: string, dir2: string) {

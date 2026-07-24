@@ -15,6 +15,8 @@ interface RunSummaryBase {
   tsMigrateVersion: string;
   rootDir: string;
   exitCode: number;
+  /** True when the run was a --dry-run: the summary describes what a real run would change. */
+  dryRun: boolean;
 }
 
 export interface RenameRunSummary extends RunSummaryBase {
@@ -40,6 +42,7 @@ function relativeTo(rootDir: string, fileName: string): string {
 export function buildRenameRunSummary(params: {
   rootDir: string;
   exitCode: number;
+  dryRun?: boolean;
   renamedFiles: Array<{ oldFile: string; newFile: string }>;
 }): RenameRunSummary {
   const { rootDir, exitCode, renamedFiles } = params;
@@ -48,6 +51,7 @@ export function buildRenameRunSummary(params: {
     tsMigrateVersion: packageVersion(),
     rootDir,
     exitCode,
+    dryRun: params.dryRun ?? false,
     renamedFiles: renamedFiles
       .map(({ oldFile, newFile }) => ({
         from: relativeTo(rootDir, oldFile),
@@ -61,7 +65,10 @@ export function buildMigrateRunSummary(params: {
   command: 'migrate' | 'reignore';
   rootDir: string;
   exitCode: number;
+  dryRun?: boolean;
   updatedSourceFiles: ReadonlySet<string>;
+  /** In-memory contents to scan instead of the disk state; required for a dry run. */
+  fileContents?: ReadonlyMap<string, string>;
   nonMigratedFilesWithSyntaxErrors: string[];
   pluginStats: MigrateResult['pluginStats'];
 }): MigrateRunSummary {
@@ -70,7 +77,7 @@ export function buildMigrateRunSummary(params: {
   // A summary of a successful run must still be written if this scan throws.
   let changedFilesTypeDebt: MigrateRunSummary['changedFilesTypeDebt'] = null;
   try {
-    const debt = scanTypeDebtForFiles(rootDir, [...updatedSourceFiles]);
+    const debt = scanTypeDebtForFiles(rootDir, [...updatedSourceFiles], params.fileContents);
     changedFilesTypeDebt = { aliasNames: debt.aliasNames, totals: debt.totals };
   } catch (err) {
     log.warn('Skipped the type debt scan of the changed files:', err);
@@ -81,6 +88,7 @@ export function buildMigrateRunSummary(params: {
     tsMigrateVersion: packageVersion(),
     rootDir,
     exitCode,
+    dryRun: params.dryRun ?? false,
     changedFiles: [...updatedSourceFiles].map((fileName) => relativeTo(rootDir, fileName)).sort(),
     nonMigratedFilesWithSyntaxErrors: params.nonMigratedFilesWithSyntaxErrors
       .map((fileName) => relativeTo(rootDir, fileName))

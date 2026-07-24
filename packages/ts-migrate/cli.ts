@@ -87,6 +87,9 @@ yargs
         .string('sources')
         .alias('sources', 's')
         .describe('sources', 'Path to a subset of your project to rename.')
+        .boolean('dry-run')
+        .default('dry-run', false)
+        .describe('dry-run', 'Print the rename mapping without renaming any file.')
         .string('jsonSummary')
         .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
         .example('$0 rename /frontend/foo', 'Rename all the files in /frontend/foo')
@@ -98,14 +101,15 @@ yargs
     (args) => {
       const rootDir = path.resolve(process.cwd(), args.folder);
       const { sources } = args;
-      const renamedFiles = rename({ rootDir, sources });
+      const dryRun = args['dry-run'];
+      const renamedFiles = rename({ rootDir, sources, dryRun });
       if (renamedFiles === null) {
         process.exit(-1);
       }
       if (args.jsonSummary) {
         const exitCode = writeRunSummary(
           args.jsonSummary,
-          buildRenameRunSummary({ rootDir, exitCode: 0, renamedFiles }),
+          buildRenameRunSummary({ rootDir, exitCode: 0, dryRun, renamedFiles }),
         );
         if (exitCode !== 0) process.exit(exitCode);
       }
