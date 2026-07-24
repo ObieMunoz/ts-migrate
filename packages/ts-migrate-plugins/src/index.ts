@@ -1,7 +1,7 @@
 import { Plugin as PluginType } from '@obiemunoz/ts-migrate-server';
 import addConversionsPlugin from './plugins/add-conversions';
 import declareMissingClassPropertiesPlugin from './plugins/declare-missing-class-properties';
-import eslintFixPlugin from './plugins/eslint-fix';
+import eslintFixPlugin, { Options as EslintFixOptionsType } from './plugins/eslint-fix';
 import explicitAnyPlugin from './plugins/explicit-any';
 import hoistArrowFunctionsPlugin from './plugins/hoist-arrow-functions';
 import hoistClassStaticsPlugin from './plugins/hoist-class-statics';
@@ -31,6 +31,7 @@ import {
 } from './utils/typesPackages';
 
 export type Plugin<T = unknown> = PluginType<T>;
+export type EslintFixOptions = EslintFixOptionsType;
 export type SourceTextUpdate = SourceTextUpdateType;
 export type TypesPackageDetector = TypesPackageDetectorType;
 export type TypesPackageReport = TypesPackageReportType;

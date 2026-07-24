@@ -2,11 +2,19 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { Worker } from 'worker_threads';
-import { loadESLint } from 'eslint';
+import type { loadESLint } from 'eslint';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 
 // Either the flat-config or legacy engine; both expose the `lintText` API.
 type AnyESLint = InstanceType<Awaited<ReturnType<typeof loadESLint>>>;
+
+export type Options = {
+  /**
+   * Lint with the project's own ESLint when one is installed and usable
+   * (default). False pins the copy bundled with ts-migrate.
+   */
+  projectEslint?: boolean;
+};
 
 // Flat config file names, in ESLint's resolution order.
 const FLAT_CONFIG_FILENAMES = [
@@ -43,20 +51,180 @@ function shouldUseFlatConfig(): boolean {
     : hasFlatConfig(process.cwd());
 }
 
+/**
+ * Which ESLint lints. The project's config was written for the project's own
+ * engine, and rule semantics, config resolution, and severity defaults all
+ * move between majors: a rule written against the ESLint 8 context API
+ * (`context.getScope()` and friends, removed in 9) throws for every file when
+ * a bundled ESLint 9 runs it, and eslint-fix can only report that and hand
+ * the file back unfixed. So the project's copy is preferred, the same way the
+ * compiler is (see ts-migrate's utils/resolveTypeScript).
+ */
+interface ESLintEngine {
+  /** What gets required: a package directory, or ts-migrate's own entry. */
+  entryPath: string;
+  version: string;
+  source: 'project' | 'bundled';
+  module: ESLintModule;
+  /** Decided once, so every worker lints with the same engine and config. */
+  useFlatConfig: boolean;
+  /** A project copy that was found and not used, and why. */
+  refused?: { version: string; reason: string };
+  /** The bundled engine was asked for by name, so nothing is a compromise. */
+  optedOut?: boolean;
+}
+
+type ESLintConstructor = new (options: { fix: boolean; ignore: boolean }) => AnyESLint;
+
+interface ESLintModule {
+  /** 8.57 and later. Chooses the flat-config or the eslintrc engine. */
+  loadESLint?: (options: { useFlatConfig: boolean }) => Promise<ESLintConstructor>;
+  /** 8.0 and later. The eslintrc engine; flat config is behind internals. */
+  ESLint?: ESLintConstructor;
+}
+
+// Below this the export shape predates the `ESLint` class entirely, and the
+// rule and config APIs are far enough from what this plugin drives that the
+// bundled engine is the safer answer.
+const MIN_PROJECT_MAJOR = 8;
+
+function readESLintVersion(packageDir: string): string | undefined {
+  try {
+    const { name, version } = JSON.parse(
+      fs.readFileSync(path.join(packageDir, 'package.json'), 'utf-8'),
+    );
+    return name === 'eslint' && typeof version === 'string' ? version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The ESLint the project's own `eslint` would run: an explicit ancestor walk
+ * rather than require.resolve, whose global fallbacks (NODE_PATH, global
+ * installs) can name a copy the project itself would never load.
+ */
+function findProjectESLint(rootDir: string): { packageDir: string; version: string } | undefined {
+  for (let dir = path.resolve(rootDir); ; dir = path.dirname(dir)) {
+    const packageDir = path.join(dir, 'node_modules', 'eslint');
+    const version = readESLintVersion(packageDir);
+    if (version) return { packageDir, version };
+    if (path.dirname(dir) === dir) return undefined;
+  }
+}
+
+/** The ESLint installed alongside ts-migrate, used when the project's is not. */
+function findBundledESLint(): { entryPath: string; version: string } {
+  const entryPath = require.resolve('eslint');
+  for (let dir = path.dirname(entryPath); ; dir = path.dirname(dir)) {
+    const version = readESLintVersion(dir);
+    if (version) return { entryPath, version };
+    if (path.dirname(dir) === dir) return { entryPath, version: 'unknown version' };
+  }
+}
+
+function resolveESLintEngine(
+  rootDir: string,
+  useProjectESLint: boolean,
+  useFlatConfig: boolean,
+): ESLintEngine {
+  const bundled = findBundledESLint();
+  const useBundled = (extra: Partial<ESLintEngine> = {}): ESLintEngine => ({
+    ...bundled,
+    source: 'bundled',
+    module: require(bundled.entryPath),
+    useFlatConfig,
+    ...extra,
+  });
+
+  if (!useProjectESLint) return useBundled({ optedOut: true });
+
+  const project = findProjectESLint(rootDir);
+  if (!project) return useBundled();
+
+  const refuse = (reason: string) => useBundled({ refused: { version: project.version, reason } });
+
+  if (Number.parseInt(project.version, 10) < MIN_PROJECT_MAJOR) {
+    return refuse(`below the ESLint ${MIN_PROJECT_MAJOR} floor ts-migrate can load`);
+  }
+
+  let projectModule: ESLintModule;
+  try {
+    projectModule = require(project.packageDir);
+  } catch (error) {
+    return refuse(`could not be loaded (${error instanceof Error ? error.message : error})`);
+  }
+
+  if (typeof projectModule.loadESLint !== 'function') {
+    if (typeof projectModule.ESLint !== 'function') {
+      return refuse('exports neither loadESLint nor an ESLint class');
+    }
+    if (useFlatConfig) {
+      // 8.0 through 8.56 reach flat config only through
+      // eslint/use-at-your-own-risk, which is not an API to hold a migration to.
+      return refuse('predates flat config support in the ESLint public API (8.57)');
+    }
+  }
+
+  return {
+    entryPath: project.packageDir,
+    version: project.version,
+    source: 'project',
+    module: projectModule,
+    useFlatConfig,
+  };
+}
+
+/** The run banner: which engine lints, and why it was that one. */
+function describeESLintEngine(engine: ESLintEngine): string {
+  if (engine.source === 'project') {
+    return `[eslint-fix] ESLint ${engine.version} (project: ${engine.entryPath})`;
+  }
+  let why = 'project has no eslint installed';
+  if (engine.optedOut) {
+    why = '--no-projectEslint';
+  } else if (engine.refused) {
+    why = `project has eslint ${engine.refused.version}, ${engine.refused.reason}`;
+  }
+  return `[eslint-fix] ESLint ${engine.version} (bundled with ts-migrate; ${why})`;
+}
+
 // Lazily create one ESLint instance, shared across all files in a run.
 // (`jiti`, a dependency, is what lets ESLint load a TypeScript `eslint.config.ts`.)
 let eslintPromise: Promise<AnyESLint> | undefined;
+// Set with it, and read when spawning workers so they load the same engine.
+let resolvedEngine: ESLintEngine | undefined;
 
-function getESLint(): Promise<AnyESLint> {
-  if (!eslintPromise) {
-    eslintPromise = loadESLint({ useFlatConfig: shouldUseFlatConfig() }).then(
-      (ESLintClass) =>
-        new ESLintClass({
-          fix: true,
-          // Set ignore to false so we can lint in `tmp` for testing.
-          ignore: false,
-        }),
+async function createESLint(rootDir: string, useProjectESLint: boolean): Promise<AnyESLint> {
+  const useFlatConfig = shouldUseFlatConfig();
+  const engine = resolveESLintEngine(rootDir, useProjectESLint, useFlatConfig);
+  resolvedEngine = engine;
+
+  console.log(describeESLintEngine(engine));
+  if (engine.refused) {
+    console.warn(
+      `[eslint-fix] This project has eslint ${engine.refused.version} installed, which is ` +
+        `${engine.refused.reason}; linting with the ESLint ${engine.version} bundled with ` +
+        'ts-migrate instead. Rules and plugins pinned to the project ESLint can fail under ' +
+        'it, and files whose rules throw come back unfixed.',
     );
+  }
+
+  const options = {
+    fix: true,
+    // Set ignore to false so we can lint in `tmp` for testing.
+    ignore: false,
+  };
+  if (typeof engine.module.loadESLint === 'function') {
+    const ESLintClass = await engine.module.loadESLint({ useFlatConfig });
+    return new ESLintClass(options);
+  }
+  return new (engine.module.ESLint as ESLintConstructor)(options);
+}
+
+function getESLint(rootDir: string, useProjectESLint: boolean): Promise<AnyESLint> {
+  if (!eslintPromise) {
+    eslintPromise = createESLint(rootDir, useProjectESLint);
   }
   return eslintPromise;
 }
@@ -166,14 +334,18 @@ if (workerData.typeScriptDir) {
   };
 }
 
-const { loadESLint } = require(workerData.eslintPath);
+// The engine the main thread resolved, entered through the API it chose.
+const eslintModule = require(workerData.eslintPath);
 
 let cliPromise;
 function getCli() {
   if (!cliPromise) {
-    cliPromise = loadESLint({ useFlatConfig: workerData.useFlatConfig }).then(
-      (ESLintClass) => new ESLintClass({ fix: true, ignore: false }),
-    );
+    const options = { fix: true, ignore: false };
+    cliPromise = workerData.useLoadESLint
+      ? eslintModule
+          .loadESLint({ useFlatConfig: workerData.useFlatConfig })
+          .then((ESLintClass) => new ESLintClass(options))
+      : Promise.resolve(new eslintModule.ESLint(options));
   }
   return cliPromise;
 }
@@ -247,12 +419,18 @@ function failPool(error: Error): void {
 }
 
 function spawnWorker(): Worker {
+  // A job only reaches the pool after getESLint resolved, so the engine the
+  // main thread lints with is the one workers are handed.
+  if (!resolvedEngine) {
+    throw new Error('eslint-fix: no ESLint engine has been resolved yet');
+  }
   const worker = new Worker(WORKER_SOURCE, {
     eval: true,
     workerData: {
-      eslintPath: require.resolve('eslint'),
+      eslintPath: resolvedEngine.entryPath,
+      useLoadESLint: typeof resolvedEngine.module.loadESLint === 'function',
       typeScriptDir: typeScriptPackageDir(),
-      useFlatConfig: shouldUseFlatConfig(),
+      useFlatConfig: resolvedEngine.useFlatConfig,
     },
   });
   worker.on('message', (result: WorkerResult) => {
@@ -418,7 +596,7 @@ async function lintFile(cli: AnyESLint, fileName: string, text: string): Promise
   return result.fixed as string;
 }
 
-const eslintFixPlugin: Plugin = {
+const eslintFixPlugin: Plugin<Options> = {
   name: 'eslint-fix',
 
   // Each file's fix depends only on that file's own text, so the runner keeps
@@ -426,13 +604,16 @@ const eslintFixPlugin: Plugin = {
   // into parallel lint work.
   independentFiles: true,
 
-  async run({ fileName, text }) {
+  async run({ fileName, rootDir, text, options }) {
     if (lastFixedText.get(fileName) === text) {
       return text;
     }
     pendingLintCalls += 1;
     try {
-      const cli = await getESLint();
+      // rootDir is where the project's ESLint is searched for. It is on every
+      // plugin's params; the fallback is for a direct caller that omits it,
+      // and matches the root the flat-config detection above uses.
+      const cli = await getESLint(rootDir ?? process.cwd(), options?.projectEslint !== false);
       const newText = await lintFile(cli, fileName, text);
       lastFixedText.set(fileName, newText);
       return newText;
