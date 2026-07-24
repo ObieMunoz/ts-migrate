@@ -119,11 +119,53 @@ const poolSize =
     return cores > 2 ? Math.min(cores - 1, 8) : 0;
   })();
 
+// The compiler this process runs, as a package directory. The CLI redirects
+// `require('typescript')` at the project's own copy (see ts-migrate's
+// utils/resolveTypeScript), and a worker starts with a fresh module registry
+// that knows nothing of it. Type-aware configs never reach a worker, but the
+// lint rules and import resolvers that do can still load a compiler.
+function typeScriptPackageDir(): string | undefined {
+  try {
+    for (let dir = path.dirname(require.resolve('typescript')); ; dir = path.dirname(dir)) {
+      const packageJsonPath = path.join(dir, 'package.json');
+      if (fs.existsSync(packageJsonPath)) {
+        const { name } = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+        return name === 'typescript' ? dir : undefined;
+      }
+      if (path.dirname(dir) === dir) return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+}
+
 // The worker body is inlined so it survives every way this plugin is loaded
 // (compiled dist, ts-jest, and the transpile-to-temp-dir test harness). Keep
 // its lint loop in sync with fixToStable above.
 const WORKER_SOURCE = `
 const { parentPort, workerData } = require('worker_threads');
+
+// Whatever loads a compiler in here gets the one the rest of the migration
+// reasons with.
+if (workerData.typeScriptDir) {
+  const Module = require('module');
+  const nodePath = require('path');
+  const originalResolveFilename = Module._resolveFilename;
+  Module._resolveFilename = function (request, ...rest) {
+    if (request === 'typescript' || request.startsWith('typescript/')) {
+      const target = request === 'typescript'
+        ? workerData.typeScriptDir
+        : nodePath.join(workerData.typeScriptDir, request.slice('typescript/'.length));
+      try {
+        return originalResolveFilename.call(this, target, ...rest);
+      } catch {
+        // Not in this copy; fall through to the default resolution.
+      }
+    }
+    return originalResolveFilename.call(this, request, ...rest);
+  };
+}
+
 const { loadESLint } = require(workerData.eslintPath);
 
 let cliPromise;
@@ -209,6 +251,7 @@ function spawnWorker(): Worker {
     eval: true,
     workerData: {
       eslintPath: require.resolve('eslint'),
+      typeScriptDir: typeScriptPackageDir(),
       useFlatConfig: shouldUseFlatConfig(),
     },
   });

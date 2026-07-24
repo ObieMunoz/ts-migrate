@@ -1,8 +1,14 @@
 #!/usr/bin/env node
 
 /* eslint-disable no-await-in-loop, no-restricted-syntax */
+// Points the process at the project's TypeScript. Must stay the first import:
+// the packages below load a compiler at module scope, and the redirect only
+// reaches a `require('typescript')` that has not happened yet.
+import typeScriptDecision from './utils/useProjectTypeScript';
+
 import fs from 'fs';
 import path from 'path';
+import ts from 'typescript';
 import log from 'updatable-log';
 import yargs from 'yargs';
 
@@ -19,6 +25,7 @@ import ensureAliasDeclarations from './utils/aliasDeclarations';
 import { combineFileFilters, createBootstrapMigrationFilter } from './utils/bootstrapFiles';
 import { createGitignoreMigrationFilter } from './utils/gitignore';
 import packageVersion from './utils/packageVersion';
+import { describeTypeScript, typeScriptWarning } from './utils/resolveTypeScript';
 import {
   buildMigrateRunSummary,
   buildRenameRunSummary,
@@ -31,6 +38,28 @@ import {
   scanTypeDebt,
   scanTypeDebtForFiles,
 } from './utils/typeDebt';
+
+const TYPESCRIPT_FLAG_DESCRIPTION =
+  'Path to the TypeScript package to run with. Defaults to the project\'s own install ' +
+  '(node_modules/typescript, searched from <folder> upward), then to the compiler bundled ' +
+  'with ts-migrate.';
+
+/**
+ * Which compiler this run reasoned with, reported from the loaded instance so
+ * the banner is what happened rather than what was asked for.
+ */
+function logTypeScriptDecision(): void {
+  const decision = typeScriptDecision();
+  log.info(describeTypeScript(decision, ts.version));
+  if (ts.version !== decision.version) {
+    log.warn(
+      `Loaded TypeScript ${ts.version}, not the ${decision.version} at ` +
+        `${decision.packageDir}: something else in this process resolves the compiler first.`,
+    );
+  }
+  const warning = typeScriptWarning(decision);
+  if (warning) log.warn(warning);
+}
 
 /** A recommendation report must never fail an otherwise successful run. */
 function printTypesPackageReport(
@@ -265,6 +294,8 @@ yargs
           'incrementalPasses',
           'Revisit only files affected by the previous pass when repeating plugins. Disable with --no-incrementalPasses.',
         )
+        .string('typescript')
+        .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
         .string('typesReportFile')
         .describe(
           'typesReportFile',
@@ -296,6 +327,7 @@ yargs
       const rootDir = path.resolve(process.cwd(), args.folder);
       const { sources } = args;
       const dryRun = args['dry-run'];
+      logTypeScriptDecision();
 
       let config: MigrateConfig;
       let typesPackageDetector: TypesPackageDetector | undefined;
@@ -438,6 +470,8 @@ yargs
           'bootstrap',
           'Skip build system files (configs and node-run scripts): they are neither reignored nor added to the program. Disable with --no-bootstrap.',
         )
+        .string('typescript')
+        .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
         .boolean('dry-run')
         .default('dry-run', false)
         .describe(
@@ -455,6 +489,7 @@ yargs
       const rootDir = path.resolve(process.cwd(), args.folder);
       const { sources } = args;
       const dryRun = args['dry-run'];
+      logTypeScriptDecision();
 
       const {
         exitCode,
@@ -546,6 +581,8 @@ yargs
         .boolean('gitignore')
         .default('gitignore', true)
         .describe('gitignore', 'Leave gitignored files uncounted. Disable with --no-gitignore.')
+        .string('typescript')
+        .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
         .example(
           '$0 check /frontend/foo',
           'Exit nonzero if any per-file count exceeds the baseline; lower the baseline on improvement',
