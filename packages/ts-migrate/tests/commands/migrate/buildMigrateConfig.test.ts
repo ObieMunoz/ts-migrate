@@ -91,6 +91,26 @@ describe('buildMigrateConfig', () => {
     expect(defaultPropsOptions({}).useDefaultPropsHelper).toBe(false);
   });
 
+  it('gives both eslint-fix passes the projectEslint choice', () => {
+    const eslintFixOptions = (params: Parameters<typeof buildMigrateConfig>[0]) =>
+      buildMigrateConfig(params)
+        .config.plugins.filter(({ plugin }) => plugin.name === 'eslint-fix')
+        .map(({ options }) => options as { projectEslint?: boolean });
+    expect(eslintFixOptions({ projectEslint: false })).toEqual([
+      { projectEslint: false },
+      { projectEslint: false },
+    ]);
+    expect(eslintFixOptions({})).toEqual([
+      { projectEslint: undefined },
+      { projectEslint: undefined },
+    ]);
+  });
+
+  it('passes projectEslint to a single --plugin eslint-fix run', () => {
+    const { config } = buildMigrateConfig({ plugin: 'eslint-fix', projectEslint: false });
+    expect(config.plugins[0].options).toEqual({ projectEslint: false });
+  });
+
   it('parses --typeMap JSON for the jsdoc plugin and rejects invalid JSON', () => {
     const { config } = buildMigrateConfig({ plugin: 'jsdoc', typeMap: '{"Object":"any"}' });
     expect((config.plugins[0].options as { typeMap?: unknown }).typeMap).toEqual({ Object: 'any' });

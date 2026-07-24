@@ -78,9 +78,10 @@ if [ -z "$frontend_folder" ]; then
 fi
 folder_name=$(basename "$frontend_folder")
 
-# A scoped run must be reignored with the same scope, and with the same
-# compiler, so the reignore hint printed on failure repeats the --sources and
-# --typescript flags this run was invoked with.
+# A scoped run must be reignored with the same scope, with the same compiler,
+# and with the same lint engine, so the reignore hint printed on failure
+# repeats the --sources, --typescript, and --no-projectEslint flags this run
+# was invoked with.
 reignore_cmd="npx -p @obiemunoz/ts-migrate ts-migrate reignore \"$frontend_folder\""
 sources_value_pending=false
 for arg in "${additional_args[@]}"; do
@@ -92,6 +93,7 @@ for arg in "${additional_args[@]}"; do
   case $arg in
     --sources=*|-s=*) reignore_cmd+=" --sources \"${arg#*=}\"" ;;
     --sources|-s) sources_value_pending=true ;;
+    --no-projectEslint) reignore_cmd+=" --no-projectEslint" ;;
   esac
 done
 if [ -n "$typescript_path" ]; then

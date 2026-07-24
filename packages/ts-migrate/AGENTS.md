@@ -54,6 +54,16 @@ docs live in this package's README.md.
    or any file inside it) to name a compiler that is not under
    `node_modules`, or to force a specific one; `ts-migrate-full` applies it to
    the migrate step and the final compile check alike.
+9. **The eslint-fix step runs the project's own ESLint**, the
+   `node_modules/eslint` found by searching from `<folder>` upward, because
+   the project's config was written for that engine: a rule using the ESLint 8
+   context API (`context.getScope()` and friends, removed in 9) throws under a
+   newer engine, and those files come back with no lint fixes. The step prints
+   the copy in use once, for example
+   `[eslint-fix] ESLint 8.57.1 (project: /repo/node_modules/eslint)`. A project
+   with no eslint, one below 8.0, or a flat config with an eslint below 8.57
+   falls back to the ESLint bundled with ts-migrate. Pass `--no-projectEslint`
+   to `migrate` or `reignore` to use the bundled one regardless.
 
 ## Recommended workflow (full migration)
 
@@ -124,7 +134,9 @@ verify with `tsc --noEmit`.
   check with the compiler at `<path>`. Without it, both use whatever compiler
   the migrate step resolved (the project's own, when it has one).
 - All other flags are forwarded to the underlying `rename` and `migrate`
-  commands (e.g. `--sources`, `--no-inferTypes`, `--exclude-plugin`).
+  commands (e.g. `--sources`, `--no-inferTypes`, `--exclude-plugin`,
+  `--no-projectEslint`, which is also repeated in the reignore hint printed
+  on failure).
   Exception: `--dry-run` is rejected here, because each pipeline step builds
   on the previous step's writes; preview with the individual commands
   instead.
@@ -212,6 +224,8 @@ with `@ts-expect-error` so the project compiles.
   counts in the changed files (see "Machine-readable summaries" below).
 - `--typescript <path>`: run with the compiler at `<path>` instead of the one
   found by searching from `<folder>` upward (critical fact 8).
+- `--no-projectEslint`: run eslint-fix with the ESLint bundled with ts-migrate
+  instead of the project's own (critical fact 9).
 
 ### `ts-migrate reignore <folder> [flags]`
 
@@ -233,6 +247,7 @@ existing suppression comments, then re-adds only the ones still needed.
 - `--typescript <path>`: same compiler override as `migrate`. A scoped
   migration reignored later must use the same compiler, or the suppressions
   will not match.
+- `--no-projectEslint`: same lint engine override as `migrate`.
 
 Both `migrate` and `reignore` end the run by printing a one-paragraph type
 debt summary (the `report` totals for the project).
@@ -318,6 +333,10 @@ need both summaries.
   cannot change them), and ordinary type errors (`reignore`).
 - "eslint-fix skipped / could not parse" warnings are expected until the
   project's ESLint understands TypeScript; the migration is still valid.
+- "Error occurred in eslint-fix plugin" leaves that file unlinted but does not
+  invalidate the migration. If the run line says the ESLint is bundled rather
+  than the project's, the config is likely being run by an engine it was not
+  written for; installing eslint in the project fixes the mismatch.
 - `rename` exits nonzero if `<folder>` has no `tsconfig.json` — run `init`
   first (`ts-migrate-full` does). A run that reports "No JS/JSX files to
   rename." succeeded but matched nothing: `<folder>` probably points at the

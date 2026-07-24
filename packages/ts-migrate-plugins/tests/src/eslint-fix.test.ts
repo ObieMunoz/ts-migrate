@@ -33,48 +33,140 @@ function getCompiledPlugin(): string {
   return compiledPlugin;
 }
 
-// Only fileName and text are read by the eslint-fix plugin; the other
-// PluginParams are unused. Files are dispatched together, as the migrate
-// runner does for independentFiles plugins. Worker spawns are counted by
-// wrapping worker_threads.Worker before the plugin loads.
+// Only fileName, rootDir, text, and options are read by the eslint-fix
+// plugin; the other PluginParams are unused. Files are dispatched together,
+// as the migrate runner does for independentFiles plugins. The workerData of
+// every spawn is recorded by wrapping worker_threads.Worker before the plugin
+// loads. Results go to a file so stdout carries only what the plugin logs.
 const driverSource = `
+const fs = require('fs');
+const path = require('path');
 const workerThreads = require('worker_threads');
 const RealWorker = workerThreads.Worker;
-let spawnedWorkers = 0;
+const workerData = [];
 workerThreads.Worker = class extends RealWorker {
-  constructor(...args) {
-    spawnedWorkers += 1;
-    super(...args);
+  constructor(source, options) {
+    workerData.push(options && options.workerData);
+    super(source, options);
   }
 };
-const plugin = require('./eslint-fix-plugin.cjs').default;
-const files = JSON.parse(process.argv[2]);
+const plugin = require('./plugin/eslint-fix-plugin.cjs').default;
+const { files, rootDir, options } = JSON.parse(process.argv[2]);
 (async () => {
   const results = await Promise.all(
-    files.map(({ fileName, text }) => plugin.run({ fileName, text })),
+    files.map(({ fileName, text }) => plugin.run({ fileName, rootDir, text, options })),
   );
-  process.stdout.write(JSON.stringify({ results, spawnedWorkers }));
+  fs.writeFileSync(
+    path.join(__dirname, 'result.json'),
+    JSON.stringify({
+      results,
+      // The temp tree is gone by the time the test reads this.
+      workerData: workerData.map((data) => ({
+        ...data,
+        eslintRealPath: fs.realpathSync(data.eslintPath),
+      })),
+      spawnedWorkers: workerData.length,
+    }),
+  );
 })().catch((error) => {
   console.error(error);
   process.exit(1);
 });
 `;
 
+/** A stand-in for a project ESLint, to pin an export shape a test needs. */
+const STUB_ENGINE_SOURCE = `
+// Exports only the ESLint class, as 8.0 through 8.56 do. The marker it
+// appends is how a test tells which engine produced the text.
+const MARKER = '// linted by the project engine\\n';
+class ESLint {
+  async lintText(text, { filePath }) {
+    return [{ filePath, messages: [], output: text.endsWith(MARKER) ? text : text + MARKER }];
+  }
+  async calculateConfigForFile() {
+    return {};
+  }
+}
+module.exports = { ESLint };
+`;
+
+const PROJECT_ENGINE_MARKER = '// linted by the project engine\n';
+
+function packageDir(specifier: string): string {
+  return fs.realpathSync(
+    path.dirname(require.resolve(`${specifier}/package.json`, { paths: [packageRoot] })),
+  );
+}
+
+/** The real ESLint 8, installed as an aliased devDependency. */
+const realESLint8Dir = () => packageDir('eslint-v8');
+/** The ESLint this package depends on, which is the fallback engine. */
+const bundledESLintDir = () => packageDir('eslint');
+const bundledESLintVersion = () =>
+  JSON.parse(fs.readFileSync(path.join(bundledESLintDir(), 'package.json'), 'utf8')).version;
+
+type ProjectESLint = 'v8' | { version: string; broken?: boolean };
+
+// Git will not track a directory named node_modules, so a fixture keeps the
+// packages its config needs in `deps` and they are installed on the way in.
+function installProjectDependencies(tmpDir: string, projectESLint?: ProjectESLint): void {
+  const nodeModules = path.join(tmpDir, 'node_modules');
+  const deps = path.join(tmpDir, 'deps');
+  if (fs.existsSync(deps)) {
+    fs.renameSync(deps, nodeModules);
+  }
+  if (!projectESLint) return;
+
+  fs.mkdirSync(nodeModules, { recursive: true });
+  const eslintDir = path.join(nodeModules, 'eslint');
+  if (projectESLint === 'v8') {
+    fs.symlinkSync(realESLint8Dir(), eslintDir, 'dir');
+    return;
+  }
+  fs.mkdirSync(eslintDir);
+  fs.writeFileSync(
+    path.join(eslintDir, 'package.json'),
+    JSON.stringify({ name: 'eslint', version: projectESLint.version, main: 'index.js' }),
+  );
+  fs.writeFileSync(
+    path.join(eslintDir, 'index.js'),
+    // A half-installed copy: the manifest is there, loading it is not.
+    projectESLint.broken ? "require('a-dependency-that-is-not-installed');\n" : STUB_ENGINE_SOURCE,
+  );
+}
+
+interface RunOptions {
+  env?: Record<string, string>;
+  /** Installed at <fixture>/node_modules/eslint before the run. */
+  projectESLint?: ProjectESLint;
+  /** The eslint-fix plugin's own options. */
+  pluginOptions?: { projectEslint?: boolean };
+}
+
 interface FixtureRun {
   results: (string | undefined)[];
   spawnedWorkers: number;
+  workerData: { eslintPath: string; eslintRealPath: string; useLoadESLint: boolean }[];
+  stdout: string;
   stderr: string;
 }
 
 function runInFixture(
   fixture: string,
   files: { fileName: string; text: string }[],
-  extraEnv: Record<string, string> = {},
+  { env: extraEnv = {}, projectESLint, pluginOptions }: RunOptions = {},
 ): FixtureRun {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ts-migrate-eslint-fix-'));
   try {
     fs.cpSync(path.join(__dirname, '..', 'fixtures', fixture), tmpDir, { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, 'eslint-fix-plugin.cjs'), getCompiledPlugin());
+    installProjectDependencies(tmpDir, projectESLint);
+    // The plugin gets its own directory with its own node_modules/eslint, the
+    // way it sits in an installed ts-migrate: the engine it falls back to has
+    // to be its own dependency, not whatever the project happens to hoist.
+    const pluginDir = path.join(tmpDir, 'plugin');
+    fs.mkdirSync(path.join(pluginDir, 'node_modules'), { recursive: true });
+    fs.symlinkSync(bundledESLintDir(), path.join(pluginDir, 'node_modules', 'eslint'), 'dir');
+    fs.writeFileSync(path.join(pluginDir, 'eslint-fix-plugin.cjs'), getCompiledPlugin());
     fs.writeFileSync(path.join(tmpDir, 'driver.cjs'), driverSource);
 
     const env = { ...process.env };
@@ -91,7 +183,7 @@ function runInFixture(
 
     const { status, stdout, stderr } = spawnSync(
       process.execPath,
-      ['driver.cjs', JSON.stringify(files)],
+      ['driver.cjs', JSON.stringify({ files, rootDir: tmpDir, options: pluginOptions })],
       {
         cwd: tmpDir,
         env,
@@ -101,7 +193,8 @@ function runInFixture(
     if (status !== 0) {
       throw new Error(`driver exited with ${status}: ${stderr}`);
     }
-    return { ...JSON.parse(stdout), stderr };
+    const result = JSON.parse(fs.readFileSync(path.join(tmpDir, 'result.json'), 'utf8'));
+    return { ...result, stdout, stderr };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -160,7 +253,7 @@ describe('eslint-fix plugin', () => {
           { fileName: 'Bar.tsx', text: `const bar = 'baz'` },
           { fileName: 'Ok.tsx', text: `const ok = 'yes';\n` },
         ],
-        { TS_MIGRATE_ESLINT_FIX_WORKERS: '2' },
+        { env: { TS_MIGRATE_ESLINT_FIX_WORKERS: '2' } },
       );
 
       expect(results).toEqual([
@@ -179,7 +272,7 @@ describe('eslint-fix plugin', () => {
       const { results, spawnedWorkers } = runInFixture(
         'eslint-flat-type-aware',
         [{ fileName: 'Foo.tsx', text: `const hello = 'world'` }],
-        { TS_MIGRATE_ESLINT_FIX_WORKERS: '2' },
+        { env: { TS_MIGRATE_ESLINT_FIX_WORKERS: '2' } },
       );
 
       expect(results).toEqual([`const hello = 'world';\n`]);
@@ -199,7 +292,7 @@ describe('eslint-fix plugin', () => {
           { fileName: 'Foo.tsx', text: `const hello = 'world'` },
           { fileName: 'Bar.tsx', text: `const bar = 'baz'` },
         ],
-        { TS_MIGRATE_ESLINT_FIX_WORKERS: '' },
+        { env: { TS_MIGRATE_ESLINT_FIX_WORKERS: '' } },
       );
 
       expect(results).toEqual([`const hello = 'world';\n`, `const bar = 'baz';\n`]);
@@ -218,7 +311,7 @@ describe('eslint-fix plugin', () => {
           { fileName: 'Foo.tsx', text },
           { fileName: 'Bar.tsx', text },
         ],
-        { TS_MIGRATE_ESLINT_FIX_WORKERS: '2' },
+        { env: { TS_MIGRATE_ESLINT_FIX_WORKERS: '2' } },
       );
 
       expect(results).toEqual([text, text]);
@@ -226,5 +319,149 @@ describe('eslint-fix plugin', () => {
       expect(stderr.match(/ESLint could not parse/g)).toHaveLength(1);
     },
     20000,
+  );
+});
+
+describe('eslint-fix engine selection', () => {
+  const unfixed = `const hello = 'world'`;
+  const fixed = `const hello = 'world';\n`;
+
+  it(
+    "runs a rule that uses the removed ESLint 8 context API under the project's ESLint",
+    () => {
+      const { results, stdout, stderr } = runInFixture(
+        'eslint-legacy-plugin',
+        [{ fileName: 'Foo.js', text: unfixed }],
+        { projectESLint: 'v8' },
+      );
+
+      expect(results).toEqual([fixed]);
+      expect(stdout).toContain('[eslint-fix] ESLint 8.57.1 (project:');
+      expect(stderr).not.toContain('getScope');
+    },
+    20000,
+  );
+
+  it(
+    'leaves the same file unfixed under the bundled engine, which --no-projectEslint selects',
+    () => {
+      const { results, stdout, stderr } = runInFixture(
+        'eslint-legacy-plugin',
+        [{ fileName: 'Foo.js', text: unfixed }],
+        { projectESLint: 'v8', pluginOptions: { projectEslint: false } },
+      );
+
+      expect(results).toEqual([unfixed]);
+      expect(stdout).toContain('bundled with ts-migrate; --no-projectEslint');
+      expect(stderr).toContain('context.getScope is not a function');
+    },
+    20000,
+  );
+
+  it(
+    'enters a project ESLint that exports no loadESLint through its ESLint class',
+    () => {
+      const { results, stdout } = runInFixture(
+        'eslint-legacy',
+        [{ fileName: 'Foo.js', text: unfixed }],
+        { projectESLint: { version: '8.30.0' } },
+      );
+
+      expect(results).toEqual([unfixed + PROJECT_ENGINE_MARKER]);
+      expect(stdout).toContain('[eslint-fix] ESLint 8.30.0 (project:');
+    },
+    20000,
+  );
+
+  it(
+    'falls back to the bundled engine, naming the version, below the supported floor',
+    () => {
+      const { results, stdout, stderr } = runInFixture(
+        'eslint-legacy',
+        [
+          { fileName: 'Foo.js', text: unfixed },
+          { fileName: 'Bar.js', text: unfixed },
+        ],
+        { projectESLint: { version: '7.32.0' } },
+      );
+
+      expect(results).toEqual([fixed, fixed]);
+      expect(stdout).toContain(
+        `[eslint-fix] ESLint ${bundledESLintVersion()} (bundled with ts-migrate; ` +
+          'project has eslint 7.32.0, which is below the ESLint 8 floor ts-migrate can load)',
+      );
+      expect(stderr.match(/This project's eslint 7\.32\.0 is below/g)).toHaveLength(1);
+    },
+    20000,
+  );
+
+  it(
+    'falls back to the bundled engine when the project ESLint will not load',
+    () => {
+      const { results, stdout, stderr } = runInFixture(
+        'eslint-legacy',
+        [{ fileName: 'Foo.js', text: unfixed }],
+        { projectESLint: { version: '9.39.0', broken: true } },
+      );
+
+      expect(results).toEqual([fixed]);
+      expect(stdout).toContain('project has eslint 9.39.0, which could not be loaded');
+      expect(stderr).toContain("This project's eslint 9.39.0 could not be loaded");
+    },
+    20000,
+  );
+
+  it(
+    'keeps the bundled engine, and says so, when the project has no ESLint',
+    () => {
+      const { results, stdout, stderr } = runInFixture('eslint-legacy', [
+        { fileName: 'Foo.js', text: unfixed },
+      ]);
+
+      expect(results).toEqual([fixed]);
+      expect(stdout).toContain('bundled with ts-migrate; project has no eslint installed');
+      expect(stderr).toBe('');
+    },
+    20000,
+  );
+
+  it(
+    'keeps the bundled engine for a flat config the project ESLint cannot load',
+    () => {
+      const { results, stdout } = runInFixture(
+        'eslint-flat',
+        [{ fileName: 'Foo.js', text: unfixed }],
+        { projectESLint: { version: '8.30.0' } },
+      );
+
+      expect(results).toEqual([fixed]);
+      expect(stdout).toContain(
+        'project has eslint 8.30.0, which predates flat config support in the ESLint public API ' +
+          '(8.57)',
+      );
+    },
+    20000,
+  );
+
+  it(
+    'hands workers the engine the main thread resolved',
+    () => {
+      const { results, workerData } = runInFixture(
+        'eslint-legacy-plugin',
+        [
+          { fileName: 'Foo.js', text: unfixed },
+          { fileName: 'Bar.js', text: `const bar = 'baz'` },
+        ],
+        { projectESLint: 'v8', env: { TS_MIGRATE_ESLINT_FIX_WORKERS: '2' } },
+      );
+
+      expect(results).toEqual([fixed, `const bar = 'baz';\n`]);
+      expect(workerData).toHaveLength(2);
+      workerData.forEach((data) => {
+        expect(data.eslintRealPath).toBe(realESLint8Dir());
+        expect(data.useLoadESLint).toBe(true);
+      });
+    },
+    30000,
   );
 });

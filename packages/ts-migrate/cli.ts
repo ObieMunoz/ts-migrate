@@ -40,6 +40,11 @@ import {
   scanTypeDebtForFiles,
 } from './utils/typeDebt';
 
+const PROJECT_ESLINT_FLAG_DESCRIPTION =
+  "Run eslint-fix with the project's own ESLint (node_modules/eslint, searched from " +
+  '<folder> upward), so lint rules and plugins see the engine they were written for. ' +
+  'Disable with --no-projectEslint to use the ESLint bundled with ts-migrate.';
+
 const TYPESCRIPT_FLAG_DESCRIPTION =
   'Path to the TypeScript package to run with. Defaults to the project\'s own install ' +
   '(node_modules/typescript, searched from <folder> upward), then to the compiler bundled ' +
@@ -313,6 +318,9 @@ yargs
           'inferTypes',
           'Infer types from usage before falling back to any. Disable with --no-inferTypes.',
         )
+        .boolean('projectEslint')
+        .default('projectEslint', true)
+        .describe('projectEslint', PROJECT_ESLINT_FLAG_DESCRIPTION)
         .number('maxStablePasses')
         .default('maxStablePasses', 5)
         .describe(
@@ -381,6 +389,7 @@ yargs
           protectedRegex: args.protectedRegex,
           publicRegex: args.publicRegex,
           inferTypes: args.inferTypes,
+          projectEslint: args.projectEslint,
           declareUntypedModules: args.declareUntypedModules,
         });
         config = built.config;
@@ -511,6 +520,9 @@ yargs
           'bootstrap',
           'Skip build system files (configs and node-run scripts): they are neither reignored nor added to the program. Disable with --no-bootstrap.',
         )
+        .boolean('projectEslint')
+        .default('projectEslint', true)
+        .describe('projectEslint', PROJECT_ESLINT_FLAG_DESCRIPTION)
         .boolean('declareUntypedModules')
         .default('declareUntypedModules', true)
         .describe(
@@ -555,6 +567,7 @@ yargs
         messagePrefix: args.p,
         gitignore: args.gitignore,
         bootstrap: args.bootstrap,
+        projectEslint: args.projectEslint,
         declareUntypedModules: args.declareUntypedModules,
         dryRun,
       });

@@ -174,6 +174,45 @@ and the compile check, so the two steps cannot disagree about which errors
 exist. Without the flag, the check runs whatever compiler the migrate step
 resolved.
 
+# Which ESLint eslint-fix runs
+
+Same principle, same search: the eslint-fix step lints with the project's own
+`node_modules/eslint`, found by searching from `<folder>` upward. It reports
+the copy it picked once per run.
+
+```
+[eslint-fix] ESLint 8.57.1 (project: /repo/node_modules/eslint)
+```
+
+Your config was written for your engine. Rule semantics, config resolution,
+and severity defaults all move between ESLint majors, and rules are the sharp
+edge: ESLint 9 removed `context.getScope()`, `context.getDeclaredVariables()`,
+and friends, so a plugin written for ESLint 8 throws on every file a newer
+engine hands it. eslint-fix can only report that and give the file back
+unfixed, which on one 2,105-file application meant 57 files silently received
+no lint fixes at all.
+
+Three cases fall back to the ESLint installed with ts-migrate, all named in
+the run line:
+
+- the project has no eslint installed
+- the project's eslint is below 8.0
+- the project uses a flat config (`eslint.config.*`) and its eslint predates
+  8.57, where flat config was still behind `eslint/use-at-your-own-risk`
+
+The second and third also print a warning, because the config and the engine
+running it then disagree by a major version.
+
+`migrate` and `reignore` take `--no-projectEslint` to use ts-migrate's own
+ESLint regardless:
+
+```sh
+npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --no-projectEslint
+```
+
+Flat versus legacy config is detected separately, from the presence of an
+`eslint.config.*` file; set `ESLINT_USE_FLAT_CONFIG` to override that.
+
 # Gitignored files
 
 Build output often lives inside the source tree (webpack/SSR bundles, a
@@ -613,7 +652,7 @@ An Airbnb convention this fork inherited: an alias for `any` (`type $TSFixMe = a
 
 > Does it work with ESLint 9 and flat configs?
 
-Yes. The eslint-fix step loads your project's own ESLint installation and auto-detects flat versus legacy config (set `ESLINT_USE_FLAT_CONFIG` to override the detection). One caveat: if your ESLint can't parse TypeScript yet, there is nothing for it to fix. It warns and moves on, which is one more reason to get `@typescript-eslint` set up early.
+Yes, and with ESLint 8 and `.eslintrc` too. The eslint-fix step loads your project's own ESLint installation and auto-detects flat versus legacy config (set `ESLINT_USE_FLAT_CONFIG` to override the detection); see [Which ESLint eslint-fix runs](#which-eslint-eslint-fix-runs) for the fallbacks and `--no-projectEslint`. One caveat: if your ESLint can't parse TypeScript yet, there is nothing for it to fix. It warns and moves on, which is one more reason to get `@typescript-eslint` set up early.
 
 > It's slow on my big repo.
 
