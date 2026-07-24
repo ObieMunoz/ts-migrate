@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      provenance:
+        description: Publish with provenance attestations (uncheck to bypass a Sigstore outage)
+        type: boolean
+        default: true
 
 concurrency:
   group: release
@@ -51,5 +56,40 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # A partial publish is recovered by dispatching a fresh run: the version
+      # step no-ops when HEAD is already tagged, and from-package only publishes
+      # versions missing from the registry. Do not use "re-run failed jobs",
+      # which checks out the pre-release commit and would version again.
       - name: Publish to npm
-        run: pnpm exec lerna publish from-package --yes
+        env:
+          NPM_CONFIG_PROVENANCE: ${{ inputs.provenance && 'true' || 'false' }}
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm exec lerna publish from-package --yes; then
+              exit 0
+            fi
+            echo "Publish attempt ${attempt} failed"
+            if [ "${attempt}" -lt 3 ]; then
+              sleep 30
+            fi
+          done
+          exit 1
+
+      - name: Verify published versions
+        run: |
+          version=$(node -p "require('./lerna.json').version")
+          for manifest in packages/*/package.json; do
+            name=$(node -p "const p = require('./${manifest}'); p.private ? '' : p.name")
+            if [ -z "${name}" ]; then
+              continue
+            fi
+            for attempt in 1 2 3; do
+              if npm view "${name}@${version}" version > /dev/null; then
+                echo "${name}@${version} is on the registry"
+                continue 2
+              fi
+              sleep 10
+            done
+            echo "${name}@${version} is missing from the registry"
+            exit 1
+          done
