@@ -351,7 +351,7 @@ function indexKeyType(
 
   const keyKinds = new Set(properties.map(propertyKeyKind));
   const indexKinds = keyKindsOfType(checker.getTypeAtLocation(access.argumentExpression));
-  if (!indexKinds || !indexKinds.size) {
+  if (!indexKinds) {
     return null;
   }
   // The assertion checks when every property name fits the index type, or when
