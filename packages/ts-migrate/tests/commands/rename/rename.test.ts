@@ -1,3 +1,5 @@
+import { execFileSync } from 'child_process';
+import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 import rename from '../../../commands/rename';
@@ -45,11 +47,12 @@ describe('rename command', () => {
     const outputDir = path.resolve(__dirname, 'output');
     copyDir(inputDir, rootDir);
 
-    const renamedFiles = rename({ rootDir });
+    const result = rename({ rootDir });
 
     const [rootData, outputData] = getDirData(rootDir, outputDir);
     expect(rootData).toEqual(outputData);
-    expect(sortedRelativeTo(rootDir, renamedFiles)).toEqual(expectedRenames);
+    expect(sortedRelativeTo(rootDir, result?.renamedFiles ?? null)).toEqual(expectedRenames);
+    expect(result?.skippedGitignoredFiles).toBe(0);
   });
 
   it('Dry run prints the mapping and leaves the tree byte-identical', () => {
@@ -58,10 +61,10 @@ describe('rename command', () => {
     const hashBefore = hashDir(rootDir);
     const infoSpy = jest.spyOn(log, 'info');
 
-    const renamedFiles = rename({ rootDir, dryRun: true });
+    const result = rename({ rootDir, dryRun: true });
 
     expect(hashDir(rootDir)).toBe(hashBefore);
-    expect(sortedRelativeTo(rootDir, renamedFiles)).toEqual(expectedRenames);
+    expect(sortedRelativeTo(rootDir, result?.renamedFiles ?? null)).toEqual(expectedRenames);
 
     const infoMessages = infoSpy.mock.calls.map((call) => call.join(' '));
     expect(infoMessages).toContainEqual(
@@ -76,5 +79,52 @@ describe('rename command', () => {
       expect.stringContaining('would update allowedImports in'),
     );
     infoSpy.mockRestore();
+  });
+
+  describe('gitignored files', () => {
+    const setUpGitignoredProject = () => {
+      execFileSync('git', ['init'], { cwd: rootDir, stdio: 'ignore' });
+      const writeFile = (relPath: string, text: string) => {
+        const filePath = path.resolve(rootDir, relPath);
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, text);
+      };
+      writeFile('tsconfig.json', JSON.stringify({ include: ['./**/*'] }));
+      writeFile('.gitignore', 'dist/\n');
+      writeFile('src/app.js', 'const a = 1;\n');
+      writeFile('dist/bundle.js', 'const b = 2;\n');
+    };
+
+    it('skips them by default', () => {
+      setUpGitignoredProject();
+      const infoSpy = jest.spyOn(log, 'info');
+
+      const result = rename({ rootDir });
+
+      expect(sortedRelativeTo(rootDir, result?.renamedFiles ?? null)).toEqual([
+        { oldFile: `src${path.sep}app.js`, newFile: `src${path.sep}app.ts` },
+      ]);
+      expect(result?.skippedGitignoredFiles).toBe(1);
+      expect(fs.existsSync(path.resolve(rootDir, 'dist/bundle.js'))).toBe(true);
+      expect(fs.existsSync(path.resolve(rootDir, 'dist/bundle.ts'))).toBe(false);
+      const infoMessages = infoSpy.mock.calls.map((call) => call.join(' '));
+      expect(infoMessages).toContainEqual(
+        expect.stringContaining('Skipping 1 gitignored JS/JSX file(s) (dist/bundle.js)'),
+      );
+      infoSpy.mockRestore();
+    });
+
+    it('renames them with gitignore disabled', () => {
+      setUpGitignoredProject();
+
+      const result = rename({ rootDir, gitignore: false });
+
+      expect(sortedRelativeTo(rootDir, result?.renamedFiles ?? null)).toEqual([
+        { oldFile: `dist${path.sep}bundle.js`, newFile: `dist${path.sep}bundle.ts` },
+        { oldFile: `src${path.sep}app.js`, newFile: `src${path.sep}app.ts` },
+      ]);
+      expect(result?.skippedGitignoredFiles).toBe(0);
+      expect(fs.existsSync(path.resolve(rootDir, 'dist/bundle.ts'))).toBe(true);
+    });
   });
 });

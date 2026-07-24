@@ -131,6 +131,9 @@ yargs
         .string('sources')
         .alias('sources', 's')
         .describe('sources', 'Path to a subset of your project to rename.')
+        .boolean('gitignore')
+        .default('gitignore', true)
+        .describe('gitignore', 'Skip gitignored files. Disable with --no-gitignore.')
         .boolean('dry-run')
         .default('dry-run', false)
         .describe('dry-run', 'Print the rename mapping without renaming any file.')
@@ -146,14 +149,20 @@ yargs
       const rootDir = path.resolve(process.cwd(), args.folder);
       const { sources } = args;
       const dryRun = args['dry-run'];
-      const renamedFiles = rename({ rootDir, sources, dryRun });
-      if (renamedFiles === null) {
+      const result = rename({ rootDir, sources, gitignore: args.gitignore, dryRun });
+      if (result === null) {
         process.exit(-1);
       }
       if (args.jsonSummary) {
         const exitCode = writeRunSummary(
           args.jsonSummary,
-          buildRenameRunSummary({ rootDir, exitCode: 0, dryRun, renamedFiles }),
+          buildRenameRunSummary({
+            rootDir,
+            exitCode: 0,
+            dryRun,
+            renamedFiles: result.renamedFiles,
+            skippedGitignoredFiles: result.skippedGitignoredFiles,
+          }),
         );
         if (exitCode !== 0) process.exit(exitCode);
       }
