@@ -3,6 +3,24 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.11.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.10.4...v0.11.0) (2026-07-24)
+
+
+### Bug Fixes
+
+* **hoist-class-statics:** expand the hoistable-globals whitelist ([#83](https://github.com/ObieMunoz/ts-migrate/issues/83)) ([4cb15b0](https://github.com/ObieMunoz/ts-migrate/commit/4cb15b0e8e1ea0145988aaaae7f3d8688be06745))
+* **ts-ignore:** skip un-suppressible diagnostics instead of aborting the file ([#71](https://github.com/ObieMunoz/ts-migrate/issues/71)) ([1dc2423](https://github.com/ObieMunoz/ts-migrate/commit/1dc2423a337744257bcde89ca4cd3a9c8fca2d80))
+
+
+### Features
+
+* **explicit-any:** cover TS7005 declaration/use-site and TS7023/7024 circular-return implicit anys ([#72](https://github.com/ObieMunoz/ts-migrate/issues/72)) ([54f93db](https://github.com/ObieMunoz/ts-migrate/commit/54f93db83118ac960582bf9babc5570faa410634))
+* **reignore:** support --sources for scoped/staged migrations ([#87](https://github.com/ObieMunoz/ts-migrate/issues/87)) ([62837a9](https://github.com/ObieMunoz/ts-migrate/commit/62837a9171efa240f9d53cbe02cebe9da365d9ce))
+
+
+
+
+
 ## [0.10.4](https://github.com/ObieMunoz/ts-migrate/compare/v0.10.3...v0.10.4) (2026-07-21)
 
 

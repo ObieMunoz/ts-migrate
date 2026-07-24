@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.11.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.10.4...v0.11.0) (2026-07-24)
+
+
+### Features
+
+* **reignore:** support --sources for scoped/staged migrations ([#87](https://github.com/ObieMunoz/ts-migrate/issues/87)) ([62837a9](https://github.com/ObieMunoz/ts-migrate/commit/62837a9171efa240f9d53cbe02cebe9da365d9ce))
+
+
+
+
+
 ## [0.10.4](https://github.com/ObieMunoz/ts-migrate/compare/v0.10.3...v0.10.4) (2026-07-21)
 
 **Note:** Version bump only for package @obiemunoz/ts-migrate
