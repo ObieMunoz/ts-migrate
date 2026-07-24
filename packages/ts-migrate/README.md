@@ -375,6 +375,10 @@ suppression pass, so the errors it resolves are never written in the first place
 - `--no-declareUntypedModules` turns this off and goes back to suppressing each
   import.
 
+On a project migrated before this existed, `reignore` clears the suppressions
+retroactively: it strips them, sees the errors again, and declares the packages
+instead of re-adding the comments.
+
 Make sure your tsconfig includes the file. The config `ts-migrate init` writes
 does; if yours restricts `include` to a source directory, add
 `types/ts-migrate-modules.d.ts` to `include` or `files` — ts-migrate warns when
