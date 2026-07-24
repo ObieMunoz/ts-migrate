@@ -20,21 +20,38 @@ cli() {
   node "$cli_js" "$@"
 }
 
-usage="Usage: ts-migrate-full <folder> [--yes] [--no-commit] [--blame-ignore-revs] [rename/migrate options...]"
+usage="Usage: ts-migrate-full <folder> [--yes] [--no-commit] [--blame-ignore-revs] [--typescript <path>] [rename/migrate options...]"
 
 # --yes, --no-commit, --blame-ignore-revs, --version, and --help belong to
 # this script; everything else after the folder is forwarded to the rename and
-# migrate commands.
+# migrate commands. --typescript is both: forwarded to migrate and used to
+# pick the compiler the check step runs.
 auto_yes=false
 no_commit=false
 blame_ignore_revs=false
+typescript_path=""
+typescript_value_pending=false
 frontend_folder=""
 additional_args=()
 for arg in "$@"; do
+  if [ "$typescript_value_pending" = "true" ]; then
+    typescript_path=$arg
+    typescript_value_pending=false
+    additional_args+=("$arg")
+    continue
+  fi
   case $arg in
     --yes|-y) auto_yes=true ;;
     --no-commit) no_commit=true ;;
     --blame-ignore-revs) blame_ignore_revs=true ;;
+    --typescript)
+      typescript_value_pending=true
+      additional_args+=("$arg")
+      ;;
+    --typescript=*)
+      typescript_path=${arg#*=}
+      additional_args+=("$arg")
+      ;;
     --version|-v) cli --version; exit ;;
     --help|-h) echo "$usage"; exit ;;
     --dry-run)
@@ -61,8 +78,9 @@ if [ -z "$frontend_folder" ]; then
 fi
 folder_name=$(basename "$frontend_folder")
 
-# A scoped run must be reignored with the same scope, so the reignore hint
-# printed on failure repeats the --sources flags this run was invoked with.
+# A scoped run must be reignored with the same scope, and with the same
+# compiler, so the reignore hint printed on failure repeats the --sources and
+# --typescript flags this run was invoked with.
 reignore_cmd="npx -p @obiemunoz/ts-migrate ts-migrate reignore \"$frontend_folder\""
 sources_value_pending=false
 for arg in "${additional_args[@]}"; do
@@ -76,10 +94,15 @@ for arg in "${additional_args[@]}"; do
     --sources|-s) sources_value_pending=true ;;
   esac
 done
+if [ -n "$typescript_path" ]; then
+  reignore_cmd+=" --typescript \"$typescript_path\""
+fi
 
 step_i=1
 step_count=4
-tsc_path="./node_modules/.bin/tsc"
+# Set only by the prompt below; empty means the check runs whichever compiler
+# the migrate step resolved.
+tsc_path=""
 should_remove_eslintrc=false
 
 # The migrate step writes its type definition recommendations here so they can
@@ -127,9 +150,9 @@ if [ "$auto_yes" != "true" ]; then
     exit
   fi
 
-  read -p "Set a custom path for the typescript compiler. (It's an optional step. Skip if you don't need it. Default path is ./node_modules/.bin/tsc.): " custom_tsc_path || custom_tsc_path=""
+  read -p "Set a custom path for the typescript compiler. (It's an optional step. Skip if you don't need it. By default the check runs the same compiler the migration used.): " custom_tsc_path || custom_tsc_path=""
   if [[ -z "$custom_tsc_path" ]]; then
-    echo "Your default tsc path is $tsc_path."
+    echo "The check will run the same compiler the migration used."
   else
     tsc_path=$custom_tsc_path;
   fi
@@ -208,25 +231,29 @@ echo "
 [Step $((step_i++)) of ${step_count}] Checking for TS compilation errors (there shouldn't be any).
 "
 
-# Prefer the requested tsc, then the target project's own install, then the
-# compiler bundled with ts-migrate (plain JS projects usually have no tsc).
+# Prefer the requested tsc. Otherwise run the compiler the migrate step
+# resolved: a check run by a different compiler reports TS2578 for
+# suppressions the migration needed, and reignoring never converges.
 tsc_cmd=("$tsc_path")
 if [ ! -x "$tsc_path" ]; then
-  if [ -x "$frontend_folder/node_modules/.bin/tsc" ]; then
-    tsc_cmd=("$frontend_folder/node_modules/.bin/tsc")
-  else
-    bundled_tsc=$(node -e '
-      const path = require("path");
-      const req = require("module").createRequire(process.argv[1]);
-      process.stdout.write(path.join(path.dirname(req.resolve("typescript")), "..", "bin", "tsc"));
-    ' "$cli_js" 2>/dev/null)
-    if [ -z "$bundled_tsc" ] || [ ! -f "$bundled_tsc" ]; then
-      echo "Could not find a TypeScript compiler at $tsc_path or bundled with ts-migrate."
-      exit 1
-    fi
-    echo "No tsc found at $tsc_path; using the compiler bundled with ts-migrate."
-    tsc_cmd=(node "$bundled_tsc")
+  if [ -n "$tsc_path" ]; then
+    echo "No tsc found at $tsc_path; using the compiler the migration ran."
   fi
+  migration_tsc=$(node -e '
+    const path = require("path");
+    const [cliJs, folder, override] = process.argv.slice(1);
+    const { resolveTypeScript } = require(path.join(path.dirname(cliJs), "utils", "resolveTypeScript.js"));
+    const { packageDir } = resolveTypeScript({
+      rootDir: path.resolve(folder),
+      override: override || undefined,
+    });
+    process.stdout.write(path.join(packageDir, "bin", "tsc"));
+  ' "$cli_js" "$frontend_folder" "$typescript_path" 2>/dev/null)
+  if [ -z "$migration_tsc" ] || [ ! -f "$migration_tsc" ]; then
+    echo "Could not find the TypeScript compiler the migration used."
+    exit 1
+  fi
+  tsc_cmd=(node "$migration_tsc")
 fi
 
 echo "${tsc_cmd[*]} -p $frontend_folder/tsconfig.json --noEmit"
@@ -239,10 +266,12 @@ if [ "$check_failed" = true ]; then
 The TypeScript check failed. What the errors above usually mean:
 
 - TS2578 (unused '@ts-expect-error'): the compiler running this check disagrees
-  with the one the migration used — usually a typescript version mismatch
-  between the project and ts-migrate (the migration log prints a warning when
-  it detects one). Align the versions, make sure tsconfig.json pins a \"types\"
-  array, then strip and re-add the suppressions with:
+  with the one the migration used. Both default to the project's own typescript
+  (the migration log names the copy it ran), so a skew is left only when a
+  custom tsc path was set above, or when the project's compiler is outside the
+  range ts-migrate supports and the bundled one was used instead. Run the check
+  with the compiler the migration named, make sure tsconfig.json pins a
+  \"types\" array, then strip and re-add the suppressions with:
     $reignore_cmd
 - Syntax errors (TS1xxx) in generated or third-party .d.ts files: those files
   are outside the migration's control (the migration log lists them). Fix or
