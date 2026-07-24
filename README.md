@@ -27,6 +27,7 @@ Check out Airbnb's original [blog post](https://medium.com/airbnb-engineering/ts
 * TypeScript 5.x and 6.x support (upstream tops out at TypeScript 4)
 * Plugin internals migrated to the TypeScript 5 node factory API
 * ESLint 9 flat config support (with legacy fallback)
+* Lints with the project's own ESLint (`node_modules/eslint`, searched from the migration folder upward) rather than the bundled one, so rules and plugins run on the engine they were written for instead of throwing on removed APIs; `--no-projectEslint` opts out
 * Works on plain JS projects out of the box: no local TypeScript install required, and `init` writes a migration-friendly tsconfig instead of shelling out to `tsc --init`
 * Migrates with the project's own TypeScript (`node_modules/typescript`, searched from the migration folder upward) rather than the version npx happens to resolve, so the suppressions it writes match what the project's `tsc` reports; `--typescript <path>` overrides it
 * Honors `.gitignore`: build output inside the source tree (bundles, `dist`, coverage) is neither renamed, migrated, nor type-checked, and `init` excludes it in the generated tsconfig (`--no-gitignore` opts out)
