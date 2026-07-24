@@ -1,7 +1,7 @@
 {
   "name": "@obiemunoz/ts-migrate-example",
   "version": "0.11.0",
-  "private": "true",
+  "private": true,
   "description": "Basic example of usage of the ts-migrate-server with writing a custom plugin",
   "license": "MIT",
   "scripts": {
