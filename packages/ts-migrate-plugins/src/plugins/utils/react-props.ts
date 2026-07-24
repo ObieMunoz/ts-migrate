@@ -207,6 +207,7 @@ function getTypeFromPropTypeExpression(
      * PropTypes.symbol, (ignore)
      * PropTypes.node,
      * PropTypes.element,
+     * PropTypes.elementType,
      * PropTypes.any,
      */
     if (/string/.test(text)) {
@@ -239,6 +240,8 @@ function getTypeFromPropTypeExpression(
       }
     } else if (/node/.test(text)) {
       result = ts.factory.createTypeReferenceNode('React.ReactNode', undefined);
+    } else if (/elementType/.test(text)) {
+      result = ts.factory.createTypeReferenceNode('React.ElementType', undefined);
     } else if (/element/.test(text)) {
       result = ts.factory.createTypeReferenceNode('React.ReactElement', undefined);
     } else if (/func/.test(text)) {

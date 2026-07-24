@@ -1286,6 +1286,43 @@ export default Foo;
 `);
   });
 
+  it('distinguishes elementType from element', async () => {
+    const text = `import React from 'react';
+import PropTypes from 'prop-types';
+
+const propTypes = {
+  icon: PropTypes.element,
+  as: PropTypes.elementType,
+  Renderer: PropTypes.elementType.isRequired,
+};
+
+function Foo({}) {
+  return <div />;
+}
+
+Foo.propTypes = propTypes;
+
+export default Foo;
+`;
+
+    const result = await reactPropsPlugin.run(mockPluginParams({ text, fileName: 'Foo.tsx' }));
+
+    expect(result).toBe(`import React from 'react';
+
+type Props = {
+    icon?: React.ReactElement;
+    as?: React.ElementType;
+    Renderer: React.ElementType;
+};
+
+function Foo({}: Props) {
+  return <div />;
+}
+
+export default Foo;
+`);
+  });
+
   it('Handles destructuring of prop-types', async () => {
     const text = `import React from "react";
 import { oneOf, node, func as propTypeFn } from "prop-types";
