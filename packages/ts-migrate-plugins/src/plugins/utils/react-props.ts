@@ -14,22 +14,29 @@ type Params = {
   importedIdentifiers?: Set<string>;
 };
 
+function getEntityName(
+  expression: ts.Expression,
+  isAllowedRoot?: (name: string) => boolean,
+): ts.EntityName | undefined {
+  if (ts.isIdentifier(expression)) {
+    return !isAllowedRoot || isAllowedRoot(expression.text)
+      ? ts.factory.createIdentifier(expression.text)
+      : undefined;
+  }
+  if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.name)) {
+    const qualifier = getEntityName(expression.expression, isAllowedRoot);
+    return qualifier && ts.factory.createQualifiedName(qualifier, expression.name.text);
+  }
+  return undefined;
+}
+
 // Imported propTypes objects can't be converted structurally, but their type
 // can be derived from the value with InferProps<typeof x>.
 export function getImportedEntityName(
   expression: ts.Expression,
   importedIdentifiers: Set<string>,
 ): ts.EntityName | undefined {
-  if (ts.isIdentifier(expression)) {
-    return importedIdentifiers.has(expression.text)
-      ? ts.factory.createIdentifier(expression.text)
-      : undefined;
-  }
-  if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.name)) {
-    const qualifier = getImportedEntityName(expression.expression, importedIdentifiers);
-    return qualifier && ts.factory.createQualifiedName(qualifier, expression.name.text);
-  }
-  return undefined;
+  return getEntityName(expression, (name) => importedIdentifiers.has(name));
 }
 
 export function createInferPropsTypeNode(entityName: ts.EntityName): ts.TypeReferenceNode {
@@ -181,6 +188,65 @@ function convertPropertyAssignment(
   return propertySignature;
 }
 
+function getLiteralTypeNode(element: ts.Expression): ts.TypeNode | undefined {
+  if (
+    ts.isStringLiteral(element) ||
+    ts.isNumericLiteral(element) ||
+    element.kind === ts.SyntaxKind.TrueKeyword ||
+    element.kind === ts.SyntaxKind.FalseKeyword ||
+    element.kind === ts.SyntaxKind.NullKeyword
+  ) {
+    return ts.factory.createLiteralTypeNode(element as ts.LiteralTypeNode['literal']);
+  }
+  if (
+    ts.isPrefixUnaryExpression(element) &&
+    element.operator === ts.SyntaxKind.MinusToken &&
+    ts.isNumericLiteral(element.operand)
+  ) {
+    return ts.factory.createLiteralTypeNode(element);
+  }
+  if (ts.isIdentifier(element) && element.text === 'undefined') {
+    return ts.factory.createKeywordTypeNode(ts.SyntaxKind.UndefinedKeyword);
+  }
+  return undefined;
+}
+
+// oneOf(Object.values(x)) and oneOf(Object.keys(x)) enumerate an object whose
+// members are only known at the value level, so the type comes from typeof x.
+function getEnumObjectTypeNode(argument: ts.Expression): ts.TypeNode | undefined {
+  if (
+    !ts.isCallExpression(argument) ||
+    argument.arguments.length !== 1 ||
+    !ts.isPropertyAccessExpression(argument.expression) ||
+    !ts.isIdentifier(argument.expression.expression) ||
+    argument.expression.expression.text !== 'Object'
+  ) {
+    return undefined;
+  }
+
+  const typeQuery = () => {
+    const entityName = getEntityName(argument.arguments[0]);
+    return entityName && ts.factory.createTypeQueryNode(entityName);
+  };
+  const keyOf = () => {
+    const query = typeQuery();
+    return query && ts.factory.createTypeOperatorNode(ts.SyntaxKind.KeyOfKeyword, query);
+  };
+
+  const method = argument.expression.name.text;
+  if (method === 'keys') {
+    return keyOf();
+  }
+  if (method === 'values') {
+    const objectType = typeQuery();
+    const indexType = keyOf();
+    return objectType && indexType
+      ? ts.factory.createIndexedAccessTypeNode(objectType, indexType)
+      : undefined;
+  }
+  return undefined;
+}
+
 function getTypeFromPropTypeExpression(
   node: ts.Expression,
   sourceFile: ts.SourceFile,
@@ -285,24 +351,30 @@ function getTypeFromPropTypeExpression(
     }
   } else if (ts.isCallExpression(node)) {
     /**
-     * PropTypes.instanceOf(), (ignore)
-     * PropTypes.oneOf(), // only support oneOf([1, 2]), oneOf(['a', 'b'])
+     * PropTypes.instanceOf(),
+     * PropTypes.oneOf(), // literal members, or Object.values(x) / Object.keys(x)
      * PropTypes.oneOfType(),
      * PropTypes.arrayOf(),
      * PropTypes.objectOf(),
      * PropTypes.shape(),
+     * PropTypes.exact(),
      */
     const expressionText = node.expression.getText(sourceFile);
-    if (/oneOf$/.test(expressionText)) {
+    if (/instanceOf$/.test(expressionText)) {
       const argument = node.arguments[0];
-      if (ts.isArrayLiteralExpression(argument)) {
-        if (argument.elements.every((elm) => ts.isStringLiteral(elm) || ts.isNumericLiteral(elm))) {
-          result = ts.factory.createUnionTypeNode(
-            (argument.elements as ts.NodeArray<ts.StringLiteral | ts.NumericLiteral>).map((elm) =>
-              ts.factory.createLiteralTypeNode(elm),
-            ),
-          );
+      const entityName = argument && getEntityName(argument);
+      if (entityName) {
+        result = ts.factory.createTypeReferenceNode(entityName, undefined);
+      }
+    } else if (/oneOf$/.test(expressionText)) {
+      const argument = node.arguments[0];
+      if (argument && ts.isArrayLiteralExpression(argument)) {
+        const literals = argument.elements.map(getLiteralTypeNode);
+        if (literals.length > 0 && literals.every((literal) => literal !== undefined)) {
+          result = ts.factory.createUnionTypeNode(literals as ts.TypeNode[]);
         }
+      } else if (argument) {
+        result = getEnumObjectTypeNode(argument);
       }
     } else if (/oneOfType$/.test(expressionText)) {
       const argument = node.arguments[0];
@@ -347,7 +419,7 @@ function getTypeFromPropTypeExpression(
         ]);
         result = ts.moveSyntheticComments(result, child);
       }
-    } else if (/shape$/.test(expressionText)) {
+    } else if (/(shape|exact)$/.test(expressionText)) {
       const argument = node.arguments[0];
       if (argument && ts.isObjectLiteralExpression(argument)) {
         return getTypeFromPropTypesObjectLiteral(argument, sourceFile, params);
