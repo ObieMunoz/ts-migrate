@@ -43,6 +43,17 @@ docs live in this package's README.md.
 7. **Requirements:** Node >= 18.18. TypeScript 5.x or 6.x if the target
    project has TypeScript installed; if it has none, ts-migrate falls back to
    its own bundled compiler and plain JS projects work out of the box.
+8. **The migration runs the project's own compiler.** `migrate`, `reignore`,
+   and `check` load the `node_modules/typescript` found by searching from
+   `<folder>` upward, not the one npx resolved for ts-migrate, because every
+   suppression written is derived from what that compiler reports. The first
+   line of a run names the copy in use, for example
+   `TypeScript 5.7.3 (project: /repo/node_modules/typescript)`. A project with
+   no typescript, or one outside `>=5.0 <7`, falls back to the bundled
+   compiler with a warning. Pass `--typescript <path>` (the package directory
+   or any file inside it) to name a compiler that is not under
+   `node_modules`, or to force a specific one; `ts-migrate-full` applies it to
+   the migrate step and the final compile check alike.
 
 ## Recommended workflow (full migration)
 
@@ -103,6 +114,9 @@ verify with `tsc --noEmit`.
   instead. A successful run prints the SHAs and this guidance either way;
   the flag is ignored with `--no-commit`.
 - `--version` (`-v`): print the ts-migrate version and exit.
+- `--typescript <path>`: run the migrate step and the final `tsc --noEmit`
+  check with the compiler at `<path>`. Without it, both use whatever compiler
+  the migrate step resolved (the project's own, when it has one).
 - All other flags are forwarded to the underlying `rename` and `migrate`
   commands (e.g. `--sources`, `--no-inferTypes`, `--exclude-plugin`).
   Exception: `--dry-run` is rejected here, because each pipeline step builds
@@ -178,6 +192,8 @@ with `@ts-expect-error` so the project compiles.
 - `--jsonSummary <file>`: write a JSON summary of the run to `<file>`: the
   changed files, per-plugin change counts, and the suppression and `any`
   counts in the changed files (see "Machine-readable summaries" below).
+- `--typescript <path>`: run with the compiler at `<path>` instead of the one
+  found by searching from `<folder>` upward (critical fact 8).
 
 ### `ts-migrate reignore <folder> [flags]`
 
@@ -195,6 +211,9 @@ existing suppression comments, then re-adds only the ones still needed.
 - `--no-bootstrap`: same behavior as in `migrate`.
 - `--dry-run`: same preview behavior as `migrate`.
 - `--jsonSummary <file>`: same machine-readable summary as `migrate`.
+- `--typescript <path>`: same compiler override as `migrate`. A scoped
+  migration reignored later must use the same compiler, or the suppressions
+  will not match.
 
 Both `migrate` and `reignore` end the run by printing a one-paragraph type
 debt summary (the `report` totals for the project).
@@ -269,8 +288,10 @@ need both summaries.
   `check` exit nonzero (255) if the tsconfig cannot be read.
 - `ts-migrate-full` stops at the first failing step; the final `tsc` check
   failing means the migration did not reach a compiling state. Its failure
-  message distinguishes the common causes: TS2578 (compiler version skew —
-  align typescript versions, then `reignore`), TS1xxx syntax errors in
+  message distinguishes the common causes: TS2578 (the check ran a different
+  compiler than the migration, which is left only by a custom tsc path or a
+  project compiler outside the supported range; run both with the compiler
+  named in the migration log, then `reignore`), TS1xxx syntax errors in
   generated/third-party `.d.ts` files (fix, regenerate, or exclude them —
   the migrate step lists these files up front; re-running the migration
   cannot change them), and ordinary type errors (`reignore`).

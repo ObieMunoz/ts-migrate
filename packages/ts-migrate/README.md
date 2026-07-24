@@ -132,6 +132,45 @@ An unknown plugin name errors and lists the valid names. Excluding
 `infer-types` is equivalent to `--no-inferTypes`. `ts-migrate-full` forwards
 the flag to the migrate step, like any other migrate option.
 
+# Which TypeScript ts-migrate runs
+
+Every suppression a migration writes comes from what its compiler reports, so
+ts-migrate runs the project's own compiler: the `node_modules/typescript` it
+finds by searching from `<folder>` upward. The run banner names the copy it
+picked.
+
+```
+TypeScript 5.7.3 (project: /repo/node_modules/typescript)
+```
+
+This matters most under `npx`, which installs the package in a temporary
+directory and resolves the `typescript` peer dependency there, picking the
+highest version the range allows. A project on TypeScript 5.7 migrated by
+TypeScript 6 gets suppressions for errors its own `tsc` never reports, and the
+compile check at the end of `ts-migrate-full` fails with TS2578 (unused
+`@ts-expect-error`).
+
+Two cases fall back to the compiler installed with ts-migrate. Both are named
+in the banner and in a warning:
+
+- the project has no typescript installed (a plain JavaScript project, which
+  is why no local install is required)
+- the project's typescript is outside the range ts-migrate supports
+  (`>=5.0 <7`)
+
+`migrate`, `reignore`, and `check` accept `--typescript <path>` for a compiler
+that is not under `node_modules`, or to force a specific one. The path can be
+the package directory or any file inside it:
+
+```sh
+npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --typescript ./vendor/typescript
+```
+
+`ts-migrate-full` takes the same flag and applies it to both the migrate step
+and the compile check, so the two steps cannot disagree about which errors
+exist. Without the flag, the check runs whatever compiler the migrate step
+resolved.
+
 # Gitignored files
 
 Build output often lives inside the source tree (webpack/SSR bundles, a
