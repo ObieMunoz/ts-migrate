@@ -13,7 +13,10 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 
 # [0.12.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.11.1...v0.12.0) (2026-07-24)
 
-**Note:** Version bump only for package @obiemunoz/ts-migrate-plugins
+
+### Bug Fixes
+
+* **react-default-props:** emit a self-contained WithDefaultProps helper ([#102](https://github.com/ObieMunoz/ts-migrate/issues/102)) ([51e7677](https://github.com/ObieMunoz/ts-migrate/commit/51e7677917eb08fce9bcdf889312d479698ffd06))
 
 
 
@@ -80,6 +83,10 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 - **ts-migrate:** share module resolution caches and memoized fs across programs ([#46](https://github.com/ObieMunoz/ts-migrate/issues/46)) ([ff643cf](https://github.com/ObieMunoz/ts-migrate/commit/ff643cfd056f78e00770a833498997b948ba66a6))
 
 # [0.9.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.8.0...v0.9.0) (2026-07-10)
+
+### Bug Fixes
+
+- work out of the box on plain JS projects ([#42](https://github.com/ObieMunoz/ts-migrate/issues/42)) ([1296cad](https://github.com/ObieMunoz/ts-migrate/commit/1296cad46d78fb035316820a664c87afdd8bacd4))
 
 ### Features
 

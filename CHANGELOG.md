@@ -17,6 +17,12 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 # [0.12.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.11.1...v0.12.0) (2026-07-24)
 
 
+### Bug Fixes
+
+* **cli:** declare hidden migrate flags and generate the anyAlias ambient declaration ([#100](https://github.com/ObieMunoz/ts-migrate/issues/100)) ([618af08](https://github.com/ObieMunoz/ts-migrate/commit/618af08d56ebe2d3f29e6b7e24277e382779d8ee))
+* **react-default-props:** emit a self-contained WithDefaultProps helper ([#102](https://github.com/ObieMunoz/ts-migrate/issues/102)) ([51e7677](https://github.com/ObieMunoz/ts-migrate/commit/51e7677917eb08fce9bcdf889312d479698ffd06))
+
+
 ### Features
 
 * **cli:** add --dry-run to rename, migrate, and reignore ([#111](https://github.com/ObieMunoz/ts-migrate/issues/111)) ([25dfc68](https://github.com/ObieMunoz/ts-migrate/commit/25dfc68fb5fa8b6edaa9febf96bb9d657b9fb3fc))
@@ -27,6 +33,7 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 * **migrate:** retain ambient .d.ts files when --sources is used ([#90](https://github.com/ObieMunoz/ts-migrate/issues/90)) ([9aa9d55](https://github.com/ObieMunoz/ts-migrate/commit/9aa9d55c5e77fb522ebaa94c45f3f6639c276e71))
 * **server:** show progress during long plugin passes ([#112](https://github.com/ObieMunoz/ts-migrate/issues/112)) ([a6ece3d](https://github.com/ObieMunoz/ts-migrate/commit/a6ece3df1bfc47f70eb6dedfea297ec88d6a4c85))
 * **ts-migrate:** add --version and -v to the CLI and ts-migrate-full ([#93](https://github.com/ObieMunoz/ts-migrate/issues/93)) ([8b65214](https://github.com/ObieMunoz/ts-migrate/commit/8b65214b54d64f990335ad3329c05b893667ff19))
+* **ts-migrate-full:** print .git-blame-ignore-revs guidance (opt-in write) ([#103](https://github.com/ObieMunoz/ts-migrate/issues/103)) ([9dfdb06](https://github.com/ObieMunoz/ts-migrate/commit/9dfdb06e70a12f571bbdcc8a902b22dec04f0adc))
 
 
 
@@ -111,6 +118,7 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 
 ### Bug Fixes
 
+- work out of the box on plain JS projects ([#42](https://github.com/ObieMunoz/ts-migrate/issues/42)) ([1296cad](https://github.com/ObieMunoz/ts-migrate/commit/1296cad46d78fb035316820a664c87afdd8bacd4))
 - **ts-migrate:** pick JSX transform from React version, check with esnext lib ([#44](https://github.com/ObieMunoz/ts-migrate/issues/44)) ([bab87b8](https://github.com/ObieMunoz/ts-migrate/commit/bab87b84c21f7ba69f7630953df5d2c51941b589))
 
 ### Features
