@@ -292,6 +292,37 @@ describe('buildMigrateConfig', () => {
       .forEach((name) => expect(names).toContain(name));
   });
 
+  it('runs jsdoc after strip-ts-ignore and before member-accessibility', () => {
+    const names = pluginNames(buildMigrateConfig({}).config);
+    expect(names.indexOf('jsdoc')).toBeGreaterThan(names.indexOf('strip-ts-ignore'));
+    expect(names.indexOf('jsdoc')).toBeLessThan(names.indexOf('member-accessibility'));
+    expect(names.indexOf('jsdoc')).toBeLessThan(names.indexOf('infer-types'));
+    expect(names.indexOf('jsdoc')).toBeLessThan(names.indexOf('explicit-any'));
+  });
+
+  it('leaves return types to inference in the default pipeline', () => {
+    const options = pluginOptions(buildMigrateConfig({}).config, 'jsdoc') as {
+      annotateReturns?: unknown;
+    };
+    expect(options.annotateReturns).toBeFalsy();
+    expect(
+      (pluginOptions(buildMigrateConfig({ annotateReturns: true }).config, 'jsdoc') as {
+        annotateReturns?: unknown;
+      }).annotateReturns,
+    ).toBe(true);
+  });
+
+  it('drops jsdoc with --no-jsdoc, leaving the rest of the pipeline alone', () => {
+    const defaultNames = pluginNames(buildMigrateConfig({}).config);
+    expect(defaultNames).toContain('jsdoc');
+    expect(pluginNames(buildMigrateConfig({ jsdoc: false }).config)).toEqual(
+      defaultNames.filter((name) => name !== 'jsdoc'),
+    );
+    expect(pluginNames(buildMigrateConfig({ excludePlugins: ['jsdoc'] }).config)).toEqual(
+      defaultNames.filter((name) => name !== 'jsdoc'),
+    );
+  });
+
   it('drops the module declarations with --no-declareUntypedModules', () => {
     expect(pluginNames(buildMigrateConfig({}).config)).toContain('declare-untyped-modules');
     expect(pluginNames(buildMigrateConfig({ declareUntypedModules: false }).config)).not.toContain(
