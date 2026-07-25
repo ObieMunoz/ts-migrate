@@ -66,6 +66,7 @@ process.exit(exitCode);
 | [detect-types-packages](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/utils/typesPackages.ts) | Read-only. Classifies the diagnostics ts-ignore is about to suppress into `@types` package recommendations (missing, not loaded, outdated, or redundant), reported at the end of the run. Created per run with `createTypesPackageDetector()` and placed immediately before ts-ignore. |
 | [ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/ts-ignore.ts) | Add `// @ts-ignore` comments for the remaining errors. |
 | [update-import-paths](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/update-import-paths.ts) | Re-point relative imports that still say `./foo.js`/`./foo.jsx` after the file was renamed to `.ts`/`.tsx`. Drops the extension by default; keeps a `.js` extension in ESM packages (`"type": "module"`) or with `{ extension: 'js' }`. Imports whose target still exists on disk are left alone. |
+| [widen-annotations](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/widen-annotations.ts) | Union an annotation with the types the assignments in its own file give it, so `let x: number` later assigned null reads `number \| null` instead of taking a suppression. Covers variable, class property, interface member and return annotations; never parameters. `{ maxUnionMembers: n }` (default 4) caps how wide an annotation may get. |
 
 ## Function component defaultProps
 
@@ -138,6 +139,35 @@ does:
   at runtime (`half(n) { return n / 2; }` infers `number` even though a
   numeric string would not crash), and callers the program cannot see
   (consumers of a published library) contribute no evidence.
+
+## What widen-annotations will and will not write
+
+Same rule, one step later: the assignments a file makes are the truth about
+what a declaration holds, and an annotation that contradicts them is the thing
+that is wrong. `let x: number` assigned null becomes `number | null` rather
+than a suppressed line.
+
+- Nothing is written on the checker's word alone. Each widening is spliced
+  into a copy of the file and kept only when the errors it was made for are
+  gone and no new error appeared. A widening that only moves the problem, or
+  that breaks a later use (`count * 2` once `count` can be null), is discarded
+  and the annotation stays exactly as it was.
+- Types are refused rather than guessed. A type that cannot be named without
+  adding an import, an anonymous object or function shape, a generic that
+  would need its type arguments spelled out, `any` and `unknown`, and a union
+  wider than `maxUnionMembers` all leave the error for ts-ignore. A confidently
+  wrong annotation type checks everywhere and misleads; the error it replaced
+  was at least visible.
+- Parameters are never widened, in either direction: not from a call that
+  disagrees, and not from the body reassigning the parameter. That is the
+  infer-types rule above, and widening here would undo it.
+- A contradicting literal is unioned as its base type, so a `string` field that
+  took `"a"` once reads `| string` and not `| "a"`.
+- Widening a declaration other files can see (an exported interface member, a
+  property of an exported class) tells them the truth about what it holds,
+  which can turn consumers that assumed otherwise into errors of their own.
+  Validation is per file and does not see those, the same way infer-types does
+  not see the call sites it makes into errors.
 
 
 # Type of plugins

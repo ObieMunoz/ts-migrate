@@ -20,6 +20,7 @@ import {
   stripTSIgnorePlugin,
   tsIgnorePlugin,
   updateImportPathsPlugin,
+  widenAnnotationsPlugin,
   createSuppressionExplainer,
   createTypesPackageDetector,
   SuppressionExplainer,
@@ -50,6 +51,7 @@ export const availablePlugins = [
   stripTSIgnorePlugin,
   tsIgnorePlugin,
   updateImportPathsPlugin,
+  widenAnnotationsPlugin,
 ];
 
 interface BuildMigrateConfigParams {
@@ -135,6 +137,7 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
     entry(stripTSIgnorePlugin, {}),
     entry(tsIgnorePlugin, {}),
     entry(updateImportPathsPlugin, {}),
+    entry(widenAnnotationsPlugin, {}),
   ]);
 
   return {
@@ -255,6 +258,13 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
   const typesPackageDetector = createTypesPackageDetector();
   config
     .addPlugin(addConversionsPlugin, optionsFor(addConversionsPlugin))
+    // Absorbs the assignability errors an annotation can hold into the
+    // annotation, so they reach neither the recommendations below nor
+    // ts-ignore. Repeats because a widened annotation changes the types the
+    // next pass reads.
+    .addPlugin(widenAnnotationsPlugin, optionsFor(widenAnnotationsPlugin), {
+      repeatUntilStable: true,
+    })
     // We need to run eslint-fix before ts-ignore because formatting may affect where
     // the errors are that need to get ignored.
     .addPlugin(eslintFixPlugin, optionsFor(eslintFixPlugin))

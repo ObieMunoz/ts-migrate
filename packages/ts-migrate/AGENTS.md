@@ -249,9 +249,10 @@ JavaScript, so a `bin` pointing at it stays valid and needs no notice.
 Runs the codemod pipeline on an already-renamed project: re-points stale
 relative imports, rewrites CommonJS `require`/`module.exports` into TypeScript
 module syntax, converts React propTypes to types, writes the type arguments
-React hook calls need, infers types from usage,
-annotates remaining implicit `any`s, and suppresses residual compiler errors
-with `@ts-expect-error` so the project compiles. Only TypeScript files are
+React hook calls need, infers types from usage, annotates remaining implicit
+`any`s, widens the annotations the file's own assignments contradict, and
+suppresses residual compiler errors with `@ts-expect-error` so the project
+compiles. Only TypeScript files are
 migration targets. `.js`, `.jsx`, `.mjs` and `.cjs` are never edited, even
 when a tsconfig with `allowJs` pulls them in; they stay in the program and
 still type the files that import them. Run `rename` on a file to make it
@@ -280,6 +281,17 @@ A hook whose evidence leaves the file gets an `any` (`$TSFixMe`) type
 argument, which is one visible any in place of the suppressions the call would
 otherwise earn. Pass `--exclude-plugin react-hook-types` to leave hook calls
 as they are.
+
+The widening step unions an annotation with what the assignments in its own
+file give it, so `let x: number` later assigned null ends up `number | null`
+instead of `@ts-expect-error`. It only ever writes a type it can name in that
+file without a new import, never touches parameter annotations, and caps how
+wide an annotation may get, leaving anything else for the suppression pass.
+Each widening is re-checked in isolation and dropped unless the errors it was
+made for are gone and no new one appeared. A widened declaration other files
+can see (an exported interface member, a property of an exported class) tells
+them what it really holds, which can surface errors in those files on the same
+run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
 
 - `--sources <glob>` (`-s`, repeatable): migrate only a subset. Quote globs.
   Ambient `.d.ts` files matched by the tsconfig `include` (vite-env.d.ts,
