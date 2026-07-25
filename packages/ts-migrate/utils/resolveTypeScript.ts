@@ -67,6 +67,13 @@ function readPackageVersion(packageDir: string): string | undefined {
  * The compiler the project's own tsc would load: an explicit ancestor walk
  * rather than require.resolve, whose global fallbacks (NODE_PATH, global
  * installs) can name a typescript the project itself would never load.
+ *
+ * ts-migrate-plugins has the same walk as a shared helper
+ * (`src/utils/resolvePackageFrom.ts`) and this one stays separate from it.
+ * `installTypeScriptResolution` below has to run before anything in the
+ * process loads a compiler, so this file imports nothing outside node
+ * builtins, and ts-migrate depends on that package rather than the other way
+ * round, so it could not import the helper even if that were free.
  */
 export function findProjectTypeScript(
   rootDir: string,

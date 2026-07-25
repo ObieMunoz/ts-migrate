@@ -3,6 +3,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import ts from 'typescript';
+import { PluginOptionsError } from '@obiemunoz/ts-migrate-server';
+import eslintFixPlugin from '../../src/plugins/eslint-fix';
 
 const packageRoot = path.join(__dirname, '..', '..');
 
@@ -14,21 +16,68 @@ const packageRoot = path.join(__dirname, '..', '..');
 // anything ambient on the machine) can't leak into engine detection or
 // ESLint's config search.
 
-let compiledPlugin: string | undefined;
+const sourceRoot = path.join(packageRoot, 'src');
+const pluginEntry = path.join(sourceRoot, 'plugins', 'eslint-fix.ts');
+/** Where the entry lands under the temp tree's `plugin` directory. */
+const pluginEntryInTree = 'plugins/eslint-fix.js';
 
-function getCompiledPlugin(): string {
+// Every module reachable from the plugin over relative specifiers is
+// transpiled and written under `plugin/` at the position it has under `src/`,
+// so the requires the transpiled files carry resolve the same way they do in
+// the source tree. Bare specifiers resolve through NODE_PATH instead: eslint
+// from the plugin directory's own node_modules, everything else from this
+// package's. That includes @obiemunoz/ts-migrate-server, whose value exports
+// (fileNoticeReporter, and PluginOptionsError through utils/validateOptions)
+// the graph imports, so these tests read the server's build output. That is
+// accepted rather than worked around: `pnpm run build` builds the server
+// before any suite runs, in CI and locally.
+const MAX_GRAPH_DEPTH = 8;
+
+interface CompiledModule {
+  /** Path under `plugin/`, mirroring the source file's path under `src/`. */
+  outputPath: string;
+  text: string;
+}
+
+/** The file a relative specifier names, with the extension TypeScript infers. */
+function resolveRelative(fromFile: string, specifier: string): string {
+  const base = path.resolve(path.dirname(fromFile), specifier);
+  const resolved = ['.ts', '.tsx', '/index.ts', '/index.tsx']
+    .map((suffix) => base + suffix)
+    .find((candidate) => fs.existsSync(candidate));
+  if (!resolved) {
+    throw new Error(`Could not resolve '${specifier}' from ${fromFile}`);
+  }
+  return resolved;
+}
+
+let compiledPlugin: CompiledModule[] | undefined;
+
+function getCompiledPlugin(): CompiledModule[] {
   if (!compiledPlugin) {
-    const source = fs.readFileSync(
-      path.join(packageRoot, 'src', 'plugins', 'eslint-fix.ts'),
-      'utf8',
-    );
-    compiledPlugin = ts.transpileModule(source, {
-      compilerOptions: {
-        module: ts.ModuleKind.CommonJS,
-        target: ts.ScriptTarget.ES2020,
-        esModuleInterop: true,
-      },
-    }).outputText;
+    const modules = new Map<string, CompiledModule>();
+    const visit = (sourcePath: string, depth: number) => {
+      if (modules.has(sourcePath)) return;
+      if (depth > MAX_GRAPH_DEPTH) {
+        throw new Error(`Relative imports go more than ${MAX_GRAPH_DEPTH} deep at ${sourcePath}`);
+      }
+      const source = fs.readFileSync(sourcePath, 'utf8');
+      modules.set(sourcePath, {
+        outputPath: `${path.relative(sourceRoot, sourcePath).replace(/\.tsx?$/, '')}.js`,
+        text: ts.transpileModule(source, {
+          compilerOptions: {
+            module: ts.ModuleKind.CommonJS,
+            target: ts.ScriptTarget.ES2020,
+            esModuleInterop: true,
+          },
+        }).outputText,
+      });
+      ts.preProcessFile(source, true, true)
+        .importedFiles.filter(({ fileName }) => fileName.startsWith('.'))
+        .forEach(({ fileName }) => visit(resolveRelative(sourcePath, fileName), depth + 1));
+    };
+    visit(pluginEntry, 0);
+    compiledPlugin = [...modules.values()];
   }
   return compiledPlugin;
 }
@@ -53,7 +102,7 @@ workerThreads.Worker = class extends RealWorker {
     super(source, options);
   }
 };
-const plugin = require('./plugin/eslint-fix-plugin.cjs').default;
+const plugin = require('./plugin/${pluginEntryInTree}').default;
 const { files, rootDir, options } = JSON.parse(process.argv[2]);
 const notices = [];
 (async () => {
@@ -195,7 +244,14 @@ function runInFixture(
     const pluginDir = path.join(tmpDir, 'plugin');
     fs.mkdirSync(path.join(pluginDir, 'node_modules'), { recursive: true });
     fs.symlinkSync(bundledESLintDir(), path.join(pluginDir, 'node_modules', 'eslint'), 'dir');
-    fs.writeFileSync(path.join(pluginDir, 'eslint-fix-plugin.cjs'), getCompiledPlugin());
+    // The transpiled files are `.js`, and the fixture above them is a project
+    // whose own package.json is none of their business.
+    fs.writeFileSync(path.join(pluginDir, 'package.json'), JSON.stringify({ type: 'commonjs' }));
+    getCompiledPlugin().forEach(({ outputPath, text }) => {
+      const file = path.join(pluginDir, outputPath);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, text);
+    });
     fs.writeFileSync(path.join(tmpDir, 'driver.cjs'), driverSource);
 
     const env = { ...process.env };
@@ -644,4 +700,16 @@ describe('eslint-fix engine selection', () => {
     },
     30000,
   );
+});
+
+describe('eslint-fix options', () => {
+  it('validates options', () => {
+    const { validate } = eslintFixPlugin;
+    if (!validate) throw new Error('expected validate to be defined');
+    expect(validate({})).toBe(true);
+    expect(validate({ projectEslint: true })).toBe(true);
+    expect(validate({ projectEslint: false })).toBe(true);
+    expect(() => validate({ projectEslint: 'yes' })).toThrow(PluginOptionsError);
+    expect(() => validate({ projectESLint: true })).toThrow(PluginOptionsError);
+  });
 });

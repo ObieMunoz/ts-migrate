@@ -5,6 +5,8 @@ import { Worker } from 'worker_threads';
 import type { loadESLint } from 'eslint';
 import log from 'updatable-log';
 import { fileNoticeReporter, Plugin, PluginFileNotice } from '@obiemunoz/ts-migrate-server';
+import { readPackageVersion, resolvePackageFrom } from '../utils/resolvePackageFrom';
+import { createValidate, Properties } from '../utils/validateOptions';
 
 // Either the flat-config or legacy engine; both expose the `lintText` API.
 type AnyESLint = InstanceType<Awaited<ReturnType<typeof loadESLint>>>;
@@ -15,6 +17,10 @@ export type Options = {
    * (default). False pins the copy bundled with ts-migrate.
    */
   projectEslint?: boolean;
+};
+
+const optionProperties: Properties = {
+  projectEslint: { type: 'boolean' },
 };
 
 // Flat config file names, in ESLint's resolution order.
@@ -114,36 +120,11 @@ interface ESLintModule {
 // bundled engine is the safer answer.
 const MIN_PROJECT_MAJOR = 8;
 
-function readESLintVersion(packageDir: string): string | undefined {
-  try {
-    const { name, version } = JSON.parse(
-      fs.readFileSync(path.join(packageDir, 'package.json'), 'utf-8'),
-    );
-    return name === 'eslint' && typeof version === 'string' ? version : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * The ESLint the project's own `eslint` would run: an explicit ancestor walk
- * rather than require.resolve, whose global fallbacks (NODE_PATH, global
- * installs) can name a copy the project itself would never load.
- */
-function findProjectESLint(rootDir: string): { packageDir: string; version: string } | undefined {
-  for (let dir = path.resolve(rootDir); ; dir = path.dirname(dir)) {
-    const packageDir = path.join(dir, 'node_modules', 'eslint');
-    const version = readESLintVersion(packageDir);
-    if (version) return { packageDir, version };
-    if (path.dirname(dir) === dir) return undefined;
-  }
-}
-
 /** The ESLint installed alongside ts-migrate, used when the project's is not. */
 function findBundledESLint(): { entryPath: string; version: string } {
   const entryPath = require.resolve('eslint');
   for (let dir = path.dirname(entryPath); ; dir = path.dirname(dir)) {
-    const version = readESLintVersion(dir);
+    const version = readPackageVersion(dir, 'eslint');
     if (version) return { entryPath, version };
     if (path.dirname(dir) === dir) return { entryPath, version: 'unknown version' };
   }
@@ -165,7 +146,9 @@ function resolveESLintEngine(
 
   if (!useProjectESLint) return useBundled({ optedOut: true });
 
-  const project = findProjectESLint(rootDir);
+  // The ESLint the project's own `eslint` would run, found the way the project
+  // would find it rather than the way this process resolves modules.
+  const project = resolvePackageFrom(rootDir, 'eslint');
   if (!project) return useBundled();
 
   const refuse = (reason: string) => useBundled({ refused: { version: project.version, reason } });
@@ -766,6 +749,8 @@ const eslintFixPlugin: Plugin<Options> = {
       pendingLintCalls -= 1;
     }
   },
+
+  validate: createValidate(optionProperties),
 };
 
 export default eslintFixPlugin;
