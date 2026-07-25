@@ -99,6 +99,87 @@ describe('plugin file notices', () => {
     ]);
   });
 
+  it('leaves a file it could not process out of the next pass, reported once', async () => {
+    writeFiles(['a.ts', 'b.ts']);
+
+    const visited: string[] = [];
+    const config = new MigrateConfig().addPlugin(
+      {
+        name: 'flaky-plugin',
+        run({ fileName, text, reportFileNotice }) {
+          visited.push(path.basename(fileName));
+          if (fileName.endsWith('b.ts')) {
+            reportFileNotice?.({ reason: 'the rule threw' });
+            return undefined;
+          }
+          // Changes a.ts once, so the group runs a second pass.
+          return text.includes('// changed') ? undefined : `${text}// changed\n`;
+        },
+      },
+      {},
+      { repeatUntilStable: true },
+    );
+
+    const { pluginFailures } = await migrate({ rootDir, config, incrementalPasses: false });
+
+    expect(visited).toEqual(['a.ts', 'b.ts', 'a.ts']);
+    expect(warnings()).toEqual([
+      '[flaky-plugin] 1 file(s) could not be processed and were left unchanged:',
+      '[flaky-plugin]   1 file(s): the rule threw. First: b.ts.',
+    ]);
+    expect(pluginFailures).toEqual([
+      {
+        pluginName: 'flaky-plugin',
+        reason: 'the rule threw',
+        ruleId: undefined,
+        fileCount: 1,
+        files: ['b.ts'],
+      },
+    ]);
+  });
+
+  it('hands the file back to the plugin once it has changed since', async () => {
+    writeFiles(['a.ts']);
+
+    let attempts = 0;
+    let appends = 0;
+    const config = new MigrateConfig()
+      .addPlugin(
+        {
+          name: 'failing-plugin',
+          run({ reportFileNotice }) {
+            attempts += 1;
+            reportFileNotice?.({ reason: 'the rule threw' });
+            return undefined;
+          },
+        },
+        {},
+        { repeatUntilStable: true },
+      )
+      .addPlugin(
+        {
+          name: 'appending-plugin',
+          run({ text }) {
+            if (appends >= 2) return undefined;
+            appends += 1;
+            return `${text}// appended\n`;
+          },
+        },
+        {},
+        { repeatUntilStable: true },
+      );
+
+    await migrate({ rootDir, config });
+
+    // The plugin before it rewrote the file each pass, so the cause is worth
+    // reaching again; repeating the line that reports it is not.
+    expect(attempts).toBe(3);
+    expect(warnings()).toEqual([
+      '[failing-plugin] 1 file(s) could not be processed and were left unchanged:',
+      '[failing-plugin]   1 file(s): the rule threw. First: a.ts.',
+    ]);
+  });
+
   it('records a recovered notice for the end of the run instead of warning mid-pass', async () => {
     writeFiles(['a.ts']);
 
