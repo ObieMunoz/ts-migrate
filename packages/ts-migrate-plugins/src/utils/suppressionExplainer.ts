@@ -12,6 +12,15 @@ const MAX_PROPERTIES = 12;
 /** How far up from the diagnostic node to look for the enclosing call. */
 const MAX_CALL_DEPTH = 8;
 
+/** How far up from an annotation to look for the comment that wrote it. */
+const MAX_JSDOC_DEPTH = 8;
+
+/** How deep into nested namespaces a name is looked for. */
+const MAX_NAMESPACE_DEPTH = 3;
+
+/** Files listed per unresolved name before the rest are counted instead. */
+const MAX_NAME_FILES = 5;
+
 export interface SourceLocation {
   /** Relative to rootDir when inside it, absolute otherwise. */
   file: string;
@@ -77,6 +86,10 @@ export interface SuppressionEvidence {
   derivedMember?: SuppressionMember;
   /** The identifier or module specifier that did not resolve. */
   unresolved?: string;
+  /** Whether the name was written where a type goes rather than in an expression. */
+  unresolvedIsType?: boolean;
+  /** Whether a JSDoc tag over the declaration it annotates writes the same name. */
+  unresolvedIsDocumented?: boolean;
   /** Paths the compiler tried for an unresolved module. */
   failedLookups?: string[];
 }
@@ -115,6 +128,27 @@ export interface SuppressionCodeGroup {
   longestMessage: number;
 }
 
+/**
+ * One type name that resolved to nothing, over every site that wrote it. The
+ * annotations a migration writes come from the comments, so a name with 33
+ * sites is one missing import or one stale comment rather than 33 findings.
+ */
+export interface UnresolvedTypeGroup {
+  name: string;
+  /** Diagnostics on this name. */
+  count: number;
+  fileCount: number;
+  /** The files that wrote it, largest count first. */
+  files: string[];
+  /** How many of `count` sit under a JSDoc tag writing the same name. */
+  documented: number;
+  /** Where the program declares the name, when anything declares it. */
+  declaredAt?: SourceLocation;
+  declarationKind?: string;
+  /** Whether that declaration is a file of the project rather than a dependency. */
+  declaredInProject?: boolean;
+}
+
 export interface SuppressionReport {
   rootDir: string;
   /** Every diagnostic ts-ignore was about to hide. */
@@ -126,6 +160,8 @@ export interface SuppressionReport {
   fileCount: number;
   /** Largest count first. */
   codes: SuppressionCodeGroup[];
+  /** The type names that resolved to nothing, largest count first. */
+  unresolvedTypes: UnresolvedTypeGroup[];
   sites: SuppressionSite[];
 }
 
@@ -326,7 +362,7 @@ function enrichDiagnostic({
       return memberEvidence(node, checker);
     case 2304:
     case 2552:
-      return { unresolved: nodeText(node, file) };
+      return unresolvedNameEvidence(node, file, checker, program, rootDir);
     case 2307:
       return moduleEvidence(node, file, program);
     default:
@@ -516,6 +552,169 @@ function memberEvidence(node: ts.Node, checker: ts.TypeChecker): SuppressionEvid
   };
 }
 
+/** The leftmost identifier of an entity name: `A` of `A.B.C`. */
+function rootName(name: ts.EntityName): string {
+  return ts.isIdentifier(name) ? name.text : rootName(name.left);
+}
+
+/** Whether the node is the name of a type reference rather than an expression. */
+function isTypeName(node: ts.Node): boolean {
+  let current: ts.Node | undefined = node.parent;
+  while (current && ts.isQualifiedName(current)) current = current.parent;
+  return current != null && ts.isTypeReferenceNode(current);
+}
+
+function jsDocTypeNames(node: ts.Node): Set<string> {
+  const names = new Set<string>();
+  const walk = (child: ts.Node): void => {
+    if (ts.isTypeReferenceNode(child)) names.add(rootName(child.typeName));
+    child.forEachChild(walk);
+  };
+  walk(node);
+  return names;
+}
+
+/**
+ * Whether a JSDoc tag over the declaration the annotation belongs to writes the
+ * same name, which is what makes the name documentation the migration read
+ * rather than something the code itself was missing.
+ */
+function documentsTypeName(node: ts.Node, name: string): boolean {
+  let current: ts.Node | undefined = node.parent;
+  for (let depth = 0; current && !ts.isSourceFile(current) && depth < MAX_JSDOC_DEPTH; depth += 1) {
+    if (ts.getJSDocTags(current).some((tag) => jsDocTypeNames(tag).has(name))) return true;
+    current = current.parent;
+  }
+  return false;
+}
+
+/** The meanings a bare name in a type position could have resolved to. */
+const NAME_MEANING = ts.SymbolFlags.Type | ts.SymbolFlags.Namespace | ts.SymbolFlags.Alias;
+
+/** Namespaces of a symbol table, and the namespaces inside those. */
+function namespacesIn(exports: ts.SymbolTable): ts.Symbol[] {
+  const found: ts.Symbol[] = [];
+  const walk = (table: ts.SymbolTable, depth: number): void => {
+    if (depth > MAX_NAMESPACE_DEPTH) return;
+    table.forEach((symbol) => {
+      if ((symbol.flags & ts.SymbolFlags.Module) === 0 || !symbol.exports) return;
+      found.push(symbol);
+      walk(symbol.exports, depth + 1);
+    });
+  };
+  walk(exports, 1);
+  return found;
+}
+
+type TypeDeclarationFinder = (name: string) => ts.Declaration | undefined;
+
+/**
+ * Finds where the program declares a type name, for names that resolved to
+ * nothing where they were written. Only module exports and namespace members
+ * are searched: a global declaration would have resolved, and both of these
+ * are invisible to an unqualified reference, so finding one turns "this type
+ * does not exist" into "this type needs an import or a qualifier".
+ */
+function createTypeDeclarationFinder(
+  program: ts.Program,
+  checker: ts.TypeChecker,
+  rootDir: string,
+): TypeDeclarationFinder {
+  const cache = new Map<string, ts.Declaration | undefined>();
+  const namespaces = new Map<ts.SourceFile, ts.Symbol[]>();
+
+  const declarationOf = (symbol: ts.Symbol): ts.Declaration | undefined => {
+    let resolved = symbol;
+    if ((symbol.flags & ts.SymbolFlags.Alias) !== 0) {
+      try {
+        resolved = checker.getAliasedSymbol(symbol);
+      } catch {
+        return undefined;
+      }
+    }
+    if ((resolved.flags & NAME_MEANING) === 0) return undefined;
+    return resolved.declarations?.[0];
+  };
+
+  const findInFile = (file: ts.SourceFile, escaped: ts.__String): ts.Declaration | undefined => {
+    const exports = checker.getSymbolAtLocation(file)?.exports;
+    if (!exports) return undefined;
+    const exported = exports.get(escaped);
+    const direct = exported && declarationOf(exported);
+    if (direct) return direct;
+
+    let inNamespaces = namespaces.get(file);
+    if (!inNamespaces) {
+      inNamespaces = namespacesIn(exports);
+      namespaces.set(file, inNamespaces);
+    }
+    let found: ts.Declaration | undefined;
+    inNamespaces.some((namespace) => {
+      const member = namespace.exports?.get(escaped);
+      found = member && declarationOf(member);
+      return found !== undefined;
+    });
+    return found;
+  };
+
+  return (name: string) => {
+    if (cache.has(name)) return cache.get(name);
+    const escaped = ts.escapeLeadingUnderscores(name);
+    let found: ts.Declaration | undefined;
+    // A declaration in the project is the one the reader can act on, so the
+    // search keeps going past a dependency's until it finds one.
+    program.getSourceFiles().some((file) => {
+      const declaration = findInFile(file, escaped);
+      if (!declaration) return false;
+      if (!found) found = declaration;
+      return inProject(declaration.getSourceFile().fileName, rootDir);
+    });
+    cache.set(name, found);
+    return found;
+  };
+}
+
+/** One finder per program: the names it looks up are the same across files. */
+const finders = new WeakMap<ts.Program, TypeDeclarationFinder>();
+
+function typeDeclarationFinder(
+  program: ts.Program,
+  checker: ts.TypeChecker,
+  rootDir: string,
+): TypeDeclarationFinder {
+  let finder = finders.get(program);
+  if (!finder) {
+    finder = createTypeDeclarationFinder(program, checker, rootDir);
+    finders.set(program, finder);
+  }
+  return finder;
+}
+
+function unresolvedNameEvidence(
+  node: ts.Node,
+  file: ts.SourceFile,
+  checker: ts.TypeChecker,
+  program: ts.Program,
+  rootDir: string,
+): SuppressionEvidence {
+  const name = nodeText(node, file);
+  const evidence: SuppressionEvidence = { unresolved: name };
+  if (!isTypeName(node)) return evidence;
+
+  evidence.unresolvedIsType = true;
+  evidence.unresolvedIsDocumented = documentsTypeName(node, name);
+  const declaration = typeDeclarationFinder(program, checker, rootDir)(name);
+  if (!declaration) return evidence;
+
+  const declaredAt = declarationLocation(declaration);
+  return {
+    ...evidence,
+    declaredAt,
+    declarationKind: ts.SyntaxKind[declaration.kind],
+    declaredInProject: declaredAt ? inProject(declaredAt.file, rootDir) : undefined,
+  };
+}
+
 /** `program.getResolvedModule` reports the paths tried even on a suppressed program. */
 type ResolutionReader = {
   getResolvedModule?(
@@ -624,7 +823,10 @@ export function fixShape(site: SuppressionSite): string {
         : 'member conflicts with the base class';
     case 2304:
     case 2552:
-      return 'name does not resolve';
+      if (!evidence.unresolvedIsType) return 'name does not resolve';
+      return evidence.declaredAt
+        ? 'type name is declared elsewhere and not imported'
+        : 'type name is declared nowhere';
     case 2307:
       return evidence.failedLookups?.length
         ? 'module does not resolve at any path tried'
@@ -722,8 +924,51 @@ function summarizeSuppressions(
     sharedLine: sites.length - commented,
     fileCount: new Set(sites.map((site) => site.location.file)).size,
     codes,
+    unresolvedTypes: groupUnresolvedTypes(sites),
     sites,
   };
+}
+
+/**
+ * One entry per name rather than per site: the annotations come from the
+ * comments, so every site of a name shares the single edit that would fix it.
+ */
+function groupUnresolvedTypes(sites: readonly SuppressionSite[]): UnresolvedTypeGroup[] {
+  const byName = new Map<string, UnresolvedTypeGroup & { fileCounts: Map<string, number> }>();
+
+  sites.forEach((site) => {
+    const evidence = site.evidence;
+    if (!evidence?.unresolvedIsType || !evidence.unresolved) return;
+    let group = byName.get(evidence.unresolved);
+    if (!group) {
+      group = {
+        name: evidence.unresolved,
+        count: 0,
+        fileCount: 0,
+        files: [],
+        documented: 0,
+        declaredAt: evidence.declaredAt,
+        declarationKind: evidence.declarationKind,
+        declaredInProject: evidence.declaredInProject,
+        fileCounts: new Map(),
+      };
+      byName.set(evidence.unresolved, group);
+    }
+    group.count += 1;
+    if (evidence.unresolvedIsDocumented) group.documented += 1;
+    const { file } = site.location;
+    group.fileCounts.set(file, (group.fileCounts.get(file) ?? 0) + 1);
+  });
+
+  return [...byName.values()]
+    .map(({ fileCounts, ...group }) => ({
+      ...group,
+      fileCount: fileCounts.size,
+      files: [...fileCounts.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([file]) => file),
+    }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
 function pluralize(count: number, word: string): string {
@@ -779,6 +1024,9 @@ function evidenceLines(evidence: SuppressionEvidence): string[] {
   if (evidence.baseMember) lines.push(formatMember('base member', evidence.baseMember));
   if (evidence.derivedMember) lines.push(formatMember('derived member', evidence.derivedMember));
   if (evidence.unresolved) lines.push(`unresolved: ${evidence.unresolved}`);
+  if (evidence.unresolvedIsDocumented) {
+    lines.push('written by a JSDoc tag over the declaration it annotates');
+  }
   if (evidence.failedLookups?.length) {
     lines.push(`paths tried: ${evidence.failedLookups.length}`);
     evidence.failedLookups.slice(0, MAX_PROPERTIES).forEach((tried) => lines.push(`  ${tried}`));
@@ -804,6 +1052,29 @@ function siteLines(site: SuppressionSite): string[] {
     evidenceLines(site.evidence).forEach((line) => lines.push(`  ${line}`));
   }
   if (site.evidenceError) lines.push(`  evidence unavailable: ${site.evidenceError}`);
+  return lines;
+}
+
+/** Why the name found nothing: an import away, or written by nobody. */
+function unresolvedTypeCause(group: UnresolvedTypeGroup): string {
+  if (!group.declaredAt) return 'nothing declares it';
+  const kind = group.declarationKind ? ` (${group.declarationKind})` : '';
+  const scope = group.declaredInProject === false ? ' outside the project' : '';
+  return `declared at ${formatLocation(group.declaredAt)}${kind}${scope}, not in scope here`;
+}
+
+function unresolvedTypeLines(groups: readonly UnresolvedTypeGroup[]): string[] {
+  const lines: string[] = ['', 'Type names that resolve to nothing:'];
+  groups.forEach((group) => {
+    const documented = group.documented > 0 ? `, ${group.documented} written by a comment` : '';
+    lines.push(
+      `  ${group.name}  ${pluralize(group.count, 'diagnostic')} in ` +
+        `${pluralize(group.fileCount, 'file')}${documented}, ${unresolvedTypeCause(group)}`,
+    );
+    const shown = group.files.slice(0, MAX_NAME_FILES);
+    const rest = group.files.length - shown.length;
+    lines.push(`    ${shown.join(', ')}${rest > 0 ? `, and ${pluralize(rest, 'more file')}` : ''}`);
+  });
   return lines;
 }
 
@@ -834,6 +1105,10 @@ export function formatSuppressionReport(report: SuppressionReport): string {
     group.fixShapes.forEach(({ shape, count }) => lines.push(`    ${count}  ${shape}`));
     lines.push(`    longest message: ${group.longestMessage} characters`);
   });
+
+  if (report.unresolvedTypes.length > 0) {
+    unresolvedTypeLines(report.unresolvedTypes).forEach((line) => lines.push(line));
+  }
 
   lines.push('', 'Sites:');
   report.sites.forEach((site) => {
@@ -866,6 +1141,26 @@ export function formatSuppressionSummary(
   if (report.codes.length > 5) {
     lines.push(`    and ${pluralize(report.codes.length - 5, 'other code')}`);
   }
+
+  const names = report.unresolvedTypes;
+  if (names.length > 0) {
+    const sites = names.reduce((count, group) => count + group.count, 0);
+    const documented = names.filter((group) => group.documented > 0).length;
+    lines.push(
+      `  ${pluralize(names.length, 'type name')} in the annotations resolve to nothing, over ` +
+        `${pluralize(sites, 'diagnostic')}, ${documented} of them written by a comment.`,
+    );
+    names.slice(0, 5).forEach((group) => {
+      lines.push(
+        `    ${group.name} x${group.count} in ${pluralize(group.fileCount, 'file')} — ` +
+          unresolvedTypeCause(group),
+      );
+    });
+    if (names.length > 5) {
+      lines.push(`    and ${pluralize(names.length - 5, 'other name')}`);
+    }
+  }
+
   lines.push(
     reportFile
       ? `  What the compiler knew at each one is in ${reportFile}.`

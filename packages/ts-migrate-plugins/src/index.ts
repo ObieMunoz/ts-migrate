@@ -43,6 +43,7 @@ import {
   SuppressionExplainer as SuppressionExplainerType,
   SuppressionReport as SuppressionReportType,
   SuppressionSite as SuppressionSiteType,
+  UnresolvedTypeGroup as UnresolvedTypeGroupType,
 } from './utils/suppressionExplainer';
 import {
   printType,
@@ -71,6 +72,7 @@ export type SourceTextUpdate = SourceTextUpdateType;
 export type SuppressionExplainer = SuppressionExplainerType;
 export type SuppressionReport = SuppressionReportType;
 export type SuppressionSite = SuppressionSiteType;
+export type UnresolvedTypeGroup = UnresolvedTypeGroupType;
 export type TypesPackageDetector = TypesPackageDetectorType;
 export type TypesPackagePreflight = TypesPackagePreflightType;
 export type TypesPackageReport = TypesPackageReportType;
