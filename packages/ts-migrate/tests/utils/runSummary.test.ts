@@ -38,6 +38,12 @@ describe('run summary', () => {
         { file: path.join(rootDir, 'scripts', 'build.js'), reason: 'run with node' },
         { file: path.join(rootDir, 'config', 'paths.js'), reason: 'required by webpack.config.js' },
       ],
+      packageJsonRewrites: [
+        { file: 'package.json', key: 'scripts.test', from: 'mocha src/z.js', to: 'mocha src/z.ts' },
+      ],
+      packageJsonNotices: [
+        { file: 'package.json', key: 'main', value: 'src/z.js', target: 'src/z.ts' },
+      ],
     });
 
     expect(summary.command).toBe('rename');
@@ -52,6 +58,12 @@ describe('run summary', () => {
     expect(summary.skippedBootstrapFiles).toEqual([
       { file: 'config/paths.js', reason: 'required by webpack.config.js' },
       { file: 'scripts/build.js', reason: 'run with node' },
+    ]);
+    expect(summary.packageJsonRewrites).toEqual([
+      { file: 'package.json', key: 'scripts.test', from: 'mocha src/z.js', to: 'mocha src/z.ts' },
+    ]);
+    expect(summary.packageJsonNotices).toEqual([
+      { file: 'package.json', key: 'main', value: 'src/z.js', target: 'src/z.ts' },
     ]);
   });
 

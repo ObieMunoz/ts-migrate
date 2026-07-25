@@ -222,7 +222,8 @@ export function logPackageJsonReferences(
 ): void {
   if (result.rewrites.length > 0) {
     const lines = result.rewrites.map(
-      ({ file, key, from, to }) => `  ${file} ${key}: ${JSON.stringify(from)} -> ${JSON.stringify(to)}`,
+      ({ file, key, from, to }) =>
+        `  ${file} ${key}: ${JSON.stringify(from)} -> ${JSON.stringify(to)}`,
     );
     log.info(
       `${dryRun ? 'Dry run: would update' : 'Updated'} ${result.rewrites.length} package.json ` +
@@ -232,7 +233,8 @@ export function logPackageJsonReferences(
 
   if (result.notices.length > 0) {
     const lines = result.notices.map(
-      ({ file, key, value, target }) => `  ${file} ${key}: ${JSON.stringify(value)} (now ${target})`,
+      ({ file, key, value, target }) =>
+        `  ${file} ${key}: ${JSON.stringify(value)} (now ${target})`,
     );
     log.info(
       `Left ${result.notices.length} package.json entry point(s) alone. They point at renamed ` +
@@ -258,6 +260,7 @@ function formatKeyPath(keyPath: JSON5Path): string {
   return keyPath
     .map((key, i) => {
       if (typeof key === 'number') return `[${key}]`;
+      if (!/^[A-Za-z_$][\w$]*$/.test(key)) return `[${JSON.stringify(key)}]`;
       return i === 0 ? key : `.${key}`;
     })
     .join('');
@@ -279,7 +282,8 @@ function isUnder(parentDir: string, candidate: string): boolean {
 /** Jest addresses its config paths from `<rootDir>`, which is the package.json directory. */
 function splitRootDir(value: string): { prefix: string; pattern: string } {
   const match = /^<rootDir>\/?/.exec(value);
-  return match ? { prefix: match[0], pattern: value.slice(match[0].length) } : { prefix: '', pattern: value };
+  if (!match) return { prefix: '', pattern: value };
+  return { prefix: match[0], pattern: value.slice(match[0].length) };
 }
 
 function resolveReference(dir: string, value: string): string {

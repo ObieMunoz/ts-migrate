@@ -316,6 +316,10 @@ describe('rename command', () => {
   "bin": {
     "demo": "src/cli.js"
   },
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": ["src"],
   "scripts": {
     "build": "node scripts/build.js",
     "lint": "eslint .",
@@ -368,13 +372,20 @@ describe('rename command', () => {
 
       expect(readPackageJson()).toContain('"main": "src/index.js"');
       expect(readPackageJson()).toContain('"demo": "src/cli.js"');
+      expect(readPackageJson()).toContain('".": "./src/index.js"');
       expect(result?.packageJsonNotices).toEqual([
         { file: 'package.json', key: 'main', value: 'src/index.js', target: 'src/index.ts' },
         { file: 'package.json', key: 'bin.demo', value: 'src/cli.js', target: 'src/cli.ts' },
+        {
+          file: 'package.json',
+          key: 'exports["."]',
+          value: './src/index.js',
+          target: 'src/index.ts',
+        },
       ]);
       const infoMessages = infoSpy.mock.calls.map((call) => call.join(' '));
       expect(infoMessages).toContainEqual(
-        expect.stringContaining('Left 2 package.json entry point(s) alone'),
+        expect.stringContaining('Left 3 package.json entry point(s) alone'),
       );
       expect(infoMessages).toContainEqual(expect.stringContaining('need to name build output'));
       infoSpy.mockRestore();

@@ -107,9 +107,7 @@ export function buildRenameRunSummary(params: {
 }
 
 function sortByFileAndKey<T extends { file: string; key: string }>(entries: T[]): T[] {
-  return [...entries].sort((a, b) =>
-    a.file + a.key < b.file + b.key ? -1 : 1,
-  );
+  return [...entries].sort((a, b) => (a.file + a.key < b.file + b.key ? -1 : 1));
 }
 
 export function buildMigrateRunSummary(params: {
