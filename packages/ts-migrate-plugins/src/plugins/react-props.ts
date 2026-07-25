@@ -242,6 +242,8 @@ function updatePropTypes(
         if (forwardRefComponent) {
           const { expression } = forwardRefComponent;
           const index = expression.getStart(sourceFile);
+          const refTypeName =
+            getForwardRefElementType(forwardRefComponent) || options.anyAlias || 'any';
           updates.push({
             kind: 'replace',
             index,
@@ -252,7 +254,7 @@ function updatePropTypes(
                 forwardRefComponent as any,
                 expression,
                 [
-                  ts.factory.createTypeReferenceNode(options.anyAlias || 'any', undefined),
+                  ts.factory.createTypeReferenceNode(refTypeName, undefined),
                   ts.factory.createTypeReferenceNode(propsTypeName, undefined),
                 ].filter(isNotNull) as any,
               ),
@@ -475,6 +477,223 @@ function getReactForwardRefFuncExpression(node: ReactNode) {
   return initializer && ts.isCallExpression(initializer) && isReactForwardRefName(initializer)
     ? initializer
     : undefined;
+}
+
+// HTMLElementTagNameMap from lib.dom.d.ts, split by whether the tag has an
+// interface of its own. SVG tags, custom elements and the deprecated HTML tags
+// JSX.IntrinsicElements still lists are absent, and fall back to any.
+const specificElementTypesByTag: { [tag: string]: string } = {
+  a: 'HTMLAnchorElement',
+  area: 'HTMLAreaElement',
+  audio: 'HTMLAudioElement',
+  base: 'HTMLBaseElement',
+  blockquote: 'HTMLQuoteElement',
+  body: 'HTMLBodyElement',
+  br: 'HTMLBRElement',
+  button: 'HTMLButtonElement',
+  canvas: 'HTMLCanvasElement',
+  caption: 'HTMLTableCaptionElement',
+  col: 'HTMLTableColElement',
+  colgroup: 'HTMLTableColElement',
+  data: 'HTMLDataElement',
+  datalist: 'HTMLDataListElement',
+  del: 'HTMLModElement',
+  details: 'HTMLDetailsElement',
+  dialog: 'HTMLDialogElement',
+  div: 'HTMLDivElement',
+  dl: 'HTMLDListElement',
+  embed: 'HTMLEmbedElement',
+  fieldset: 'HTMLFieldSetElement',
+  form: 'HTMLFormElement',
+  h1: 'HTMLHeadingElement',
+  h2: 'HTMLHeadingElement',
+  h3: 'HTMLHeadingElement',
+  h4: 'HTMLHeadingElement',
+  h5: 'HTMLHeadingElement',
+  h6: 'HTMLHeadingElement',
+  head: 'HTMLHeadElement',
+  hr: 'HTMLHRElement',
+  html: 'HTMLHtmlElement',
+  iframe: 'HTMLIFrameElement',
+  img: 'HTMLImageElement',
+  input: 'HTMLInputElement',
+  ins: 'HTMLModElement',
+  label: 'HTMLLabelElement',
+  legend: 'HTMLLegendElement',
+  li: 'HTMLLIElement',
+  link: 'HTMLLinkElement',
+  map: 'HTMLMapElement',
+  menu: 'HTMLMenuElement',
+  meta: 'HTMLMetaElement',
+  meter: 'HTMLMeterElement',
+  object: 'HTMLObjectElement',
+  ol: 'HTMLOListElement',
+  optgroup: 'HTMLOptGroupElement',
+  option: 'HTMLOptionElement',
+  output: 'HTMLOutputElement',
+  p: 'HTMLParagraphElement',
+  picture: 'HTMLPictureElement',
+  pre: 'HTMLPreElement',
+  progress: 'HTMLProgressElement',
+  q: 'HTMLQuoteElement',
+  script: 'HTMLScriptElement',
+  select: 'HTMLSelectElement',
+  slot: 'HTMLSlotElement',
+  source: 'HTMLSourceElement',
+  span: 'HTMLSpanElement',
+  style: 'HTMLStyleElement',
+  table: 'HTMLTableElement',
+  tbody: 'HTMLTableSectionElement',
+  td: 'HTMLTableCellElement',
+  template: 'HTMLTemplateElement',
+  textarea: 'HTMLTextAreaElement',
+  tfoot: 'HTMLTableSectionElement',
+  th: 'HTMLTableCellElement',
+  thead: 'HTMLTableSectionElement',
+  time: 'HTMLTimeElement',
+  title: 'HTMLTitleElement',
+  tr: 'HTMLTableRowElement',
+  track: 'HTMLTrackElement',
+  ul: 'HTMLUListElement',
+  video: 'HTMLVideoElement',
+};
+
+// Tags lib.dom.d.ts types as the base HTMLElement.
+const plainElementTags = [
+  'abbr',
+  'address',
+  'article',
+  'aside',
+  'b',
+  'bdi',
+  'bdo',
+  'cite',
+  'code',
+  'dd',
+  'dfn',
+  'dt',
+  'em',
+  'figcaption',
+  'figure',
+  'footer',
+  'header',
+  'hgroup',
+  'i',
+  'kbd',
+  'main',
+  'mark',
+  'nav',
+  'noscript',
+  'rp',
+  'rt',
+  'ruby',
+  's',
+  'samp',
+  'search',
+  'section',
+  'small',
+  'strong',
+  'sub',
+  'summary',
+  'sup',
+  'u',
+  'var',
+  'wbr',
+];
+
+const elementTypesByTag: { [tag: string]: string | undefined } = {
+  ...specificElementTypesByTag,
+  ...Object.fromEntries(plainElementTags.map((tag) => [tag, 'HTMLElement'])),
+};
+
+function isUseImperativeHandleCall(node: ts.CallExpression) {
+  const { expression } = node;
+  if (ts.isIdentifier(expression)) {
+    return expression.text === 'useImperativeHandle';
+  }
+  return ts.isPropertyAccessExpression(expression)
+    ? expression.name.text === 'useImperativeHandle'
+    : false;
+}
+
+function isRefAttribute(node: ts.Node, refName: string): node is ts.JsxAttribute {
+  if (!ts.isJsxAttribute(node) || !ts.isIdentifier(node.name) || node.name.text !== 'ref') {
+    return false;
+  }
+  const { initializer } = node;
+  return (
+    initializer != null &&
+    ts.isJsxExpression(initializer) &&
+    initializer.expression != null &&
+    ts.isIdentifier(initializer.expression) &&
+    initializer.expression.text === refName
+  );
+}
+
+function getRefAttachmentTag(attribute: ts.JsxAttribute): string | undefined {
+  const element = attribute.parent.parent;
+  if (!ts.isJsxOpeningElement(element) && !ts.isJsxSelfClosingElement(element)) {
+    return undefined;
+  }
+  const { tagName } = element;
+  return ts.isIdentifier(tagName) && /^[a-z]/.test(tagName.text) ? tagName.text : undefined;
+}
+
+function isNamePosition(identifier: ts.Identifier) {
+  const { parent } = identifier;
+  return (
+    (ts.isPropertyAccessExpression(parent) && parent.name === identifier) ||
+    (ts.isJsxAttribute(parent) && parent.name === identifier) ||
+    (ts.isPropertyAssignment(parent) && parent.name === identifier) ||
+    (ts.isBindingElement(parent) && parent.propertyName === identifier)
+  );
+}
+
+// Recovers the ref element type syntactically: the ref has to reach exactly one
+// kind of intrinsic tag and be used nowhere else, otherwise the caller writes any.
+function getForwardRefElementType(forwardRefCall: ts.CallExpression): string | undefined {
+  const [component] = forwardRefCall.arguments;
+  if (!component || !isSfcFunctionExpression(component)) {
+    return undefined;
+  }
+
+  const refParam = component.parameters[1];
+  if (!refParam || !ts.isIdentifier(refParam.name)) {
+    return undefined;
+  }
+  const refName = refParam.name.text;
+
+  let tag: string | undefined;
+  let unresolved = false;
+
+  const visit = (node: ts.Node): void => {
+    if (unresolved) return;
+
+    if (ts.isCallExpression(node) && isUseImperativeHandleCall(node)) {
+      unresolved = true;
+      return;
+    }
+
+    if (isRefAttribute(node, refName)) {
+      const attachmentTag = getRefAttachmentTag(node);
+      if (attachmentTag === undefined || (tag !== undefined && tag !== attachmentTag)) {
+        unresolved = true;
+      } else {
+        tag = attachmentTag;
+      }
+      return;
+    }
+
+    if (ts.isIdentifier(node) && node.text === refName && !isNamePosition(node)) {
+      unresolved = true;
+      return;
+    }
+
+    ts.forEachChild(node, visit);
+  };
+  visit(component.body);
+
+  return unresolved || tag === undefined ? undefined : elementTypesByTag[tag];
 }
 
 function getParentVariableStatement(

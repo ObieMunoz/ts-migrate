@@ -82,7 +82,7 @@ type Props = {
     foo: string;
 };
 
-const Foo = forwardRef<any, Props>(({ foo }, ref) => <div ref={ref}>{foo}</div>)
+const Foo = forwardRef<HTMLDivElement, Props>(({ foo }, ref) => <div ref={ref}>{foo}</div>)
 
 export default Foo;
 `);
@@ -102,7 +102,7 @@ type Props = {
     foo: string;
 };
 
-const Foo = forwardRef<any, Props>(({ foo }, ref) => <div ref={ref}>{foo}</div>)
+const Foo = forwardRef<HTMLDivElement, Props>(({ foo }, ref) => <div ref={ref}>{foo}</div>)
 
 Foo.propTypes = propTypes;
 
@@ -133,7 +133,7 @@ type Props = {
     foo: string;
 };
 
-const Foo = React.forwardRef<any, Props>(({ foo }, ref) => <div ref={ref}>{foo}</div>)
+const Foo = React.forwardRef<HTMLDivElement, Props>(({ foo }, ref) => <div ref={ref}>{foo}</div>)
 
 export default Foo;
 `);
@@ -277,7 +277,7 @@ type Props = {
     foo: string;
 };
 
-const Foo = memo(forwardRef<any, Props>(({ foo }, ref) => <section ref={ref}>{foo}</section>));
+const Foo = memo(forwardRef<HTMLElement, Props>(({ foo }, ref) => <section ref={ref}>{foo}</section>));
 
 export default Foo;
 `);
@@ -353,6 +353,155 @@ const Bar = ({ bar }: BarProps) => <div>{bar}</div>;
 
 export { Foo, Bar };
 `);
+  });
+
+  describe('forwardRef ref type', () => {
+    const buildSource = (component: string, imports: string) =>
+      `import React, { ${imports} } from 'react';
+import PropTypes from 'prop-types';
+
+${component}
+
+Foo.propTypes = {
+  foo: PropTypes.string.isRequired,
+};
+`;
+
+    const buildExpected = (component: string, imports: string) =>
+      `import React, { ${imports} } from 'react';
+
+type Props = {
+    foo: string;
+};
+
+${component}
+`;
+
+    const expectConversion = async (
+      component: string,
+      converted: string,
+      { imports = 'forwardRef', options = {} }: { imports?: string; options?: object } = {},
+    ) => {
+      const result = await reactPropsPlugin.run(
+        mockPluginParams({ text: buildSource(component, imports), fileName: 'Foo.tsx', options }),
+      );
+      expect(result).toBe(buildExpected(converted, imports));
+    };
+
+    it('infers the element type of the single tag the ref is attached to', () =>
+      expectConversion(
+        'const Foo = forwardRef(({ foo }, ref) => <input ref={ref} placeholder={foo} />);',
+        'const Foo = forwardRef<HTMLInputElement, Props>(({ foo }, ref) => <input ref={ref} placeholder={foo} />);',
+      ));
+
+    it('infers from a ref parameter under any name', () =>
+      expectConversion(
+        'const Foo = forwardRef(({ foo }, inputRef) => <textarea ref={inputRef} value={foo} />);',
+        'const Foo = forwardRef<HTMLTextAreaElement, Props>(({ foo }, inputRef) => <textarea ref={inputRef} value={foo} />);',
+      ));
+
+    it('infers from a function expression component', () =>
+      expectConversion(
+        `const Foo = forwardRef(function Foo({ foo }, ref) {
+  return <button ref={ref}>{foo}</button>;
+});`,
+        `const Foo = forwardRef<HTMLButtonElement, Props>(function Foo({ foo }, ref) {
+  return <button ref={ref}>{foo}</button>;
+});`,
+      ));
+
+    it('infers when the ref reaches the same tag more than once', () =>
+      expectConversion(
+        'const Foo = forwardRef(({ foo }, ref) => foo ? <input ref={ref} /> : <input ref={ref} disabled />);',
+        'const Foo = forwardRef<HTMLInputElement, Props>(({ foo }, ref) => foo ? <input ref={ref} /> : <input ref={ref} disabled />);',
+      ));
+
+    it('ignores ref attributes that hold some other ref', () =>
+      expectConversion(
+        'const Foo = forwardRef(({ foo }, ref) => <div ref={ref}><span ref={localRef}>{foo}</span></div>);',
+        'const Foo = forwardRef<HTMLDivElement, Props>(({ foo }, ref) => <div ref={ref}><span ref={localRef}>{foo}</span></div>);',
+      ));
+
+    it('keeps any when the ref is never attached', () =>
+      expectConversion(
+        'const Foo = forwardRef(({ foo }, ref) => <div>{foo}</div>);',
+        'const Foo = forwardRef<any, Props>(({ foo }, ref) => <div>{foo}</div>);',
+      ));
+
+    it('keeps any when the component takes no ref parameter', () =>
+      expectConversion(
+        'const Foo = forwardRef(({ foo }) => <div>{foo}</div>);',
+        'const Foo = forwardRef<any, Props>(({ foo }) => <div>{foo}</div>);',
+      ));
+
+    it('keeps any when the ref reaches tags of different types', () =>
+      expectConversion(
+        'const Foo = forwardRef(({ foo }, ref) => <div ref={ref}><span ref={ref}>{foo}</span></div>);',
+        'const Foo = forwardRef<any, Props>(({ foo }, ref) => <div ref={ref}><span ref={ref}>{foo}</span></div>);',
+      ));
+
+    it('keeps any when the ref is attached to a component', () =>
+      expectConversion(
+        'const Foo = forwardRef(({ foo }, ref) => <Inner ref={ref}>{foo}</Inner>);',
+        'const Foo = forwardRef<any, Props>(({ foo }, ref) => <Inner ref={ref}>{foo}</Inner>);',
+      ));
+
+    it('keeps any when the ref is spread onto an element', () =>
+      expectConversion(
+        'const Foo = forwardRef(({ foo }, ref) => <div {...{ ref }}>{foo}</div>);',
+        'const Foo = forwardRef<any, Props>(({ foo }, ref) => <div {...{ ref }}>{foo}</div>);',
+      ));
+
+    it('keeps any when the ref is forwarded through a helper', () =>
+      expectConversion(
+        'const Foo = forwardRef(({ foo }, ref) => <div ref={mergeRefs(ref, innerRef)}>{foo}</div>);',
+        'const Foo = forwardRef<any, Props>(({ foo }, ref) => <div ref={mergeRefs(ref, innerRef)}>{foo}</div>);',
+      ));
+
+    it('keeps any when the ref is read directly', () =>
+      expectConversion(
+        `const Foo = forwardRef(({ foo }, ref) => {
+  const value = ref.current;
+  return <input ref={ref} defaultValue={value} />;
+});`,
+        `const Foo = forwardRef<any, Props>(({ foo }, ref) => {
+  const value = ref.current;
+  return <input ref={ref} defaultValue={value} />;
+});`,
+      ));
+
+    it('keeps any when useImperativeHandle is present', () =>
+      expectConversion(
+        `const Foo = forwardRef(({ foo }, ref) => {
+  useImperativeHandle(ref, () => ({ focus() {} }));
+  return <input ref={ref} placeholder={foo} />;
+});`,
+        `const Foo = forwardRef<any, Props>(({ foo }, ref) => {
+  useImperativeHandle(ref, () => ({ focus() {} }));
+  return <input ref={ref} placeholder={foo} />;
+});`,
+        { imports: 'forwardRef, useImperativeHandle' },
+      ));
+
+    it('keeps any for tags outside the map', () =>
+      expectConversion(
+        'const Foo = forwardRef(({ foo }, ref) => <svg ref={ref}>{foo}</svg>);',
+        'const Foo = forwardRef<any, Props>(({ foo }, ref) => <svg ref={ref}>{foo}</svg>);',
+      ));
+
+    it('falls back to anyAlias rather than any', () =>
+      expectConversion(
+        'const Foo = forwardRef(({ foo }, ref) => <div>{foo}</div>);',
+        'const Foo = forwardRef<$TSFixMe, Props>(({ foo }, ref) => <div>{foo}</div>);',
+        { options: { anyAlias: '$TSFixMe' } },
+      ));
+
+    it('prefers the inferred element type over anyAlias', () =>
+      expectConversion(
+        'const Foo = forwardRef(({ foo }, ref) => <textarea ref={ref} value={foo} />);',
+        'const Foo = forwardRef<HTMLTextAreaElement, Props>(({ foo }, ref) => <textarea ref={ref} value={foo} />);',
+        { options: { anyAlias: '$TSFixMe' } },
+      ));
   });
 
   it('handles class with propTypes declared as a separate variable wrapped in forbidExtraProps', async () => {
@@ -2004,7 +2153,7 @@ import { InferProps } from "prop-types";
 
 type Props = InferProps<typeof fieldPropTypes>;
 
-const Field = forwardRef<any, Props>((props, ref) => <input ref={ref} />);
+const Field = forwardRef<HTMLInputElement, Props>((props, ref) => <input ref={ref} />);
 `);
   });
 
