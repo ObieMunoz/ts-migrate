@@ -1,7 +1,13 @@
-import path from 'path';
 import ts from 'typescript';
 import { errorMessage, fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
-import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
+import {
+  applyTextChanges,
+  createFileLanguageService,
+  findNewErrors,
+  getValidationOptions,
+  TextChange,
+  toOriginalPos,
+} from '../utils/candidateValidation';
 
 export interface LintConfig {
   useTabs: boolean;
@@ -24,12 +30,6 @@ const anyFallbackRegex = /^\s*(this\s*)?:\s*any(\[\])?\s*$/;
 const callArgumentErrorCodes = new Set([2345, 2554, 2555, 2559, 2769]);
 
 const bodyOnlySuffix = 'TsMigrateBodyOnly';
-
-interface TextChange {
-  start: number;
-  length: number;
-  text: string;
-}
 
 /**
  * Annotates implicit-any locations with types the TypeScript language
@@ -541,30 +541,6 @@ function nodeSpanning(source: ts.SourceFile, start: number, end: number): ts.Nod
   return result;
 }
 
-function findNewErrors(
-  baseline: ts.LanguageService,
-  candidate: ts.LanguageService,
-  changes: TextChange[],
-  fileName: string,
-): ts.Diagnostic[] {
-  const isError = (d: ts.Diagnostic) => d.category === ts.DiagnosticCategory.Error;
-  // Checked first: a clean candidate never type-checks the baseline (the
-  // baseline service stays lazy until its first query).
-  const candidateErrors = candidate.getSemanticDiagnostics(fileName).filter(isError);
-  if (candidateErrors.length === 0) {
-    return [];
-  }
-  const baselineKeys = new Set(
-    baseline
-      .getSemanticDiagnostics(fileName)
-      .filter(isError)
-      .map((d) => `${d.code}:${d.start == null ? '' : toCandidatePos(d.start, changes)}`),
-  );
-  return candidateErrors.filter(
-    (d) => !baselineKeys.has(`${d.code}:${d.start == null ? '' : d.start}`),
-  );
-}
-
 function bindingNameOf(fn: ts.Node): ts.Identifier | undefined {
   if (ts.isFunctionDeclaration(fn) && fn.name) {
     return fn.name;
@@ -648,34 +624,6 @@ function argumentNodeAt(source: ts.SourceFile, position: number): ts.Node | unde
   return undefined;
 }
 
-function toCandidatePos(originalPos: number, changes: TextChange[]): number {
-  let shift = 0;
-  changes.forEach((change) => {
-    if (change.start <= originalPos) {
-      shift += change.text.length - change.length;
-    }
-  });
-  return originalPos + shift;
-}
-
-function toOriginalPos(candidatePos: number, changes: TextChange[]): number {
-  let shift = 0;
-  for (const change of changes) {
-    if (change.start + shift >= candidatePos) break;
-    shift += change.text.length - change.length;
-  }
-  return candidatePos - shift;
-}
-
-function applyTextChanges(text: string, changes: TextChange[]): string {
-  const updates: SourceTextUpdate[] = changes.map((change) =>
-    change.length === 0
-      ? { kind: 'insert', index: change.start, text: change.text }
-      : { kind: 'replace', index: change.start, length: change.length, text: change.text },
-  );
-  return updateSourceText(text, updates);
-}
-
 function isNoOp(changes: TextChange[]): boolean {
   // Parenthesizing an arrow parameter whose annotation was dropped is not
   // worth a diff on its own.
@@ -689,201 +637,4 @@ function getSourceFileOrThrow(service: ts.LanguageService, fileName: string): ts
     throw new Error(`Failed to load source file: ${fileName}`);
   }
   return source;
-}
-
-// Parsed and bound dependency files (default libs, node_modules, the import
-// graph) and disk reads are shared across all validation services: disk
-// content is stable for the whole run because migrate persists overlay
-// changes only at the very end. Only the file under migration differs
-// between services, so it gets a fresh version and everything else stays
-// cached in the registry.
-const sharedDocumentRegistry = ts.createDocumentRegistry(
-  ts.sys.useCaseSensitiveFileNames,
-  ts.sys.getCurrentDirectory(),
-);
-const diskFileText = new Map<string, string | undefined>();
-const diskFilePresence = new Map<string, boolean>();
-const diskDirectoryPresence = new Map<string, boolean>();
-const diskDirectoryNames = new Map<string, string[]>();
-const diskRealpaths = new Map<string, string>();
-let overrideVersion = 0;
-
-function readFileCached(name: string): string | undefined {
-  if (!diskFileText.has(name)) {
-    diskFileText.set(name, ts.sys.readFile(name));
-  }
-  return diskFileText.get(name);
-}
-
-function fileExistsCached(name: string): boolean {
-  let exists = diskFilePresence.get(name);
-  if (exists === undefined) {
-    exists = ts.sys.fileExists(name);
-    diskFilePresence.set(name, exists);
-  }
-  return exists;
-}
-
-function directoryExistsCached(name: string): boolean {
-  let exists = diskDirectoryPresence.get(name);
-  if (exists === undefined) {
-    exists = ts.sys.directoryExists(name);
-    diskDirectoryPresence.set(name, exists);
-  }
-  return exists;
-}
-
-function getDirectoriesCached(name: string): string[] {
-  let directories = diskDirectoryNames.get(name);
-  if (directories === undefined) {
-    directories = ts.sys.getDirectories(name);
-    diskDirectoryNames.set(name, directories);
-  }
-  return directories;
-}
-
-const sysRealpath = ts.sys.realpath;
-const realpathCached =
-  sysRealpath &&
-  ((name: string): string => {
-    let real = diskRealpaths.get(name);
-    if (real === undefined) {
-      real = sysRealpath(name);
-      diskRealpaths.set(name, real);
-    }
-    return real;
-  });
-
-// A ModuleResolutionCache assumes every lookup uses the options it was
-// created with, so caches are keyed by options object; run() derives one
-// stable options object per program, giving one cache shared by all of a
-// run's validation services. Resolutions are as stable as the disk reads
-// above: renames happen in the earlier `rename` command.
-interface ResolutionCaches {
-  moduleResolutionCache: ts.ModuleResolutionCache;
-  typeReferenceDirectiveResolutionCache: ts.TypeReferenceDirectiveResolutionCache;
-}
-const resolutionCachesByOptions = new WeakMap<ts.CompilerOptions, ResolutionCaches>();
-
-function getResolutionCaches(compilerOptions: ts.CompilerOptions): ResolutionCaches {
-  let caches = resolutionCachesByOptions.get(compilerOptions);
-  if (!caches) {
-    const currentDirectory = ts.sys.getCurrentDirectory();
-    const getCanonicalFileName = ts.sys.useCaseSensitiveFileNames
-      ? (fileName: string) => fileName
-      : (fileName: string) => fileName.toLowerCase();
-    const moduleResolutionCache = ts.createModuleResolutionCache(
-      currentDirectory,
-      getCanonicalFileName,
-      compilerOptions,
-    );
-    caches = {
-      moduleResolutionCache,
-      typeReferenceDirectiveResolutionCache: ts.createTypeReferenceDirectiveResolutionCache(
-        currentDirectory,
-        getCanonicalFileName,
-        compilerOptions,
-        moduleResolutionCache.getPackageJsonInfoCache(),
-      ),
-    };
-    resolutionCachesByOptions.set(compilerOptions, caches);
-  }
-  return caches;
-}
-
-const validationOptionsByProgramOptions = new WeakMap<ts.CompilerOptions, ts.CompilerOptions>();
-
-function getValidationOptions(programOptions: ts.CompilerOptions): ts.CompilerOptions {
-  let options = validationOptionsByProgramOptions.get(programOptions);
-  if (!options) {
-    options = { ...programOptions, skipLibCheck: true };
-    validationOptionsByProgramOptions.set(programOptions, options);
-  }
-  return options;
-}
-
-// The language service reads host.getModuleResolutionCache at runtime (the
-// program reuses its packageJsonInfoCache), but the method is marked
-// @internal on ts.LanguageServiceHost and missing from the public type.
-interface LanguageServiceHostWithCache extends ts.LanguageServiceHost {
-  getModuleResolutionCache?(): ts.ModuleResolutionCache | undefined;
-}
-
-function createFileLanguageService(
-  fileName: string,
-  content: string,
-  compilerOptions: ts.CompilerOptions,
-): ts.LanguageService {
-  // Only the file under migration is overridden; imports and default libs
-  // resolve from disk. The shared registry reuses cached files purely by
-  // version, so the overridden file must never repeat one for different
-  // content.
-  overrideVersion += 1;
-  const version = String(overrideVersion);
-  const { moduleResolutionCache, typeReferenceDirectiveResolutionCache } =
-    getResolutionCaches(compilerOptions);
-  const getCurrentDirectory = () => path.dirname(fileName);
-  const resolutionHost: ts.ModuleResolutionHost = {
-    fileExists: fileExistsCached,
-    readFile: readFileCached,
-    directoryExists: directoryExistsCached,
-    getDirectories: getDirectoriesCached,
-    ...(realpathCached ? { realpath: realpathCached } : undefined),
-    getCurrentDirectory,
-    useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
-  };
-  const host: LanguageServiceHostWithCache = {
-    getCompilationSettings: () => compilerOptions,
-    getScriptFileNames: () => [fileName],
-    getScriptVersion: (name) => (name === fileName ? version : '0'),
-    getScriptSnapshot: (name) => {
-      const contents = name === fileName ? content : readFileCached(name);
-      return contents !== undefined ? ts.ScriptSnapshot.fromString(contents) : undefined;
-    },
-    getCurrentDirectory,
-    getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
-    fileExists: (name) => name === fileName || fileExistsCached(name),
-    readFile: (name) => (name === fileName ? content : readFileCached(name)),
-    directoryExists: directoryExistsCached,
-    getDirectories: getDirectoriesCached,
-    ...(realpathCached ? { realpath: realpathCached } : undefined),
-    resolveModuleNameLiterals: (
-      moduleLiterals,
-      containingFile,
-      redirectedReference,
-      options,
-      containingSourceFile,
-    ) =>
-      moduleLiterals.map((literal) =>
-        ts.resolveModuleName(
-          literal.text,
-          containingFile,
-          options,
-          resolutionHost,
-          moduleResolutionCache,
-          redirectedReference,
-          ts.getModeForUsageLocation(containingSourceFile, literal, options),
-        ),
-      ),
-    resolveTypeReferenceDirectiveReferences: (
-      typeDirectiveReferences,
-      containingFile,
-      redirectedReference,
-      options,
-      containingSourceFile,
-    ) =>
-      typeDirectiveReferences.map((reference) =>
-        ts.resolveTypeReferenceDirective(
-          typeof reference === 'string' ? reference : reference.fileName,
-          containingFile,
-          options,
-          resolutionHost,
-          redirectedReference,
-          typeReferenceDirectiveResolutionCache,
-          ts.getModeForFileReference(reference, containingSourceFile?.impliedNodeFormat),
-        ),
-      ),
-    getModuleResolutionCache: () => moduleResolutionCache,
-  };
-  return ts.createLanguageService(host, sharedDocumentRegistry);
 }
