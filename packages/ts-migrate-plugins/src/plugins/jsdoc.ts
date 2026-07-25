@@ -138,7 +138,8 @@ const jsDocTransformerFactory =
         ts.isMethodDeclaration(node) && insideClass
           ? modifiersFromJSDoc(node, factory)
           : nodeModifiers;
-      const typeParameters = node.typeParameters ? undefined : visitTypeParameters(node);
+      const typeParameters =
+        node.typeParameters || !acceptsTypeParameters(node) ? undefined : visitTypeParameters(node);
       const parameters = visitParameters(node);
       const returnType = annotateReturns ? visitReturnType(node) : node.type;
       if (
@@ -661,6 +662,15 @@ function modifiersFromJSDoc(
   }
 
   return factory.createModifiersFromModifierFlags(modifierFlags);
+}
+
+/** Constructors and accessors take none, whatever their comment says. */
+function acceptsTypeParameters(node: ts.SignatureDeclaration): boolean {
+  return (
+    !ts.isConstructorDeclaration(node) &&
+    !ts.isGetAccessorDeclaration(node) &&
+    !ts.isSetAccessorDeclaration(node)
+  );
 }
 
 function entityNameText(name: ts.EntityName): string {
