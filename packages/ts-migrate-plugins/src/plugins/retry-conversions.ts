@@ -305,12 +305,14 @@ function retriedChanges(
   programsLeft = maxValidationPrograms;
   const retyped: number[] = [];
   kept.forEach((candidate) => {
-    narrowingsFor(candidate.node).some((change) => {
-      if (!checksClean([...accepted, change], [...retyped, candidate.node.end])) return false;
+    const { end } = candidate.node;
+    const change = narrowingsFor(candidate.node).find((narrowing) =>
+      checksClean([...accepted, narrowing], [...retyped, end]),
+    );
+    if (change) {
       accepted.push(change);
-      retyped.push(candidate.node.end);
-      return true;
-    });
+      retyped.push(end);
+    }
   });
   return accepted;
 }
