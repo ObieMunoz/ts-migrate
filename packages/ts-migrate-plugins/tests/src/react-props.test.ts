@@ -196,6 +196,165 @@ export default WrappedComponent;
 `);
   });
 
+  it('handles functional component wrapped in memo', async () => {
+    const text = `import React, { memo } from 'react';
+import PropTypes from 'prop-types';
+
+const propTypes = {
+  foo: PropTypes.string.isRequired,
+};
+
+const Foo = memo(({ foo }) => <div>{foo}</div>);
+
+Foo.propTypes = propTypes;
+
+export default Foo;
+`;
+
+    const result = await reactPropsPlugin.run(mockPluginParams({ text, fileName: 'Foo.tsx' }));
+
+    expect(result).toBe(`import React, { memo } from 'react';
+
+type Props = {
+    foo: string;
+};
+
+const Foo = memo(({ foo }: Props) => <div>{foo}</div>);
+
+export default Foo;
+`);
+  });
+
+  it('handles functional component wrapped in React.memo', async () => {
+    const text = `import React from 'react';
+import PropTypes from 'prop-types';
+
+const propTypes = {
+  foo: PropTypes.string.isRequired,
+};
+
+const Foo = React.memo(({ foo }) => <div>{foo}</div>);
+
+Foo.propTypes = propTypes;
+
+export default Foo;
+`;
+
+    const result = await reactPropsPlugin.run(mockPluginParams({ text, fileName: 'Foo.tsx' }));
+
+    expect(result).toBe(`import React from 'react';
+
+type Props = {
+    foo: string;
+};
+
+const Foo = React.memo(({ foo }: Props) => <div>{foo}</div>);
+
+export default Foo;
+`);
+  });
+
+  it('handles memo wrapping forwardRef', async () => {
+    const text = `import React, { forwardRef, memo } from 'react';
+import PropTypes from 'prop-types';
+
+const propTypes = {
+  foo: PropTypes.string.isRequired,
+};
+
+const Foo = memo(forwardRef(({ foo }, ref) => <section ref={ref}>{foo}</section>));
+
+Foo.propTypes = propTypes;
+
+export default Foo;
+`;
+
+    const result = await reactPropsPlugin.run(mockPluginParams({ text, fileName: 'Foo.tsx' }));
+
+    expect(result).toBe(`import React, { forwardRef, memo } from 'react';
+
+type Props = {
+    foo: string;
+};
+
+const Foo = memo(forwardRef<any, Props>(({ foo }, ref) => <section ref={ref}>{foo}</section>));
+
+export default Foo;
+`);
+  });
+
+  it('handles a component declared as a function expression', async () => {
+    const text = `import React from 'react';
+import PropTypes from 'prop-types';
+
+const propTypes = {
+  foo: PropTypes.string.isRequired,
+};
+
+const Foo = function (props) {
+  return <div>{props.foo}</div>;
+};
+
+Foo.propTypes = propTypes;
+
+export default Foo;
+`;
+
+    const result = await reactPropsPlugin.run(mockPluginParams({ text, fileName: 'Foo.tsx' }));
+
+    expect(result).toBe(`import React from 'react';
+
+type Props = {
+    foo: string;
+};
+
+const Foo = function (props: Props) {
+  return <div>{props.foo}</div>;
+};
+
+export default Foo;
+`);
+  });
+
+  it('counts a memo-wrapped component when naming props types', async () => {
+    const text = `import React, { memo } from 'react';
+import PropTypes from 'prop-types';
+
+const Foo = memo(({ foo }) => <div>{foo}</div>);
+
+Foo.propTypes = {
+  foo: PropTypes.string.isRequired,
+};
+
+const Bar = ({ bar }) => <div>{bar}</div>;
+
+Bar.propTypes = {
+  bar: PropTypes.string.isRequired,
+};
+
+export { Foo, Bar };
+`;
+
+    const result = await reactPropsPlugin.run(mockPluginParams({ text, fileName: 'Foo.tsx' }));
+
+    expect(result).toBe(`import React, { memo } from 'react';
+
+type FooProps = {
+    foo: string;
+};
+
+const Foo = memo(({ foo }: FooProps) => <div>{foo}</div>);
+
+type BarProps = {
+    bar: string;
+};
+
+const Bar = ({ bar }: BarProps) => <div>{bar}</div>;
+
+export { Foo, Bar };
+`);
+  });
+
   it('handles class with propTypes declared as a separate variable wrapped in forbidExtraProps', async () => {
     const text = `import React from 'react';
 import PropTypes from 'prop-types';
