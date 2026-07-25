@@ -2,6 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 import {
+  formatTypesPackagePreflight,
+  preflightTypesPackages,
+} from '@obiemunoz/ts-migrate-plugins';
+import {
   AssetDeclarations,
   buildAssetDeclarations,
   writeAssetDeclarations,
@@ -176,17 +180,23 @@ function defaultConfig(rootDir: string): DefaultConfig {
   const typesPackages = installedTypesPackages(rootDir);
   const viteClient = bundler?.name === 'vite' && hasViteClientTypes(rootDir);
   const typesEntries = viteClient ? [...typesPackages, 'vite/client'] : typesPackages;
+  const preflight = preflightTypesPackages(rootDir);
   if (bundler?.name === 'webpack' && !typesPackages.includes('webpack-env')) {
     log.warn(
       'webpack-only globals (require.context, module.hot, __webpack_public_path__) have no ' +
         'types here, so every use collects a suppression. Install @types/webpack-env ' +
-        '(npm i -D @types/webpack-env)' +
+        `(${preflight.installCommand} @types/webpack-env)` +
         (typesEntries.length > 0
           ? ' and add "webpack-env" to the "types" array in the generated tsconfig.json'
           : '') +
         '.',
     );
   }
+  // The evidence half of the types report needs a program and cannot run until
+  // the migration is over; what package.json alone answers can be said here,
+  // before the run that would suppress those errors.
+  const preflightText = formatTypesPackagePreflight(preflight, typesEntries.length > 0);
+  if (preflightText) log.warn(preflightText);
   const typesField =
     typesEntries.length > 0
       ? `,
