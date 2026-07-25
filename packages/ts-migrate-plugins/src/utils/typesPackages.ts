@@ -847,7 +847,7 @@ export function formatTypesPackagePreflight(
   if (preflight.installDir) lines.push(`  Run from: ${preflight.installDir}`);
   if (typesPinned) {
     lines.push(
-      '  Then add each one to the "types" array in the generated tsconfig.json' +
+      '  Then add each one to the "types" array in the project tsconfig.json' +
         ' (drop the "@types/" prefix).',
     );
   }

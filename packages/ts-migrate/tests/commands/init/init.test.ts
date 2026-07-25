@@ -390,7 +390,7 @@ describe('init command', () => {
 
       expect(readConfig(rootDir).compilerOptions.types).toEqual(['react']);
       expect(warnings(warn)).toContain(
-        'Then add each one to the "types" array in the generated tsconfig.json',
+        'Then add each one to the "types" array in the project tsconfig.json',
       );
       warn.mockRestore();
     });

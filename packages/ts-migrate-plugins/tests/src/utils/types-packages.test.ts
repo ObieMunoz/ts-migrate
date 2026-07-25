@@ -920,7 +920,7 @@ describe('formatTypesPackagePreflight', () => {
     );
 
     expect(formatted).toContain(
-      'Then add each one to the "types" array in the generated tsconfig.json',
+      'Then add each one to the "types" array in the project tsconfig.json',
     );
   });
 });
