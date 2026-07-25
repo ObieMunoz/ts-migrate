@@ -57,3 +57,6 @@ temp
 
 # build output directory
 build
+
+# Scratch projects created by the command tests
+packages/*/tests/tmp/
