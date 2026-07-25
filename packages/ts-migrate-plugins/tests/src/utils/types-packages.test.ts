@@ -349,6 +349,113 @@ describe('package manager detection', () => {
       expect(detect(nestedCheckout({}))).toBe('yarn');
     });
   });
+
+  describe('packageManager field', () => {
+    const pinned = (value: unknown, files: { [filePath: string]: string } = {}) =>
+      summarizeTypesEvidence(
+        nodeAndTestRunnerEvidence(),
+        makeFixture({
+          'package.json': JSON.stringify({
+            packageManager: value,
+            devDependencies: { jest: '^29.0.0' },
+          }),
+          ...files,
+        }),
+      );
+
+    it.each([
+      ['pnpm@10.34.5', 'pnpm', '10.34.5'],
+      ['pnpm@10.34.5+sha512.abc123', 'pnpm', '10.34.5'],
+      ['yarn@1.22.22', 'yarn', '1.22.22'],
+      ['bun@1.2.0', 'bun', '1.2.0'],
+      ['npm@10.9.0', 'npm', '10.9.0'],
+      ['pnpm', 'pnpm', undefined],
+    ])('reads %s with no lockfile present', (value, manager, version) => {
+      const report = pinned(value);
+
+      expect(report.packageManager).toBe(manager);
+      expect(report.packageManagerVersion).toBe(version);
+    });
+
+    it('prints the pinned manager install command', () => {
+      expect(formatTypesPackageReport(pinned('pnpm@10.34.5'), 'src')).toContain(
+        'Install: pnpm add -D @types/jest @types/node',
+      );
+    });
+
+    it.each([
+      ['an unrecognized tool', 'deno@2.1.4'],
+      ['a name the pin only prefixes', 'pnpmx@1.0.0'],
+      ['an empty string', ''],
+      ['a non-string value', 10],
+    ])('falls through to the lockfile for %s', (_label, value) => {
+      const report = pinned(value, { 'yarn.lock': '' });
+
+      expect(report.packageManager).toBe('yarn');
+      expect(report.packageManagerVersion).toBeUndefined();
+      expect(report.notes).toEqual([]);
+    });
+
+    it('follows the field over a conflicting lockfile and says so', () => {
+      const report = pinned('pnpm@10.34.5', { 'yarn.lock': '' });
+
+      expect(report.packageManager).toBe('pnpm');
+      const formatted = formatTypesPackageReport(report, 'src')!;
+      expect(formatted).toContain('Install: pnpm add -D @types/jest @types/node');
+      expect(formatted).toContain('Note: package.json pins "packageManager": "pnpm@10.34.5"');
+      expect(formatted).toContain('a yarn.lock was found');
+    });
+
+    it('says nothing when the field and the lockfile agree', () => {
+      expect(pinned('pnpm@10.34.5', { 'pnpm-lock.yaml': '' }).notes).toEqual([]);
+    });
+
+    it('finds the field at the workspace root above the migration root', () => {
+      const rootDir = makeFixture({
+        'package.json': JSON.stringify({
+          packageManager: 'pnpm@10.34.5',
+          workspaces: ['packages/*'],
+        }),
+        'packages/app/package.json': JSON.stringify({}),
+      });
+
+      const report = summarizeTypesEvidence(
+        nodeAndTestRunnerEvidence(),
+        path.join(rootDir, 'packages', 'app'),
+      );
+
+      expect(report.packageManager).toBe('pnpm');
+      expect(report.packageManagerVersion).toBe('10.34.5');
+    });
+
+    it('does not adopt a field above the project root', () => {
+      const rootDir = makeFixture({
+        'outer/package.json': JSON.stringify({ packageManager: 'yarn@1.22.22' }),
+        'outer/repo/.git/HEAD': 'ref: refs/heads/master\n',
+        'outer/repo/package.json': JSON.stringify({}),
+      });
+
+      const report = summarizeTypesEvidence(
+        nodeAndTestRunnerEvidence(),
+        path.join(rootDir, 'outer', 'repo'),
+      );
+
+      expect(report.packageManager).toBe('npm');
+      expect(report.packageManagerVersion).toBeUndefined();
+    });
+
+    it('survives a malformed package.json above the migration root', () => {
+      const rootDir = makeFixture({
+        'package.json': '{ this is not json',
+        'pnpm-lock.yaml': '',
+        'app/package.json': JSON.stringify({}),
+      });
+
+      const report = summarizeTypesEvidence(nodeAndTestRunnerEvidence(), path.join(rootDir, 'app'));
+
+      expect(report.packageManager).toBe('pnpm');
+    });
+  });
 });
 
 describe('formatTypesPackageReport', () => {
