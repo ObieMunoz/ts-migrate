@@ -267,6 +267,197 @@ export default Button;`;
     expect(typeCheck({ '/file.tsx': withHelper })).toEqual([]);
   });
 
+  it('names the defaults of an arrow component that assigns them inline', async () => {
+    const text = `import React from 'react';
+
+type Props = {
+  title: string;
+};
+
+const Greeting = ({ title }: Props) => {
+  return <div>{title}</div>;
+};
+Greeting.defaultProps = {
+  title: 'hi',
+};
+
+export default Greeting;`;
+
+    const intersection = (await reactDefaultPropsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx' }),
+    )) as string;
+
+    expect(intersection).toBe(`import React from 'react';
+
+type OwnProps = {
+    title: string;
+};
+
+const GreetingDefaultProps = {
+  title: 'hi',
+};
+
+type Props = OwnProps & typeof GreetingDefaultProps;
+
+const Greeting = ({ title }: Props) => {
+  return <div>{title}</div>;
+};
+Greeting.defaultProps = GreetingDefaultProps;
+
+export default Greeting;`);
+    expect(typeCheck({ '/file.tsx': intersection })).toEqual([]);
+
+    const withHelper = (await reactDefaultPropsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx', options }),
+    )) as string;
+    expect(withHelper).toContain(
+      'type Props = WithDefaultProps<OwnProps, typeof GreetingDefaultProps>;',
+    );
+    expect(withHelper).toContain('Greeting.defaultProps = GreetingDefaultProps;');
+    expect(typeCheck({ '/file.tsx': withHelper })).toEqual([]);
+  });
+
+  it('leaves an arrow component alone when its defaults read a binding below it', async () => {
+    const text = `import React from 'react';
+
+type Props = {
+  title: string;
+};
+
+const Greeting = ({ title }: Props) => {
+  return <div>{title}</div>;
+};
+
+const DEFAULT_TITLE = 'hi';
+
+Greeting.defaultProps = {
+  title: DEFAULT_TITLE,
+};
+
+export default Greeting;`;
+
+    const notices: PluginFileNotice[] = [];
+    const result = await reactDefaultPropsPlugin.run(
+      mockPluginParams({
+        text,
+        fileName: 'file.tsx',
+        reportFileNotice: (notice) => notices.push(notice),
+      }),
+    );
+
+    expect(result).toBe(text);
+    expect(notices).toEqual([
+      {
+        reason:
+          'Left Greeting without a defaults type: naming its defaults would move them above a binding they read.',
+        hint: 'Declare the defaults in a const above the component to have them typed.',
+        recovered: true,
+      },
+    ]);
+    expect(typeCheck({ '/file.tsx': result as string })).toEqual([]);
+  });
+
+  it('names the defaults of every arrow component in the file', async () => {
+    const text = `import React from 'react';
+
+type ButtonProps = {
+  size: string;
+};
+
+const Button = ({ size }: ButtonProps) => {
+  return <button className={size} />;
+};
+Button.defaultProps = {
+  size: 'md',
+};
+
+type LinkProps = {
+  href: string;
+};
+
+const Link = ({ href }: LinkProps) => {
+  return <a href={href} />;
+};
+Link.defaultProps = {
+  href: '#',
+};
+
+export { Button, Link };`;
+
+    const result = (await reactDefaultPropsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx' }),
+    )) as string;
+
+    expect(result).toContain('type ButtonProps = OwnButtonProps & typeof ButtonDefaultProps;');
+    expect(result).toContain('type LinkProps = OwnLinkProps & typeof LinkDefaultProps;');
+    expect(typeCheck({ '/file.tsx': result })).toEqual([]);
+  });
+
+  it('leaves an arrow component it already named alone on a second run', async () => {
+    const text = `import React from 'react';
+
+type Props = {
+  title: string;
+};
+
+const Greeting = ({ title }: Props) => {
+  return <div>{title}</div>;
+};
+Greeting.defaultProps = {
+  title: 'hi',
+};
+
+export default Greeting;`;
+
+    const first = (await reactDefaultPropsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx' }),
+    )) as string;
+    const second = await reactDefaultPropsPlugin.run(
+      mockPluginParams({ text: first, fileName: 'file.tsx' }),
+    );
+
+    expect(second ?? first).toBe(first);
+  });
+
+  it('leaves a function declaration on the indexed access', async () => {
+    const text = `import React from 'react';
+
+type Props = {
+  title: string;
+};
+
+function Greeting({ title }: Props) {
+  return <div>{title}</div>;
+}
+Greeting.defaultProps = {
+  title: 'hi',
+};
+
+export default Greeting;`;
+
+    const result = (await reactDefaultPropsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx' }),
+    )) as string;
+
+    expect(result).toBe(`import React from 'react';
+
+type OwnProps = {
+    title: string;
+};
+
+type Props = OwnProps & (typeof Greeting)["defaultProps"];
+
+function Greeting({ title }: Props) {
+  return <div>{title}</div>;
+}
+Greeting.defaultProps = {
+  title: 'hi',
+};
+
+export default Greeting;`);
+    expect(typeCheck({ '/file.tsx': result })).toEqual([]);
+  });
+
   it('compiles with the alias above a class that states its defaults', async () => {
     const text = `import React from 'react';
 
@@ -1915,6 +2106,34 @@ export default Button;`;
     const notices: PluginFileNotice[] = [];
     const result = (await modernize(text, notices)) as string;
     expect(result).toContain('type Props = OwnProps & (typeof Button)["defaultProps"];');
+    expect(notices.map((notice) => notice.reason)).toEqual([
+      'Left defaultProps in place: a default value is not a literal.',
+    ]);
+    expect(typeCheck({ '/file.tsx': result })).toEqual([]);
+  });
+
+  it('produces output that compiles for an arrow component it left the defaults on', async () => {
+    const text = `import React from 'react';
+
+type Props = {
+  size?: string;
+  onClick?: () => void;
+};
+
+const Button = ({ size, onClick }: Props) => {
+  return <button className={size} onClick={onClick} />;
+};
+Button.defaultProps = {
+  size: 'md',
+  onClick: () => {},
+};
+
+export default Button;`;
+
+    const notices: PluginFileNotice[] = [];
+    const result = (await modernize(text, notices)) as string;
+    expect(result).toContain('type Props = OwnProps & typeof ButtonDefaultProps;');
+    expect(result).toContain('Button.defaultProps = ButtonDefaultProps;');
     expect(notices.map((notice) => notice.reason)).toEqual([
       'Left defaultProps in place: a default value is not a literal.',
     ]);
