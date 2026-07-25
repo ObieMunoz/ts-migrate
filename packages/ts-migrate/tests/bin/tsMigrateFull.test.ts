@@ -2,17 +2,17 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import ts from 'typescript';
 
 const packageRoot = path.resolve(__dirname, '..', '..');
 
 /**
- * The script under test with the layout it ships in: a bin/ next to a build/
- * holding the CLI and the compiled utils it probes the compiler with. Both are
- * stubs, so a run reaches the end of the pipeline without a migration.
+ * The pipeline itself is `ts-migrate full`, tested in process in
+ * tests/commands/full. What is left in the shell script is the entry point npm
+ * installs as `ts-migrate-full`, so what is left to test is that it finds the
+ * CLI from wherever it was invoked and hands over the arguments and exit code
+ * unchanged.
  */
 let installDir: string;
-let projectDir: string;
 
 beforeEach(() => {
   installDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-full-'));
@@ -23,43 +23,14 @@ beforeEach(() => {
     path.join(installDir, 'bin', 'ts-migrate-full.sh'),
   );
 
-  fs.mkdirSync(path.join(installDir, 'build', 'utils'), { recursive: true });
+  fs.mkdirSync(path.join(installDir, 'build'));
+  // Reports the argument list it was handed, and exits with the code the test
+  // asked for, so the shim's own behavior is all that is under test.
   fs.writeFileSync(
     path.join(installDir, 'build', 'cli.js'),
-    // STUB_CLI_TYPES_REPORT writes the report the migrate step would write, and
-    // STUB_CLI_FAIL_COMMAND fails the named command with STUB_CLI_EXIT_CODE
-    // after writing it, the order the real command uses.
-    `const fs = require('fs');
-const args = process.argv.slice(2);
-console.log('[stub cli]', args.join(' '));
-const reportFlag = args.indexOf('--typesReportFile');
-if (reportFlag !== -1 && process.env.STUB_CLI_TYPES_REPORT) {
-  fs.writeFileSync(args[reportFlag + 1], \`\${process.env.STUB_CLI_TYPES_REPORT}\\n\`);
-}
-if (process.env.STUB_CLI_FAIL_COMMAND === args[0]) {
-  process.exit(Number(process.env.STUB_CLI_EXIT_CODE || 1));
-}
+    `console.log(JSON.stringify(process.argv.slice(2)));
+process.exit(Number(process.env.STUB_CLI_EXIT_CODE || 0));
 `,
-  );
-  fs.writeFileSync(
-    path.join(installDir, 'build', 'utils', 'resolveTypeScript.js'),
-    ts.transpileModule(
-      fs.readFileSync(path.join(packageRoot, 'utils', 'resolveTypeScript.ts'), 'utf-8'),
-      {
-        compilerOptions: {
-          module: ts.ModuleKind.CommonJS,
-          target: ts.ScriptTarget.ES2019,
-          esModuleInterop: true,
-        },
-      },
-    ).outputText,
-  );
-
-  projectDir = path.join(installDir, 'project');
-  fs.mkdirSync(path.join(projectDir, 'node_modules', 'typescript'), { recursive: true });
-  fs.writeFileSync(
-    path.join(projectDir, 'node_modules', 'typescript', 'package.json'),
-    JSON.stringify({ name: 'typescript', version: '5.7.3' }),
   );
 });
 
@@ -67,382 +38,74 @@ afterEach(() => {
   fs.rmSync(installDir, { recursive: true, force: true });
 });
 
-/** The fallback compiler, failing the check with the diagnostics it is given. */
-function writeFailingMigrationTsc(diagnostics: string): void {
-  const binDir = path.join(projectDir, 'node_modules', 'typescript', 'bin');
-  fs.mkdirSync(binDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(binDir, 'tsc'),
-    `console.log(${JSON.stringify(diagnostics)});\nprocess.exit(2);\n`,
-  );
-}
-
-/** An executable tsc that reports the given version and compiles nothing. */
-function writeTsc(version: string): string {
-  const tscPath = path.join(installDir, `tsc-${version}`);
-  fs.writeFileSync(
-    tscPath,
-    `#!/usr/bin/env bash\nif [ "$1" = "-v" ]; then echo "Version ${version}"; fi\nexit 0\n`,
-  );
-  fs.chmodSync(tscPath, 0o755);
-  return tscPath;
-}
-
-/** Answers the prompts in order. --no-commit by default, so a run cannot reach `git commit`. */
-function runFull(
-  answers: string[],
-  args: string[] = ['--no-commit'],
-  env: NodeJS.ProcessEnv = {},
-): {
-  status: number;
-  output: string;
-} {
+function runShim(
+  args: string[],
+  { script = path.join(installDir, 'bin', 'ts-migrate-full.sh'), env = {}, cwd = installDir } = {},
+): { status: number; argv: string[]; output: string } {
   try {
-    const output = execFileSync(
-      'bash',
-      [path.join(installDir, 'bin', 'ts-migrate-full.sh'), projectDir, ...args],
-      {
-        input: `${answers.join('\n')}\n`,
-        encoding: 'utf-8',
-        stdio: 'pipe',
-        env: { ...process.env, ...env },
-      },
-    );
-    return { status: 0, output };
+    const output = execFileSync('bash', [script, ...args], {
+      encoding: 'utf-8',
+      cwd,
+      env: { ...process.env, ...env },
+    });
+    return { status: 0, argv: JSON.parse(output), output };
   } catch (err: any) {
-    return { status: err.status, output: `${err.stdout ?? ''}${err.stderr ?? ''}` };
+    return { status: err.status, argv: [], output: `${err.stdout ?? ''}${err.stderr ?? ''}` };
   }
 }
 
-const git = (...args: string[]) =>
-  execFileSync('git', ['-C', projectDir, ...args], { stdio: 'ignore' });
-
-/** A git repository at the project, so a run without --no-commit can commit. */
-function initGitRepo(): void {
-  git('init', '-q');
-  git('config', 'user.email', 'ts-migrate@example.com');
-  git('config', 'user.name', 'ts-migrate');
-  git('config', 'commit.gpgsign', 'false');
-}
-
-/** Commits the fixture, so a later status reports only what a test added. */
-function commitFixture(): void {
-  git('add', '.');
-  git('commit', '-q', '-m', 'fixture');
-}
-
-/**
- * The compiler the check falls back to when no custom tsc is set, which is the
- * path every non-interactive run takes.
- */
-function writeMigrationTsc(): void {
-  const binDir = path.join(projectDir, 'node_modules', 'typescript', 'bin');
-  fs.mkdirSync(binDir, { recursive: true });
-  fs.writeFileSync(path.join(binDir, 'tsc'), 'process.exit(0);\n');
-}
-
-describe('the ts-migrate-full compiler preflight', () => {
-  it('stops before Step 1 when the custom tsc cannot check what the migration writes', () => {
-    const { status, output } = runFull(['y', writeTsc('5.5.4'), 'n']);
-
-    expect(output).toContain('TypeScript 5.5.4');
-    expect(output).toContain('TypeScript 5.7.3');
-    expect(output).toContain(path.join(projectDir, 'node_modules', 'typescript'));
-    expect(output).toContain('TS2578');
-    expect(output).toContain('Stopping before Step 1');
-    expect(output).not.toContain('Step 1 of 4');
-    expect(status).toBe(1);
-  });
-
-  it('runs the migration anyway when the skew is confirmed', () => {
-    const { output } = runFull(['y', writeTsc('5.5.4'), 'y']);
-
-    expect(output).toContain('TS2578');
-    expect(output).toContain('Step 1 of 4');
-  });
-
-  it('does not ask about a patch difference', () => {
-    const { output } = runFull(['y', writeTsc('5.7.2')]);
-
-    expect(output).not.toContain('Continue anyway?');
-    expect(output).toContain('Step 1 of 4');
-  });
-
-  it('does not guess when the custom tsc reports no version', () => {
-    const wrapper = path.join(installDir, 'tsc-wrapper');
-    fs.writeFileSync(wrapper, '#!/usr/bin/env bash\nexit 0\n');
-    fs.chmodSync(wrapper, 0o755);
-
-    const { output } = runFull(['y', wrapper]);
-
-    expect(output).not.toContain('Continue anyway?');
-    expect(output).toContain('Step 1 of 4');
-  });
-
-  it('has nothing to compare when the check runs the migration compiler', () => {
-    const { output } = runFull(['y', '']);
-
-    expect(output).toContain('The check will run the same compiler the migration used.');
-    expect(output).not.toContain('Continue anyway?');
-    expect(output).toContain('Step 1 of 4');
-  });
-});
-
-describe('the ts-migrate-full type package preflight', () => {
-  it('is left to the migrate step for a folder that already has a tsconfig', () => {
-    fs.writeFileSync(path.join(projectDir, 'tsconfig.json'), '{}\n');
-
-    const { status, output } = runFull(['y', writeTsc('5.7.2')]);
+describe('the ts-migrate-full shim', () => {
+  it('runs the full command with the arguments it was given', () => {
+    const { status, argv } = runShim(['some/folder', '--yes', '--no-commit']);
 
     expect(status).toBe(0);
-    expect(output).not.toContain('[stub cli] init');
-    expect(output).toContain('[stub cli] migrate');
-    expect(output).not.toContain('--no-typesPreflight');
+    expect(argv).toEqual(['full', 'some/folder', '--yes', '--no-commit']);
   });
 
-  it('is said once when Step 1 writes the tsconfig itself', () => {
-    const { status, output } = runFull(['y', writeTsc('5.7.2')]);
+  it('keeps a folder whose path has a space as one argument', () => {
+    const { argv } = runShim(['my project', '--yes']);
 
-    expect(status).toBe(0);
-    expect(output).toContain('[stub cli] init');
-    expect(output).toContain('--no-typesPreflight');
-  });
-});
-
-describe('the ts-migrate-full commit step', () => {
-  it('commits without printing a directory of its own between the steps', () => {
-    initGitRepo();
-
-    const { status, output } = runFull(['y', writeTsc('5.7.2')], []);
-
-    expect(status).toBe(0);
-    expect(output).toContain('[ts-migrate][project] Init tsconfig.json file');
-    expect(output).toContain('This run created mechanical rewrite commits');
-    const bareDirectories = output.split('\n').filter((line) => /^\/\S*$/.test(line.trim()));
-    expect(bareDirectories).toEqual([]);
-  });
-});
-
-describe('the ts-migrate-full git tree preflight', () => {
-  it('names a folder outside a git repository instead of failing every commit', () => {
-    const { status, output } = runFull(['y', writeTsc('5.7.2')], []);
-
-    expect(status).toBe(0);
-    expect(output).toContain('is not in a git repository');
-    expect(output.indexOf('is not in a git repository')).toBeLessThan(
-      output.indexOf('Step 1 of 4'),
-    );
+    expect(argv).toEqual(['full', 'my project', '--yes']);
   });
 
-  describe('in a git repository', () => {
-    beforeEach(() => {
-      writeMigrationTsc();
-      initGitRepo();
-      commitFixture();
-    });
+  it('forwards the rename and migrate flags unchanged', () => {
+    const { argv } = runShim([
+      'folder',
+      '--sources',
+      'src/**/*',
+      '--exclude-plugin',
+      'ts-ignore',
+      '--typescript',
+      '/opt/ts',
+    ]);
 
-    it('says nothing about a clean tree', () => {
-      const { status, output } = runFull(['y', writeTsc('5.7.2')], []);
-
-      expect(status).toBe(0);
-      expect(output).not.toContain('Uncommitted changes');
-    });
-
-    it('lists what the run would sweep into its own commits', () => {
-      fs.writeFileSync(path.join(projectDir, 'wip.js'), 'module.exports = 1;\n');
-
-      const { status, output } = runFull(['y', writeTsc('5.7.2')], []);
-
-      expect(status).toBe(0);
-      expect(output).toContain('Uncommitted changes in');
-      expect(output).toContain('?? wip.js');
-      expect(output).toContain('git add .');
-      expect(output).toContain('git stash -u');
-      expect(output.indexOf('Uncommitted changes in')).toBeLessThan(
-        output.indexOf('Step 1 of 4'),
-      );
-    });
-
-    it('reports every path git add would stage, capped with a count', () => {
-      for (let i = 0; i < 12; i += 1) {
-        fs.writeFileSync(path.join(projectDir, `wip${i}.js`), '');
-      }
-
-      const { output } = runFull(['y', writeTsc('5.7.2')], []);
-
-      expect(output).toContain('Uncommitted changes in');
-      expect(output).toContain('(12)');
-      expect(output).toContain('... and 2 more');
-    });
-
-    it('warns under --no-commit, where nothing holds a copy of an untracked file', () => {
-      fs.writeFileSync(path.join(projectDir, 'wip.js'), '');
-
-      const { output } = runFull(['y', writeTsc('5.7.2')], ['--no-commit']);
-
-      expect(output).toContain('?? wip.js');
-      expect(output).toContain('no committed copy to recover it from');
-      expect(output).not.toContain('git add .');
-    });
-
-    it('warns and continues under --yes', () => {
-      fs.writeFileSync(path.join(projectDir, 'wip.js'), '');
-
-      const { status, output } = runFull([], ['--yes', '--no-commit']);
-
-      expect(status).toBe(0);
-      expect(output).toContain('?? wip.js');
-      expect(output).toContain('--yes was passed, so the run continues.');
-      expect(output).toContain('All done!');
-    });
-
-    it('adds no prompt of its own to the interactive path', () => {
-      fs.writeFileSync(path.join(projectDir, 'wip.js'), '');
-
-      const { status, output } = runFull(['n'], ['--no-commit']);
-
-      expect(status).toBe(0);
-      expect(output).toContain('?? wip.js');
-      expect(output).toContain('See you later.');
-      expect(output).not.toContain('Step 1 of 4');
-    });
+    expect(argv).toEqual([
+      'full',
+      'folder',
+      '--sources',
+      'src/**/*',
+      '--exclude-plugin',
+      'ts-ignore',
+      '--typescript',
+      '/opt/ts',
+    ]);
   });
-});
 
-describe('a ts-migrate-full step that fails', () => {
-  it('names the step and exits with its code', () => {
-    const { status, output } = runFull(['y', writeTsc('5.7.2')], ['--no-commit'], {
-      STUB_CLI_FAIL_COMMAND: 'migrate',
-      STUB_CLI_EXIT_CODE: '255',
-    });
+  it('exits with the code the command exited with', () => {
+    const { status } = runShim(['folder'], { env: { STUB_CLI_EXIT_CODE: '255' } });
 
     expect(status).toBe(255);
-    expect(output).toContain('Step 3 of 4 (migrate) failed (exit 255)');
-    expect(output).toContain("This run's partial result is in the working tree");
-    expect(output).not.toContain('Step 4 of 4');
   });
 
-  it('prints the types report and keeps the file it was written to', () => {
-    const { status, output } = runFull(['y', writeTsc('5.7.2')], ['--no-commit'], {
-      STUB_CLI_FAIL_COMMAND: 'migrate',
-      STUB_CLI_TYPES_REPORT: 'Type definition recommendations:\n  @types/node',
-    });
+  it('finds the CLI through the symlink npm puts in .bin, from any directory', () => {
+    const binLink = path.join(installDir, 'node_modules', '.bin');
+    fs.mkdirSync(binLink, { recursive: true });
+    const linkPath = path.join(binLink, 'ts-migrate-full');
+    fs.symlinkSync(path.join(installDir, 'bin', 'ts-migrate-full.sh'), linkPath);
 
-    expect(status).toBe(1);
-    expect(output).toContain('Type definition recommendations:');
-    expect(output.split('Type definition recommendations:').length - 1).toBe(1);
-
-    const reportPath = /also in (\S+)\.\s*$/m.exec(output)?.[1];
-    expect(reportPath).toBeTruthy();
-    expect(fs.readFileSync(reportPath!, 'utf-8')).toContain('@types/node');
-    fs.rmSync(reportPath!);
-  });
-
-  it('removes the .eslintrc it created for the migrate step', () => {
-    const { status } = runFull(['y', writeTsc('5.7.2')], ['--no-commit'], {
-      STUB_CLI_FAIL_COMMAND: 'migrate',
-    });
-
-    expect(status).toBe(1);
-    expect(fs.existsSync(path.join(projectDir, '.eslintrc'))).toBe(false);
-  });
-
-  it('stops before the welcome screen on a folder that does not exist', () => {
-    projectDir = path.join(installDir, 'nope');
-
-    const { status, output } = runFull(['y', '']);
-
-    expect(status).toBe(1);
-    expect(output).toContain('No such folder:');
-    expect(output).not.toContain('Welcome to TS Migrate');
-  });
-});
-
-describe('a successful ts-migrate-full run', () => {
-  it('prints the types report once', () => {
-    const { status, output } = runFull(['y', writeTsc('5.7.2')], ['--no-commit'], {
-      STUB_CLI_TYPES_REPORT: 'Type definition recommendations:\n  @types/node',
-    });
+    const { status, argv } = runShim(['folder'], { script: linkPath, cwd: os.tmpdir() });
 
     expect(status).toBe(0);
-    expect(output.split('Type definition recommendations:').length - 1).toBe(1);
-    expect(output).not.toContain('The recommendations above are also in');
-  });
-
-  it('keeps the generated .eslintrc out of every commit', () => {
-    initGitRepo();
-
-    const { status } = runFull(['y', writeTsc('5.7.2')], []);
-
-    expect(status).toBe(0);
-    const committed = execFileSync(
-      'git',
-      ['-C', projectDir, 'log', '--format=', '--name-only'],
-      { encoding: 'utf-8' },
-    );
-    expect(committed).toContain('node_modules/typescript/package.json');
-    expect(committed).not.toContain('.eslintrc');
-  });
-});
-
-describe('a ts-migrate-full folder whose path has a space', () => {
-  it('is one argument to every command the run passes it to', () => {
-    const spacedDir = path.join(installDir, 'my project');
-    fs.renameSync(projectDir, spacedDir);
-    projectDir = spacedDir;
-
-    const { status, output } = runFull(['y', writeTsc('5.7.2')]);
-
-    expect(status).toBe(0);
-    // Step 3 writes this when the project has no ESLint config, and removes it
-    // again once the migrate step is done with it.
-    expect(fs.existsSync(path.join(spacedDir, '.eslintrc'))).toBe(false);
-    expect(output).toContain('All done!');
-  });
-});
-
-describe('a ts-migrate-full check that fails', () => {
-  const tsError = (code: string, file = 'app/foo.ts') =>
-    `${file}(3,10): error ${code}: something is wrong.`;
-
-  it('explains only the causes the output shows', () => {
-    writeFailingMigrationTsc(tsError('TS2339'));
-
-    const { status, output } = runFull([], ['--yes', '--no-commit']);
-
-    expect(status).toBe(1);
-    expect(output).toContain('The TypeScript check failed');
-    expect(output).toContain('ts-migrate reignore');
-    // Neither cause is in this output, so neither is described.
-    expect(output).not.toContain("TS2578 (unused '@ts-expect-error')");
-    expect(output).not.toContain('Syntax errors (TS1xxx)');
-  });
-
-  it('explains a compiler skew when the output reports TS2578', () => {
-    writeFailingMigrationTsc(tsError('TS2578'));
-
-    const { status, output } = runFull([], ['--yes', '--no-commit']);
-
-    expect(status).toBe(1);
-    expect(output).toContain("TS2578 (unused '@ts-expect-error')");
-    expect(output).not.toContain('Syntax errors (TS1xxx)');
-  });
-
-  it('explains a broken declaration file when one is in the output', () => {
-    writeFailingMigrationTsc(tsError('TS1005', 'node_modules/x/index.d.ts'));
-
-    const { status, output } = runFull([], ['--yes', '--no-commit']);
-
-    expect(status).toBe(1);
-    expect(output).toContain('Syntax errors (TS1xxx)');
-    expect(output).not.toContain("TS2578 (unused '@ts-expect-error')");
-  });
-
-  it('shows the compiler output as well as the explanation', () => {
-    writeFailingMigrationTsc(tsError('TS2339'));
-
-    const { output } = runFull([], ['--yes', '--no-commit']);
-
-    expect(output).toContain('app/foo.ts(3,10): error TS2339');
+    expect(argv).toEqual(['full', 'folder']);
   });
 });

@@ -116,6 +116,29 @@ export const mockUpdatableLog: () => typeof log = () => ({
 });
 /* eslint-enable no-console */
 
+/**
+ * What a run printed, for a suite that asserts on the transcript rather than on
+ * the files. Shared module state, so a suite using it clears it per test.
+ */
+export const transcriptLines: string[] = [];
+
+export const collectingUpdatableLog: () => typeof log = () => {
+  const push =
+    (prefix: string) =>
+    (...msg: unknown[]) => {
+      transcriptLines.push(`${prefix}${msg.map(String).join(' ')}`);
+    };
+  return {
+    error: push('Error: '),
+    important: push(''),
+    info: push(''),
+    warn: push('Warning: '),
+    update: () => {},
+    clear: () => {},
+    quiet: false,
+  };
+};
+
 export const noopUpdatableLog: () => typeof log = () => ({
   error: () => {},
   important: () => {},
