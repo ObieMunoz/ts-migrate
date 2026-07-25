@@ -9,34 +9,22 @@ import {
   getValidationOptions,
   TextChange,
 } from '../utils/candidateValidation';
+import {
+  asWrite,
+  blamableDiagnosticCodes,
+  declareProperties,
+  isBlamed,
+  isEmptyObject,
+  printProperties,
+  Property,
+  Write,
+} from './utils/empty-object-properties';
 
 type Options = AnyAliasOptions;
 
 // Validation programs one file may build before the declarations still
 // unproven are left alone.
 const maxValidationPrograms = 24;
-
-// What a write to an unannotated `= {}` reports. TS2339 spans the property
-// name, TS7053 the whole element access.
-const blamableDiagnosticCodes = new Set([
-  // TS2339: Property '{0}' does not exist on type '{1}'.
-  2339,
-  // TS7053: Element implicitly has an 'any' type because expression of type
-  // '{0}' can't be used to index type '{1}'.
-  7053,
-]);
-
-// How deep a type is walked looking for the spellings that mean "no evidence".
-const maxTypeDepth = 4;
-
-const identifierNameRegex = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
-
-/** One property to declare, name and type already printed. */
-interface Property {
-  name: string;
-  /** Absent where the assigned values gave no evidence and the alias is used. */
-  type?: string;
-}
 
 /** An empty object literal declaration and the annotation proposed for it. */
 interface Candidate {
@@ -46,13 +34,6 @@ interface Candidate {
 
 /** A declaration the annotation can go on. */
 type Target = ts.VariableDeclaration | ts.PropertyDeclaration;
-
-/** A `name.key = value` or `name['key'] = value` assignment. */
-interface Write {
-  key: string;
-  access: ts.PropertyAccessExpression | ts.ElementAccessExpression;
-  value: ts.Expression;
-}
 
 /**
  * Types the accumulator idiom `const cache = {}; cache.total = 1;` from the
@@ -67,12 +48,7 @@ interface Write {
  * instance, or through the class for a static, without each spelling needing
  * its own rule.
  *
- * Properties are declared optional: required ones would not match the empty
- * initializer, and optional reads the same whether or not strictNullChecks is
- * on. Each property takes the widened checker type of the values assigned to
- * it, except where that type is `any` or one of the spellings the checker
- * uses when it found nothing (`never[]`, `{}`, `null`), which take the any
- * alias instead of a type nothing supports.
+ * The property list itself is derived in ./utils/empty-object-properties.
  *
  * The annotation is then re-checked against the file, and a declaration whose
  * annotation introduces an error the file did not already have is left for
@@ -81,11 +57,13 @@ interface Write {
  * reject every annotation that used it by name.
  *
  * declare-missing-class-properties runs earlier in the pipeline and covers the
- * properties a class assigns but never declares. The two cannot propose a type
- * for the same property: it skips the names the class already declares, so a
- * `foo = {}` is invisible to it, and what it adds carries no initializer, so
- * neither the bare declaration it leaves where the checker can type one nor the
- * aliased declaration it falls back to is a candidate here.
+ * properties a class assigns but never declares, including the ones a
+ * constructor assigns the empty object literal to, which it declares from the
+ * same property list. The two cannot propose a type for the same property: it
+ * skips the names the class already declares, so a `foo = {}` is invisible to
+ * it, and what it adds carries no initializer, so neither the bare declaration
+ * it leaves where the checker can type one nor the annotated ones it writes
+ * otherwise is a candidate here.
  *
  * A deferred declaration only reports under `noImplicitAny`. Without it
  * `let cache;` is a plain any, the writes contradict nothing, and with no
@@ -204,7 +182,7 @@ function collectCandidates(
     }
 
     const properties = declareProperties(declarationWrites, {
-      declaration,
+      enclosingDeclaration: declaration,
       source,
       checker,
       printer,
@@ -215,10 +193,6 @@ function collectCandidates(
   });
 
   return candidates;
-}
-
-function isEmptyObject(node: ts.Node | undefined): boolean {
-  return node !== undefined && ts.isObjectLiteralExpression(node) && node.properties.length === 0;
 }
 
 /** A name a symbol can be looked up from, as opposed to a binding or computed one. */
@@ -258,25 +232,6 @@ function annotationIndex(declaration: Target): number {
   return (token ?? declaration.name).end;
 }
 
-/**
- * Assignments through a fixed key: the ones a property list can describe. What
- * is written to is left to the checker, so `this.foo.x`, `C.foo.x` and
- * `cache.x` all resolve to whichever declaration owns the symbol.
- */
-function asWrite(node: ts.Node): Write | undefined {
-  if (!ts.isBinaryExpression(node) || node.operatorToken.kind !== ts.SyntaxKind.EqualsToken) {
-    return undefined;
-  }
-  const { left } = node;
-  if (ts.isPropertyAccessExpression(left) && ts.isIdentifier(left.name)) {
-    return { key: left.name.text, access: left, value: node.right };
-  }
-  if (ts.isElementAccessExpression(left) && ts.isStringLiteralLike(left.argumentExpression)) {
-    return { key: left.argumentExpression.text, access: left, value: node.right };
-  }
-  return undefined;
-}
-
 /** `cache = value`, the assignment that can carry a deferred declaration's first value. */
 function asAssignment(node: ts.Node): { name: ts.Identifier; value: ts.Expression } | undefined {
   if (
@@ -287,110 +242,6 @@ function asAssignment(node: ts.Node): { name: ts.Identifier; value: ts.Expressio
     return { name: node.left, value: node.right };
   }
   return undefined;
-}
-
-function isBlamed(write: Write, source: ts.SourceFile, diagnostics: ts.Diagnostic[]): boolean {
-  const start = write.access.getStart(source);
-  const { end } = write.access;
-  return diagnostics.some(
-    (diagnostic) =>
-      diagnostic.start != null &&
-      diagnostic.start < end &&
-      diagnostic.start + (diagnostic.length ?? 0) > start,
-  );
-}
-
-interface PrintContext {
-  declaration: Target;
-  source: ts.SourceFile;
-  checker: ts.TypeChecker;
-  printer: ts.Printer;
-}
-
-/**
- * One optional property per key, in the order the keys are first assigned,
- * typed as the union of the widened types assigned to it.
- */
-function declareProperties(writes: Write[], context: PrintContext): Property[] {
-  const byKey = new Map<string, string[]>();
-  const aliased = new Set<string>();
-
-  writes.forEach((write) => {
-    let types = byKey.get(write.key);
-    if (!types) {
-      types = [];
-      byKey.set(write.key, types);
-    }
-    const type = printType(write.value, context);
-    if (type === undefined) {
-      aliased.add(write.key);
-    } else if (!types.includes(type)) {
-      types.push(type);
-    }
-  });
-
-  return Array.from(byKey, ([key, types]) => ({
-    name: identifierNameRegex.test(key) ? key : JSON.stringify(key),
-    ...(aliased.has(key) || types.length === 0 ? undefined : { type: types.join(' | ') }),
-  }));
-}
-
-/**
- * The assigned value's type as it would be written at the declaration, or
- * undefined where the checker knows nothing worth writing down.
- */
-function printType(value: ts.Expression, context: PrintContext): string | undefined {
-  const { declaration, source, checker, printer } = context;
-  const type = checker.getBaseTypeOfLiteralType(checker.getTypeAtLocation(value));
-  if (isNoEvidence(type, checker)) {
-    return undefined;
-  }
-  const typeNode = checker.typeToTypeNode(type, declaration, ts.NodeBuilderFlags.NoTruncation);
-  if (!typeNode) {
-    return undefined;
-  }
-  try {
-    return printer.printNode(ts.EmitHint.Unspecified, typeNode, source);
-  } catch {
-    return undefined;
-  }
-}
-
-/** `null`, `undefined` and `void`: real types that describe no value. */
-function isVacuous(type: ts.Type): boolean {
-  return (
-    (type.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void)) !== 0
-  );
-}
-
-/**
- * Whether a type says nothing an annotation could rest on. `any` is
- * assignable in both directions, so no re-check rejects it and it has to be
- * ruled out here; the empty object type and an array with no element type are
- * what the checker prints where it found no evidence at all, and an
- * annotation built from either rejects every value added later.
- */
-function isNoEvidence(type: ts.Type, checker: ts.TypeChecker, depth = 0): boolean {
-  if ((type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Never)) !== 0 || isVacuous(type)) {
-    return true;
-  }
-  if (depth >= maxTypeDepth) {
-    return false;
-  }
-  if (type.isUnion()) {
-    return type.types.every((member) => isNoEvidence(member, checker, depth + 1));
-  }
-  if (checker.isArrayType(type) || checker.isTupleType(type)) {
-    const elements = checker.getTypeArguments(type as ts.TypeReference);
-    return (
-      elements.length === 0 || elements.some((element) => isNoEvidence(element, checker, depth + 1))
-    );
-  }
-  return (
-    (type.flags & ts.TypeFlags.Object) !== 0 &&
-    ((type as ts.ObjectType).objectFlags & ts.ObjectFlags.ObjectLiteral) !== 0 &&
-    checker.getPropertiesOfType(type).length === 0
-  );
 }
 
 /**
@@ -438,8 +289,6 @@ function changesOf(candidates: Candidate[], anyType: string): TextChange[] {
   return candidates.map((candidate) => ({
     start: candidate.index,
     length: 0,
-    text: `: { ${candidate.properties
-      .map((property) => `${property.name}?: ${property.type ?? anyType}`)
-      .join('; ')} }`,
+    text: `: ${printProperties(candidate.properties, anyType)}`,
   }));
 }
