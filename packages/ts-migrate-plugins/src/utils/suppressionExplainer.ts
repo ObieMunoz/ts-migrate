@@ -675,19 +675,19 @@ function createTypeDeclarationFinder(
 }
 
 /** One finder per program: the names it looks up are the same across files. */
-const finders = new WeakMap<ts.Program, TypeDeclarationFinder>();
+const finders = new WeakMap<ts.Program, { rootDir: string; find: TypeDeclarationFinder }>();
 
 function typeDeclarationFinder(
   program: ts.Program,
   checker: ts.TypeChecker,
   rootDir: string,
 ): TypeDeclarationFinder {
-  let finder = finders.get(program);
-  if (!finder) {
-    finder = createTypeDeclarationFinder(program, checker, rootDir);
-    finders.set(program, finder);
+  let entry = finders.get(program);
+  if (!entry || entry.rootDir !== rootDir) {
+    entry = { rootDir, find: createTypeDeclarationFinder(program, checker, rootDir) };
+    finders.set(program, entry);
   }
-  return finder;
+  return entry.find;
 }
 
 function unresolvedNameEvidence(
@@ -1147,8 +1147,8 @@ export function formatSuppressionSummary(
     const sites = names.reduce((count, group) => count + group.count, 0);
     const documented = names.filter((group) => group.documented > 0).length;
     lines.push(
-      `  ${pluralize(names.length, 'type name')} in the annotations resolve to nothing, over ` +
-        `${pluralize(sites, 'diagnostic')}, ${documented} of them written by a comment.`,
+      `  ${pluralize(names.length, 'type name')} in the annotations resolve to nothing, across ` +
+        `${pluralize(sites, 'diagnostic')}; the comments write ${documented} of them.`,
     );
     names.slice(0, 5).forEach((group) => {
       lines.push(

@@ -477,6 +477,27 @@ comment, so the per-code totals `ts-migrate report` scrapes match the report's
 "commented" column, not its "diagnostics" column. The report states how many
 diagnostics that covers.
 
+### Type names that resolve to nothing
+
+The jsdoc plugin writes what the comments document, and a comment can name a
+type the code never declares: `@param {ASTNode} node` becomes `node: ASTNode`
+whether or not `ASTNode` exists. Those annotations reach ts-ignore as `TS2304`
+and would otherwise be one anonymous suppression per site.
+
+Both `migrate` and `reignore` end with those names grouped, one line per name
+rather than one per site, since every site of a name shares the single edit that
+would fix it. Each line carries the count, the number of files, how many sites a
+JSDoc tag documents, and where the program declares the name:
+
+- a name declared somewhere the reference cannot see, in the project or in a
+  dependency, is a missing import or a missing qualifier, and the report names
+  the declaration file and line;
+- a name nothing declares is a stale comment, or a type parameter no
+  `@template` declares, and the report says nothing declares it.
+
+The log names the five largest and counts the rest;
+`--suppressionReportFile <file>` lists every name with the files that wrote it.
+
 ### `ts-migrate report <folder> [--json]`
 
 Measures the type debt left in the project: `@ts-expect-error`/`@ts-ignore`

@@ -586,8 +586,8 @@ describe('formatSuppressionSummary', () => {
 
     const summary = formatSuppressionSummary(report)!;
     expect(summary).toContain(
-      '2 type names in the annotations resolve to nothing, over 3 diagnostics, ' +
-        '2 of them written by a comment.',
+      '2 type names in the annotations resolve to nothing, across 3 diagnostics; ' +
+        'the comments write 2 of them.',
     );
     expect(summary).toContain('ASTNode x2 in 1 file — nothing declares it');
     expect(summary).toContain('Declared x1 in 1 file — declared at types.ts:1:1');
