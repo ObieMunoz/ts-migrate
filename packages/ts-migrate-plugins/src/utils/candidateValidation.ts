@@ -1,3 +1,27 @@
+/**
+ * The harness a plugin re-checks a proposed edit with: a single-file language
+ * service over the candidate text, whose errors are diffed against the
+ * baseline's.
+ *
+ * Three things it does not do, each of which the caller has to handle itself.
+ *
+ * A type the checker resolved to `any` has to be rejected before validation
+ * rather than by it. `any` is assignable to everything, so an edit built on
+ * one never produces a new error and always reads as proven. A two-way
+ * `isTypeAssignableTo` veto does not catch it either, because `any` answers
+ * true in both directions; it takes an explicit `ts.TypeFlags.Any` test on the
+ * checker's type ahead of the call. Measurements are in
+ * https://github.com/ObieMunoz/ts-migrate/issues/146#issuecomment-5077134220.
+ *
+ * Candidate text spells the any alias `any`, and only the text the plugin
+ * emits gets the configured `anyAlias`. The alias is declared in a file a
+ * single-file program does not see, so `$TSFixMe` in candidate text reports
+ * TS2304 and every aliased candidate comes back rejected.
+ *
+ * No new error is not on its own evidence that the edit did anything: an edit
+ * that accomplishes nothing produces no new error either. A caller should also
+ * require that the diagnostics it made the edit for are gone.
+ */
 import path from 'path';
 import ts from 'typescript';
 import updateSourceText, { SourceTextUpdate } from './updateSourceText';
@@ -191,6 +215,12 @@ interface LanguageServiceHostWithCache extends ts.LanguageServiceHost {
 // Each source file object gets its own version, so the shared registry, which
 // reuses a cached file whenever the version matches without comparing
 // content, never serves one revision of a dependency in place of another.
+//
+// Versions live in two namespaces: `dN` for a file the run can rewrite, `'0'`
+// for one it cannot. The program is a required argument for that reason. The
+// registry outlives any one plugin, so a file that can change must never land
+// in the `'0'` namespace, where the entry holds the disk copy and the next
+// caller asking for `'0'` gets it back whatever the run has since written.
 const dependencyVersions = new WeakMap<ts.SourceFile, string>();
 let dependencyVersion = 0;
 
@@ -223,7 +253,7 @@ export function createFileLanguageService(
   fileName: string,
   content: string,
   compilerOptions: ts.CompilerOptions,
-  projectProgram?: ts.Program,
+  projectProgram: ts.Program | undefined,
 ): ts.LanguageService {
   // Only the file under migration is overridden; default libs and anything the
   // run does not track resolve from disk. The shared registry reuses cached

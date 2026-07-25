@@ -69,6 +69,7 @@ const retryConversionsPlugin: Plugin = {
         text,
         getValidationOptions(program.getCompilerOptions()),
         candidates,
+        program,
       );
     } catch (e) {
       fileNoticeReporter(params, '[retry-conversions]')({
@@ -211,8 +212,9 @@ function removableCandidates(
   text: string,
   compilerOptions: ts.CompilerOptions,
   candidates: Candidate[],
+  projectProgram: ts.Program,
 ): Candidate[] {
-  const baseline = createFileLanguageService(fileName, text, compilerOptions);
+  const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
   let programsLeft = maxValidationPrograms;
 
   const checksClean = (group: Candidate[]): boolean => {
@@ -223,6 +225,7 @@ function removableCandidates(
       fileName,
       applyTextChanges(text, changes),
       compilerOptions,
+      projectProgram,
     );
     return findNewErrors(baseline, candidate, changes, fileName).length === 0;
   };

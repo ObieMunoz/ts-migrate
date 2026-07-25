@@ -115,7 +115,13 @@ const reactDestructuredPropsPlugin: Plugin<Options> = {
 
     let proven: Component[] | undefined;
     try {
-      proven = proveComponents(fileName, source, getValidationOptions(compilerOptions), components);
+      proven = proveComponents(
+        fileName,
+        source,
+        getValidationOptions(compilerOptions),
+        components,
+        program,
+      );
     } catch (e) {
       fileNoticeReporter(params, '[react-destructured-props]')({
         reason: e instanceof Error ? e.message.split('\n')[0].trim() : String(e),
@@ -404,9 +410,10 @@ function proveComponents(
   source: ts.SourceFile,
   compilerOptions: ts.CompilerOptions,
   components: Component[],
+  projectProgram: ts.Program,
 ): Component[] | undefined {
   const { text } = source;
-  const baseline = createFileLanguageService(fileName, text, compilerOptions);
+  const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
 
   // Checked as plain `any`: a single-file program does not include the
   // declaration file the alias is declared in, so the alias would read as an
@@ -417,6 +424,7 @@ function proveComponents(
       fileName,
       applyTextChanges(text, changes),
       compilerOptions,
+      projectProgram,
     );
     return { errors: findNewErrors(baseline, service, changes, fileName), changes };
   };
