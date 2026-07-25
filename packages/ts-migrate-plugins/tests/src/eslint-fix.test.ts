@@ -34,8 +34,9 @@ function getCompiledPlugin(): string {
 }
 
 // Only fileName, rootDir, text, and options are read by the eslint-fix
-// plugin; the other PluginParams are unused. Files are dispatched together,
-// as the migrate runner does for independentFiles plugins. The workerData of
+// plugin; the other PluginParams are unused. File names are resolved against
+// rootDir, which is where the runner's are. Files are dispatched together, as
+// the migrate runner does for independentFiles plugins. The workerData of
 // every spawn is recorded by wrapping worker_threads.Worker before the plugin
 // loads. Results go to a file so stdout carries only what the plugin logs.
 const driverSource = `
@@ -54,7 +55,9 @@ const plugin = require('./plugin/eslint-fix-plugin.cjs').default;
 const { files, rootDir, options } = JSON.parse(process.argv[2]);
 (async () => {
   const results = await Promise.all(
-    files.map(({ fileName, text }) => plugin.run({ fileName, rootDir, text, options })),
+    files.map(({ fileName, text }) =>
+      plugin.run({ fileName: path.resolve(rootDir, fileName), rootDir, text, options }),
+    ),
   );
   fs.writeFileSync(
     path.join(__dirname, 'result.json'),
@@ -141,20 +144,34 @@ interface RunOptions {
   projectESLint?: ProjectESLint;
   /** The eslint-fix plugin's own options. */
   pluginOptions?: { projectEslint?: boolean };
+  /**
+   * The migration root, relative to the fixture. The working directory stays
+   * at the fixture root, so setting this is what `ts-migrate migrate
+   * packages/app` from a repository root looks like to the plugin.
+   */
+  rootDir?: string;
 }
 
 interface FixtureRun {
   results: (string | undefined)[];
   spawnedWorkers: number;
-  workerData: { eslintPath: string; eslintRealPath: string; useLoadESLint: boolean }[];
+  workerData: {
+    eslintPath: string;
+    eslintRealPath: string;
+    useLoadESLint: boolean;
+    useFlatConfig: boolean;
+    cwd: string;
+  }[];
   stdout: string;
   stderr: string;
+  /** Where the fixture was copied, for asserting on paths the run printed. */
+  tmpDir: string;
 }
 
 function runInFixture(
   fixture: string,
   files: { fileName: string; text: string }[],
-  { env: extraEnv = {}, projectESLint, pluginOptions }: RunOptions = {},
+  { env: extraEnv = {}, projectESLint, pluginOptions, rootDir: rootSubDir }: RunOptions = {},
 ): FixtureRun {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ts-migrate-eslint-fix-'));
   try {
@@ -181,9 +198,10 @@ function runInFixture(
     env.TS_MIGRATE_ESLINT_FIX_WORKERS = '0';
     Object.assign(env, extraEnv);
 
+    const rootDir = rootSubDir ? path.join(tmpDir, rootSubDir) : tmpDir;
     const { status, stdout, stderr } = spawnSync(
       process.execPath,
-      ['driver.cjs', JSON.stringify({ files, rootDir: tmpDir, options: pluginOptions })],
+      ['driver.cjs', JSON.stringify({ files, rootDir, options: pluginOptions })],
       {
         cwd: tmpDir,
         env,
@@ -194,7 +212,7 @@ function runInFixture(
       throw new Error(`driver exited with ${status}: ${stderr}`);
     }
     const result = JSON.parse(fs.readFileSync(path.join(tmpDir, 'result.json'), 'utf8'));
-    return { ...result, stdout, stderr };
+    return { ...result, stdout, stderr, tmpDir };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -319,6 +337,107 @@ describe('eslint-fix plugin', () => {
       expect(stderr.match(/ESLint could not parse/g)).toHaveLength(1);
     },
     20000,
+  );
+});
+
+describe('eslint-fix config resolution', () => {
+  const unfixed = `const hello = 'world'`;
+  const fixed = `const hello = 'world';\n`;
+  // Everything below runs with the working directory at the repository root
+  // and the migration root at packages/app, which is what `ts-migrate migrate
+  // packages/app` looks like from a monorepo root.
+  const inPackage = { rootDir: path.join('packages', 'app') };
+
+  it(
+    'applies fixes with a flat config under the migration root',
+    () => {
+      const { results, stdout, tmpDir } = runInFixture(
+        'eslint-flat-monorepo',
+        [{ fileName: 'src/Foo.js', text: unfixed }],
+        inPackage,
+      );
+
+      expect(results).toEqual([fixed]);
+      expect(stdout).toContain(
+        `[eslint-fix] flat config: ${path.join(tmpDir, 'packages', 'app', 'eslint.config.cjs')}`,
+      );
+    },
+    20000,
+  );
+
+  it(
+    'still finds a flat config above the migration root',
+    () => {
+      const { results, stdout, tmpDir } = runInFixture(
+        'eslint-flat-above',
+        [{ fileName: 'src/Foo.js', text: unfixed }],
+        inPackage,
+      );
+
+      expect(results).toEqual([fixed]);
+      expect(stdout).toContain(
+        `[eslint-fix] flat config: ${path.join(tmpDir, 'eslint.config.cjs')}`,
+      );
+    },
+    20000,
+  );
+
+  it(
+    'selects the legacy engine for an eslintrc project under the migration root',
+    () => {
+      const { results, stdout, tmpDir } = runInFixture(
+        'eslint-legacy-monorepo',
+        [{ fileName: 'src/Foo.js', text: unfixed }],
+        inPackage,
+      );
+
+      expect(results).toEqual([fixed]);
+      expect(stdout).toContain(
+        `[eslint-fix] eslintrc config, rooted at ${path.join(tmpDir, 'packages', 'app')}`,
+      );
+    },
+    20000,
+  );
+
+  it(
+    'lets ESLINT_USE_FLAT_CONFIG override what discovery found',
+    () => {
+      // A flat config is right there under the migration root, and the
+      // override still sends the run to the legacy engine, which finds no
+      // .eslintrc and leaves the file alone.
+      const { results, stdout } = runInFixture(
+        'eslint-flat-monorepo',
+        [{ fileName: 'src/Foo.js', text: unfixed }],
+        { ...inPackage, env: { ESLINT_USE_FLAT_CONFIG: 'false' } },
+      );
+
+      expect(results).toEqual([unfixed]);
+      expect(stdout).toContain('[eslint-fix] eslintrc config');
+      expect(stdout).toContain('[ESLINT_USE_FLAT_CONFIG]');
+    },
+    20000,
+  );
+
+  it(
+    'roots pooled workers at the same config the main thread resolved',
+    () => {
+      const { results, workerData, tmpDir } = runInFixture(
+        'eslint-flat-monorepo',
+        [
+          { fileName: 'src/Foo.js', text: unfixed },
+          { fileName: 'src/Bar.js', text: `const bar = 'baz'` },
+        ],
+        { ...inPackage, env: { TS_MIGRATE_ESLINT_FIX_WORKERS: '2' } },
+      );
+
+      expect(results).toEqual([fixed, `const bar = 'baz';\n`]);
+      expect(workerData).toHaveLength(2);
+      workerData.forEach((data) => {
+        expect(data.cwd).toBe(path.join(tmpDir, 'packages', 'app'));
+        expect(data.useFlatConfig).toBe(true);
+      });
+    },
+    30000,
   );
 });
 

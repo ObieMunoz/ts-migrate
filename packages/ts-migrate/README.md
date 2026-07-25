@@ -213,6 +213,17 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --no-projectEslint
 Flat versus legacy config is detected separately, from the presence of an
 `eslint.config.*` file; set `ESLINT_USE_FLAT_CONFIG` to override that.
 
+The search starts at the folder being migrated and walks up, and ESLint is
+rooted there too, so `ts-migrate migrate packages/app` run from a repository
+root uses `packages/app`'s config, and still finds one at the repository root
+when the package has none. The run prints the config file it settled on next
+to the engine line:
+
+```
+[eslint-fix] ESLint 9.39.4 (project: /repo/node_modules/eslint)
+[eslint-fix] flat config: /repo/packages/app/eslint.config.js
+```
+
 # Gitignored files
 
 Build output often lives inside the source tree (webpack/SSR bundles, a
