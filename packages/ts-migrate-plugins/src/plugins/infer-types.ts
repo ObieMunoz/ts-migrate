@@ -1,6 +1,6 @@
 import path from 'path';
 import ts from 'typescript';
-import { fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
+import { errorMessage, fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 
 export interface LintConfig {
@@ -88,7 +88,7 @@ const inferTypesPlugin: Plugin = {
       return withBodyWins(fileName, text, changes, compilerOptions, formatSettings);
     } catch (e) {
       fileNoticeReporter(params, '[infer-types]')({
-        reason: e instanceof Error ? e.message.split('\n')[0].trim() : String(e),
+        reason: errorMessage(e).split('\n')[0].trim(),
         hint: 'The file keeps the annotations it had; explicit-any fills the rest in with any.',
       });
       return undefined;
@@ -285,17 +285,15 @@ function getInferenceChanges(
   fileName: string,
   formatSettings: ts.FormatCodeSettings,
 ): TextChange[] {
-  let actions: ts.CombinedCodeActions;
-  try {
-    actions = languageService.getCombinedCodeFix(
-      { type: 'file', fileName },
-      'inferFromUsage',
-      formatSettings,
-      {},
-    );
-  } catch {
-    return [];
-  }
+  // A throw here reaches the plugin's own handler, which reports it and keeps
+  // the file's existing annotations. Swallowing it would instead read as "this
+  // file had nothing to infer" and say nothing.
+  const actions = languageService.getCombinedCodeFix(
+    { type: 'file', fileName },
+    'inferFromUsage',
+    formatSettings,
+    {},
+  );
 
   // Without strictNullChecks an empty array literal prints as `undefined[]`
   // (with it, `never[]`), so only there does that spelling mean "no element
@@ -405,7 +403,15 @@ function inferBodyOnly(
 
   const decoyText = applyTextChanges(text, renames);
   const decoy = createFileLanguageService(fileName, decoyText, compilerOptions);
-  getInferenceChanges(decoy, fileName, formatSettings).forEach((change) => {
+  let decoyChanges: TextChange[] = [];
+  try {
+    decoyChanges = getInferenceChanges(decoy, fileName, formatSettings);
+  } catch {
+    // The decoy only refines which changes count as body evidence. Letting it
+    // throw would discard the inferences the real service already produced,
+    // which costs more than the attribution it buys.
+  }
+  decoyChanges.forEach((change) => {
     const originalStart = toOriginalPos(change.start, renames);
     const fn = enclosingFunctionLike(originalSource, originalStart);
     if (fn == null || !contestedFunctions.includes(fn)) return;

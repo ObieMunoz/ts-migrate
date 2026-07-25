@@ -1,3 +1,5 @@
+import ts from 'typescript';
+import type { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
 import { realPluginParams } from '../test-utils';
 import inferTypesPlugin from '../../src/plugins/infer-types';
 import explicitAnyPlugin from '../../src/plugins/explicit-any';
@@ -509,5 +511,35 @@ getItem('abc');
   return mystery;
 }
 `);
+  });
+
+  it('reports a language service failure rather than reading as nothing to infer', async () => {
+    const text = `function add(a, b) {
+  return a + b;
+}
+add(1, 2);
+`;
+    const params = await realPluginParams({ text });
+    const failing: ts.LanguageService = {
+      ...params.getLanguageService(),
+      getCombinedCodeFix: () => {
+        throw new Error('Debug Failure. False expression.\nOccurred while inferring /file.ts');
+      },
+    };
+    const notices: PluginFileNotice[] = [];
+
+    const result = await inferTypesPlugin.run({
+      ...params,
+      getLanguageService: () => failing,
+      reportFileNotice: (notice) => notices.push(notice),
+    });
+
+    expect(result).toBeUndefined();
+    expect(notices).toEqual([
+      {
+        reason: 'Debug Failure. False expression.',
+        hint: 'The file keeps the annotations it had; explicit-any fills the rest in with any.',
+      },
+    ]);
   });
 });
