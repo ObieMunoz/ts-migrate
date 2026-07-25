@@ -128,6 +128,13 @@ describe('buildMigrateConfig', () => {
     }
   });
 
+  it('has options for every plugin --plugin accepts', () => {
+    availablePlugins.forEach(({ name }) => {
+      const { config } = buildMigrateConfig({ plugin: name });
+      expect([name, typeof config.plugins[0].options]).toEqual([name, 'object']);
+    });
+  });
+
   it('warns once about the flags the selected plugin has no option for', () => {
     const warn = jest.spyOn(log, 'warn').mockImplementation(() => {});
     try {
