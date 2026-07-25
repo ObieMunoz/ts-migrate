@@ -252,7 +252,7 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
           undefined,
         );
 
-        const index = componentTypeReference.pos;
+        const index = componentTypeReference.getStart(sourceFile);
         const length = componentTypeReference.end - index;
         const text = printer.printNode(
           ts.EmitHint.Unspecified,
