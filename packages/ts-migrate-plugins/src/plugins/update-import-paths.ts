@@ -4,7 +4,7 @@ import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { createValidate, Properties } from '../utils/validateOptions';
-import { isEsmFileName, isEsmPackageDir } from '../utils/moduleFormat';
+import { isEsmFilePath } from '../utils/moduleFormat';
 
 /**
  * Updates relative module specifiers that still end in `.js`/`.jsx` after the
@@ -17,7 +17,8 @@ import { isEsmFileName, isEsmPackageDir } from '../utils/moduleFormat';
  * importing file is ESM, where extensionless relative imports are an error,
  * the specifier keeps a `.js` extension instead (`./foo.jsx` -> `./foo.js`).
  * A file is ESM either by its own `.mts`/`.mjs` extension or by belonging to a
- * `"type": "module"` package. The `extension` option overrides the detection.
+ * `"type": "module"` package, except that `.cts`/`.cjs` are CommonJS whatever
+ * the package says. The `extension` option overrides the detection.
  *
  * `.mjs`/`.cjs` specifiers are left alone: `.mts`/`.cts` emit those same
  * extensions, so the specifier still names the file that ships.
@@ -35,8 +36,7 @@ const updateImportPathsPlugin: Plugin<Options> = {
 
   run({ fileName, sourceFile, text, options }) {
     const importerDir = path.dirname(fileName);
-    const isEsm = isEsmFileName(fileName) || isEsmPackageDir(importerDir);
-    const extension = options.extension ?? (isEsm ? 'js' : 'omit');
+    const extension = options.extension ?? (isEsmFilePath(fileName) ? 'js' : 'omit');
 
     const updates: SourceTextUpdate[] = [];
     collectModuleSpecifiers(sourceFile).forEach((literal) => {

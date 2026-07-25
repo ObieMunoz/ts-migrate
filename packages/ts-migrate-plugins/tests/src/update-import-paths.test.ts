@@ -6,6 +6,9 @@ const fixturesDir = path.resolve(__dirname, '../fixtures/update-import-paths');
 const entryFile = path.join(fixturesDir, 'src', 'entry.ts');
 const mtsEntryFile = path.join(fixturesDir, 'src', 'entry.mts');
 const esmEntryFile = path.join(fixturesDir, 'esm', 'src', 'entry.ts');
+const esmMtsEntryFile = path.join(fixturesDir, 'esm', 'src', 'entry.mts');
+const esmCtsEntryFile = path.join(fixturesDir, 'esm', 'src', 'entry.cts');
+const esmCjsEntryFile = path.join(fixturesDir, 'esm', 'src', 'entry.cjs');
 
 describe('update-import-paths plugin', () => {
   it('rewrites specifiers of renamed files across module syntaxes', async () => {
@@ -117,6 +120,75 @@ import Widget from './Widget.jsx';
     expect(result).toBe(`import foo from './foo.js';
 import Widget from './Widget.js';
 `);
+  });
+
+  it('drops the extension in a .cts file in an ESM package', async () => {
+    const text = `import foo from './foo.js';
+import Widget from './Widget.jsx';
+`;
+
+    const result = await updateImportPathsPlugin.run(
+      mockPluginParams({ text, fileName: esmCtsEntryFile }),
+    );
+
+    expect(result).toBe(`import foo from './foo';
+import Widget from './Widget';
+`);
+  });
+
+  it('drops the extension in a .cjs file in an ESM package', async () => {
+    const text = `const foo = require('./foo.js');
+const Widget = require('./Widget.jsx');
+`;
+
+    const result = await updateImportPathsPlugin.run(
+      mockPluginParams({ text, fileName: esmCjsEntryFile }),
+    );
+
+    expect(result).toBe(`const foo = require('./foo');
+const Widget = require('./Widget');
+`);
+  });
+
+  it('keeps a .js extension in a .mts file in an ESM package', async () => {
+    const text = `import foo from './foo.js';
+import Widget from './Widget.jsx';
+`;
+
+    const result = await updateImportPathsPlugin.run(
+      mockPluginParams({ text, fileName: esmMtsEntryFile }),
+    );
+
+    expect(result).toBe(`import foo from './foo.js';
+import Widget from './Widget.js';
+`);
+  });
+
+  it('drops a .js extension an earlier run left in a .cts file', async () => {
+    const earlier = await updateImportPathsPlugin.run(
+      mockPluginParams({
+        text: `import foo from './foo.js';
+import Widget from './Widget.jsx';
+`,
+        fileName: esmCtsEntryFile,
+        options: { extension: 'js' },
+      }),
+    );
+    expect(earlier).toBe(`import foo from './foo.js';
+import Widget from './Widget.js';
+`);
+
+    const result = await updateImportPathsPlugin.run(
+      mockPluginParams({ text: earlier, fileName: esmCtsEntryFile }),
+    );
+    expect(result).toBe(`import foo from './foo';
+import Widget from './Widget';
+`);
+
+    const rerun = await updateImportPathsPlugin.run(
+      mockPluginParams({ text: result, fileName: esmCtsEntryFile }),
+    );
+    expect(rerun).toBe(result);
   });
 
   it('validates options', () => {
