@@ -524,14 +524,22 @@ machine-readable preview. Per command:
   `generatedFiles` (declaration files the run wrote itself, e.g.
   `types/ts-migrate-modules.d.ts` and `types/ts-migrate-globals.d.ts`, which
   are new files rather than edits),
+  `migratedFilesWithSyntaxErrors` (migrated files that still do not parse),
   `nonMigratedFilesWithSyntaxErrors` (files that will keep failing `tsc` and
   that re-running cannot fix), `plugins` (`{"name", "changedFileCount"}` per
   pipeline step, in order), `pluginFailures` (files a plugin could not
   process, grouped by cause, as `{"plugin", "reason", "ruleId", "fileCount",
-  "files"}`; empty when every plugin processed every file), and
+  "files"}`; empty when every plugin processed every file), `pluginErrors`
+  (one entry per file whose plugin threw, as `{"plugin", "file", "message"}`,
+  with the message capped and the full error left in the run log), and
   `changedFilesTypeDebt` (the suppression, any-alias, and `any` totals now
   present in the changed files, with the suppressed error codes; `null` if
   that scan failed).
+- Four of those fields have confusable names and different consequences.
+  `migratedFilesWithSyntaxErrors` and `pluginErrors` fail the run;
+  `nonMigratedFilesWithSyntaxErrors` and `pluginFailures` do not. So a run can
+  exit `0` with entries in the second pair, and a nonzero exit means entries in
+  the first pair or a `filesToMigrate` of `0`.
 - All three also report `skippedGitignoredFiles`, the number of files the
   run left untouched because git ignores them (0 with `--no-gitignore`),
   and `skippedBootstrapFiles`, the build system files kept as JavaScript
@@ -544,7 +552,10 @@ How to read a run from the outside:
   files unchanged without failing the run, so a successful exit can still hide
   files no plugin could touch.
 - Nonzero exit and the file exists: the run completed with errors; the file's
-  `exitCode` field matches the process exit code.
+  `exitCode` field matches the process exit code. The last line the run printed
+  names the counts (`Migration failed: 3 file(s) errored in plugins, 1 file(s)
+  still have syntax errors.`), and the two arrays above name the files. A
+  successful run prints no such line.
 - Nonzero exit and no file: the command failed before running (bad flags,
   missing tsconfig.json), or the summary file itself could not be written.
 

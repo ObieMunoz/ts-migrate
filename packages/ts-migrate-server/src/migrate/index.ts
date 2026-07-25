@@ -9,6 +9,7 @@ import computeDirtyFiles from './dirtyFiles';
 import PassProgress from '../utils/PassProgress';
 import PassNotices from '../utils/PassNotices';
 import PerfTimer from '../utils/PerfTimer';
+import errorMessage from '../utils/errorMessage';
 import { PluginParams, LintConfig } from '../../types';
 
 interface MigrateParams {
@@ -79,12 +80,23 @@ export interface MigrateResult {
    */
   emptyMigrationSet?: { reason: EmptyMigrationSetReason; diagnostics: string[] };
   /**
+   * Migrated files that still do not parse once every plugin has run. No
+   * suppression comment can fix a parse error, so these fail the run.
+   */
+  migratedFilesWithSyntaxErrors: string[];
+  /**
    * Program files with syntax errors that no plugin can edit (declaration
    * files, files outside the migration set). They will fail any tsc run
    * over this project until fixed, regenerated, or excluded. Unlike
    * migratedFilesWithSyntaxErrors, these do not fail the run.
    */
   nonMigratedFilesWithSyntaxErrors: string[];
+  /**
+   * One entry per file whose run() threw, which fails the run. The message is
+   * bounded, since this reaches a JSON summary people paste into pull
+   * requests; the full error is in the run log.
+   */
+  pluginErrors: Array<{ pluginName: string; file: string; message: string }>;
   /**
    * One entry per configured plugin, in pipeline order, with the number of
    * distinct files that plugin changed across all passes.
@@ -218,6 +230,7 @@ export default async function migrate({
   const updatedSourceFiles = new Set<string>();
   const changedFilesByPlugin = config.plugins.map(() => new Set<string>());
   const pluginFailures: MigrateResult['pluginFailures'] = [];
+  const pluginErrors: MigrateResult['pluginErrors'] = [];
 
   // Consecutive repeatUntilStable plugins form one group; other plugins are
   // groups of one that run a single pass.
@@ -308,6 +321,11 @@ export default async function migrate({
             }
           } catch (pluginErr) {
             log.error(`${fileLogPrefix} Error:\n`, pluginErr);
+            pluginErrors.push({
+              pluginName: plugin.name,
+              file: relFile,
+              message: boundedErrorMessage(pluginErr),
+            });
             exitCode = -1;
           }
           progress.fileFinished();
@@ -371,13 +389,14 @@ export default async function migrate({
 
   // Files that still fail to parse cannot be fixed by suppression comments;
   // surface them instead of reporting success.
-  const filesWithSyntaxErrors = getSourceFilesToMigrate(project)
+  const migratedFilesWithSyntaxErrors = getSourceFilesToMigrate(project)
     .filter(({ fileName }) => originalSourceFilesToMigrate.has(fileName))
     .filter(
       ({ fileName }) => project.getLanguageService().getSyntacticDiagnostics(fileName).length > 0,
-    );
-  if (filesWithSyntaxErrors.length > 0) {
-    filesWithSyntaxErrors.forEach(({ fileName }) => {
+    )
+    .map(({ fileName }) => fileName);
+  if (migratedFilesWithSyntaxErrors.length > 0) {
+    migratedFilesWithSyntaxErrors.forEach((fileName) => {
       log.error(`${path.relative(rootDir, fileName)} still has syntax errors after migration.`);
     });
     exitCode = -1;
@@ -450,11 +469,23 @@ export default async function migrate({
     exitCode,
     filesToMigrate: originalSourceFilesToMigrate.size,
     emptyMigrationSet,
+    migratedFilesWithSyntaxErrors,
     nonMigratedFilesWithSyntaxErrors,
     pluginStats,
     pluginFailures,
+    pluginErrors,
     generatedFiles,
   };
+}
+
+/** Enough of an error to identify it, short of a stack trace per file. */
+const PLUGIN_ERROR_MESSAGE_LIMIT = 300;
+
+function boundedErrorMessage(error: unknown): string {
+  const message = errorMessage(error).replace(/\s+/g, ' ').trim();
+  return message.length > PLUGIN_ERROR_MESSAGE_LIMIT
+    ? `${message.slice(0, PLUGIN_ERROR_MESSAGE_LIMIT - 3)}...`
+    : message;
 }
 
 /**

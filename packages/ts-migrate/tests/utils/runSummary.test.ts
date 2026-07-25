@@ -144,6 +144,36 @@ describe('run summary', () => {
     expect(summary.exitCode).toBe(0);
   });
 
+  it('separates the failures that fail the run from the ones that do not', () => {
+    fs.writeFileSync(path.join(rootDir, 'tsconfig.json'), '{ "compilerOptions": {} }');
+
+    const summary = buildMigrateRunSummary({
+      command: 'migrate',
+      rootDir,
+      exitCode: -1,
+      filesToMigrate: 4,
+      updatedSourceFiles: new Set(),
+      migratedFilesWithSyntaxErrors: [
+        path.join(rootDir, 'src', 'z.ts'),
+        path.join(rootDir, 'src', 'a.ts'),
+      ],
+      nonMigratedFilesWithSyntaxErrors: [path.join(rootDir, 'gen', 'broken.d.ts')],
+      pluginStats: [],
+      pluginErrors: [
+        { pluginName: 'jsdoc', file: 'src/z.ts', message: 'Cannot read properties of undefined' },
+        { pluginName: 'ts-ignore', file: 'src/a.ts', message: 'boom' },
+      ],
+    });
+
+    expect(summary.migratedFilesWithSyntaxErrors).toEqual(['src/a.ts', 'src/z.ts']);
+    expect(summary.nonMigratedFilesWithSyntaxErrors).toEqual(['gen/broken.d.ts']);
+    expect(summary.pluginErrors).toEqual([
+      { plugin: 'ts-ignore', file: 'src/a.ts', message: 'boom' },
+      { plugin: 'jsdoc', file: 'src/z.ts', message: 'Cannot read properties of undefined' },
+    ]);
+    expect(summary.exitCode).toBe(-1);
+  });
+
   it('records no failures for a run where every plugin processed every file', () => {
     fs.writeFileSync(path.join(rootDir, 'tsconfig.json'), '{ "compilerOptions": {} }');
 
@@ -158,6 +188,8 @@ describe('run summary', () => {
     });
 
     expect(summary.pluginFailures).toEqual([]);
+    expect(summary.pluginErrors).toEqual([]);
+    expect(summary.migratedFilesWithSyntaxErrors).toEqual([]);
   });
 
   it('scans the provided contents instead of the disk for a dry run', () => {

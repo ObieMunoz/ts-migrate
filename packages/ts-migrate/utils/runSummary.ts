@@ -44,6 +44,12 @@ export interface MigrateRunSummary extends RunSummaryBase {
   changedFiles: string[];
   /** Declaration files the run generated (e.g. the untyped module declarations). */
   generatedFiles: string[];
+  /**
+   * Migrated files that still do not parse. These fail the run, unlike
+   * nonMigratedFilesWithSyntaxErrors below.
+   */
+  migratedFilesWithSyntaxErrors: string[];
+  /** Files outside the migration set that do not parse. These do not fail the run. */
   nonMigratedFilesWithSyntaxErrors: string[];
   plugins: Array<{ name: string; changedFileCount: number }>;
   /**
@@ -58,6 +64,12 @@ export interface MigrateRunSummary extends RunSummaryBase {
     fileCount: number;
     files: string[];
   }>;
+  /**
+   * Exceptions thrown out of a plugin, one entry per file. These fail the run,
+   * unlike pluginFailures above. The message is bounded; the run log has the
+   * full error.
+   */
+  pluginErrors: Array<{ plugin: string; file: string; message: string }>;
   /** Debt now present in the changed files; null if the post-run scan failed. */
   changedFilesTypeDebt: { aliasNames: string[]; totals: FileDebt } | null;
   /** Files left untouched because git ignores them (0 with --no-gitignore). */
@@ -124,9 +136,11 @@ export function buildMigrateRunSummary(params: {
   updatedSourceFiles: ReadonlySet<string>;
   /** In-memory contents to scan instead of the disk state; required for a dry run. */
   fileContents?: ReadonlyMap<string, string>;
+  migratedFilesWithSyntaxErrors?: string[];
   nonMigratedFilesWithSyntaxErrors: string[];
   pluginStats: MigrateResult['pluginStats'];
   pluginFailures?: MigrateResult['pluginFailures'];
+  pluginErrors?: MigrateResult['pluginErrors'];
   generatedFiles?: ReadonlyMap<string, string>;
   skippedGitignoredFiles?: number;
   skippedBootstrapFiles?: BootstrapFile[];
@@ -153,6 +167,9 @@ export function buildMigrateRunSummary(params: {
     generatedFiles: [...(params.generatedFiles?.keys() ?? [])]
       .map((fileName) => relativeTo(rootDir, fileName))
       .sort(),
+    migratedFilesWithSyntaxErrors: (params.migratedFilesWithSyntaxErrors ?? [])
+      .map((fileName) => relativeTo(rootDir, fileName))
+      .sort(),
     nonMigratedFilesWithSyntaxErrors: params.nonMigratedFilesWithSyntaxErrors
       .map((fileName) => relativeTo(rootDir, fileName))
       .sort(),
@@ -169,6 +186,9 @@ export function buildMigrateRunSummary(params: {
         files: [...files].sort(),
       }),
     ),
+    pluginErrors: (params.pluginErrors ?? [])
+      .map(({ pluginName, file, message }) => ({ plugin: pluginName, file, message }))
+      .sort((a, b) => (a.file + a.plugin < b.file + b.plugin ? -1 : 1)),
     changedFilesTypeDebt,
     skippedGitignoredFiles: params.skippedGitignoredFiles ?? 0,
     skippedBootstrapFiles: summarizeBootstrapFiles(rootDir, params.skippedBootstrapFiles),

@@ -206,6 +206,29 @@ function printGeneratedFiles(
 }
 
 /**
+ * The last line of a failing run. Both causes were logged where they happened,
+ * which on a large project is hours and thousands of lines above, and the
+ * closing sequence is otherwise identical to a successful run's.
+ */
+function logRunFailure(
+  pluginErrors: MigrateResult['pluginErrors'],
+  migratedFilesWithSyntaxErrors: string[],
+): void {
+  const causes = [];
+  if (pluginErrors.length > 0) {
+    causes.push(`${pluginErrors.length} file(s) errored in plugins`);
+  }
+  if (migratedFilesWithSyntaxErrors.length > 0) {
+    causes.push(`${migratedFilesWithSyntaxErrors.length} file(s) still have syntax errors`);
+  }
+  log.error(
+    causes.length > 0
+      ? `Migration failed: ${causes.join(', ')}. See the errors above.`
+      : 'Migration failed. See the errors above.',
+  );
+}
+
+/**
  * Names an empty migration set in terms of the signal that produced it, and
  * attaches the tsconfig's own diagnostics. Nothing here scans the disk to
  * narrow the cause further: a confident wrong guess costs more than a plain
@@ -611,9 +634,11 @@ yargs
         emptyMigrationSet,
         updatedSourceFiles,
         updatedFileTexts,
+        migratedFilesWithSyntaxErrors,
         nonMigratedFilesWithSyntaxErrors,
         pluginStats,
         pluginFailures,
+        pluginErrors,
         generatedFiles,
       } = await migrate({
         rootDir,
@@ -662,6 +687,9 @@ yargs
       logTypeScriptWarning();
 
       const runExitCode = emptyMigrationSet ? -1 : exitCode;
+      if (runExitCode !== 0) {
+        logRunFailure(pluginErrors, migratedFilesWithSyntaxErrors);
+      }
 
       let finalExitCode = runExitCode;
       if (args.jsonSummary) {
@@ -675,9 +703,11 @@ yargs
             filesToMigrate,
             updatedSourceFiles,
             fileContents,
+            migratedFilesWithSyntaxErrors,
             nonMigratedFilesWithSyntaxErrors,
             pluginStats,
             pluginFailures,
+            pluginErrors,
             generatedFiles,
             skippedGitignoredFiles: gitignoreFilter?.skippedFiles().length ?? 0,
             skippedBootstrapFiles: bootstrapFilter?.skippedFiles() ?? [],
@@ -770,9 +800,11 @@ yargs
         suppressionExplainer,
         updatedSourceFiles,
         updatedFileTexts,
+        migratedFilesWithSyntaxErrors,
         nonMigratedFilesWithSyntaxErrors,
         pluginStats,
         pluginFailures,
+        pluginErrors,
         generatedFiles,
         skippedGitignoredFiles,
         skippedBootstrapFiles,
@@ -799,6 +831,10 @@ yargs
       }
       logTypeScriptWarning();
 
+      if (exitCode !== 0) {
+        logRunFailure(pluginErrors, migratedFilesWithSyntaxErrors);
+      }
+
       let finalExitCode = exitCode;
       if (args.jsonSummary) {
         finalExitCode = writeRunSummary(
@@ -811,9 +847,11 @@ yargs
             filesToMigrate,
             updatedSourceFiles,
             fileContents: updatedFileTexts,
+            migratedFilesWithSyntaxErrors,
             nonMigratedFilesWithSyntaxErrors,
             pluginStats,
             pluginFailures,
+            pluginErrors,
             generatedFiles,
             skippedGitignoredFiles,
             skippedBootstrapFiles,

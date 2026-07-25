@@ -161,3 +161,62 @@ describe('a migrate run with nothing to migrate', () => {
     expect(summary.exitCode).not.toBe(0);
   }, 120000);
 });
+
+describe('a migrate run that fails', () => {
+  let brokenDir: string;
+
+  beforeAll(() => {
+    brokenDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-broken-'));
+    fs.writeFileSync(
+      path.join(brokenDir, 'tsconfig.json'),
+      '{ "compilerOptions": { "types": [] }, "include": ["**/*.ts"] }\n',
+    );
+    fs.writeFileSync(path.join(brokenDir, 'ok.ts'), 'export const ok = 1;\n');
+    // Valid sloppy-mode JavaScript that TypeScript cannot parse. No plugin can
+    // repair it, so the run ends nonzero with the file still unparseable.
+    fs.writeFileSync(path.join(brokenDir, 'broken.ts'), "const legal = 'Copyright \\251 ACME';\n");
+  });
+
+  afterAll(() => {
+    fs.rmSync(brokenDir, { recursive: true, force: true });
+  });
+
+  it('ends on a failure line and records the files in the summary', () => {
+    const summaryFile = path.join(brokenDir, 'summary.json');
+    const { status, output } = runCli(['migrate', brokenDir, '--jsonSummary', summaryFile]);
+
+    expect(status).not.toBe(0);
+    expect(output).toContain(
+      'Migration failed: 1 file(s) still have syntax errors. See the errors above.',
+    );
+
+    const summary = JSON.parse(fs.readFileSync(summaryFile, 'utf8'));
+    expect(summary.migratedFilesWithSyntaxErrors).toEqual(['broken.ts']);
+    expect(summary.pluginErrors).toEqual([]);
+    expect(summary.exitCode).not.toBe(0);
+  }, 180000);
+
+  it('prints no failure line for a run that succeeds', () => {
+    const okDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-ok-'));
+    try {
+      fs.writeFileSync(
+        path.join(okDir, 'tsconfig.json'),
+        '{ "compilerOptions": { "types": [] }, "include": ["**/*.ts"] }\n',
+      );
+      fs.writeFileSync(path.join(okDir, 'ok.ts'), 'export const ok = 1;\n');
+      const summaryFile = path.join(okDir, 'summary.json');
+
+      const { status, output } = runCli(['migrate', okDir, '--jsonSummary', summaryFile]);
+
+      expect(status).toBe(0);
+      expect(output).not.toContain('Migration failed');
+
+      const summary = JSON.parse(fs.readFileSync(summaryFile, 'utf8'));
+      expect(summary.filesToMigrate).toBe(1);
+      expect(summary.migratedFilesWithSyntaxErrors).toEqual([]);
+      expect(summary.pluginErrors).toEqual([]);
+    } finally {
+      fs.rmSync(okDir, { recursive: true, force: true });
+    }
+  }, 180000);
+});
