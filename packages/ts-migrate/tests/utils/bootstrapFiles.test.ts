@@ -97,6 +97,30 @@ describe('partitionBootstrapFiles', () => {
     expect(partition.kept).toEqual(abs(rootDir, 'src/app.config.js'));
   });
 
+  it('keeps a config split per environment, in either segment order', () => {
+    writeFiles(rootDir, {
+      'package.json': '{}',
+      'webpack.config.js': 'module.exports = {};\n',
+      'webpack.config.production.js': 'module.exports = {};\n',
+      'webpack.dev.config.js': 'module.exports = {};\n',
+      'jest.config.integration.js': 'module.exports = {};\n',
+      'src/settings.js': 'export default {};\n',
+    });
+    const configs = [
+      'webpack.config.js',
+      'webpack.config.production.js',
+      'webpack.dev.config.js',
+      'jest.config.integration.js',
+    ];
+
+    const partition = partitionBootstrapFiles(rootDir, abs(rootDir, ...configs, 'src/settings.js'));
+
+    expect(partition.bootstrap.map(({ file }) => file).sort()).toEqual(
+      abs(rootDir, ...configs).sort(),
+    );
+    expect(partition.kept).toEqual(abs(rootDir, 'src/settings.js'));
+  });
+
   it('classifies the extension-neutral name table for .cjs and .mjs files too', () => {
     writeFiles(rootDir, {
       'package.json': '{}',

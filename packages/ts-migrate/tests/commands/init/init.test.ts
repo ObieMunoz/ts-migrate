@@ -170,6 +170,29 @@ describe('init command', () => {
     ]);
   });
 
+  it('excludes a build config split per environment alongside the main one', () => {
+    fs.writeFileSync(
+      path.join(rootDir, 'package.json'),
+      JSON.stringify({
+        scripts: { build: 'webpack --config webpack.config.production.js --progress' },
+      }),
+    );
+    fs.writeFileSync(path.join(rootDir, 'webpack.config.js'), 'module.exports = {};\n');
+    fs.writeFileSync(path.join(rootDir, 'webpack.config.production.js'), 'module.exports = {};\n');
+    fs.mkdirSync(path.join(rootDir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(rootDir, 'src/app.js'), '');
+
+    init({ rootDir, isExtendedConfig: false });
+
+    expect(readConfig(rootDir).exclude).toEqual([
+      'node_modules',
+      'bower_components',
+      'jspm_packages',
+      'webpack.config.js',
+      'webpack.config.production.js',
+    ]);
+  });
+
   describe('.mjs and .cjs build system files', () => {
     const writeModuleBootstrapProject = () => {
       const writeFile = (relPath: string, text: string) => {

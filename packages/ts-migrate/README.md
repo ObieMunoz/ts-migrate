@@ -396,7 +396,11 @@ generated `"exclude"` so the project's own `tsc` and editors skip them too.
 Detection, in order of confidence:
 
 - Known config names next to a package.json: `*.config.js`, `*.conf.js`,
-  `gulpfile.js`, `Gruntfile.js`, and the `.*rc.js` family.
+  `gulpfile.js`, `Gruntfile.js`, and the `.*rc.js` family. The suffix is open,
+  so a config split per environment counts too:
+  `webpack.config.production.js` and `webpack.dev.config.js` are detected the
+  same way `webpack.config.js` is. A file named plainly `config.js` is not a
+  config name; it migrates.
 - Paths a package.json script runs with `node`, as in
   `"build": "node scripts/build.js"`. (`main` and `bin` are not evidence:
   after a migration those should point at build output.)

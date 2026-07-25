@@ -42,7 +42,9 @@ docs live in this package's README.md.
    files they require) are kept out of rename so the build still boots;
    `init` writes them into the generated tsconfig's `exclude`. Detection
    covers every extension the compiler reads as JavaScript: `.js`, `.jsx`,
-   `.cjs`, `.mjs`. Runs log every kept file with its evidence. Pass
+   `.cjs`, `.mjs`, and a config split per environment
+   (`webpack.config.production.js`) counts as a config the same way
+   `webpack.config.js` does. Runs log every kept file with its evidence. Pass
    `--no-bootstrap` to rename them anyway, e.g. when the project loads
    TypeScript configs through ts-node or tsx. In `migrate` and `reignore`
    the flag only decides whether those files are loaded into the program;
