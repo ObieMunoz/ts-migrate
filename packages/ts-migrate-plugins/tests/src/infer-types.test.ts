@@ -2,8 +2,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import ts from 'typescript';
-import type { PluginFileNotice, PluginParams } from '@obiemunoz/ts-migrate-server';
-import { realPluginParams } from '../test-utils';
+import type { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
+import { midRunProject, realPluginParams } from '../test-utils';
 import inferTypesPlugin from '../../src/plugins/infer-types';
 import explicitAnyPlugin from '../../src/plugins/explicit-any';
 
@@ -557,64 +557,8 @@ add(1, 2);
       fs.rmSync(tmpDir, { recursive: true, force: true });
     });
 
-    /**
-     * Models the state a migration is in when it reaches a file: the run has
-     * already produced new text for some files, but nothing is persisted until
-     * the run ends, so the copies on disk are still the originals.
-     */
-    function midRunProject(files: { [name: string]: { onDisk: string; inRun?: string } }) {
-      const inRun = new Map<string, string>();
-      const versions = new Map<string, number>();
-      const fileOf = (name: string) => path.join(tmpDir, name);
-      Object.entries(files).forEach(([name, texts]) => {
-        fs.writeFileSync(fileOf(name), texts.onDisk);
-        inRun.set(fileOf(name), texts.inRun ?? texts.onDisk);
-      });
-
-      const compilerOptions: ts.CompilerOptions = {
-        strict: true,
-        target: ts.ScriptTarget.Latest,
-      };
-      const read = (name: string) => (inRun.has(name) ? inRun.get(name) : ts.sys.readFile(name));
-      const serviceHost: ts.LanguageServiceHost = {
-        getCompilationSettings: () => compilerOptions,
-        getScriptFileNames: () => Array.from(inRun.keys()),
-        getScriptVersion: (name) => String(versions.get(name) ?? 0),
-        getScriptSnapshot: (name) => {
-          const text = read(name);
-          return text !== undefined ? ts.ScriptSnapshot.fromString(text) : undefined;
-        },
-        getCurrentDirectory: () => tmpDir,
-        getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
-        fileExists: (name) => inRun.has(name) || ts.sys.fileExists(name),
-        readFile: read,
-      };
-      const languageService = ts.createLanguageService(serviceHost);
-
-      return {
-        // What the runner does with a plugin's result: the new text lives in
-        // the run and nothing reaches disk.
-        rewrite(name: string, text: string) {
-          inRun.set(fileOf(name), text);
-          versions.set(fileOf(name), (versions.get(fileOf(name)) ?? 0) + 1);
-        },
-        paramsFor(name: string): PluginParams<unknown> {
-          const sourceFile = languageService.getProgram()?.getSourceFile(fileOf(name));
-          if (!sourceFile) throw new Error(`Failed to create source file: ${name}`);
-          return {
-            options: {},
-            fileName: fileOf(name),
-            rootDir: tmpDir,
-            text: sourceFile.text,
-            sourceFile,
-            getLanguageService: () => languageService,
-          };
-        },
-      };
-    }
-
     it('keeps an annotation the dependency text the run will write agrees with', async () => {
-      const project = midRunProject({
+      const project = midRunProject(tmpDir, {
         'dep.ts': {
           onDisk: `export const sink = { write( s: number ) { return s; } };
 `,
@@ -643,7 +587,7 @@ export function forward( value: string ) {
     });
 
     it('recomputes an annotation the dependency text the run will write contradicts', async () => {
-      const project = midRunProject({
+      const project = midRunProject(tmpDir, {
         'dep.ts': {
           onDisk: `export function send( value: string | number ) { return value; }
 `,
@@ -681,7 +625,7 @@ export function ${name}( value ) {
   return value.toUpperCase();
 }
 `;
-      const project = midRunProject({
+      const project = midRunProject(tmpDir, {
         'dep.ts': { onDisk: `export const sink = { write( s: number ) { return s; } };\n` },
         'first.ts': { onDisk: consumer('first') },
         'second.ts': { onDisk: consumer('second') },

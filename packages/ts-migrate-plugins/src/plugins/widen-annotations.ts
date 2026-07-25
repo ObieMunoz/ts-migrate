@@ -103,6 +103,7 @@ const widenAnnotationsPlugin: Plugin<Options> = {
         source.text,
         getValidationOptions(program.getCompilerOptions()),
         candidates,
+        program,
       );
       if (accepted.length === 0) {
         return undefined;
@@ -383,8 +384,9 @@ function provenCandidates(
   text: string,
   compilerOptions: ts.CompilerOptions,
   candidates: Candidate[],
+  projectProgram: ts.Program,
 ): Candidate[] {
-  const baseline = createFileLanguageService(fileName, text, compilerOptions);
+  const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
   const baselineSyntacticCount = baseline.getSyntacticDiagnostics(fileName).length;
   let programsLeft = maxValidationPrograms;
 
@@ -396,6 +398,7 @@ function provenCandidates(
       fileName,
       applyTextChanges(text, changes),
       compilerOptions,
+      projectProgram,
     );
     if (candidate.getSyntacticDiagnostics(fileName).length !== baselineSyntacticCount) return false;
     if (findNewErrors(baseline, candidate, changes, fileName).length > 0) return false;

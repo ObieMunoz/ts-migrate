@@ -1,5 +1,8 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import ts from 'typescript';
-import { mockDiagnostic, mockPluginParams, realPluginParams } from '../test-utils';
+import { midRunProject, mockDiagnostic, mockPluginParams, realPluginParams } from '../test-utils';
 import declareMissingClassPropertiesPlugin from '../../src/plugins/declare-missing-class-properties';
 
 async function runReal(
@@ -400,6 +403,100 @@ class Box {
       const once = await runReal(text);
       expect(once).not.toBe(text);
       expect(await runReal(once as string)).toBe(once);
+    });
+  });
+
+  describe('mid-run dependencies', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ts-migrate-declare-')));
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('keeps a declaration the dependency text the run will write supports', async () => {
+      const project = midRunProject(tmpDir, {
+        'dep.ts': {
+          onDisk: `export const initial = 0;\n`,
+          inRun: `export const initial = '';\n`,
+        },
+        'main.ts': {
+          onDisk: `import { initial } from './dep';
+
+export class Label {
+  constructor() {
+    this.value = initial;
+  }
+
+  shout() {
+    return this.value.toUpperCase();
+  }
+}
+`,
+        },
+      });
+
+      expect(
+        await declareMissingClassPropertiesPlugin.run(
+          project.paramsFor('main.ts', { anyAlias: '$TSFixMe' }),
+        ),
+      ).toBe(`import { initial } from './dep';
+
+export class Label {
+  value;
+  constructor() {
+    this.value = initial;
+  }
+
+  shout() {
+    return this.value.toUpperCase();
+  }
+}
+`);
+    });
+
+    it('rejects a declaration the dependency text the run will write contradicts', async () => {
+      const project = midRunProject(tmpDir, {
+        'dep.ts': {
+          onDisk: `export const initial = '';\n`,
+          inRun: `export const initial = 0;\n`,
+        },
+        'main.ts': {
+          onDisk: `import { initial } from './dep';
+
+export class Label {
+  constructor() {
+    this.value = initial;
+  }
+
+  shout() {
+    return this.value.toUpperCase();
+  }
+}
+`,
+        },
+      });
+
+      expect(
+        await declareMissingClassPropertiesPlugin.run(
+          project.paramsFor('main.ts', { anyAlias: '$TSFixMe' }),
+        ),
+      ).toBe(`import { initial } from './dep';
+
+export class Label {
+  value: $TSFixMe;
+  constructor() {
+    this.value = initial;
+  }
+
+  shout() {
+    return this.value.toUpperCase();
+  }
+}
+`);
     });
   });
 });

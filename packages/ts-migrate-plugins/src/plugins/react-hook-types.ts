@@ -95,6 +95,7 @@ const reactHookTypesPlugin: Plugin<Options> = {
         source,
         getValidationOptions(program.getCompilerOptions()),
         candidates,
+        program,
       );
     } catch (e) {
       fileNoticeReporter(params, '[react-hook-types]')({
@@ -413,6 +414,7 @@ function provenCandidates(
   source: ts.SourceFile,
   compilerOptions: ts.CompilerOptions,
   candidates: Candidate[],
+  projectProgram: ts.Program,
 ): Set<Candidate> {
   const withEvidence = candidates.filter((candidate) => candidate.evidence !== undefined);
   if (withEvidence.length === 0) {
@@ -420,7 +422,7 @@ function provenCandidates(
   }
 
   const { text } = source;
-  const baseline = createFileLanguageService(fileName, text, compilerOptions);
+  const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
   let programsLeft = maxValidationPrograms;
 
   // The any alias is left out of the candidate text on purpose: it is declared
@@ -434,6 +436,7 @@ function provenCandidates(
       fileName,
       applyTextChanges(text, changes),
       compilerOptions,
+      projectProgram,
     );
     return findNewErrors(baseline, candidate, changes, fileName).length === 0;
   };

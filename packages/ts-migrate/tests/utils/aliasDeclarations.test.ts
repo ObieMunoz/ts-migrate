@@ -73,6 +73,39 @@ describe('ensureAliasDeclarations', () => {
     expect(fs.existsSync(generatedFile())).toBe(false);
   });
 
+  it('writes the alias a module declaration file only exports', () => {
+    fs.writeFileSync(path.resolve(rootDir, 'shared.d.ts'), 'export type $TSFixMe = any;\n');
+    const written = ensureAliasDeclarations({ rootDir, anyAlias: '$TSFixMe' });
+    expect(fs.readFileSync(written?.filePath as string, 'utf-8')).toContain('type $TSFixMe = any;');
+  });
+
+  it('omits an alias a module declaration file declares in a global block', () => {
+    fs.writeFileSync(
+      path.resolve(rootDir, 'shared.d.ts'),
+      'export const version: string;\n\ndeclare global {\n  type $TSFixMe = any;\n}\n',
+    );
+    expect(ensureAliasDeclarations({ rootDir, anyAlias: '$TSFixMe' })).toBeNull();
+    expect(fs.existsSync(generatedFile())).toBe(false);
+  });
+
+  it('does not treat the alias name in a comment or a string as a declaration', () => {
+    fs.writeFileSync(
+      path.resolve(rootDir, 'globals.d.ts'),
+      '// type $TSFixMe = any;\ndeclare const marker: "type $TSFixMe";\n',
+    );
+    const written = ensureAliasDeclarations({ rootDir, anyAlias: '$TSFixMe' });
+    expect(fs.readFileSync(written?.filePath as string, 'utf-8')).toContain('type $TSFixMe = any;');
+  });
+
+  it('does not treat an alias inside an ambient module as a global declaration', () => {
+    fs.writeFileSync(
+      path.resolve(rootDir, 'globals.d.ts'),
+      'declare module "shapes" {\n  type $TSFixMe = any;\n}\n',
+    );
+    const written = ensureAliasDeclarations({ rootDir, anyAlias: '$TSFixMe' });
+    expect(fs.readFileSync(written?.filePath as string, 'utf-8')).toContain('type $TSFixMe = any;');
+  });
+
   it('does not treat a declared $TSFixMeFunction as covering $TSFixMe', () => {
     fs.writeFileSync(
       path.resolve(rootDir, 'globals.d.ts'),

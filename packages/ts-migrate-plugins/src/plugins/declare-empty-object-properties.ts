@@ -122,6 +122,7 @@ const declareEmptyObjectPropertiesPlugin: Plugin<Options> = {
         source.text,
         getValidationOptions(program.getCompilerOptions()),
         candidates,
+        program,
       );
     } catch (e) {
       fileNoticeReporter(params, '[declare-empty-object-properties]')({
@@ -402,8 +403,9 @@ function validateCandidates(
   text: string,
   compilerOptions: ts.CompilerOptions,
   candidates: Candidate[],
+  projectProgram: ts.Program,
 ): Candidate[] {
-  const baseline = createFileLanguageService(fileName, text, compilerOptions);
+  const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
   let programsLeft = maxValidationPrograms;
 
   const isClean = (group: Candidate[]): boolean => {
@@ -414,6 +416,7 @@ function validateCandidates(
       fileName,
       applyTextChanges(text, changes),
       compilerOptions,
+      projectProgram,
     );
     return findNewErrors(baseline, candidate, changes, fileName).length === 0;
   };

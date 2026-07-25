@@ -184,7 +184,13 @@ function inferrableCandidates(
     return [];
   }
 
-  return validateCandidates(fileName, sourceFile, getValidationOptions(programOptions), candidates);
+  return validateCandidates(
+    fileName,
+    sourceFile,
+    getValidationOptions(programOptions),
+    candidates,
+    program,
+  );
 }
 
 /** What one program says about the group it was built for. */
@@ -210,9 +216,10 @@ function validateCandidates(
   sourceFile: ts.SourceFile,
   compilerOptions: ts.CompilerOptions,
   candidates: Candidate[],
+  projectProgram: ts.Program,
 ): Candidate[] {
   const { text } = sourceFile;
-  const baseline = createFileLanguageService(fileName, text, compilerOptions);
+  const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
   let programsLeft = maxValidationPrograms;
 
   // A candidate left out of a group stays undeclared, so the accesses that
@@ -227,6 +234,7 @@ function validateCandidates(
       fileName,
       applyTextChanges(text, changes),
       compilerOptions,
+      projectProgram,
     );
     return {
       newErrors: findNewErrors(baseline, candidate, changes, fileName),

@@ -13,39 +13,66 @@ interface EnsureAliasDeclarationsParams {
 
 const GENERATED_FILE = 'ts-migrate-aliases.d.ts';
 
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 /**
- * The texts of the declaration files the project's tsconfig includes, where a
+ * The declaration files the project's tsconfig includes, parsed, where a
  * pre-existing global alias declaration would live (e.g. Airbnb's shared
  * reactTypes.d.ts, pulled in through an extended config).
  */
-function declarationFileTexts(rootDir: string): string[] {
+function declarationSourceFiles(rootDir: string): ts.SourceFile[] {
   const configFile = path.join(rootDir, 'tsconfig.json');
   const { config, error } = ts.readConfigFile(configFile, ts.sys.readFile);
   if (error || !config) return [];
-  return ts
-    .parseJsonConfigFileContent(config, ts.sys, rootDir)
+  const sourceFiles: ts.SourceFile[] = [];
+  ts.parseJsonConfigFileContent(config, ts.sys, rootDir)
     .fileNames.filter(isDeclarationFile)
-    .map((fileName) => {
+    .forEach((fileName) => {
+      let text: string;
       try {
-        return fs.readFileSync(fileName, 'utf-8');
+        text = fs.readFileSync(fileName, 'utf-8');
       } catch {
-        return '';
+        return;
       }
+      sourceFiles.push(ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest));
     });
+  return sourceFiles;
+}
+
+function isGlobalBlock(node: ts.Node): node is ts.ModuleDeclaration {
+  return ts.isModuleDeclaration(node) && (node.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
+}
+
+/**
+ * Whether the file puts the alias in the global scope, which is where the
+ * migrated annotations look for it.
+ *
+ * A declaration file with a top-level import or export is a module, so its own
+ * declarations belong to the module and only a `declare global` block in it
+ * reaches the global scope. TypeScript's `isFileForcedToBeModuleByFormat`
+ * excludes declaration files, so the module-versus-script question for them is
+ * decided by content rather than by extension.
+ */
+function declaresGlobalAlias(sourceFile: ts.SourceFile, name: string): boolean {
+  const isAlias = (node: ts.Node) => ts.isTypeAliasDeclaration(node) && node.name.text === name;
+  if (!ts.isExternalModule(sourceFile) && sourceFile.statements.some(isAlias)) return true;
+  const inGlobalBlock = (node: ts.Node): boolean =>
+    isGlobalBlock(node)
+      ? node.body != null && ts.isModuleBlock(node.body) && node.body.statements.some(isAlias)
+      : (ts.forEachChild(node, inGlobalBlock) ?? false);
+  return ts.forEachChild(sourceFile, inGlobalBlock) ?? false;
 }
 
 /**
  * Writes an ambient declaration file for the requested aliases into rootDir,
  * where the tsconfig picks it up, so alias-annotated output compiles on
  * projects that don't declare the aliases themselves. Aliases some included
- * declaration file already declares are omitted (a second declaration would be
- * a duplicate identifier error), and an existing generated file is kept as is.
- * Returns the file written (with its contents, so a dry run can hold it in
- * memory instead), or null if nothing needed to be written.
+ * declaration file already declares globally are omitted (a second declaration
+ * would be a duplicate identifier error), and an existing generated file is
+ * kept as is. An alias a module exports rather than declares globally is
+ * generated anyway: the export satisfies nothing the migrated files write,
+ * since they name the alias without importing it, so the two end up as
+ * separate symbols that happen to share a name. Returns the file written (with
+ * its contents, so a dry run can hold it in memory instead), or null if
+ * nothing needed to be written.
  */
 export default function ensureAliasDeclarations({
   rootDir,
@@ -64,10 +91,9 @@ export default function ensureAliasDeclarations({
   const targetFile = path.join(rootDir, GENERATED_FILE);
   if (fs.existsSync(targetFile)) return null;
 
-  const declarationTexts = declarationFileTexts(rootDir);
+  const declarations = declarationSourceFiles(rootDir);
   const missing = aliases.filter(
-    ({ name }) =>
-      !declarationTexts.some((text) => new RegExp(`\\btype\\s+${escapeRegExp(name)}\\b`).test(text)),
+    ({ name }) => !declarations.some((sourceFile) => declaresGlobalAlias(sourceFile, name)),
   );
   if (missing.length === 0) return null;
 
