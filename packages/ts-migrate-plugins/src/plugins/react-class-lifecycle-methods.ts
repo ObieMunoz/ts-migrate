@@ -1,6 +1,7 @@
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import { getReactComponentHeritageType, isReactClassComponent } from './utils/react';
+import { isStatic } from './utils/modifiers';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { createValidate, Properties } from '../utils/validateOptions';
 
@@ -55,12 +56,6 @@ const reactLifecycleMethodAnnotations: { [method: string]: AnnotationKind[] } = 
   // static getDerivedStateFromProps?(nextProps: Readonly<P>, prevState: S): Partial<S> | null;
   getDerivedStateFromProps: [AnnotationKind.Props, AnnotationKind.State],
 };
-
-function isStatic(member: ts.MethodDeclaration) {
-  return (
-    member.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword) ?? false
-  );
-}
 
 // Static members cannot reference class type parameters (TS2302).
 function referencesTypeParameter(type: ts.TypeNode, typeParameterNames: Set<string>) {
