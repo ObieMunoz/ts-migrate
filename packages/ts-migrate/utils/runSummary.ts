@@ -13,7 +13,7 @@ import { FileDebt, scanTypeDebtForFiles } from './typeDebt';
  * slashes; lists are sorted so identical runs produce identical files.
  */
 interface RunSummaryBase {
-  command: 'rename' | 'migrate' | 'reignore';
+  command: 'rename' | 'migrate' | 'reignore' | 'full';
   tsMigrateVersion: string;
   rootDir: string;
   exitCode: number;
@@ -92,7 +92,36 @@ export interface MigrateRunSummary extends RunSummaryBase {
   skippedBootstrapFiles: Array<{ file: string; reason: string }>;
 }
 
-export type RunSummary = RenameRunSummary | MigrateRunSummary;
+export interface FullRunStep {
+  name: 'init' | 'rename' | 'migrate' | 'check';
+  /**
+   * `skipped` is a step the run decided it did not need (a tsconfig that
+   * already exists, a dry run that cannot reach the migration);
+   * `not-reached` is one an earlier failure stopped it from starting.
+   */
+  status: 'ok' | 'failed' | 'skipped' | 'not-reached';
+  /** The step's own exit code, or null where it never ran. */
+  exitCode: number | null;
+  /** The commit this step's writes went into, or null under --no-commit. */
+  commit: string | null;
+}
+
+/**
+ * The whole pipeline as one run. The per-step summaries are the ones the
+ * individual commands write, nested rather than restated, so a caller reads
+ * `rename` and `migrate` here exactly as it would read their own --jsonSummary
+ * files. The shell script this replaces could only overwrite one with the other.
+ */
+export interface FullRunSummary extends RunSummaryBase {
+  command: 'full';
+  steps: FullRunStep[];
+  /** The mechanical rewrite commits this run created, in the order it made them. */
+  commits: Array<{ sha: string; subject: string }>;
+  rename: RenameRunSummary | null;
+  migrate: MigrateRunSummary | null;
+}
+
+export type RunSummary = RenameRunSummary | MigrateRunSummary | FullRunSummary;
 
 function relativeTo(rootDir: string, fileName: string): string {
   return path.relative(rootDir, fileName).split(path.sep).join('/');

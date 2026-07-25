@@ -8,51 +8,39 @@ import typeScriptDecision from './utils/useProjectTypeScript';
 
 import fs from 'fs';
 import path from 'path';
-import ts from 'typescript';
+import readline from 'readline';
 import log from 'updatable-log';
-import yargs from 'yargs';
+import yargs, { Argv } from 'yargs';
 
-import {
-  formatGlobalDeclarationsReport,
-  formatSuppressionReport,
-  formatSuppressionSummary,
-  formatTypesPackagePreflight,
-  formatTypesPackageReport,
-  GlobalDeclarationsCollector,
-  preflightTypesPackages,
-  SuppressionExplainer,
-  TypesPackageDetector,
-} from '@obiemunoz/ts-migrate-plugins';
-import { errorMessage, migrate, MigrateConfig, MigrateResult } from '@obiemunoz/ts-migrate-server';
+import { errorMessage } from '@obiemunoz/ts-migrate-server';
 import check from './commands/check';
+import full, { Prompter } from './commands/full';
 import init from './commands/init';
-import buildMigrateConfig, { availablePlugins } from './commands/migrate';
+import { availablePlugins, BuildMigrateConfigParams } from './commands/migrate';
 import reignore from './commands/reignore';
 import rename from './commands/rename';
 import report from './commands/report';
+import runMigrate from './commands/runMigrate';
 import readAgentsPlaybook from './utils/agentsPlaybook';
-import ensureAliasDeclarations from './utils/aliasDeclarations';
-import { combineFileFilters, createBootstrapMigrationFilter } from './utils/bootstrapFiles';
-import { createGitignoreMigrationFilter } from './utils/gitignore';
-import formatFollowUpReport from './utils/followUpReport';
 import packageVersion from './utils/packageVersion';
-import { describeTypeScript, typeScriptWarning } from './utils/resolveTypeScript';
 import {
-  canKeepGeneratedDeclarations,
-  ensureIncludedByTsConfig,
-} from './utils/tsConfigIncludes';
+  logRunFailure,
+  logTypeScriptDecision,
+  logTypeScriptWarning,
+  printDryRunSummary,
+  printFollowUpReport,
+  printGeneratedFiles,
+  printSuppressionReport,
+  printTypeDebtSummary,
+  printTypesPackagePreflight,
+  typesPackageReport,
+} from './utils/runReports';
+import { canKeepGeneratedDeclarations } from './utils/tsConfigIncludes';
 import {
   buildMigrateRunSummary,
   buildRenameRunSummary,
   writeRunSummary,
 } from './utils/runSummary';
-import {
-  FileDebt,
-  formatFileDebtCounts,
-  formatTypeDebtSummary,
-  scanTypeDebt,
-  scanTypeDebtForFiles,
-} from './utils/typeDebt';
 
 const BUG_REPORT_URL = 'https://github.com/ObieMunoz/ts-migrate/issues';
 
@@ -120,410 +108,15 @@ function resolveRootDir(folder: string): string {
   return rootDir;
 }
 
-/**
- * Printed twice: with the banner, and again on the last screen. The banner is
- * in the first three lines of a run that can take many minutes, so by the time
- * the suppressions this qualifies exist it has long scrolled away.
- */
-function logTypeScriptWarning(): void {
-  const warning = typeScriptWarning(typeScriptDecision());
-  if (warning) log.warn(warning);
-}
 
 /**
- * Which compiler this run reasoned with, reported from the loaded instance so
- * the banner is what happened rather than what was asked for.
+ * The flags the migration pipeline takes. `migrate` runs the pipeline directly
+ * and `full` runs it as one of four steps, so both declare this set; generic
+ * over the argument type so each keeps the arguments yargs infers for it.
  */
-function logTypeScriptDecision(): void {
-  const decision = typeScriptDecision();
-  log.info(describeTypeScript(decision, ts.version));
-  if (ts.version !== decision.version) {
-    log.warn(
-      `Loaded TypeScript ${ts.version}, not the ${decision.version} at ` +
-        `${decision.packageDir}: something else in this process resolves the compiler first.`,
-    );
-  }
-  logTypeScriptWarning();
-}
-
-/**
- * Whether the project's tsconfig pins a `types` array, which decides whether a
- * newly installed @types package also needs an entry there to be loaded. Parsed
- * with a host that enumerates nothing: only the compiler options are read.
- */
-function tsConfigPinsTypes(rootDir: string): boolean {
-  const { config, error } = ts.readConfigFile(path.join(rootDir, 'tsconfig.json'), ts.sys.readFile);
-  if (error || !config) return false;
-  const host: ts.ParseConfigHost = {
-    useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
-    readDirectory: () => [],
-    fileExists: ts.sys.fileExists,
-    readFile: ts.sys.readFile,
-  };
-  return ts.parseJsonConfigFileContent(config, host, rootDir).options.types !== undefined;
-}
-
-/**
- * What package.json and the install layout alone say about missing type
- * packages, printed with the banner so it is read before the pipeline turns the
- * errors those packages would resolve into suppressions. It claims no counts,
- * so it cannot contradict the end of run report. Advice, and so it must never
- * fail an otherwise successful run.
- */
-function printTypesPackagePreflight(rootDir: string): void {
-  try {
-    const preflightText = formatTypesPackagePreflight(
-      preflightTypesPackages(rootDir),
-      tsConfigPinsTypes(rootDir),
-    );
-    if (preflightText) log.warn(preflightText);
-  } catch (err) {
-    log.warn('Skipped the type package preflight:', err);
-  }
-}
-
-/** A recommendation report must never fail an otherwise successful run. */
-function printTypesPackageReport(
-  detector: TypesPackageDetector,
-  rootDir: string,
-  folder: string,
-  reportFile?: string,
-): void {
-  try {
-    const reportText = formatTypesPackageReport(detector.summarize(rootDir), folder);
-    if (!reportText) return;
-    if (reportFile) {
-      fs.writeFileSync(reportFile, `${reportText}\n`);
-    } else {
-      log.info(reportText);
-    }
-  } catch (err) {
-    log.warn(`Skipped type definition recommendations: ${errorMessage(err)}`);
-  }
-}
-
-/**
- * The evidence the compiler had for every diagnostic ts-ignore suppressed. Only
- * the grouped counts reach the log; the per-site detail goes to reportFile,
- * since stdout is the progress log. Must never fail an otherwise successful run.
- */
-function printSuppressionReport(
-  explainer: SuppressionExplainer,
-  rootDir: string,
-  reportFile?: string,
-): void {
-  try {
-    const report = explainer.summarize(rootDir);
-    if (reportFile) {
-      fs.writeFileSync(reportFile, `${formatSuppressionReport(report)}\n`);
-    }
-    const summary = formatSuppressionSummary(report, reportFile);
-    if (summary) log.info(summary);
-  } catch (err) {
-    log.warn(`Skipped the suppression report: ${errorMessage(err)}`);
-  }
-}
-
-/**
- * What the run declared on `window` and `globalThis`, and what it found but
- * could not declare. Printed rather than written to a file: it is one line per
- * global, and each one names an edit worth making now. Must never fail an
- * otherwise successful run.
- */
-function printGlobalDeclarationsReport(globalDeclarations: GlobalDeclarationsCollector): void {
-  try {
-    const reportText = formatGlobalDeclarationsReport(globalDeclarations.summarize());
-    if (reportText) log.info(reportText);
-  } catch (err) {
-    log.warn(`Skipped the global declarations report: ${errorMessage(err)}`);
-  }
-}
-
-/**
- * Names the declaration files the run generated and keeps them in the project's
- * file set. A generated file the tsconfig does not match is in effect for the
- * migration and nothing after it, so the errors it resolved come back on the
- * next `tsc` run — starting with the one ts-migrate-full runs to close out.
- */
-function printGeneratedFiles(
-  rootDir: string,
-  generatedFiles: ReadonlyMap<string, string>,
-  dryRun: boolean,
-): void {
-  generatedFiles.forEach((_text, filePath) => {
-    const displayPath = path.relative(rootDir, filePath) || filePath;
-    log.info(
-      dryRun
-        ? `Dry run: would write the generated declarations to ${displayPath}.`
-        : `Wrote the generated declarations to ${displayPath}.`,
-    );
-    reportGeneratedFileInclusion(rootDir, filePath, displayPath, dryRun);
-  });
-}
-
-function reportGeneratedFileInclusion(
-  rootDir: string,
-  filePath: string,
-  displayPath: string,
-  dryRun: boolean,
-): void {
-  let repair;
-  try {
-    repair = ensureIncludedByTsConfig(rootDir, filePath, { dryRun });
-  } catch (err) {
-    log.warn(
-      'Skipped checking whether tsconfig.json includes the generated declarations: ' +
-        errorMessage(err),
-    );
-    return;
-  }
-
-  switch (repair.kind) {
-    case 'included':
-      break;
-    case 'added':
-      log.info(
-        `tsconfig.json did not match ${displayPath}, so "${repair.entry}" was added to its ` +
-          `"${repair.key}". Without it the declarations would have applied to this run only.`,
-      );
-      break;
-    case 'would-add':
-      log.info(
-        `Dry run: tsconfig.json does not match ${displayPath}; a real run would add ` +
-          `"${repair.entry}" to its "${repair.key}".`,
-      );
-      break;
-    case 'failed':
-      log.error(
-        `tsconfig.json does not match ${displayPath} and ${repair.reason}, so the declarations ` +
-          `applied to this run only: every error they resolved comes back on the next \`tsc\` ` +
-          `run. Add "${repair.entry}" to "files" in ${repair.configFile} by hand.`,
-      );
-      break;
-    default:
-      break;
-  }
-}
-
-/**
- * What the run left for a person to do. Printed at the end because that is the
- * only point the whole list is known and the only part of a long run's output
- * anyone reliably reads. Must never fail an otherwise successful run.
- */
-function printFollowUpReport(pluginNotices: MigrateResult['pluginNotices']): void {
-  try {
-    const reportText = formatFollowUpReport(pluginNotices);
-    if (reportText) log.warn(reportText);
-  } catch (err) {
-    log.warn(`Skipped the follow-up report: ${errorMessage(err)}`);
-  }
-}
-
-/**
- * The last line of a failing run. Both causes were logged where they happened,
- * which on a large project is hours and thousands of lines above, and the
- * closing sequence is otherwise identical to a successful run's.
- */
-function logRunFailure(
-  pluginErrors: MigrateResult['pluginErrors'],
-  migratedFilesWithSyntaxErrors: string[],
-): void {
-  const causes = [];
-  if (pluginErrors.length > 0) {
-    causes.push(`${pluginErrors.length} file(s) errored in plugins`);
-  }
-  if (migratedFilesWithSyntaxErrors.length > 0) {
-    causes.push(`${migratedFilesWithSyntaxErrors.length} file(s) still have syntax errors`);
-  }
-  log.error(
-    causes.length > 0
-      ? `Migration failed: ${causes.join(', ')}. See the errors above.`
-      : 'Migration failed. See the errors above.',
-  );
-}
-
-/**
- * Names an empty migration set in terms of the signal that produced it, and
- * attaches the tsconfig's own diagnostics. Nothing here scans the disk to
- * narrow the cause further: a confident wrong guess costs more than a plain
- * count with the diagnostic attached.
- */
-function describeEmptyMigrationSet(
-  { reason, diagnostics }: NonNullable<MigrateResult['emptyMigrationSet']>,
-  folder: string,
-): string {
-  const lines = [`No files to migrate in ${folder}.`];
-  switch (reason) {
-    case 'tsconfig-matched-nothing':
-      lines.push(
-        `tsconfig.json matched no input files. If ${folder} is still JavaScript, run ` +
-          `ts-migrate rename ${folder} first.`,
-      );
-      break;
-    case 'only-javascript-files':
-      lines.push(
-        `Every file matched is JavaScript, which migrate never edits. Run ` +
-          `ts-migrate rename ${folder} first.`,
-      );
-      break;
-    case 'sources-matched-nothing':
-      lines.push(`--sources matched no file under ${folder}.`);
-      break;
-    case 'only-declaration-files':
-      lines.push('Only declaration files were matched, and they hold nothing to migrate.');
-      break;
-    case 'all-files-filtered':
-      lines.push(
-        'Every candidate file was skipped as gitignored or as a build system file. ' +
-          'Pass --no-gitignore or --no-bootstrap to include them.',
-      );
-      break;
-    default:
-      lines.push('Nothing the program includes is a file this command can edit.');
-  }
-  return [...lines, ...diagnostics].join('\n');
-}
-
-/** The end-of-run debt summary must never fail an otherwise successful run. */
-function printTypeDebtSummary(rootDir: string, folder: string, gitignore?: boolean): void {
-  try {
-    log.info(formatTypeDebtSummary(scanTypeDebt(rootDir, gitignore), folder));
-  } catch (err) {
-    log.warn(`Skipped type debt summary: ${errorMessage(err)}`);
-  }
-}
-
-/**
- * A dry run's replacement for the debt summary: every file a real run would
- * have updated, with the suppression and any counts it would then contain.
- * Reads the would-be contents, never the disk.
- */
-function printDryRunSummary(
-  rootDir: string,
-  folder: string,
-  updatedSourceFiles: ReadonlySet<string>,
-  fileContents: ReadonlyMap<string, string>,
-): void {
-  if (updatedSourceFiles.size === 0) {
-    log.info(`Dry run: no files would be updated in ${folder}.`);
-    return;
-  }
-
-  let debtByFile: Record<string, FileDebt> = {};
-  try {
-    debtByFile = scanTypeDebtForFiles(rootDir, [...updatedSourceFiles], fileContents).files;
-  } catch (err) {
-    log.warn(`Skipped the suppression counts of the dry run summary: ${errorMessage(err)}`);
-  }
-
-  const lines = [
-    `Dry run: ${updatedSourceFiles.size} file(s) would be updated in ${folder} ` +
-      `(nothing was written):`,
-  ];
-  [...updatedSourceFiles]
-    .map((fileName) => path.relative(rootDir, fileName).split(path.sep).join('/'))
-    .sort()
-    .forEach((file) => {
-      const debt = debtByFile[file];
-      lines.push(debt ? `  ${file} (${formatFileDebtCounts(debt)})` : `  ${file}`);
-    });
-  lines.push('For full diffs, run without --dry-run on a clean git tree and use git diff.');
-  log.info(lines.join('\n'));
-}
-
-const version = packageVersion();
-
-// eslint-disable-next-line @typescript-eslint/no-unused-expressions
-yargs
-  .scriptName('ts-migrate')
-  .version(version)
-  .usage(`ts-migrate v${version}\n\nUsage: $0 <command> [options]`)
-  .command(
-    'init <folder>',
-    'Initialize tsconfig.json file in <folder>',
-    (cmd) => cmd.positional('folder', { type: 'string' }).require(['folder']),
-    (args) => {
-      const rootDir = resolveRootDir(args.folder);
-      init({ rootDir, isExtendedConfig: false });
-    },
-  )
-  .command(
-    'init:extended <folder>',
-    'Initialize tsconfig.json in <folder> extending a shared base config',
-    (cmd) => cmd.positional('folder', { type: 'string' }).require(['folder']),
-    (args) => {
-      const rootDir = resolveRootDir(args.folder);
-      init({ rootDir, isExtendedConfig: true });
-    },
-  )
-  .command(
-    'rename <folder>',
-    'Rename files in folder from JS/JSX to TS/TSX',
-    (cmd) =>
-      cmd
-        .positional('folder', { type: 'string' })
-        .string('sources')
-        .alias('sources', 's')
-        .describe('sources', 'Path to a subset of your project to rename.')
-        .boolean('gitignore')
-        .default('gitignore', true)
-        .describe('gitignore', 'Skip gitignored files. Disable with --no-gitignore.')
-        .boolean('bootstrap')
-        .default('bootstrap', true)
-        .describe(
-          'bootstrap',
-          'Keep build system files (configs and node-run scripts) as JavaScript so the build still boots. Disable with --no-bootstrap.',
-        )
-        .boolean('dry-run')
-        .default('dry-run', false)
-        .describe('dry-run', 'Print the rename mapping without renaming any file.')
-        .string('jsonSummary')
-        .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
-        .example('$0 rename /frontend/foo', 'Rename all the files in /frontend/foo')
-        .example(
-          '$0 rename /frontend/foo -s "bar/**/*"',
-          'Rename all the files in /frontend/foo/bar',
-        )
-        .require(['folder']),
-    (args) => {
-      const rootDir = resolveRootDir(args.folder);
-      const { sources } = args;
-      const dryRun = args['dry-run'];
-      const result = rename({
-        rootDir,
-        sources,
-        gitignore: args.gitignore,
-        bootstrap: args.bootstrap,
-        dryRun,
-      });
-      if (result === null) {
-        process.exit(-1);
-      }
-      if (args.jsonSummary) {
-        const exitCode = writeRunSummary(
-          args.jsonSummary,
-          buildRenameRunSummary({
-            rootDir,
-            exitCode: 0,
-            dryRun,
-            renamedFiles: result.renamedFiles,
-            skippedGitignoredFiles: result.skippedGitignoredFiles,
-            skippedBootstrapFiles: result.skippedBootstrapFiles,
-            packageJsonRewrites: result.packageJsonRewrites,
-            packageJsonNotices: result.packageJsonNotices,
-          }),
-        );
-        if (exitCode !== 0) process.exit(exitCode);
-      }
-    },
-  )
-  .command(
-    'migrate <folder>',
-    'Fix TypeScript errors, using codemods',
-    (cmd) =>
-      cmd
-        .positional('folder', { type: 'string' })
-        .choices('defaultAccessibility', ['private', 'protected', 'public'] as const)
+function migrationFlags<T>(cmd: Argv<T>) {
+  return cmd
+    .choices('defaultAccessibility', ['private', 'protected', 'public'] as const)
         .describe(
           'defaultAccessibility',
           'Give every class member that declares no accessibility modifier this one. Members matched by one of the regex flags below take that modifier instead.',
@@ -650,15 +243,287 @@ yargs
         .boolean('typesPreflight')
         .default('typesPreflight', true)
         .describe('typesPreflight', TYPES_PREFLIGHT_FLAG_DESCRIPTION)
-        .string('typesReportFile')
-        .describe(
-          'typesReportFile',
-          'Write the type definition recommendations to this file instead of printing them. Used by ts-migrate-full to show the report at the end of the run.',
-        )
         .string('suppressionReportFile')
         .describe(
           'suppressionReportFile',
           'Write what the compiler knew about every suppressed diagnostic to this file: the full message and its chain, the related information, and the resolved signatures and types. The comment keeps the code and 50 characters of the message, and nothing can recover the rest afterwards.',
+        );
+}
+
+/**
+ * The flags the pipeline reads through its plugin options, as the shape
+ * `buildMigrateConfig` takes. Read off the parsed arguments in one place so
+ * `migrate` and `full` cannot pass different subsets of the same flags.
+ */
+interface PipelineArgs {
+  plugin?: string | string[];
+  'exclude-plugin'?: string | string[];
+  aliases?: 'tsfixme';
+  typeMap?: string;
+  annotateReturns?: boolean;
+  useDefaultPropsHelper?: boolean;
+  modernizeDefaultProps?: boolean;
+  defaultAccessibility?: 'private' | 'protected' | 'public';
+  privateRegex?: string;
+  protectedRegex?: string;
+  publicRegex?: string;
+  inferTypes?: boolean;
+  jsdoc?: boolean;
+  projectEslint?: boolean;
+  declareUntypedModules?: boolean;
+  declareGlobals?: boolean;
+}
+
+function pluginParams(args: PipelineArgs): BuildMigrateConfigParams {
+  return {
+    plugin: args.plugin,
+    excludePlugins: ([] as string[]).concat(args['exclude-plugin'] ?? []),
+    aliases: args.aliases,
+    typeMap: args.typeMap,
+    annotateReturns: args.annotateReturns,
+    useDefaultPropsHelper: args.useDefaultPropsHelper,
+    modernizeDefaultProps: args.modernizeDefaultProps,
+    defaultAccessibility: args.defaultAccessibility,
+    privateRegex: args.privateRegex,
+    protectedRegex: args.protectedRegex,
+    publicRegex: args.publicRegex,
+    inferTypes: args.inferTypes,
+    jsdoc: args.jsdoc,
+    projectEslint: args.projectEslint,
+    declareUntypedModules: args.declareUntypedModules,
+    declareGlobals: args.declareGlobals,
+  };
+}
+
+/**
+ * The terminal answering the `full` pipeline's questions.
+ *
+ * Every line is queued as it arrives rather than read through `rl.question`.
+ * Piped answers reach the process in one chunk, and readline hands a chunk to
+ * whatever question is pending at that instant and emits the rest as `line`
+ * events with nowhere to go, so a question asked after the first `await` would
+ * find its answer already read and discarded.
+ *
+ * The prompt goes to stderr, where a shell's own `read -p` puts it, so it stays
+ * out of a redirected transcript.
+ */
+function createPrompter(): Prompter {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stderr,
+    // Off a terminal there is nothing to echo, and readline's line editing
+    // would rewrite the prompt this writes itself.
+    terminal: process.stdin.isTTY === true,
+  });
+  const answers: string[] = [];
+  let waiting: ((answer: string | null) => void) | undefined;
+  let closed = false;
+
+  const deliver = (answer: string | null) => {
+    const resolve = waiting;
+    waiting = undefined;
+    resolve?.(answer);
+  };
+  rl.on('line', (line) => (waiting ? deliver(line) : answers.push(line)));
+  rl.on('close', () => {
+    closed = true;
+    deliver(null);
+  });
+
+  return {
+    ask: (question) =>
+      new Promise((resolve) => {
+        process.stderr.write(question);
+        if (answers.length > 0) resolve(answers.shift() as string);
+        else if (closed) resolve(null);
+        else waiting = resolve;
+      }),
+    close: () => {
+      rl.close();
+      // readline leaves stdin flowing, which would hold the process open long
+      // after the last question is answered.
+      process.stdin.pause();
+    },
+  };
+}
+
+const version = packageVersion();
+
+// eslint-disable-next-line @typescript-eslint/no-unused-expressions
+yargs
+  .scriptName('ts-migrate')
+  .version(version)
+  .usage(`ts-migrate v${version}\n\nUsage: $0 <command> [options]`)
+  .command(
+    'init <folder>',
+    'Initialize tsconfig.json file in <folder>',
+    (cmd) => cmd.positional('folder', { type: 'string' }).require(['folder']),
+    (args) => {
+      const rootDir = resolveRootDir(args.folder);
+      init({ rootDir, isExtendedConfig: false });
+    },
+  )
+  .command(
+    'init:extended <folder>',
+    'Initialize tsconfig.json in <folder> extending a shared base config',
+    (cmd) => cmd.positional('folder', { type: 'string' }).require(['folder']),
+    (args) => {
+      const rootDir = resolveRootDir(args.folder);
+      init({ rootDir, isExtendedConfig: true });
+    },
+  )
+  .command(
+    'rename <folder>',
+    'Rename files in folder from JS/JSX to TS/TSX',
+    (cmd) =>
+      cmd
+        .positional('folder', { type: 'string' })
+        .string('sources')
+        .alias('sources', 's')
+        .describe('sources', 'Path to a subset of your project to rename.')
+        .boolean('gitignore')
+        .default('gitignore', true)
+        .describe('gitignore', 'Skip gitignored files. Disable with --no-gitignore.')
+        .boolean('bootstrap')
+        .default('bootstrap', true)
+        .describe(
+          'bootstrap',
+          'Keep build system files (configs and node-run scripts) as JavaScript so the build still boots. Disable with --no-bootstrap.',
+        )
+        .boolean('dry-run')
+        .default('dry-run', false)
+        .describe('dry-run', 'Print the rename mapping without renaming any file.')
+        .string('jsonSummary')
+        .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
+        .example('$0 rename /frontend/foo', 'Rename all the files in /frontend/foo')
+        .example(
+          '$0 rename /frontend/foo -s "bar/**/*"',
+          'Rename all the files in /frontend/foo/bar',
+        )
+        .require(['folder']),
+    (args) => {
+      const rootDir = resolveRootDir(args.folder);
+      const { sources } = args;
+      const dryRun = args['dry-run'];
+      const result = rename({
+        rootDir,
+        sources,
+        gitignore: args.gitignore,
+        bootstrap: args.bootstrap,
+        dryRun,
+      });
+      if (result === null) {
+        process.exit(-1);
+      }
+      if (args.jsonSummary) {
+        const exitCode = writeRunSummary(
+          args.jsonSummary,
+          buildRenameRunSummary({
+            rootDir,
+            exitCode: 0,
+            dryRun,
+            renamedFiles: result.renamedFiles,
+            skippedGitignoredFiles: result.skippedGitignoredFiles,
+            skippedBootstrapFiles: result.skippedBootstrapFiles,
+            packageJsonRewrites: result.packageJsonRewrites,
+            packageJsonNotices: result.packageJsonNotices,
+          }),
+        );
+        if (exitCode !== 0) process.exit(exitCode);
+      }
+    },
+  )
+  .command(
+    'full <folder>',
+    'Run the whole pipeline: init, rename, migrate, then verify with tsc --noEmit',
+    (cmd) =>
+      migrationFlags(cmd.positional('folder', { type: 'string' }))
+        .boolean('yes')
+        .alias('yes', 'y')
+        .default('yes', false)
+        .describe('yes', 'Accept the prompts without asking. Required for an unattended run.')
+        .boolean('commit')
+        .default('commit', true)
+        .describe(
+          'commit',
+          'Commit after each step that wrote something. Disable with --no-commit to leave every change in the working tree.',
+        )
+        .boolean('blame-ignore-revs')
+        .default('blame-ignore-revs', false)
+        .describe(
+          'blame-ignore-revs',
+          'Append the SHAs of this run\'s commits to .git-blame-ignore-revs at the repository root. Only useful on merge-commit workflows; with squash or rebase merges those SHAs never reach the main branch.',
+        )
+        .boolean('dry-run')
+        .default('dry-run', false)
+        .describe(
+          'dry-run',
+          'Preview the steps that can run without writes and stop before the migration, which reads the files the rename would have written. Nothing is written and nothing is committed.',
+        )
+        .string('typesReportFile')
+        .describe(
+          'typesReportFile',
+          'Also write the type definition recommendations to this file. They are printed at the end of the run either way, which is what this command holds them back for.',
+        )
+        .string('jsonSummary')
+        .describe(
+          'jsonSummary',
+          'Write a machine-readable JSON summary of the whole run to this file: every step with its status and commit, plus the rename and migrate summaries.',
+        )
+        .example('$0 full /frontend/foo', 'Migrate /frontend/foo end to end, committing each step')
+        .example(
+          '$0 full /frontend/foo --yes --no-commit',
+          'The same run unattended, leaving every change in the working tree',
+        )
+        .require(['folder']),
+    async (args) => {
+      const rootDir = resolveRootDir(args.folder);
+      const { exitCode, summary } = await full({
+        rootDir,
+        folder: args.folder,
+        typeScript: typeScriptDecision(),
+        typeScriptOverride: args.typescript,
+        yes: args.yes,
+        commit: args.commit,
+        blameIgnoreRevs: args['blame-ignore-revs'],
+        dryRun: args['dry-run'],
+        jsonSummary: args.jsonSummary,
+        renameOptions: {
+          sources: args.sources,
+          gitignore: args.gitignore,
+          bootstrap: args.bootstrap,
+        },
+        migrateOptions: {
+          plugins: pluginParams(args),
+          sources: args.sources,
+          ambientSources: args.ambientSources,
+          gitignore: args.gitignore,
+          bootstrap: args.bootstrap,
+          maxStablePasses: args.maxStablePasses,
+          incrementalPasses: args.incrementalPasses,
+          typesPreflight: args.typesPreflight,
+          typesReportFile: args.typesReportFile,
+          suppressionReportFile: args.suppressionReportFile,
+          collectSummary: true,
+        },
+        prompter: args.yes ? undefined : createPrompter(),
+      });
+      // Not process.exit: this command prints four steps' worth of reports, and
+      // exiting drops whatever of that is still queued on a pipe.
+      process.exitCode = args.jsonSummary
+        ? writeRunSummary(args.jsonSummary, summary)
+        : exitCode;
+    },
+  )
+  .command(
+    'migrate <folder>',
+    'Fix TypeScript errors, using codemods',
+    (cmd) =>
+      migrationFlags(cmd.positional('folder', { type: 'string' }))
+        .string('typesReportFile')
+        .describe(
+          'typesReportFile',
+          'Write the type definition recommendations to this file instead of printing them.',
         )
         .boolean('dry-run')
         .default('dry-run', false)
@@ -684,176 +549,24 @@ yargs
         .require(['folder']),
     async (args) => {
       const rootDir = resolveRootDir(args.folder);
-      const { sources } = args;
-      const dryRun = args['dry-run'];
-      logTypeScriptDecision();
-      if (args.typesPreflight) printTypesPackagePreflight(rootDir);
-
-      // Declaring a global or an untyped module beats casting at every site
-      // only if the generated file survives the run, which takes a tsconfig
-      // this can read and edit. Without one, casting is what still compiles.
-      const keepsDeclarations = canKeepGeneratedDeclarations(rootDir);
-      if (!keepsDeclarations && (args.declareGlobals || args.declareUntypedModules)) {
-        log.warn(
-          `No readable tsconfig.json in ${rootDir}, so a generated declaration file could not ` +
-            'be kept in the project. Casting at each site instead.',
-        );
-      }
-
-      let config: MigrateConfig;
-      let typesPackageDetector: TypesPackageDetector | undefined;
-      let suppressionExplainer: SuppressionExplainer | undefined;
-      let globalDeclarations: GlobalDeclarationsCollector | undefined;
-      let aliasDeclarations: { filePath: string; text: string } | null = null;
-      try {
-        const built = buildMigrateConfig({
-          plugin: args.plugin,
-          excludePlugins: ([] as string[]).concat(args['exclude-plugin'] ?? []),
-          aliases: args.aliases,
-          typeMap: args.typeMap,
-          annotateReturns: args.annotateReturns,
-          useDefaultPropsHelper: args.useDefaultPropsHelper,
-          modernizeDefaultProps: args.modernizeDefaultProps,
-          defaultAccessibility: args.defaultAccessibility,
-          privateRegex: args.privateRegex,
-          protectedRegex: args.protectedRegex,
-          publicRegex: args.publicRegex,
-          inferTypes: args.inferTypes,
-          jsdoc: args.jsdoc,
-          projectEslint: args.projectEslint,
-          declareUntypedModules: args.declareUntypedModules && keepsDeclarations,
-          declareGlobals: args.declareGlobals && keepsDeclarations,
-        });
-        config = built.config;
-        typesPackageDetector = built.typesPackageDetector;
-        suppressionExplainer = built.suppressionExplainer;
-        globalDeclarations = built.globalDeclarations;
-        // Written before the program is created so the aliases resolve during
-        // the run; otherwise ts-ignore would suppress every annotation added.
-        // A dry run keeps the file in memory and feeds it to the program as a
-        // virtual source instead, for the same effect without the write.
-        aliasDeclarations = ensureAliasDeclarations({
-          rootDir,
-          anyAlias: built.anyAlias,
-          anyFunctionAlias: built.anyFunctionAlias,
-          dryRun,
-        });
-        if (aliasDeclarations) {
-          const aliasPath =
-            path.relative(rootDir, aliasDeclarations.filePath) || aliasDeclarations.filePath;
-          log.info(
-            dryRun
-              ? `Dry run: would create ${aliasPath} declaring the global aliases.`
-              : `Created ${aliasPath} declaring the global aliases.`,
-          );
-          // Same requirement as the generated declarations below: a tsconfig
-          // that does not match the file leaves every annotation naming an
-          // alias unresolved on the next `tsc` run.
-          reportGeneratedFileInclusion(rootDir, aliasDeclarations.filePath, aliasPath, dryRun);
-        }
-      } catch (err) {
-        log.error(errorMessage(err));
-        process.exit(1);
-        return;
-      }
-
-      const gitignoreFilter = args.gitignore
-        ? createGitignoreMigrationFilter(rootDir)
-        : undefined;
-      const bootstrapFilter = args.bootstrap
-        ? createBootstrapMigrationFilter(rootDir)
-        : undefined;
-      const {
-        exitCode,
-        filesToMigrate,
-        emptyMigrationSet,
-        updatedSourceFiles,
-        updatedFileTexts,
-        migratedFilesWithSyntaxErrors,
-        nonMigratedFilesWithSyntaxErrors,
-        pluginStats,
-        pluginFailures,
-        pluginNotices,
-        pluginErrors,
-        generatedFiles,
-      } = await migrate({
+      const { exitCode } = await runMigrate({
         rootDir,
-        config,
-        sources,
+        folder: args.folder,
+        typeScript: typeScriptDecision(),
+        plugins: pluginParams(args),
+        sources: args.sources,
         ambientSources: args.ambientSources,
-        filterMigrationFiles: combineFileFilters([gitignoreFilter, bootstrapFilter]),
+        gitignore: args.gitignore,
+        bootstrap: args.bootstrap,
         maxStablePasses: args.maxStablePasses,
         incrementalPasses: args.incrementalPasses,
-        dryRun,
-        virtualFiles:
-          dryRun && aliasDeclarations
-            ? [{ fileName: aliasDeclarations.filePath, text: aliasDeclarations.text }]
-            : undefined,
+        typesPreflight: args.typesPreflight,
+        typesReportFile: args.typesReportFile,
+        suppressionReportFile: args.suppressionReportFile,
+        dryRun: args['dry-run'],
+        jsonSummary: args.jsonSummary,
       });
-
-      // A run that migrated nothing is otherwise indistinguishable from one
-      // that had nothing left to do, and it is the commonest first-run mistake.
-      if (emptyMigrationSet) {
-        log.error(describeEmptyMigrationSet(emptyMigrationSet, args.folder));
-      }
-
-      // The would-be state of every touched file, including the alias
-      // declarations a dry run held back, so the summaries below never
-      // depend on what reached the disk.
-      const fileContents = new Map(updatedFileTexts);
-      if (dryRun && aliasDeclarations) {
-        fileContents.set(aliasDeclarations.filePath, aliasDeclarations.text);
-      }
-
-      printGeneratedFiles(rootDir, generatedFiles, dryRun);
-      if (globalDeclarations) {
-        printGlobalDeclarationsReport(globalDeclarations);
-      }
-      if (typesPackageDetector) {
-        printTypesPackageReport(typesPackageDetector, rootDir, args.folder, args.typesReportFile);
-      }
-      if (suppressionExplainer) {
-        printSuppressionReport(suppressionExplainer, rootDir, args.suppressionReportFile);
-      }
-      if (dryRun) {
-        printDryRunSummary(rootDir, args.folder, updatedSourceFiles, fileContents);
-      } else {
-        printTypeDebtSummary(rootDir, args.folder, args.gitignore);
-      }
-      logTypeScriptWarning();
-      printFollowUpReport(pluginNotices);
-
-      const runExitCode = emptyMigrationSet ? -1 : exitCode;
-      if (runExitCode !== 0) {
-        logRunFailure(pluginErrors, migratedFilesWithSyntaxErrors);
-      }
-
-      let finalExitCode = runExitCode;
-      if (args.jsonSummary) {
-        finalExitCode = writeRunSummary(
-          args.jsonSummary,
-          buildMigrateRunSummary({
-            command: 'migrate',
-            rootDir,
-            exitCode: runExitCode,
-            dryRun,
-            filesToMigrate,
-            updatedSourceFiles,
-            fileContents,
-            migratedFilesWithSyntaxErrors,
-            nonMigratedFilesWithSyntaxErrors,
-            pluginStats,
-            pluginFailures,
-            pluginNotices,
-            pluginErrors,
-            generatedFiles,
-            skippedGitignoredFiles: gitignoreFilter?.skippedFiles().length ?? 0,
-            skippedBootstrapFiles: bootstrapFilter?.skippedFiles() ?? [],
-          }),
-        );
-      }
-
-      process.exit(finalExitCode);
+      process.exit(exitCode);
     },
   )
   .command(
@@ -932,7 +645,7 @@ yargs
       const rootDir = resolveRootDir(args.folder);
       const { sources } = args;
       const dryRun = args['dry-run'];
-      logTypeScriptDecision();
+      logTypeScriptDecision(typeScriptDecision());
       if (args.typesPreflight) printTypesPackagePreflight(rootDir);
 
       const {
@@ -967,14 +680,15 @@ yargs
       });
 
       printGeneratedFiles(rootDir, generatedFiles, dryRun);
-      printTypesPackageReport(typesPackageDetector, rootDir, args.folder);
+      const typesReport = typesPackageReport(typesPackageDetector, rootDir, args.folder);
+      if (typesReport) log.info(typesReport);
       printSuppressionReport(suppressionExplainer, rootDir, args.suppressionReportFile);
       if (dryRun) {
         printDryRunSummary(rootDir, args.folder, updatedSourceFiles, updatedFileTexts);
       } else {
         printTypeDebtSummary(rootDir, args.folder, args.gitignore);
       }
-      logTypeScriptWarning();
+      logTypeScriptWarning(typeScriptDecision());
       printFollowUpReport(pluginNotices);
 
       if (exitCode !== 0) {
