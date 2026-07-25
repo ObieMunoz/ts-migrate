@@ -2,6 +2,20 @@ import { mockPluginParams } from '../test-utils';
 import stripTSIgnorePlugin from '../../src/plugins/strip-ts-ignore';
 
 describe('strip-ts-ignore plugin', () => {
+  it('strips a suppression on the first line of a file', async () => {
+    // At position 0 TypeScript reports the comment as both a leading and a
+    // trailing range, so it was deleted twice; two deletes of one range are a
+    // no-op, but they are overlapping updates and updateSourceText rejects
+    // those now.
+    const text = `// @ts-expect-error FIXME: no longer needed
+const fine: number = 1;
+`;
+
+    const result = await stripTSIgnorePlugin.run(mockPluginParams({ text }));
+
+    expect(result).toBe('const fine: number = 1;\n');
+  });
+
   it('returns text without `// @ts-ignore`s', async () => {
     const text = `export class Foo {
   method1() {
