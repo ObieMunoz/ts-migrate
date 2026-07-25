@@ -51,6 +51,16 @@ const TYPESCRIPT_FLAG_DESCRIPTION =
   'with ts-migrate.';
 
 /**
+ * Printed twice: with the banner, and again on the last screen. The banner is
+ * in the first three lines of a run that can take many minutes, so by the time
+ * the suppressions this qualifies exist it has long scrolled away.
+ */
+function logTypeScriptWarning(): void {
+  const warning = typeScriptWarning(typeScriptDecision());
+  if (warning) log.warn(warning);
+}
+
+/**
  * Which compiler this run reasoned with, reported from the loaded instance so
  * the banner is what happened rather than what was asked for.
  */
@@ -63,18 +73,7 @@ function logTypeScriptDecision(): void {
         `${decision.packageDir}: something else in this process resolves the compiler first.`,
     );
   }
-  const warning = typeScriptWarning(decision);
-  if (warning) log.warn(warning);
-}
-
-/**
- * The compiler warning again, on the last screen. The banner prints in the
- * first three lines of a run that can take many minutes, so by the time the
- * suppressions it qualifies exist it has long scrolled away.
- */
-function logTypeScriptWarningAgain(): void {
-  const warning = typeScriptWarning(typeScriptDecision());
-  if (warning) log.warn(warning);
+  logTypeScriptWarning();
 }
 
 /** A recommendation report must never fail an otherwise successful run. */
@@ -473,7 +472,7 @@ yargs
       } else {
         printTypeDebtSummary(rootDir, args.folder, args.gitignore);
       }
-      logTypeScriptWarningAgain();
+      logTypeScriptWarning();
 
       let finalExitCode = exitCode;
       if (args.jsonSummary) {
@@ -593,7 +592,7 @@ yargs
       } else {
         printTypeDebtSummary(rootDir, args.folder, args.gitignore);
       }
-      logTypeScriptWarningAgain();
+      logTypeScriptWarning();
 
       let finalExitCode = exitCode;
       if (args.jsonSummary) {
