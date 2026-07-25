@@ -431,14 +431,20 @@ const jsDocTransformerFactory =
       return /^[ \t]*/.exec(sourceFile.text.slice(lineStart, pos))![0];
     }
 
+    /**
+     * Every type parameter written on an alias is given a default, so a
+     * reference that passes no type arguments keeps the meaning it had while
+     * the alias was not generic, whatever file it is in.
+     */
     function typeAliasFromTag({ tag, doc, name }: JSDocTypeAlias): ts.TypeAliasDeclaration {
       const type = ts.isJSDocCallbackTag(tag)
         ? visitJSDocSignature(tag.typeExpression)
         : visitTypedefType(tag);
+      const typeParameters = typeParametersFromTags(aliasTemplateTags(doc));
       return factory.createTypeAliasDeclaration(
         exportAliases ? [factory.createModifier(ts.SyntaxKind.ExportKeyword)] : undefined,
         factory.createIdentifier(name),
-        typeParametersFromTags(aliasTemplateTags(doc)),
+        typeParameters && withAnyDefaults(typeParameters),
         type,
       );
     }
