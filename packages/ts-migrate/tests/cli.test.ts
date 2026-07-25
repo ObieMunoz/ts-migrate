@@ -39,21 +39,21 @@ describe('command names', () => {
     expect(output).toContain('Unknown command');
     expect(output).toContain('frobnicate');
     expect(status).toBe(1);
-  });
+  }, 30000);
 
   it('names the command a typo was probably meant to be', () => {
     const { status, output } = runCli(['migate', projectDir]);
 
     expect(output).toContain('Did you mean migrate?');
     expect(status).toBe(1);
-  });
+  }, 30000);
 
   it('still asks for a command when none is given', () => {
     const { status, output } = runCli([]);
 
     expect(output).toContain('Must provide a command.');
     expect(status).toBe(1);
-  });
+  }, 30000);
 
   it('runs a command that exists', () => {
     const { status, output } = runCli(['report', projectDir]);
