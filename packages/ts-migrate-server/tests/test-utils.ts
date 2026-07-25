@@ -11,9 +11,9 @@ function assertDirExists(dir: string) {
 }
 
 export function createDir() {
-  if (!fs.existsSync(path.resolve(__dirname, 'tmp'))) {
-    fs.mkdirSync(path.resolve(__dirname, 'tmp'));
-  }
+  // Every suite in this package shares the tmp root and jest runs them in
+  // parallel workers, so the mkdir has to be idempotent.
+  fs.mkdirSync(path.resolve(__dirname, 'tmp'), { recursive: true });
   return fs.mkdtempSync(path.resolve(__dirname, 'tmp/ts-migrate-'));
 }
 
