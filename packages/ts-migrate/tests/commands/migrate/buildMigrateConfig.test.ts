@@ -275,12 +275,14 @@ describe('buildMigrateConfig', () => {
   });
 
   it('exposes every default-pipeline plugin as excludable', () => {
-    // The detector's two plugins and the suppression explainer hold per-run
-    // state, so they are built per command rather than listed among the static
-    // plugins.
+    // The detector's two plugins, the global declaration pair and the
+    // suppression explainer hold per-run state, so they are built per command
+    // rather than listed among the static plugins.
     const perRunPlugins = [
       'detect-types-packages',
       'declare-untyped-modules',
+      'collect-global-assignments',
+      'declare-globals',
       'explain-suppressions',
     ];
     const names = new Set(availablePlugins.map((plugin) => plugin.name));
@@ -295,5 +297,20 @@ describe('buildMigrateConfig', () => {
     expect(pluginNames(buildMigrateConfig({ declareUntypedModules: false }).config)).not.toContain(
       'declare-untyped-modules',
     );
+  });
+
+  it('collects and declares the globals before add-conversions', () => {
+    const names = pluginNames(buildMigrateConfig({}).config);
+
+    expect(names.indexOf('collect-global-assignments')).toBeGreaterThan(-1);
+    expect(names.indexOf('declare-globals')).toBe(names.indexOf('collect-global-assignments') + 1);
+    expect(names.indexOf('declare-globals')).toBeLessThan(names.indexOf('add-conversions'));
+  });
+
+  it('drops the global declarations with declareGlobals: false', () => {
+    const names = pluginNames(buildMigrateConfig({ declareGlobals: false }).config);
+
+    expect(names).not.toContain('collect-global-assignments');
+    expect(names).not.toContain('declare-globals');
   });
 });

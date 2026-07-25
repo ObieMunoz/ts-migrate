@@ -29,6 +29,12 @@ import updateSourceText, {
   SourceTextUpdate as SourceTextUpdateType,
 } from './utils/updateSourceText';
 import {
+  createGlobalDeclarations,
+  GLOBAL_DECLARATIONS_FILE,
+  GlobalDeclarationsCollector as GlobalDeclarationsCollectorType,
+  GlobalDeclarationsReport as GlobalDeclarationsReportType,
+} from './utils/globalDeclarations';
+import {
   createSuppressionExplainer,
   formatSuppressionReport,
   formatSuppressionSummary,
@@ -53,6 +59,8 @@ import {
 
 export type Plugin<T = unknown> = PluginType<T>;
 export type EslintFixOptions = EslintFixOptionsType;
+export type GlobalDeclarationsCollector = GlobalDeclarationsCollectorType;
+export type GlobalDeclarationsReport = GlobalDeclarationsReportType;
 export type SourceTextUpdate = SourceTextUpdateType;
 export type SuppressionExplainer = SuppressionExplainerType;
 export type SuppressionReport = SuppressionReportType;
@@ -94,11 +102,13 @@ export {
   printType,
   DEFAULT_MAX_UNION_MEMBERS,
   updateSourceText,
+  createGlobalDeclarations,
   createSuppressionExplainer,
   createTypesPackageDetector,
   formatSuppressionReport,
   formatSuppressionSummary,
   formatTypesPackageReport,
   collectModuleSpecifiers,
+  GLOBAL_DECLARATIONS_FILE,
   MODULE_DECLARATIONS_FILE,
 };
