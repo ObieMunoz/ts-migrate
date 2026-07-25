@@ -293,6 +293,12 @@ yargs
           'typeMap',
           'JSON object mapping JSDoc types to TypeScript types, used with --plugin jsdoc.',
         )
+        .boolean('annotateReturns')
+        .default('annotateReturns', false)
+        .describe(
+          'annotateReturns',
+          'Also annotate return types from JSDoc @returns, used with --plugin jsdoc. Off by default: a documented return type replaces the one TypeScript infers from the body, which a parameter type does not.',
+        )
         .boolean('useDefaultPropsHelper')
         .default('useDefaultPropsHelper', false)
         .describe(
@@ -394,6 +400,7 @@ yargs
           excludePlugins: ([] as string[]).concat(args['exclude-plugin'] ?? []),
           aliases: args.aliases,
           typeMap: args.typeMap,
+          annotateReturns: args.annotateReturns,
           useDefaultPropsHelper: args.useDefaultPropsHelper,
           defaultAccessibility: args.defaultAccessibility,
           privateRegex: args.privateRegex,
