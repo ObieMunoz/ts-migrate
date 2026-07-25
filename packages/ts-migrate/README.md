@@ -586,7 +586,7 @@ deliberately narrow:
 `init` names every extension it skipped and why. Declare those yourself, in a
 file of your own. A file already at `types/ts-migrate-assets.d.ts` that
 ts-migrate did not write is left alone, and so is the whole step on a project
-whose tsconfig already exists — `init` never touches one.
+whose tsconfig already exists, since `init` never touches one.
 
 # Measuring type debt
 
