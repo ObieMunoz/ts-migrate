@@ -73,17 +73,17 @@ any pnpm >= 9.7 will automatically fetch and run the pinned version.
 Do not use `pnpm add` here. It reruns peer resolution for the whole workspace,
 and every package declares TypeScript as a peer with the range `>=5.0 <7`.
 `ts-migrate-server` also carries `typescript6` (`npm:typescript@6.0.3`) as a
-devDependency so the TypeScript 6 tests have a compiler to load, so the pass
-satisfies those peer ranges with 6.0.3 and rewrites the committed 5.9.3
-resolutions across the workspace.
+devDependency so the TypeScript 6 tests have a compiler to load. A fresh
+resolution sees 6.0.3 in the workspace, satisfies those peer ranges with it,
+and rewrites the committed 5.9.3 resolutions across the workspace.
 
 Add the dependency by hand instead:
 
 1. Edit the `package.json` of the package that needs it.
 2. Run `pnpm install` from the repo root.
-3. Confirm `git diff --stat pnpm-lock.yaml` shows insertions only, and that
-   `git diff pnpm-lock.yaml | grep typescript@` prints nothing unless you are
-   changing the compiler on purpose.
+3. Confirm `git diff --stat pnpm-lock.yaml` shows insertions only. Removed
+   lines are the signal: `git diff pnpm-lock.yaml | grep '^-.*typescript@'`
+   prints nothing unless you are changing the compiler on purpose.
 
 A flipped lockfile puts two copies of the compiler in one type graph, so the
 build fails with about 70 cross-package `TypeChecker` and `Symbol`
