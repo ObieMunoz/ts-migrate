@@ -85,7 +85,7 @@ const inferTypesPlugin: Plugin = {
       const program = languageService.getProgram();
       const compilerOptions = getValidationOptions(program ? program.getCompilerOptions() : {});
 
-      return withBodyWins(fileName, text, changes, compilerOptions, formatSettings);
+      return withBodyWins(fileName, text, changes, compilerOptions, formatSettings, program);
     } catch (e) {
       fileNoticeReporter(params, '[infer-types]')({
         reason: errorMessage(e).split('\n')[0].trim(),
@@ -104,10 +104,16 @@ function withBodyWins(
   changes: TextChange[],
   compilerOptions: ts.CompilerOptions,
   formatSettings: ts.FormatCodeSettings,
+  projectProgram: ts.Program | undefined,
 ): string | undefined {
-  const baseline = createFileLanguageService(fileName, text, compilerOptions);
+  const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
   const candidateText = applyTextChanges(text, changes);
-  const candidate = createFileLanguageService(fileName, candidateText, compilerOptions);
+  const candidate = createFileLanguageService(
+    fileName,
+    candidateText,
+    compilerOptions,
+    projectProgram,
+  );
 
   const newErrors = findNewErrors(baseline, candidate, changes, fileName);
   if (newErrors.length === 0) {
@@ -147,6 +153,7 @@ function withBodyWins(
     compilerOptions,
     formatSettings,
     originalSource,
+    projectProgram,
   );
 
   const assemble = (dropped: Set<ts.Node | null>): TextChange[] => {
@@ -182,7 +189,7 @@ function withBodyWins(
   // parameter's annotation is dropped.
   let finalText = reassembled ? applyTextChanges(text, finalChanges) : candidateText;
   const finalService = reassembled
-    ? createFileLanguageService(fileName, finalText, compilerOptions)
+    ? createFileLanguageService(fileName, finalText, compilerOptions, projectProgram)
     : candidate;
   const finalErrors = reassembled
     ? findNewErrors(baseline, finalService, finalChanges, fileName)
@@ -375,6 +382,7 @@ function inferBodyOnly(
   compilerOptions: ts.CompilerOptions,
   formatSettings: ts.FormatCodeSettings,
   originalSource: ts.SourceFile,
+  projectProgram: ts.Program | undefined,
 ): Map<ts.Node, TextChange[]> {
   const bodyOnlyChanges = new Map<ts.Node, TextChange[]>();
   if (contestedFunctions.length === 0) {
@@ -402,7 +410,7 @@ function inferBodyOnly(
   renames.sort((a, b) => a.start - b.start);
 
   const decoyText = applyTextChanges(text, renames);
-  const decoy = createFileLanguageService(fileName, decoyText, compilerOptions);
+  const decoy = createFileLanguageService(fileName, decoyText, compilerOptions, projectProgram);
   let decoyChanges: TextChange[] = [];
   try {
     decoyChanges = getInferenceChanges(decoy, fileName, formatSettings);
