@@ -1,8 +1,13 @@
+import log from 'updatable-log';
 import buildMigrateConfig, { availablePlugins } from '../../../commands/migrate';
 import type { MigrateConfig } from '@obiemunoz/ts-migrate-server';
 
 function pluginNames(config: MigrateConfig): string[] {
   return config.plugins.map(({ plugin }) => plugin.name);
+}
+
+function pluginOptions(config: MigrateConfig, name: string): unknown {
+  return config.plugins.find(({ plugin }) => plugin.name === name)?.options;
 }
 
 describe('buildMigrateConfig', () => {
@@ -64,6 +69,80 @@ describe('buildMigrateConfig', () => {
     expect(() => buildMigrateConfig({ plugin: 'does-not-exist' })).toThrow(
       'Could not find a plugin named does-not-exist.',
     );
+  });
+
+  it('names the real problem when --plugin is repeated', () => {
+    expect(() => buildMigrateConfig({ plugin: ['explicit-any', 'ts-ignore'] })).toThrow(
+      '--plugin takes a single plugin name, but was given explicit-any, ts-ignore. ' +
+        'To run the default pipeline without some of its plugins, use --exclude-plugin instead.',
+    );
+  });
+
+  it('gives a single --plugin run the options the pipeline gives that plugin', () => {
+    const accessibility = {
+      defaultAccessibility: 'private' as const,
+      privateRegex: '^_',
+      protectedRegex: '^p_',
+      publicRegex: '^pub_',
+    };
+    const single = buildMigrateConfig({ plugin: 'member-accessibility', ...accessibility }).config;
+    expect(single.plugins[0].options).toEqual(accessibility);
+    expect(single.plugins[0].options).toEqual(
+      pluginOptions(buildMigrateConfig(accessibility).config, 'member-accessibility'),
+    );
+  });
+
+  it('gives a single --plugin react-default-props run the useDefaultPropsHelper choice', () => {
+    const single = buildMigrateConfig({
+      plugin: 'react-default-props',
+      useDefaultPropsHelper: true,
+    }).config;
+    expect(single.plugins[0].options).toEqual({ useDefaultPropsHelper: true });
+    expect(single.plugins[0].options).toEqual(
+      pluginOptions(
+        buildMigrateConfig({ useDefaultPropsHelper: true }).config,
+        'react-default-props',
+      ),
+    );
+  });
+
+  it('gives every single-plugin run the same options as the default pipeline', () => {
+    const params = {
+      aliases: 'tsfixme',
+      useDefaultPropsHelper: true,
+      defaultAccessibility: 'private' as const,
+      privateRegex: '^_',
+      projectEslint: false,
+    };
+    const pipeline = buildMigrateConfig(params).config;
+    // Most plugins take none of these flags, so the run is expected to warn.
+    const warn = jest.spyOn(log, 'warn').mockImplementation(() => {});
+    try {
+      pluginNames(pipeline).forEach((name) => {
+        if (!availablePlugins.some((plugin) => plugin.name === name)) return;
+        const { config } = buildMigrateConfig({ ...params, plugin: name });
+        expect([name, config.plugins[0].options]).toEqual([name, pluginOptions(pipeline, name)]);
+      });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('warns once about the flags the selected plugin has no option for', () => {
+    const warn = jest.spyOn(log, 'warn').mockImplementation(() => {});
+    try {
+      buildMigrateConfig({ plugin: 'ts-ignore', defaultAccessibility: 'private', aliases: 'tsfixme' });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        'Ignoring --aliases, --defaultAccessibility: not an option of the ts-ignore plugin.',
+      );
+
+      warn.mockClear();
+      buildMigrateConfig({ plugin: 'member-accessibility', defaultAccessibility: 'private' });
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('threads the tsfixme aliases through the pipeline and the result', () => {
