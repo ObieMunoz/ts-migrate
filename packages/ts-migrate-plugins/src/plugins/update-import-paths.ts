@@ -4,6 +4,7 @@ import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { createValidate, Properties } from '../utils/validateOptions';
+import { isEsmFileName, isEsmPackageDir } from '../utils/moduleFormat';
 
 /**
  * Updates relative module specifiers that still end in `.js`/`.jsx` after the
@@ -34,7 +35,7 @@ const updateImportPathsPlugin: Plugin<Options> = {
 
   run({ fileName, sourceFile, text, options }) {
     const importerDir = path.dirname(fileName);
-    const isEsm = ESM_EXTENSION_REGEX.test(fileName) || isEsmPackageDir(importerDir);
+    const isEsm = isEsmFileName(fileName) || isEsmPackageDir(importerDir);
     const extension = options.extension ?? (isEsm ? 'js' : 'omit');
 
     const updates: SourceTextUpdate[] = [];
@@ -62,9 +63,6 @@ const renamedExtensions: Record<string, string[]> = {
   '.js': ['.ts', '.tsx'],
   '.jsx': ['.tsx', '.ts'],
 };
-
-// Extensions that make a file ESM whatever the enclosing package says.
-const ESM_EXTENSION_REGEX = /\.m[jt]s$/;
 
 function renamedSpecifier(
   specifier: string,
@@ -145,27 +143,4 @@ export function collectModuleSpecifiers(sourceFile: ts.SourceFile): ts.StringLit
   };
   visit(sourceFile);
   return literals;
-}
-
-const esmPackageDirCache = new Map<string, boolean>();
-
-function isEsmPackageDir(dir: string): boolean {
-  const cached = esmPackageDirCache.get(dir);
-  if (cached !== undefined) return cached;
-
-  let result = false;
-  const packageJsonPath = path.join(dir, 'package.json');
-  if (fs.existsSync(packageJsonPath)) {
-    try {
-      result = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')).type === 'module';
-    } catch {
-      result = false;
-    }
-  } else {
-    const parent = path.dirname(dir);
-    result = parent !== dir && isEsmPackageDir(parent);
-  }
-
-  esmPackageDirCache.set(dir, result);
-  return result;
 }
