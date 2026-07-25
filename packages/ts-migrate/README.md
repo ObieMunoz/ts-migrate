@@ -54,8 +54,6 @@ prefix with your runner: `npx ts-migrate ...` or `pnpm ts-migrate ...`):
 ```
 $ npx -p @obiemunoz/ts-migrate ts-migrate --help
 
-ts-migrate v0.13.0
-
 Usage: ts-migrate <command> [options]
 
 Commands:
