@@ -164,7 +164,10 @@ verify with `tsc --noEmit`.
 
 Writes a migration-friendly `tsconfig.json` in `<folder>` (no-op if one
 exists). `resolveJsonModule` is on, so JSON imports type as their contents
-instead of collecting a suppression each.
+instead of collecting a suppression each. `allowJs` is on (and `checkJs`
+off), so a migration done one directory at a time resolves imports into the
+directories it has not converted yet instead of suppressing each one; those
+files are read for their types and never migrated in place.
 The module settings follow the project: `commonjs`, or `nodenext` when
 package.json declares `"type": "module"`, or `esnext` with
 `"moduleResolution": "bundler"` when the project builds with Vite or webpack

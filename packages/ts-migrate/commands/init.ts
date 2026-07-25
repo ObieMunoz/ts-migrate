@@ -215,6 +215,10 @@ function defaultConfig(rootDir: string): string {
     "moduleDetection": "force",
     "jsx": "${jsx}",
     "esModuleInterop": true,
+    // Files a staged migration has not converted yet still resolve, so
+    // imports crossing into the JavaScript side type as their contents
+    // instead of erroring. Only the rename step converts those files.
+    "allowJs": true,
     // JSON imports (package.json, fixtures, locale data) type as their
     // contents instead of failing to resolve.
     "resolveJsonModule": true,
