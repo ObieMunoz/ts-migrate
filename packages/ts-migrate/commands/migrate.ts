@@ -13,6 +13,7 @@ import {
   reactClassLifecycleMethodsPlugin,
   reactClassStatePlugin,
   reactDefaultPropsPlugin,
+  reactHookTypesPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
   reactShapePlugin,
@@ -42,6 +43,7 @@ export const availablePlugins = [
   reactClassLifecycleMethodsPlugin,
   reactClassStatePlugin,
   reactDefaultPropsPlugin,
+  reactHookTypesPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
   reactShapePlugin,
@@ -124,6 +126,7 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
     entry(reactDefaultPropsPlugin, {
       useDefaultPropsHelper: params.useDefaultPropsHelper ?? false,
     }),
+    entry(reactHookTypesPlugin, { anyAlias }),
     entry(reactInlineImportedPropTypesPlugin, {}),
     entry(reactPropsPlugin, { anyAlias, anyFunctionAlias, shouldUpdateAirbnbImports: true }),
     entry(reactShapePlugin, { anyAlias, anyFunctionAlias }),
@@ -230,6 +233,9 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     .addPlugin(reactClassLifecycleMethodsPlugin, optionsFor(reactClassLifecycleMethodsPlugin))
     .addPlugin(reactDefaultPropsPlugin, optionsFor(reactDefaultPropsPlugin))
     .addPlugin(reactShapePlugin, optionsFor(reactShapePlugin))
+    // Runs on the props react-props has just typed, so a setter called with
+    // one is evidence instead of an any.
+    .addPlugin(reactHookTypesPlugin, optionsFor(reactHookTypesPlugin))
     .addPlugin(declareMissingClassPropertiesPlugin, optionsFor(declareMissingClassPropertiesPlugin))
     .addPlugin(memberAccessibilityPlugin, optionsFor(memberAccessibilityPlugin));
   if (inferTypes) {
