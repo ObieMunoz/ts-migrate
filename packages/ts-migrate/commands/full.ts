@@ -43,8 +43,8 @@ export interface FullParams {
   rootDir: string;
   /**
    * The folder as the user wrote it. Every message names this rather than the
-   * resolved path, and the shell script this replaced never normalized it either, so
-   * `./src`, `src` and `src/` each read back the way they were typed.
+   * resolved path, and the shell script this replaced never normalized it
+   * either, so `./src`, `src` and `src/` each read back the way they were typed.
    */
   folder: string;
   /** The compiler this process was redirected at. */

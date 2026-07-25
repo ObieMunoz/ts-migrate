@@ -354,85 +354,6 @@ yargs
   .version(version)
   .usage(`ts-migrate v${version}\n\nUsage: $0 <command> [options]`)
   .command(
-    'init <folder>',
-    'Initialize tsconfig.json file in <folder>',
-    (cmd) => cmd.positional('folder', { type: 'string' }).require(['folder']),
-    (args) => {
-      const rootDir = resolveRootDir(args.folder);
-      init({ rootDir, isExtendedConfig: false });
-    },
-  )
-  .command(
-    'init:extended <folder>',
-    'Initialize tsconfig.json in <folder> extending a shared base config',
-    (cmd) => cmd.positional('folder', { type: 'string' }).require(['folder']),
-    (args) => {
-      const rootDir = resolveRootDir(args.folder);
-      init({ rootDir, isExtendedConfig: true });
-    },
-  )
-  .command(
-    'rename <folder>',
-    'Rename files in folder from JS/JSX to TS/TSX',
-    (cmd) =>
-      cmd
-        .positional('folder', { type: 'string' })
-        .string('sources')
-        .alias('sources', 's')
-        .describe('sources', 'Path to a subset of your project to rename.')
-        .boolean('gitignore')
-        .default('gitignore', true)
-        .describe('gitignore', 'Skip gitignored files. Disable with --no-gitignore.')
-        .boolean('bootstrap')
-        .default('bootstrap', true)
-        .describe(
-          'bootstrap',
-          'Keep build system files (configs and node-run scripts) as JavaScript so the build still boots. Disable with --no-bootstrap.',
-        )
-        .boolean('dry-run')
-        .default('dry-run', false)
-        .describe('dry-run', 'Print the rename mapping without renaming any file.')
-        .string('jsonSummary')
-        .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
-        .example('$0 rename /frontend/foo', 'Rename all the files in /frontend/foo')
-        .example(
-          '$0 rename /frontend/foo -s "bar/**/*"',
-          'Rename all the files in /frontend/foo/bar',
-        )
-        .require(['folder']),
-    (args) => {
-      const rootDir = resolveRootDir(args.folder);
-      const { sources } = args;
-      const dryRun = args['dry-run'];
-      const result = rename({
-        rootDir,
-        sources,
-        gitignore: args.gitignore,
-        bootstrap: args.bootstrap,
-        dryRun,
-      });
-      if (result === null) {
-        process.exit(-1);
-      }
-      if (args.jsonSummary) {
-        const exitCode = writeRunSummary(
-          args.jsonSummary,
-          buildRenameRunSummary({
-            rootDir,
-            exitCode: 0,
-            dryRun,
-            renamedFiles: result.renamedFiles,
-            skippedGitignoredFiles: result.skippedGitignoredFiles,
-            skippedBootstrapFiles: result.skippedBootstrapFiles,
-            packageJsonRewrites: result.packageJsonRewrites,
-            packageJsonNotices: result.packageJsonNotices,
-          }),
-        );
-        if (exitCode !== 0) process.exit(exitCode);
-      }
-    },
-  )
-  .command(
     'full <folder>',
     'Run the whole pipeline: init, rename, migrate, then verify with tsc --noEmit',
     (cmd) =>
@@ -512,6 +433,85 @@ yargs
       process.exitCode = args.jsonSummary
         ? writeRunSummary(args.jsonSummary, summary)
         : exitCode;
+    },
+  )
+  .command(
+    'init <folder>',
+    'Initialize tsconfig.json file in <folder>',
+    (cmd) => cmd.positional('folder', { type: 'string' }).require(['folder']),
+    (args) => {
+      const rootDir = resolveRootDir(args.folder);
+      init({ rootDir, isExtendedConfig: false });
+    },
+  )
+  .command(
+    'init:extended <folder>',
+    'Initialize tsconfig.json in <folder> extending a shared base config',
+    (cmd) => cmd.positional('folder', { type: 'string' }).require(['folder']),
+    (args) => {
+      const rootDir = resolveRootDir(args.folder);
+      init({ rootDir, isExtendedConfig: true });
+    },
+  )
+  .command(
+    'rename <folder>',
+    'Rename files in folder from JS/JSX to TS/TSX',
+    (cmd) =>
+      cmd
+        .positional('folder', { type: 'string' })
+        .string('sources')
+        .alias('sources', 's')
+        .describe('sources', 'Path to a subset of your project to rename.')
+        .boolean('gitignore')
+        .default('gitignore', true)
+        .describe('gitignore', 'Skip gitignored files. Disable with --no-gitignore.')
+        .boolean('bootstrap')
+        .default('bootstrap', true)
+        .describe(
+          'bootstrap',
+          'Keep build system files (configs and node-run scripts) as JavaScript so the build still boots. Disable with --no-bootstrap.',
+        )
+        .boolean('dry-run')
+        .default('dry-run', false)
+        .describe('dry-run', 'Print the rename mapping without renaming any file.')
+        .string('jsonSummary')
+        .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
+        .example('$0 rename /frontend/foo', 'Rename all the files in /frontend/foo')
+        .example(
+          '$0 rename /frontend/foo -s "bar/**/*"',
+          'Rename all the files in /frontend/foo/bar',
+        )
+        .require(['folder']),
+    (args) => {
+      const rootDir = resolveRootDir(args.folder);
+      const { sources } = args;
+      const dryRun = args['dry-run'];
+      const result = rename({
+        rootDir,
+        sources,
+        gitignore: args.gitignore,
+        bootstrap: args.bootstrap,
+        dryRun,
+      });
+      if (result === null) {
+        process.exit(-1);
+      }
+      if (args.jsonSummary) {
+        const exitCode = writeRunSummary(
+          args.jsonSummary,
+          buildRenameRunSummary({
+            rootDir,
+            exitCode: 0,
+            dryRun,
+            renamedFiles: result.renamedFiles,
+            skippedGitignoredFiles: result.skippedGitignoredFiles,
+            skippedBootstrapFiles: result.skippedBootstrapFiles,
+            packageJsonRewrites: result.packageJsonRewrites,
+            packageJsonNotices: result.packageJsonNotices,
+          }),
+        );
+        if (exitCode !== 0) process.exit(exitCode);
+      }
     },
   )
   .command(
@@ -797,6 +797,7 @@ yargs
     },
   )
   .example('$0 --help', 'Show help')
+  .example('$0 full frontend/foo', 'Run the whole pipeline over frontend/foo')
   .example('$0 migrate --help', 'Show help for the migrate command')
   .example('$0 init frontend/foo', 'Create tsconfig.json file at frontend/foo/tsconfig.json')
   .example(
