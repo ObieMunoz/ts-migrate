@@ -2,6 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
+import { isJsExtension, JS_EXTENSION_REGEX } from './jsExtensions';
 import { JSON5Path, replaceJSON5Strings } from './updateJSON5';
 
 export interface PackageJsonRewrite {
@@ -25,8 +26,6 @@ export interface PackageJsonReferenceResult {
   notices: PackageJsonNotice[];
 }
 
-const JS_EXTENSIONS = ['js', 'jsx', 'cjs', 'mjs'];
-const JS_EXTENSION_REGEX = /\.[cm]?jsx?$/;
 const GLOB_CHARS = /[*?[{]/;
 const BRACED_EXTENSIONS_REGEX = /\.\{([A-Za-z0-9,]+)\}$/;
 const PLAIN_EXTENSION_REGEX = /\.([A-Za-z0-9]+)$/;
@@ -264,10 +263,6 @@ function formatKeyPath(keyPath: JSON5Path): string {
       return i === 0 ? key : `.${key}`;
     })
     .join('');
-}
-
-function isJsExtension(extension: string): boolean {
-  return JS_EXTENSIONS.includes(extension);
 }
 
 function toPosix(filePath: string): string {

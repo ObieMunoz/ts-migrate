@@ -11,6 +11,7 @@ import {
   partitionBootstrapFiles,
 } from '../utils/bootstrapFiles';
 import { logUnfilteredReason, partitionGitignored, sampleIgnoredPaths } from '../utils/gitignore';
+import { JS_EXTENSION_REGEX } from '../utils/jsExtensions';
 import {
   PackageJsonNotice,
   PackageJsonRewrite,
@@ -249,8 +250,6 @@ function findJSFiles(rootDir: string, configFile: string, sources?: string | str
 
   return fileNames.filter((fileName) => JS_EXTENSION_REGEX.test(fileName));
 }
-
-const JS_EXTENSION_REGEX = /\.(jsx?|[cm]js)$/;
 
 const moduleExtensions: Record<string, string> = { '.mjs': '.mts', '.cjs': '.cts' };
 
