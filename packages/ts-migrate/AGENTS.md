@@ -258,7 +258,8 @@ JavaScript, so a `bin` pointing at it stays valid and needs no notice.
 
 Runs the codemod pipeline on an already-renamed project: re-points stale
 relative imports, rewrites CommonJS `require`/`module.exports` into TypeScript
-module syntax, converts React propTypes to types, writes the type arguments
+module syntax, declares the properties the code assigns to `window` and
+`globalThis`, converts React propTypes to types, writes the type arguments
 React hook calls need, infers types from usage, declares the properties
 assigned onto empty object literals, annotates remaining implicit `any`s,
 widens the annotations the file's own assignments contradict, and suppresses
@@ -363,6 +364,15 @@ run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
   checkable imports typed `any` rather than N `@ts-expect-error` comments.
   Entries are kept across runs and dropped once their types resolve, so
   installing a real `@types` package retires one. A file at that path that
+  ts-migrate did not write is never touched.
+- `--no-declareGlobals`: cast every read and write of a property the code hangs
+  off `window`, `global` or `globalThis`, instead of declaring those properties
+  once in `types/ts-migrate-globals.d.ts`. By default the run generates that
+  file and prints what it declared. Types are the ones the assigned expressions
+  state outright and the any alias everywhere else, so narrowing one by hand is
+  the useful edit and a later run keeps it. Entries are never dropped
+  automatically: delete one once something else declares that property, since
+  two declarations of one global is an error. A file at that path that
   ts-migrate did not write is never touched.
 - `--dry-run`: run every plugin pass but write nothing to disk. Prints each
   file a real run would update, with the suppression and `any` counts it

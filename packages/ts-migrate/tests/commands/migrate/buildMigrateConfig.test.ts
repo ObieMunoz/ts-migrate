@@ -307,10 +307,18 @@ describe('buildMigrateConfig', () => {
     expect(names.indexOf('declare-globals')).toBeLessThan(names.indexOf('add-conversions'));
   });
 
-  it('drops the global declarations with declareGlobals: false', () => {
-    const names = pluginNames(buildMigrateConfig({ declareGlobals: false }).config);
+  it('runs the global declarations unless declareGlobals is false', () => {
+    const globalPlugins = ['collect-global-assignments', 'declare-globals'];
+    const declared = (params: Parameters<typeof buildMigrateConfig>[0]) => {
+      const built = buildMigrateConfig(params);
+      return {
+        plugins: pluginNames(built.config).filter((name) => globalPlugins.includes(name)),
+        collector: built.globalDeclarations !== undefined,
+      };
+    };
 
-    expect(names).not.toContain('collect-global-assignments');
-    expect(names).not.toContain('declare-globals');
+    expect(declared({ declareGlobals: true })).toEqual({ plugins: globalPlugins, collector: true });
+    expect(declared({})).toEqual({ plugins: globalPlugins, collector: true });
+    expect(declared({ declareGlobals: false })).toEqual({ plugins: [], collector: false });
   });
 });

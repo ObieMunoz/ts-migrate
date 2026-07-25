@@ -13,9 +13,11 @@ import log from 'updatable-log';
 import yargs, { Argv as YargsArgv } from 'yargs';
 
 import {
+  formatGlobalDeclarationsReport,
   formatSuppressionReport,
   formatSuppressionSummary,
   formatTypesPackageReport,
+  GlobalDeclarationsCollector,
   SuppressionExplainer,
   TypesPackageDetector,
 } from '@obiemunoz/ts-migrate-plugins';
@@ -161,6 +163,21 @@ function printSuppressionReport(
     if (summary) log.info(summary);
   } catch (err) {
     log.warn('Skipped the suppression report:', err);
+  }
+}
+
+/**
+ * What the run declared on `window` and `globalThis`, and what it found but
+ * could not declare. Printed rather than written to a file: it is one line per
+ * global, and each one names an edit worth making now. Must never fail an
+ * otherwise successful run.
+ */
+function printGlobalDeclarationsReport(globalDeclarations: GlobalDeclarationsCollector): void {
+  try {
+    const reportText = formatGlobalDeclarationsReport(globalDeclarations.summarize());
+    if (reportText) log.info(reportText);
+  } catch (err) {
+    log.warn('Skipped the global declarations report:', err);
   }
 }
 
@@ -446,6 +463,12 @@ yargs
           'declareUntypedModules',
           'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. Disable with --no-declareUntypedModules.',
         )
+        .boolean('declareGlobals')
+        .default('declareGlobals', true)
+        .describe(
+          'declareGlobals',
+          'Declare the properties the code assigns to window, global and globalThis in types/ts-migrate-globals.d.ts, instead of casting every read and write of them. Disable with --no-declareGlobals.',
+        )
         .string('typescript')
         .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
         .string('typesReportFile')
@@ -489,6 +512,7 @@ yargs
       let config: MigrateConfig;
       let typesPackageDetector: TypesPackageDetector | undefined;
       let suppressionExplainer: SuppressionExplainer | undefined;
+      let globalDeclarations: GlobalDeclarationsCollector | undefined;
       let aliasDeclarations: { filePath: string; text: string } | null = null;
       try {
         const built = buildMigrateConfig({
@@ -506,10 +530,12 @@ yargs
           inferTypes: args.inferTypes,
           projectEslint: args.projectEslint,
           declareUntypedModules: args.declareUntypedModules,
+          declareGlobals: args.declareGlobals,
         });
         config = built.config;
         typesPackageDetector = built.typesPackageDetector;
         suppressionExplainer = built.suppressionExplainer;
+        globalDeclarations = built.globalDeclarations;
         // Written before the program is created so the aliases resolve during
         // the run; otherwise ts-ignore would suppress every annotation added.
         // A dry run keeps the file in memory and feeds it to the program as a
@@ -571,6 +597,9 @@ yargs
       }
 
       printGeneratedFiles(rootDir, generatedFiles, dryRun);
+      if (globalDeclarations) {
+        printGlobalDeclarationsReport(globalDeclarations);
+      }
       if (typesPackageDetector) {
         printTypesPackageReport(typesPackageDetector, rootDir, args.folder, args.typesReportFile);
       }
