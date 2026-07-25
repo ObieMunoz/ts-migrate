@@ -156,6 +156,7 @@ interface PackageJson {
   typings?: string;
   exports?: unknown;
   engines?: { node?: string };
+  workspaces?: unknown;
   dependencies?: { [name: string]: string };
   devDependencies?: { [name: string]: string };
 }
@@ -168,15 +169,38 @@ function readJson(filePath: string): PackageJson | undefined {
   }
 }
 
-function findUp<T>(startDir: string, probe: (dir: string) => T | undefined): T | undefined {
+/**
+ * Walk up from `startDir` until `probe` answers. `isBoundary` stops the walk
+ * after the directory it matches has itself been probed, so the boundary is
+ * inclusive.
+ */
+function findUp<T>(
+  startDir: string,
+  probe: (dir: string) => T | undefined,
+  isBoundary?: (dir: string) => boolean,
+): T | undefined {
   let dir = path.resolve(startDir);
   for (;;) {
     const result = probe(dir);
     if (result !== undefined) return result;
+    if (isBoundary?.(dir)) return undefined;
     const parent = path.dirname(dir);
     if (parent === dir) return undefined;
     dir = parent;
   }
+}
+
+/**
+ * The top of the project, past which an upward search is reading somebody
+ * else's files. Worktrees and submodules write `.git` as a file rather than a
+ * directory, and a checkout that carries no git metadata at all still has its
+ * workspace manifest, so both signals are needed.
+ */
+function isProjectRoot(dir: string): boolean {
+  if (fs.existsSync(path.join(dir, '.git'))) return true;
+  if (fs.existsSync(path.join(dir, 'pnpm-workspace.yaml'))) return true;
+  if (fs.existsSync(path.join(dir, 'lerna.json'))) return true;
+  return readJson(path.join(dir, 'package.json'))?.workspaces !== undefined;
 }
 
 /** The migration root may be a subfolder of the package. */
@@ -211,11 +235,21 @@ const LOCKFILES: [string, PackageManager][] = [
   ['package-lock.json', 'npm'],
 ];
 
+/**
+ * The lockfile can sit several levels above the migration root, since in a
+ * monorepo it only exists at the workspace root. It stops being the project's
+ * lockfile above the project root, and recommending the wrong manager writes a
+ * second lockfile into the repository, so the walk stops there.
+ */
 function detectPackageManager(startDir: string): PackageManager {
-  const found = findUp(startDir, (dir) => {
-    const entry = LOCKFILES.find(([file]) => fs.existsSync(path.join(dir, file)));
-    return entry ? entry[1] : undefined;
-  });
+  const found = findUp(
+    startDir,
+    (dir) => {
+      const entry = LOCKFILES.find(([file]) => fs.existsSync(path.join(dir, file)));
+      return entry ? entry[1] : undefined;
+    },
+    isProjectRoot,
+  );
   return found ?? 'npm';
 }
 
