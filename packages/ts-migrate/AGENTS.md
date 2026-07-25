@@ -310,6 +310,16 @@ as they are.
   `--exclude-plugin ts-ignore --exclude-plugin strip-ts-ignore`; pass
   `--exclude-plugin eslint-fix` to keep lint-autofix churn out of the diff.
   Excluding `infer-types` is equivalent to `--no-inferTypes`.
+- `--no-modernizeDefaultProps`: keep `Component.defaultProps = { ... }` on
+  function components and type it, instead of moving the defaults into the
+  props destructuring (`{ size = 'md' }`), making those props optional and
+  deleting the assignment. React 19 ignores defaultProps on function
+  components, so the conversion is on by default. It is made only where it
+  cannot change behavior: literal default values, an object literal in the
+  same file, nothing else reading the defaults or `Component.defaultProps`, a
+  destructured props parameter that binds every defaulted prop, and a props
+  type declared in full in that file. Everything else, class components
+  included, keeps the assignment and is reported at the end of the run.
 - `--aliases tsfixme`: use `$TSFixMe`/`$TSFixMeFunction` instead of plain
   `any`. If the project does not already declare those globals, the migration
   writes them to `ts-migrate-aliases.d.ts` in `<folder>` so the output still

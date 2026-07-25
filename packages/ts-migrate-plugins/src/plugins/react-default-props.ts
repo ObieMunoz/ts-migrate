@@ -2,13 +2,21 @@ import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { createValidate, Properties } from '../utils/validateOptions';
+import {
+  isReactForwardRefName,
+  isSfcFunctionExpression,
+  ReactSfcFunctionExpression,
+  unwrapReactMemo,
+} from './utils/react';
 
 type Options = {
   useDefaultPropsHelper?: boolean;
+  modernizeDefaultProps?: boolean;
 };
 
 const optionProperties: Properties = {
   useDefaultPropsHelper: { type: 'boolean' },
+  modernizeDefaultProps: { type: 'boolean' },
 };
 
 /**
@@ -26,7 +34,7 @@ const WITH_DEFAULT_PROPS_DECLARATION = `type ${WITH_DEFAULT_PROPS_HELPER}<P, D> 
 const reactDefaultPropsPlugin: Plugin<Options> = {
   name: 'react-default-props',
 
-  run({ sourceFile, text, options }) {
+  run({ sourceFile, text, options, reportFileNotice }) {
     const importDeclarations = sourceFile.statements.filter(ts.isImportDeclaration);
     const expressionStatements = sourceFile.statements.filter(ts.isExpressionStatement);
     const classDeclarations = sourceFile.statements.filter(ts.isClassDeclaration);
@@ -60,6 +68,35 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
     const updates: SourceTextUpdate[] = [];
     const printer = ts.createPrinter();
     const processedPropTypes = new Map<string, string>();
+
+    // Function components whose defaults moved into the parameter no longer
+    // have an assignment to type, so they skip the intersection path below.
+    const modernized = new Set<ts.ExpressionStatement>();
+    // A props type this pass edited cannot also be replaced wholesale by the
+    // intersection path, so components sharing one are left alone there.
+    const editedTypeDeclarations = new Set<ts.Declaration>();
+    if (options.modernizeDefaultProps) {
+      const markedOptional = new Set<ts.PropertySignature>();
+      sfcsDefaultPropsAssignments.forEach((assignment) => {
+        const result = modernizeDefaultProps(
+          assignment,
+          sourceFile,
+          [...typeAliasDeclarations, ...interfaceDeclarations],
+          markedOptional,
+          editedTypeDeclarations,
+        );
+        if (result.updates) {
+          updates.push(...result.updates);
+          modernized.add(assignment);
+        } else if (result.reason && reportFileNotice) {
+          reportFileNotice({
+            reason: `Left defaultProps in place: ${result.reason}.`,
+            hint: 'React 19 ignores defaultProps on function components, so these need converting by hand.',
+            recovered: true,
+          });
+        }
+      });
+    }
 
     let shouldAddWithDefaultPropsHelper =
       !importDeclarations.some((importDeclaration) =>
@@ -95,6 +132,8 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
     ) => {
       // we don't want process props types more than once
       if (processedPropTypes.get(propsTypeName) === defaultPropsTypeName) return;
+
+      if (editedTypeDeclarations.has(propsTypeAliasDeclaration)) return;
 
       // prevent multiple usage of defalut props or WithDefaultProps
       const alreadyHaveDefalutProps = ts.isIntersectionTypeNode(propsTypeAliasDeclaration.type)
@@ -228,6 +267,8 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
      * - use a new Props type in the component
      */
     sfcsDefaultPropsAssignments.forEach((defaultProp) => {
+      if (modernized.has(defaultProp)) return;
+
       const expression = defaultProp.expression as ts.BinaryExpression;
       const leftPart = expression.left as ts.PropertyAccessExpression;
       const componentName = leftPart.expression.getText();
@@ -359,5 +400,365 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
 
   validate: createValidate(optionProperties),
 };
+
+type DefaultValue = { name: string; text: string };
+
+type ModernizeResult = { updates?: SourceTextUpdate[]; reason?: string };
+
+type PropsTypeMembers = {
+  members: ts.TypeElement[];
+  /** Set when the members are the whole props type, so an absent prop is absent. */
+  exhaustive: boolean;
+  declaration?: ts.Declaration;
+};
+
+/**
+ * Moves `Foo.defaultProps = { size: 'md' }` into the props destructuring as
+ * `{ size = 'md' }` and marks the prop optional, then deletes the assignment.
+ *
+ * React resolves defaultProps for a prop that is undefined once the element's
+ * props are built, and a default parameter applies to a property that is
+ * undefined when it is destructured, so the two agree on an omitted prop, on an
+ * explicitly passed `undefined`, and on `null` (neither substitutes). They
+ * differ on the value's identity, on props read through the element rather than
+ * the component, and on anything that reads `Foo.defaultProps` itself, so the
+ * gates below keep the conversion to the components where the two are the same.
+ */
+function modernizeDefaultProps(
+  assignment: ts.ExpressionStatement,
+  sourceFile: ts.SourceFile,
+  typeDeclarations: (ts.TypeAliasDeclaration | ts.InterfaceDeclaration)[],
+  markedOptional: Set<ts.PropertySignature>,
+  editedTypeDeclarations: Set<ts.Declaration>,
+): ModernizeResult {
+  const expression = assignment.expression as ts.BinaryExpression;
+  const target = expression.left as ts.PropertyAccessExpression;
+  if (
+    expression.operatorToken.kind !== ts.SyntaxKind.EqualsToken ||
+    !ts.isIdentifier(target.expression)
+  ) {
+    return { reason: 'the assignment target is not a plain component name' };
+  }
+
+  const componentName = target.expression.text;
+  const isClassComponent = sourceFile.statements.some(
+    (statement) => ts.isClassDeclaration(statement) && statement.name?.text === componentName,
+  );
+  // React 19 still reads defaultProps off class components.
+  if (isClassComponent) return {};
+
+  const component = findComponentFunction(sourceFile, componentName);
+  if (!component) return { reason: 'the component is not a function component in this file' };
+
+  const propsParam = component.parameters[0];
+  if (!propsParam || !ts.isObjectBindingPattern(propsParam.name)) {
+    return { reason: 'the props parameter is not destructured' };
+  }
+
+  const defaults = findDefaultsObject(expression.right, sourceFile);
+  if (!defaults) return { reason: 'the defaults are not an object literal in this file' };
+
+  if (
+    defaults.declaration &&
+    findValueReferences(sourceFile, (expression.right as ts.Identifier).text).length !== 1
+  ) {
+    return { reason: 'the defaults object is used elsewhere in the file' };
+  }
+
+  if (findDefaultPropsReads(sourceFile, componentName, target).length > 0) {
+    return { reason: 'defaultProps is read elsewhere in the file' };
+  }
+
+  const values = readDefaultValues(defaults.objectLiteral, sourceFile);
+  if (!values) return { reason: 'a default value is not a literal' };
+
+  const propsType = propsParam.type
+    ? collectPropsTypeMembers(propsParam.type, typeDeclarations, true)
+    : undefined;
+  if (propsType && !propsType.exhaustive) {
+    return { reason: 'the props type is not declared in full in this file' };
+  }
+
+  const updates: SourceTextUpdate[] = [];
+  const toMarkOptional: ts.PropertySignature[] = [];
+
+  for (const value of values) {
+    const element = findBindingElement(propsParam.name, value.name);
+    if (!element) return { reason: 'a defaulted prop is not destructured by the component' };
+    if (!ts.isIdentifier(element.name)) {
+      return { reason: 'a defaulted prop is destructured into a nested pattern' };
+    }
+    if (element.initializer) {
+      if (element.initializer.getText(sourceFile) !== value.text) {
+        return { reason: 'a defaulted prop already has a different default' };
+      }
+    } else {
+      updates.push({ kind: 'insert', index: element.name.end, text: ` = ${value.text}` });
+    }
+
+    if (propsType) {
+      const signature = findPropertySignature(propsType.members, value.name);
+      if (!signature) {
+        return { reason: 'a defaulted prop is not declared in a props type in this file' };
+      }
+      if (!signature.questionToken) toMarkOptional.push(signature);
+    }
+  }
+
+  toMarkOptional.forEach((signature) => {
+    if (markedOptional.has(signature)) return;
+    markedOptional.add(signature);
+    updates.push({ kind: 'insert', index: signature.name.end, text: '?' });
+    if (propsType?.declaration) editedTypeDeclarations.add(propsType.declaration);
+  });
+
+  updates.push({ kind: 'delete', index: assignment.pos, length: assignment.end - assignment.pos });
+  if (defaults.declaration) {
+    const { pos, end } = defaults.declaration;
+    updates.push({ kind: 'delete', index: pos, length: end - pos });
+  }
+
+  return { updates };
+}
+
+/**
+ * The component shapes react-props recognizes: a function declaration, a
+ * function expression or arrow function, and either of those behind forwardRef
+ * and any number of memo calls.
+ */
+function findComponentFunction(
+  sourceFile: ts.SourceFile,
+  componentName: string,
+): ts.FunctionDeclaration | ReactSfcFunctionExpression | undefined {
+  for (const statement of sourceFile.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name?.text === componentName) {
+      return statement;
+    }
+
+    if (ts.isVariableStatement(statement)) {
+      const declaration = statement.declarationList.declarations.find(
+        (current) => ts.isIdentifier(current.name) && current.name.text === componentName,
+      );
+      if (declaration?.initializer) {
+        return unwrapComponentFunction(declaration.initializer);
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function unwrapComponentFunction(
+  expression: ts.Expression,
+): ReactSfcFunctionExpression | undefined {
+  const initializer = unwrapReactMemo(expression);
+  if (isSfcFunctionExpression(initializer)) return initializer;
+
+  if (ts.isCallExpression(initializer) && isReactForwardRefName(initializer)) {
+    const [argument] = initializer.arguments;
+    return argument && isSfcFunctionExpression(argument) ? argument : undefined;
+  }
+
+  return undefined;
+}
+
+function findDefaultsObject(
+  expression: ts.Expression,
+  sourceFile: ts.SourceFile,
+): { objectLiteral: ts.ObjectLiteralExpression; declaration?: ts.VariableStatement } | undefined {
+  if (ts.isObjectLiteralExpression(expression)) return { objectLiteral: expression };
+  if (!ts.isIdentifier(expression)) return undefined;
+
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    if ((statement.declarationList.flags & ts.NodeFlags.Const) === 0) continue;
+    if (statement.declarationList.declarations.length !== 1) continue;
+
+    const [declaration] = statement.declarationList.declarations;
+    if (
+      ts.isIdentifier(declaration.name) &&
+      declaration.name.text === expression.text &&
+      declaration.initializer &&
+      ts.isObjectLiteralExpression(declaration.initializer)
+    ) {
+      return { objectLiteral: declaration.initializer, declaration: statement };
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * A default parameter is evaluated on every call, so only values that are the
+ * same on every evaluation convert. An object, array or function default would
+ * reach the component as a new value per render where defaultProps shared one.
+ */
+function readDefaultValues(
+  objectLiteral: ts.ObjectLiteralExpression,
+  sourceFile: ts.SourceFile,
+): DefaultValue[] | undefined {
+  const values: DefaultValue[] = [];
+
+  for (const property of objectLiteral.properties) {
+    if (!ts.isPropertyAssignment(property) || !ts.isIdentifier(property.name)) return undefined;
+    if (!isStableDefaultValue(property.initializer)) return undefined;
+    values.push({ name: property.name.text, text: property.initializer.getText(sourceFile) });
+  }
+
+  return values;
+}
+
+function isStableDefaultValue(node: ts.Expression): boolean {
+  if (ts.isPrefixUnaryExpression(node)) {
+    return (
+      (node.operator === ts.SyntaxKind.MinusToken || node.operator === ts.SyntaxKind.PlusToken) &&
+      (ts.isNumericLiteral(node.operand) || ts.isBigIntLiteral(node.operand))
+    );
+  }
+
+  return (
+    ts.isStringLiteral(node) ||
+    ts.isNumericLiteral(node) ||
+    ts.isBigIntLiteral(node) ||
+    ts.isNoSubstitutionTemplateLiteral(node) ||
+    node.kind === ts.SyntaxKind.TrueKeyword ||
+    node.kind === ts.SyntaxKind.FalseKeyword ||
+    node.kind === ts.SyntaxKind.NullKeyword ||
+    (ts.isIdentifier(node) && node.text === 'undefined')
+  );
+}
+
+function findBindingElement(
+  pattern: ts.ObjectBindingPattern,
+  propName: string,
+): ts.BindingElement | undefined {
+  return pattern.elements.find((element) => {
+    if (element.dotDotDotToken) return false;
+    const name = element.propertyName ?? element.name;
+    if (ts.isIdentifier(name)) return name.text === propName;
+    if (ts.isStringLiteral(name)) return name.text === propName;
+    return false;
+  });
+}
+
+function collectPropsTypeMembers(
+  type: ts.TypeNode,
+  typeDeclarations: (ts.TypeAliasDeclaration | ts.InterfaceDeclaration)[],
+  resolveReference: boolean,
+  declaration?: ts.Declaration,
+): PropsTypeMembers {
+  if (ts.isTypeLiteralNode(type)) {
+    return { members: [...type.members], exhaustive: true, declaration };
+  }
+
+  if (ts.isIntersectionTypeNode(type)) {
+    const literals = type.types.filter(ts.isTypeLiteralNode);
+    return {
+      members: literals.flatMap((literal) => [...literal.members]),
+      exhaustive: literals.length === type.types.length,
+      declaration,
+    };
+  }
+
+  if (
+    resolveReference &&
+    ts.isTypeReferenceNode(type) &&
+    ts.isIdentifier(type.typeName) &&
+    type.typeArguments == null
+  ) {
+    const referenced = typeDeclarations.find(
+      (current) =>
+        current.name.text === (type.typeName as ts.Identifier).text && !current.typeParameters,
+    );
+    if (referenced && ts.isTypeAliasDeclaration(referenced)) {
+      return collectPropsTypeMembers(referenced.type, typeDeclarations, false, referenced);
+    }
+    if (referenced && ts.isInterfaceDeclaration(referenced)) {
+      return {
+        members: [...referenced.members],
+        // An interface with a heritage clause declares props it does not list,
+        // and one that is merged elsewhere cannot take a `?` here alone.
+        exhaustive: referenced.heritageClauses == null,
+        declaration: referenced,
+      };
+    }
+  }
+
+  return { members: [], exhaustive: false, declaration };
+}
+
+function findPropertySignature(
+  members: ts.TypeElement[],
+  propName: string,
+): ts.PropertySignature | undefined {
+  return members.filter(ts.isPropertySignature).find((member) => {
+    if (ts.isIdentifier(member.name)) return member.name.text === propName;
+    if (ts.isStringLiteral(member.name)) return member.name.text === propName;
+    return false;
+  });
+}
+
+/** Reads of `Foo.defaultProps` other than the assignment being converted. */
+function findDefaultPropsReads(
+  sourceFile: ts.SourceFile,
+  componentName: string,
+  assignmentTarget: ts.PropertyAccessExpression,
+): ts.Node[] {
+  const reads: ts.Node[] = [];
+
+  const visit = (node: ts.Node) => {
+    if (node !== assignmentTarget) {
+      if (
+        ts.isPropertyAccessExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === componentName &&
+        node.name.text === 'defaultProps'
+      ) {
+        reads.push(node);
+      }
+      if (
+        ts.isElementAccessExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === componentName &&
+        ts.isStringLiteral(node.argumentExpression) &&
+        node.argumentExpression.text === 'defaultProps'
+      ) {
+        reads.push(node);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sourceFile, visit);
+
+  return reads;
+}
+
+/** Identifiers that read the named binding, ignoring members that share its name. */
+function findValueReferences(sourceFile: ts.SourceFile, name: string): ts.Identifier[] {
+  const references: ts.Identifier[] = [];
+
+  const visit = (node: ts.Node) => {
+    if (ts.isIdentifier(node) && node.text === name && isValueReference(node)) {
+      references.push(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sourceFile, visit);
+
+  return references;
+}
+
+function isValueReference(node: ts.Identifier): boolean {
+  const { parent } = node;
+  if (!parent) return true;
+  if (ts.isPropertyAccessExpression(parent)) return parent.expression === node;
+  if (ts.isElementAccessExpression(parent)) return parent.expression === node;
+  if (ts.isQualifiedName(parent)) return parent.left === node;
+  if (ts.isPropertyAssignment(parent) || ts.isPropertySignature(parent)) return parent.name !== node;
+  if (ts.isBindingElement(parent)) return parent.propertyName !== node && parent.name !== node;
+  if (ts.isVariableDeclaration(parent) || ts.isParameter(parent)) return parent.name !== node;
+  if (ts.isFunctionDeclaration(parent) || ts.isClassDeclaration(parent)) return parent.name !== node;
+  return true;
+}
 
 export default reactDefaultPropsPlugin;

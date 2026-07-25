@@ -57,7 +57,7 @@ process.exit(exitCode);
 | [member-accessibility](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/member-accessibility.ts) | Add accessibility modifiers (private, protected, or public) to class members according to naming conventions. |
 | [react-class-lifecycle-methods](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-class-lifecycle-methods.ts) | Annotate React lifecycle method types. |
 | [react-class-state](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-class-state.ts) | Declare React state type. |
-| [react-default-props](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-default-props.ts) | Annotate React default props. With `{ useDefaultPropsHelper: true }`, props are typed through a `WithDefaultProps` helper type generated into each migrated file. |
+| [react-default-props](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-default-props.ts) | Annotate React default props. With `{ modernizeDefaultProps: true }`, a function component's defaults move into its props destructuring instead, the defaulted props become optional, and the assignment is deleted (see "Function component defaultProps" below). Class components and the components that cannot be converted are typed instead: with `{ useDefaultPropsHelper: true }` through a `WithDefaultProps` helper type generated into each migrated file, otherwise through a `Props & typeof defaultProps` intersection. |
 | [react-hook-types](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-hook-types.ts) | Write the type argument a React hook call needs when its initializer infers nothing useful: `useState(null)`, `useState(undefined)`, `useState([])`, `useState({})` and `useRef(null)`. Only calls an existing error blames are touched. `useState` reads the arguments its setter is called with in the same file, `useRef` reads the intrinsic tag its ref is attached to; an argument the checker types `any` is not evidence. The proposed argument is written only when re-checking the file with it in place reports no new error, and everything else takes `any` (`$TSFixMe`). |
 | [react-inline-imported-prop-types](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-inline-imported-prop-types.ts) | Copy propTypes objects imported from other modules into the file that assigns them (including spreads of them), carrying over the imports the copied text needs, so react-props converts them structurally like colocated propTypes. Runs before the other React plugins. |
 | [react-props](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-props.ts) | Convert React prop types to TypeScript type. Imported propTypes objects that react-inline-imported-prop-types could not copy (non-relative modules, non-literal exports, references to module-local values) are typed with `InferProps<typeof importedPropTypes>` instead. |
@@ -66,6 +66,47 @@ process.exit(exitCode);
 | [detect-types-packages](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/utils/typesPackages.ts) | Read-only. Classifies the diagnostics ts-ignore is about to suppress into `@types` package recommendations (missing, not loaded, outdated, or redundant), reported at the end of the run. Created per run with `createTypesPackageDetector()` and placed immediately before ts-ignore. |
 | [ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/ts-ignore.ts) | Add `// @ts-ignore` comments for the remaining errors. |
 | [update-import-paths](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/update-import-paths.ts) | Re-point relative imports that still say `./foo.js`/`./foo.jsx` after the file was renamed to `.ts`/`.tsx`. Drops the extension by default; keeps a `.js` extension in ESM packages (`"type": "module"`) or with `{ extension: 'js' }`. Imports whose target still exists on disk are left alone. |
+
+## Function component defaultProps
+
+React 18.3 warns on `defaultProps` for function components and React 19 ignores
+it, so react-default-props rewrites
+
+```jsx
+function Button({ size, label }: Props) { ... }
+Button.defaultProps = { size: 'md' };
+```
+
+into `function Button({ size = 'md', label }: Props)` with `size` optional in
+`Props`, and deletes the assignment.
+
+The two are the same for a prop that is omitted, passed as `undefined`, or
+passed as `null`: React substitutes a default only for `undefined`, and so does
+a default parameter. They are not the same for a value's identity, since a
+default parameter is evaluated on every render, and not for anything that reads
+the defaults through the element or off the component. A component is converted
+only when all of the following hold, and keeps its assignment (and gets the
+typing above) otherwise:
+
+- Every default is a literal: a string, number, bigint, boolean, `null`,
+  `undefined`, or a template with no substitutions. An object, array or
+  function default would reach the component as a new value on every render
+  where `defaultProps` shared one.
+- The defaults are an object literal in the same file, either assigned inline or
+  through a `const` that nothing else in the file reads.
+- Nothing else in the file reads `Component.defaultProps`.
+- The props parameter is destructured and binds every defaulted prop, so a
+  defaulted prop cannot silently stop reaching a rest element.
+- No defaulted prop already carries a different default.
+- The props type is declared in full in the same file, as a type literal, a type
+  alias to one, or an interface with no heritage clause, and it declares every
+  defaulted prop.
+
+Class components are left alone: `defaultProps` still works there in React 19.
+A prop read through `React.createElement` results rather than through the
+component, and a `Component.defaultProps` read from another file, are not
+visible to the plugin; the assignments it keeps are reported at the end of the
+run.
 
 ## What infer-types annotations mean
 
