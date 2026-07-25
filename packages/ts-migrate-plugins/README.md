@@ -60,7 +60,7 @@ process.exit(exitCode);
 | [member-accessibility](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/member-accessibility.ts) | Add accessibility modifiers (private, protected, or public) to class members according to naming conventions. |
 | [react-class-lifecycle-methods](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-class-lifecycle-methods.ts) | Annotate React lifecycle method types. |
 | [react-class-state](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-class-state.ts) | Declare React state type. |
-| [react-default-props](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-default-props.ts) | Annotate React default props. With `{ modernizeDefaultProps: true }`, a function component's defaults move into its props destructuring instead, the defaulted props become optional, and the assignment is deleted (see "Function component defaultProps" below). Class components and the components that cannot be converted are typed instead: with `{ useDefaultPropsHelper: true }` through a `WithDefaultProps` helper type generated into each migrated file, otherwise through a `Props & typeof defaultProps` intersection. Defaults assigned inline onto a function component are read as `(typeof Component)["defaultProps"]`, which does not depend on the assignment sitting above the generated type. |
+| [react-default-props](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-default-props.ts) | Annotate React default props. With `{ modernizeDefaultProps: true }`, a function component's defaults move into its props destructuring instead, the defaulted props become optional, and the assignment is deleted (see "Function component defaultProps" below). Class components and the components that cannot be converted are typed instead: with `{ useDefaultPropsHelper: true }` through a `WithDefaultProps` helper type generated into each migrated file, otherwise through a `Props & typeof defaultProps` intersection. Defaults assigned inline onto a function declaration are read as `(typeof Component)["defaultProps"]`, which does not depend on the assignment sitting above the generated type. A component declared on a `const` takes its own type from that initializer, so its inline defaults are moved into a `const` of their own above it and read as `typeof ComponentDefaultProps` instead, or left untyped when moving them would put them above a binding they read. |
 | [react-destructured-props](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-destructured-props.ts) | Name the props of a function component that destructures them and has no propTypes, which react-props skips and explicit-any would annotate as one `any` over the whole pattern. Emits an all-optional `Props` type from the destructured keys and types the members from single-file evidence only. |
 | [react-hook-types](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-hook-types.ts) | Write the type argument a React hook call needs when its initializer infers nothing useful: `useState(null)`, `useState(undefined)`, `useState([])`, `useState({})` and `useRef(null)`. Only calls an existing error blames are touched. `useState` reads the arguments its setter is called with in the same file, `useRef` reads the intrinsic tag its ref is attached to; an argument the checker types `any` is not evidence. The proposed argument is written only when re-checking the file with it in place reports no new error, and everything else takes `any` (`$TSFixMe`). |
 | [react-inline-imported-prop-types](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-inline-imported-prop-types.ts) | Copy propTypes objects imported from other modules into the file that assigns them (including spreads of them), carrying over the imports the copied text needs, so react-props converts them structurally like colocated propTypes. Runs before the other React plugins. |
@@ -112,6 +112,28 @@ A prop read through `React.createElement` results rather than through the
 component, and a `Component.defaultProps` read from another file, are not
 visible to the plugin; the assignments it keeps are reported at the end of the
 run.
+
+A kept assignment is typed by naming its defaults when the component is a
+`const`:
+
+```jsx
+const Button = ({ size, onClick }: Props) => { ... }
+Button.defaultProps = { size: 'md', onClick: () => {} };
+```
+
+becomes `const ButtonDefaultProps = { ... }` above the component, with
+`Button.defaultProps = ButtonDefaultProps` and `typeof ButtonDefaultProps` in
+the props type. Reading `typeof Button` there instead would be circular, since
+`Button`'s type comes from the initializer the props type annotates.
+
+The defaults move to where the props type goes, so they are named only when
+everything they read is already initialized there: an import or a function
+declaration anywhere in the file, or anything else declared above the
+component. A component whose defaults read a name declared below it, including
+a value under a function in the defaults, keeps its assignment untouched and
+gets no defaults type, reported at the end of the run. Moving those defaults
+would read a binding in its temporal dead zone, which is a `ReferenceError` at
+module load rather than a type to fix later.
 
 ## What infer-types annotations mean
 
