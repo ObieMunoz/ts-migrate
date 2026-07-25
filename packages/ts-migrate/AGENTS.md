@@ -132,6 +132,15 @@ export and a wrong declaration type-checks while a suppression does not.
 `init` names each one it skipped. Declare those yourself, in a file of your
 own rather than in this one.
 
+A run may also add `types/ts-migrate-globals.d.ts`, declaring the properties
+the code assigns to `window`, `global` and `globalThis` so those reads and
+writes type-check instead of taking a cast at each site. Commit it too. Its
+types are the ones the assigned expressions state outright and the any alias
+everywhere else, so narrowing one to the real shape is the useful edit and a
+later run keeps it. Delete an entry once something else declares that
+property, since two declarations of one global is an error. Do not add
+entries by hand: the file is rewritten from its own declarations every run.
+
 Afterwards, update the project plumbing the tool deliberately does not touch:
 
 - Add a way to produce/run JS again: a `tsc` build step or a TS-aware runner
@@ -249,7 +258,8 @@ JavaScript, so a `bin` pointing at it stays valid and needs no notice.
 
 Runs the codemod pipeline on an already-renamed project: re-points stale
 relative imports, rewrites CommonJS `require`/`module.exports` into TypeScript
-module syntax, converts React propTypes to types, writes the type arguments
+module syntax, declares the properties the code assigns to `window` and
+`globalThis`, converts React propTypes to types, writes the type arguments
 React hook calls need, infers types from usage, declares the properties
 assigned onto empty object literals, annotates remaining implicit `any`s,
 widens the annotations the file's own assignments contradict, and suppresses
@@ -354,6 +364,15 @@ run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
   checkable imports typed `any` rather than N `@ts-expect-error` comments.
   Entries are kept across runs and dropped once their types resolve, so
   installing a real `@types` package retires one. A file at that path that
+  ts-migrate did not write is never touched.
+- `--no-declareGlobals`: cast every read and write of a property the code hangs
+  off `window`, `global` or `globalThis`, instead of declaring those properties
+  once in `types/ts-migrate-globals.d.ts`. By default the run generates that
+  file and prints what it declared. Types are the ones the assigned expressions
+  state outright and the any alias everywhere else, so narrowing one by hand is
+  the useful edit and a later run keeps it. Entries are never dropped
+  automatically: delete one once something else declares that property, since
+  two declarations of one global is an error. A file at that path that
   ts-migrate did not write is never touched.
 - `--dry-run`: run every plugin pass but write nothing to disk. Prints each
   file a real run would update, with the suppression and `any` counts it
@@ -474,7 +493,8 @@ machine-readable preview. Per command:
   `{"file", "key", "value", "target"}`).
 - `migrate` and `reignore`: `changedFiles` (every file the run modified),
   `generatedFiles` (declaration files the run wrote itself, e.g.
-  `types/ts-migrate-modules.d.ts`, which are new files rather than edits),
+  `types/ts-migrate-modules.d.ts` and `types/ts-migrate-globals.d.ts`, which
+  are new files rather than edits),
   `nonMigratedFilesWithSyntaxErrors` (files that will keep failing `tsc` and
   that re-running cannot fix), `plugins` (`{"name", "changedFileCount"}` per
   pipeline step, in order), `pluginFailures` (files a plugin could not

@@ -22,8 +22,10 @@ import {
   tsIgnorePlugin,
   updateImportPathsPlugin,
   widenAnnotationsPlugin,
+  createGlobalDeclarations,
   createSuppressionExplainer,
   createTypesPackageDetector,
+  GlobalDeclarationsCollector,
   SuppressionExplainer,
   TypesPackageDetector,
 } from '@obiemunoz/ts-migrate-plugins';
@@ -73,12 +75,14 @@ interface BuildMigrateConfigParams {
   inferTypes?: boolean;
   projectEslint?: boolean;
   declareUntypedModules?: boolean;
+  declareGlobals?: boolean;
 }
 
 interface MigrateCommandConfig {
   config: MigrateConfig;
   typesPackageDetector?: TypesPackageDetector;
   suppressionExplainer?: SuppressionExplainer;
+  globalDeclarations?: GlobalDeclarationsCollector;
   anyAlias?: string;
   anyFunctionAlias?: string;
 }
@@ -227,13 +231,27 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
   const inferTypes =
     (params.inferTypes ?? true) && !excludePlugins.includes(inferTypesPlugin.name);
 
+  const globalDeclarations = (params.declareGlobals ?? true)
+    ? createGlobalDeclarations({ anyAlias })
+    : undefined;
+
   const config = new MigrateConfig()
     .addPlugin(updateImportPathsPlugin, optionsFor(updateImportPathsPlugin))
     // Runs on the specifiers update-import-paths has already re-pointed, and
     // before the passes that read types across files, which need the imports
     // this restores.
     .addPlugin(convertCommonjsPlugin, optionsFor(convertCommonjsPlugin))
-    .addPlugin(stripTSIgnorePlugin, optionsFor(stripTSIgnorePlugin))
+    .addPlugin(stripTSIgnorePlugin, optionsFor(stripTSIgnorePlugin));
+  if (globalDeclarations) {
+    // Declares the properties the code hangs off window and globalThis. Both
+    // passes run before add-conversions, which would otherwise cast every one
+    // of those sites, and early enough that the file joins the program before
+    // the passes that read types across files.
+    config
+      .addPlugin(globalDeclarations.plugin, {})
+      .addPlugin(globalDeclarations.declarationsPlugin, {});
+  }
+  config
     .addPlugin(reactInlineImportedPropTypesPlugin, optionsFor(reactInlineImportedPropTypesPlugin))
     .addPlugin(hoistClassStaticsPlugin, optionsFor(hoistClassStaticsPlugin))
     .addPlugin(hoistArrowFunctionsPlugin, optionsFor(hoistArrowFunctionsPlugin))
@@ -302,5 +320,12 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     config.plugins = config.plugins.filter(({ plugin }) => !excluded.has(plugin.name));
   }
 
-  return { config, typesPackageDetector, suppressionExplainer, anyAlias, anyFunctionAlias };
+  return {
+    config,
+    typesPackageDetector,
+    suppressionExplainer,
+    globalDeclarations,
+    anyAlias,
+    anyFunctionAlias,
+  };
 }
