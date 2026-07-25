@@ -118,6 +118,19 @@ are errors again. Delete a line from it once that package has real types
 (a later run drops the entry on its own), and never add hand-written
 declarations to it — ts-migrate rewrites the file.
 
+On a webpack project, `init` also writes `types/ts-migrate-assets.d.ts`,
+declaring the asset imports the bundler resolves and TypeScript does not
+(`import logo from './logo.png'`, `import './App.css'`). Commit it too.
+Only the extensions the project imports are declared, and only where the
+loader cannot change the type: images, fonts and media get a `string`
+default export, and an extension imported only for its side effects gets a
+module with no exports. An extension imported by name, a style sheet bound
+to a name (CSS modules), and `*.svg` in a project that has an svgr package
+installed are all left undeclared, because only the loader knows what those
+export and a wrong declaration type-checks while a suppression does not.
+`init` names each one it skipped. Declare those yourself, in a file of your
+own rather than in this one.
+
 Afterwards, update the project plumbing the tool deliberately does not touch:
 
 - Add a way to produce/run JS again: a `tsc` build step or a TS-aware runner
@@ -171,8 +184,9 @@ files are read for their types and never migrated in place.
 The module settings follow the project: `commonjs`, or `nodenext` when
 package.json declares `"type": "module"`, or `esnext` with
 `"moduleResolution": "bundler"` when the project builds with Vite or webpack
-(either one in `dependencies`/`devDependencies`, or a
-`vite.config.*`/`webpack.config.*` file in `<folder>`). Bundler projects need
+(either one in `dependencies`/`devDependencies`, `react-scripts` for a
+Create React App project, or a `vite.config.*`/`webpack.config.*` file in
+`<folder>`). Bundler projects need
 that third setting because the bundler resolves their imports, not node:
 `import.meta` is TS1343 under `commonjs`, and extensionless relative imports
 are TS2835 under `nodenext`. A Vite
@@ -180,6 +194,7 @@ project also gets `"vite/client"` in the `types` array when vite is
 installed, which is what declares `import.meta.env` and the asset imports
 (`*.svg`, `*.css`). For a webpack project, install `@types/webpack-env` so
 `require.context` and `module.hot` type; init says so when it is missing.
+A webpack project also gets `types/ts-migrate-assets.d.ts`, described below.
 Installed `@types` packages are pinned in a `types` array so that
 TypeScript 5 (which loads `node_modules/@types` automatically) and
 TypeScript 6 (which does not) check the project identically; add new

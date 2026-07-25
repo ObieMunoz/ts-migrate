@@ -18,19 +18,29 @@ export interface BundlerPackageJson {
 // over, and "vite/client" is the more specific of the two type packages.
 const BUNDLERS: BundlerName[] = ['vite', 'webpack'];
 
+// react-scripts builds with webpack and keeps the config to itself, so a
+// Create React App project declares the wrapper and never webpack.
+const BUNDLER_DEPENDENCIES: Record<BundlerName, string[]> = {
+  vite: ['vite'],
+  webpack: ['webpack', 'react-scripts'],
+};
+
 const CONFIG_EXTENSION_REGEX = /\.[cm]?[jt]sx?$/;
 
 const DEPENDENCY_FIELDS: Array<keyof BundlerPackageJson> = ['devDependencies', 'dependencies'];
 
-function dependencyField(
+function dependencyEvidence(
   packageJson: BundlerPackageJson | null,
   name: BundlerName,
 ): string | undefined {
   if (!packageJson) return undefined;
-  return DEPENDENCY_FIELDS.find((field) => {
+  return DEPENDENCY_FIELDS.flatMap((field) => {
     const dependencies = packageJson[field];
-    return typeof dependencies === 'object' && dependencies !== null && name in dependencies;
-  });
+    if (typeof dependencies !== 'object' || dependencies === null) return [];
+    return BUNDLER_DEPENDENCIES[name]
+      .filter((dependency) => dependency in dependencies)
+      .map((dependency) => `"${dependency}" in ${field}`);
+  })[0];
 }
 
 /**
@@ -61,8 +71,8 @@ export function detectBundler(
     // Unreadable rootDir; the dependency evidence still stands on its own.
   }
   const detections = BUNDLERS.map((name): BundlerDetection | null => {
-    const field = dependencyField(packageJson, name);
-    if (field !== undefined) return { name, evidence: `"${name}" in ${field}` };
+    const declared = dependencyEvidence(packageJson, name);
+    if (declared !== undefined) return { name, evidence: declared };
     const file = configFile(entries, name);
     return file !== undefined ? { name, evidence: file } : null;
   }).filter((detection): detection is BundlerDetection => detection !== null);

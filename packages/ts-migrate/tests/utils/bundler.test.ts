@@ -31,6 +31,22 @@ describe('detectBundler', () => {
     });
   });
 
+  it('reads react-scripts as webpack, which is what Create React App builds with', () => {
+    expect(detectBundler(rootDir, { dependencies: { 'react-scripts': '5.0.1' } })).toEqual({
+      name: 'webpack',
+      evidence: '"react-scripts" in dependencies',
+    });
+  });
+
+  it('names webpack itself when a project declares both', () => {
+    expect(
+      detectBundler(rootDir, {
+        devDependencies: { webpack: '^5.0.0' },
+        dependencies: { 'react-scripts': '5.0.1' },
+      }),
+    ).toEqual({ name: 'webpack', evidence: '"webpack" in devDependencies' });
+  });
+
   it('finds a bundler from a config file at the project root', () => {
     fs.writeFileSync(path.join(rootDir, 'webpack.config.dev.js'), 'module.exports = {};\n');
 

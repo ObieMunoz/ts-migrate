@@ -1,9 +1,15 @@
 import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
+import {
+  AssetDeclarations,
+  buildAssetDeclarations,
+  writeAssetDeclarations,
+} from '../utils/assetModules';
 import { logApplicationEntries, partitionBootstrapFiles } from '../utils/bootstrapFiles';
 import { detectBundler, hasViteClientTypes } from '../utils/bundler';
 import { listGitignoredDirectories, partitionGitignored } from '../utils/gitignore';
+import isIncludedByTsConfig from '../utils/tsConfigIncludes';
 
 interface InitParams {
   rootDir: string;
@@ -94,16 +100,26 @@ function findJsFiles(rootDir: string, skippedDirectories: string[]): string[] {
   return files;
 }
 
-function detectBootstrapFiles(rootDir: string, ignoredDirectories: string[]): string[] {
+interface BootstrapPartition {
+  /** rootDir-relative paths for the tsconfig "exclude". */
+  bootstrapFiles: string[];
+  /** The files the migration will convert. */
+  migratedFiles: string[];
+}
+
+function detectBootstrapFiles(rootDir: string, ignoredDirectories: string[]): BootstrapPartition {
   const candidates = partitionGitignored(
     rootDir,
     findJsFiles(rootDir, ignoredDirectories),
   ).kept;
   const partition = partitionBootstrapFiles(rootDir, candidates);
   logApplicationEntries(rootDir, partition.applicationEntries);
-  return partition.bootstrap
-    .map(({ file }) => path.relative(rootDir, file).split(path.sep).join('/'))
-    .sort();
+  return {
+    bootstrapFiles: partition.bootstrap
+      .map(({ file }) => path.relative(rootDir, file).split(path.sep).join('/'))
+      .sort(),
+    migratedFiles: partition.kept,
+  };
 }
 
 // Written directly instead of shelling out to `npx tsc --init`: in a project
@@ -112,7 +128,16 @@ function detectBootstrapFiles(rootDir: string, ignoredDirectories: string[]): st
 // also a poor migration starting point ("types": [] hides @types packages,
 // and flags like verbatimModuleSyntax bury converted files in suppressions
 // unrelated to their actual types).
-function defaultConfig(rootDir: string): string {
+interface DefaultConfig {
+  text: string;
+  /**
+   * Only for a project whose bundler resolves asset imports and has no type
+   * package that declares them; null everywhere else.
+   */
+  assetDeclarations: AssetDeclarations | null;
+}
+
+function defaultConfig(rootDir: string): DefaultConfig {
   let isEsm = false;
   // The classic transform expects `import React` in scope, which is how
   // pre-17 code is written; 17+ may rely on the automatic runtime instead.
@@ -182,7 +207,7 @@ function defaultConfig(rootDir: string): string {
   const ignoredDirectories = listGitignoredDirectories(rootDir).filter(
     (dir) => !defaultExcludes.includes(dir),
   );
-  const bootstrapFiles = detectBootstrapFiles(rootDir, ignoredDirectories);
+  const { bootstrapFiles, migratedFiles } = detectBootstrapFiles(rootDir, ignoredDirectories);
   const excludeComments = [
     ignoredDirectories.length > 0
       ? `
@@ -204,7 +229,14 @@ function defaultConfig(rootDir: string): string {
     .join(', ')}]`
       : '';
 
-  return `{
+  // Vite declares the asset imports it resolves in "vite/client"; webpack
+  // has no equivalent, so the project's own imports are the only evidence.
+  const assetDeclarations =
+    bundler?.name === 'webpack'
+      ? buildAssetDeclarations(rootDir, migratedFiles, packageJson)
+      : null;
+
+  const text = `{
   // Created by ts-migrate. A starting point for a migrated project;
   // adjust as your codebase needs (see the ts-migrate README FAQ).
   "compilerOptions": {
@@ -228,6 +260,7 @@ function defaultConfig(rootDir: string): string {
   }${excludeField}
 }
 `;
+  return { text, assetDeclarations };
 }
 
 export default function init({ rootDir, isExtendedConfig = false }: InitParams): void {
@@ -244,9 +277,21 @@ export default function init({ rootDir, isExtendedConfig = false }: InitParams):
 
   if (isExtendedConfig) {
     fs.writeFileSync(configFile, extendedConfig);
-  } else {
-    fs.writeFileSync(configFile, defaultConfig(rootDir));
+    log.info(`Config file created at ${configFile}`);
+    return;
   }
 
+  const { text, assetDeclarations } = defaultConfig(rootDir);
+  fs.writeFileSync(configFile, text);
   log.info(`Config file created at ${configFile}`);
+
+  if (!assetDeclarations) return;
+  writeAssetDeclarations(assetDeclarations);
+  if (fs.existsSync(assetDeclarations.filePath) && !isIncludedByTsConfig(rootDir, assetDeclarations.filePath)) {
+    log.warn(
+      `${assetDeclarations.filePath} is not matched by the generated tsconfig, so the ` +
+        'declarations have no effect. Add the file to "include" or move it out of an ' +
+        'excluded directory.',
+    );
+  }
 }
