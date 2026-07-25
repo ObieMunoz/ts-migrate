@@ -218,16 +218,14 @@ function maybe_commit() {
   if [ "$no_commit" = "true" ]; then
     return
   fi
-  cd $frontend_folder
   # Scope the dirtiness check to the folder being committed; `git status`
   # alone reports the whole repository, and changes elsewhere would send an
   # empty commit to `git commit`, which fails and aborts the run (set -e).
-  if [[ `git status --porcelain .` ]]
+  if [[ `git -C "$frontend_folder" status --porcelain .` ]]
   then
-    git add . && git commit "$@"
-    migration_commits+=("$(git rev-parse HEAD)")
+    git -C "$frontend_folder" add . && git -C "$frontend_folder" commit "$@"
+    migration_commits+=("$(git -C "$frontend_folder" rev-parse HEAD)")
   fi
-  cd -
 }
 
 echo "
