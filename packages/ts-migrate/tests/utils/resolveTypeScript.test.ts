@@ -5,8 +5,10 @@ import path from 'path';
 import ts from 'typescript';
 import {
   SUPPORTED_RANGE,
+  checkerSkewWarning,
   describeTypeScript,
   findProjectTypeScript,
+  isSameCheckerVersion,
   migrationRootFromArgv,
   readTypeScriptOverride,
   resolveTypeScript,
@@ -104,6 +106,9 @@ describe('resolveTypeScript', () => {
     );
     expect(typeScriptWarning(decision)).toContain('typescript 4.9.5');
     expect(typeScriptWarning(decision)).toContain(ts.version);
+    // A version pair alone does not say which install is which.
+    expect(typeScriptWarning(decision)).toContain(packageDir);
+    expect(typeScriptWarning(decision)).toContain(decision.packageDir);
   });
 
   it('falls back to the bundled compiler when the project has none', () => {
@@ -119,14 +124,107 @@ describe('resolveTypeScript', () => {
   });
 
   it('honors --typescript over the project install, and warns outside the range', () => {
-    installTypeScript(tmpDir, '5.7.3');
+    const installDir = installTypeScript(tmpDir, '5.7.3');
     const overrideDir = writeTypeScriptPackage(path.join(tmpDir, 'vendor', 'typescript'), '7.1.0');
 
     const decision = resolveTypeScript({ rootDir: tmpDir, override: overrideDir });
 
-    expect(decision).toEqual({ packageDir: overrideDir, version: '7.1.0', source: 'override' });
+    expect(decision).toEqual({
+      packageDir: overrideDir,
+      version: '7.1.0',
+      source: 'override',
+      skew: { packageDir: installDir, version: '5.7.3' },
+    });
     expect(describeTypeScript(decision)).toBe(`TypeScript 7.1.0 (--typescript ${overrideDir})`);
     expect(typeScriptWarning(decision)).toContain(SUPPORTED_RANGE);
+  });
+
+  it('warns when --typescript is a minor away from the project install', () => {
+    const installDir = installTypeScript(tmpDir, '5.7.3');
+    const overrideDir = writeTypeScriptPackage(path.join(tmpDir, 'vendor', 'typescript'), '5.5.4');
+
+    const decision = resolveTypeScript({ rootDir: tmpDir, override: overrideDir });
+
+    expect(decision.skew).toEqual({ packageDir: installDir, version: '5.7.3' });
+    const warning = typeScriptWarning(decision);
+    expect(warning).toContain('TypeScript 5.5.4');
+    expect(warning).toContain(overrideDir);
+    expect(warning).toContain('typescript 5.7.3');
+    expect(warning).toContain(installDir);
+    expect(warning).toContain('TS2578');
+    // Following the reignore command under the skew is what does not converge.
+    expect(warning).toContain('reignore');
+  });
+
+  it('stays quiet when --typescript is a patch away from the project install', () => {
+    installTypeScript(tmpDir, '5.7.3');
+    const overrideDir = writeTypeScriptPackage(path.join(tmpDir, 'vendor', 'typescript'), '5.7.2');
+
+    const decision = resolveTypeScript({ rootDir: tmpDir, override: overrideDir });
+
+    expect(decision.skew).toBeUndefined();
+    expect(typeScriptWarning(decision)).toBeUndefined();
+  });
+
+  it('has no skew to report when the project has no compiler of its own', () => {
+    const overrideDir = writeTypeScriptPackage(path.join(tmpDir, 'vendor', 'typescript'), '5.5.4');
+
+    const decision = resolveTypeScript({ rootDir: tmpDir, override: overrideDir });
+
+    expect(decision.skew).toBeUndefined();
+    expect(typeScriptWarning(decision)).toBeUndefined();
+  });
+});
+
+describe('isSameCheckerVersion', () => {
+  it('compares the major and the minor, not the patch', () => {
+    expect(isSameCheckerVersion('5.7.2', '5.7.3')).toBe(true);
+    expect(isSameCheckerVersion('5.7.3', '5.7.3-dev.20240101')).toBe(true);
+    expect(isSameCheckerVersion('5.5.4', '5.7.3')).toBe(false);
+    expect(isSameCheckerVersion('5.7.3', '6.0.2')).toBe(false);
+  });
+});
+
+describe('checkerSkewWarning', () => {
+  it('names both compilers, the failure they produce, and the two ways out', () => {
+    const migrationDir = installTypeScript(tmpDir, '5.7.3');
+    const checkDir = writeTypeScriptPackage(path.join(tmpDir, 'vendor', 'typescript'), '5.5.4');
+    const checkTsc = path.join(checkDir, 'bin', 'tsc');
+
+    const warning = checkerSkewWarning(
+      { version: '5.7.3', packageDir: migrationDir },
+      { version: '5.5.4', path: checkTsc },
+    );
+
+    expect(warning).toContain('TypeScript 5.5.4');
+    expect(warning).toContain(checkTsc);
+    expect(warning).toContain('TypeScript 5.7.3');
+    expect(warning).toContain(migrationDir);
+    expect(warning).toContain('TS2578');
+    expect(warning).toContain('does not converge');
+    expect(warning).toContain(`--typescript ${checkDir}`);
+  });
+
+  it('leaves out the --typescript suggestion for a tsc outside a package', () => {
+    const migrationDir = installTypeScript(tmpDir, '5.7.3');
+    const shim = path.join(tmpDir, 'bin', 'tsc');
+
+    const warning = checkerSkewWarning(
+      { version: '5.7.3', packageDir: migrationDir },
+      { version: '5.5.4', path: shim },
+    );
+
+    expect(warning).toContain(shim);
+    expect(warning).not.toContain('--typescript');
+  });
+
+  it('says nothing when the two compilers agree about diagnostics', () => {
+    expect(
+      checkerSkewWarning(
+        { version: '5.7.3', packageDir: installTypeScript(tmpDir, '5.7.3') },
+        { version: '5.7.2', path: path.join(tmpDir, 'bin', 'tsc') },
+      ),
+    ).toBeUndefined();
   });
 });
 
