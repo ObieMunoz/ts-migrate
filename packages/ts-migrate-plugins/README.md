@@ -204,15 +204,17 @@ than a suppressed line.
   Validation is per file and does not see those, the same way infer-types does
   not see the call sites it makes into errors. This is deliberate, and it is
   measured. Across 1759 files of webpack, ESLint, three.js and jira_clone
-  (#238), 30 of the 32 widenings written were on declarations other files can
-  see; they removed 45 suppressions in the files they changed and added 4 in
-  files they did not. Skipping those declarations instead left 38 more
-  suppressions than widening them. On JavaScript typed with JSDoc the split is
-  not a tail: every `@typedef` becomes an exported type, so every member a
-  widening can reach is one other files can see. Those counts were measured
-  before `void` was refused, and 10 of webpack's 31 widenings were the
-  `| void` ones the printer now leaves for ts-ignore, so the widenings written
-  today are fewer and the suppressions they remove are fewer with them.
+  (#238, re-run once `void` was refused), 20 of the 22 widenings written were
+  on declarations other files can see; they removed 35 suppressions in the
+  files they changed and added 4 in files they did not. All 4 are in one
+  webpack consumer and trace to `/** @type {EXPECTED_ANY} */ (null)` in the
+  file the widening changed: the cast stops working when the file is renamed
+  (#273) and the type it names is not one the published package ships, so the
+  compiler reads a real null and the widening records it. Skipping those
+  declarations instead left 28 more suppressions than widening them. On
+  JavaScript typed with JSDoc the split is not a tail: every `@typedef`
+  becomes an exported type, so every member a widening can reach is one other
+  files can see.
 
 ## What retry-conversions will and will not write
 
