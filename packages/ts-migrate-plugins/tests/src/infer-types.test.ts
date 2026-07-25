@@ -1,3 +1,8 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import ts from 'typescript';
+import { PluginParams } from '@obiemunoz/ts-migrate-server';
 import { realPluginParams } from '../test-utils';
 import inferTypesPlugin from '../../src/plugins/infer-types';
 import explicitAnyPlugin from '../../src/plugins/explicit-any';
@@ -509,6 +514,119 @@ getItem('abc');
   return mystery;
 }
 `);
+  });
+
+  describe('mid-run dependencies', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ts-migrate-infer-'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    /**
+     * Models the state a migration is actually in when a file is visited: the
+     * dependency still holds its pre-migration text on disk, because the run
+     * persists nothing until the end, while the text the run has produced for
+     * it so far lives in the overlay. Only the overlay text will be written.
+     */
+    function midRunParams({
+      mainText,
+      depOnDisk,
+      depInOverlay,
+    }: {
+      mainText: string;
+      depOnDisk: string;
+      depInOverlay: string;
+    }): PluginParams<unknown> {
+      const mainFile = path.join(tmpDir, 'main.ts');
+      const depFile = path.join(tmpDir, 'dep.ts');
+      fs.writeFileSync(depFile, depOnDisk);
+      fs.writeFileSync(mainFile, mainText);
+
+      const compilerOptions: ts.CompilerOptions = {
+        strict: true,
+        target: ts.ScriptTarget.Latest,
+      };
+      const overlay = new Map([
+        [mainFile, mainText],
+        [depFile, depInOverlay],
+      ]);
+      const versions = new Map<string, number>();
+      const bumpVersion = (name: string) => versions.set(name, (versions.get(name) ?? 0) + 1);
+      const read = (name: string) => (overlay.has(name) ? overlay.get(name) : ts.sys.readFile(name));
+
+      const serviceHost: ts.LanguageServiceHost = {
+        getCompilationSettings: () => compilerOptions,
+        getScriptFileNames: () => Array.from(overlay.keys()),
+        getScriptVersion: (name) => String(versions.get(name) ?? 0),
+        getScriptSnapshot: (name) => {
+          const text = read(name);
+          return text !== undefined ? ts.ScriptSnapshot.fromString(text) : undefined;
+        },
+        getCurrentDirectory: () => tmpDir,
+        getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
+        fileExists: (name) => overlay.has(name) || ts.sys.fileExists(name),
+        readFile: read,
+      };
+      const languageService = ts.createLanguageService(serviceHost);
+      const sourceFile = languageService.getProgram()?.getSourceFile(mainFile);
+      if (!sourceFile) throw new Error('Failed to create source file');
+
+      return {
+        options: {},
+        fileName: mainFile,
+        rootDir: tmpDir,
+        text: mainText,
+        sourceFile,
+        getLanguageService: () => languageService,
+        withScratchText: <T>(fileName: string, text: string, use: () => T): T => {
+          const previous = overlay.get(fileName);
+          overlay.set(fileName, text);
+          bumpVersion(fileName);
+          try {
+            return use();
+          } finally {
+            if (previous !== undefined) overlay.set(fileName, previous);
+            else overlay.delete(fileName);
+            bumpVersion(fileName);
+          }
+        },
+      };
+    }
+
+    it('validates against the dependency text the run will write, not the stale copy on disk', async () => {
+      // The run has already retyped `write` to take a string; only the copy
+      // still sitting on disk says number.
+      const result = await inferTypesPlugin.run(
+        midRunParams({
+          depOnDisk: `export const sink = { write( s: number ) { return s; } };
+`,
+          depInOverlay: `export const sink = { write( s: string ) { return s; } };
+`,
+          mainText: `import { sink } from './dep';
+
+export function forward( value ) {
+  sink.write( value );
+  return value.toUpperCase();
+}
+`,
+        }),
+      );
+
+      // Checking the annotation against the stale copy makes it look like it
+      // contradicts sink.write, and the annotation is dropped for nothing.
+      expect(result).toBe(`import { sink } from './dep';
+
+export function forward( value: string ) {
+  sink.write( value );
+  return value.toUpperCase();
+}
+`);
+    });
   });
 
   // Every case above validates candidates on the runner's own program through
