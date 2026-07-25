@@ -83,25 +83,62 @@ describe('command names', () => {
     expect(status).toBe(1);
   }, 30000);
 
-  // ts-migrate-full forwards one argument list to both rename and migrate, and
-  // the two accept different flags, so an unrecognized option is not an error.
-  it('accepts an option the command does not declare', () => {
-    const { status } = runCli(['report', projectDir, '--notAFlag']);
+  // Options went unchecked while ts-migrate-full forwarded one argument list to
+  // both rename and migrate; `full` declares that union itself now, so a flag
+  // nothing accepts is a typo worth failing on.
+  it('rejects an option the command does not declare', () => {
+    const { status, output } = runCli(['report', projectDir, '--notAFlag']);
 
-    expect(status).toBe(0);
+    expect(output).toContain('Unknown argument');
+    expect(output).toContain('notAFlag');
+    expect(status).not.toBe(0);
   }, 30000);
 
-  // The value of such an option is the option's, not a second positional.
-  it('accepts an option the command does not declare with a value', () => {
-    const { status } = runCli([
+  it('rejects an option another command declares', () => {
+    const { status, output } = runCli([
       'report',
       projectDir,
       '--typesReportFile',
       path.join(projectDir, 'types-report.json'),
     ]);
 
-    expect(status).toBe(0);
+    expect(output).toContain('Unknown argument');
+    expect(status).not.toBe(0);
   }, 30000);
+
+  // A single plugin leaves the errors the rest of the pipeline would have
+  // resolved, so the compile check closing a full run would fail by
+  // construction. It stays on migrate, which has no such check.
+  it('rejects --plugin on full and accepts it on migrate', () => {
+    const full = runCli(['full', projectDir, '--plugin', 'jsdoc', '--yes', '--dry-run']);
+    expect(full.output).toContain('Unknown argument');
+    expect(full.status).not.toBe(0);
+
+    const migrate = runCli(['migrate', '--help']);
+    expect(migrate.output).toContain('--plugin');
+  }, 30000);
+
+  it('still accepts every flag full forwards to its steps', () => {
+    const { status, output } = runCli([
+      'full',
+      projectDir,
+      '--sources',
+      '**/*',
+      '--exclude-plugin',
+      'ts-ignore',
+      '--aliases',
+      'tsfixme',
+      '--maxStablePasses',
+      '3',
+      '--no-inferTypes',
+      '--no-commit',
+      '--yes',
+      '--dry-run',
+    ]);
+
+    expect(output).not.toContain('Unknown argument');
+    expect(status).toBe(0);
+  }, 60000);
 });
 
 describe('a <folder> that is not a directory', () => {

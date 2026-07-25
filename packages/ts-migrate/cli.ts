@@ -120,12 +120,6 @@ function migrationFlags<T>(cmd: Argv<T>) {
       'defaultAccessibility',
       'Give every class member that declares no accessibility modifier this one. Members matched by one of the regex flags below take that modifier instead.',
     )
-    .string('plugin')
-    .choices(
-      'plugin',
-      availablePlugins.map((p) => p.name),
-    )
-    .describe('plugin', 'Run a specific plugin')
     .string('exclude-plugin')
     .choices(
       'exclude-plugin',
@@ -135,7 +129,6 @@ function migrationFlags<T>(cmd: Argv<T>) {
       'exclude-plugin',
       'Skip a plugin of the default pipeline. Repeat the flag to skip several. Excluding infer-types is equivalent to --no-inferTypes.',
     )
-    .conflicts('plugin', 'exclude-plugin')
     .string('aliases')
     .choices('aliases', ['tsfixme'] as const)
     .describe(
@@ -519,6 +512,16 @@ yargs
     'Fix TypeScript errors, using codemods',
     (cmd) =>
       migrationFlags(cmd.positional('folder', { type: 'string' }))
+        // Only here, and not on `full`: a single plugin leaves the errors the
+        // rest of the pipeline would have resolved, so the compile check that
+        // closes a full run would fail by construction.
+        .string('plugin')
+        .choices(
+          'plugin',
+          availablePlugins.map((p) => p.name),
+        )
+        .describe('plugin', 'Run a specific plugin')
+        .conflicts('plugin', 'exclude-plugin')
         .string('typesReportFile')
         .describe(
           'typesReportFile',
@@ -816,9 +819,16 @@ yargs
   )
   .demandCommand(1, 'Must provide a command.')
   // demandCommand only counts positionals, so a name that matches no command
-  // reaches here. Options stay unchecked: ts-migrate-full forwards one argument
-  // list to both rename and migrate, which accept different flags.
+  // reaches here, and so does an option no command declares. Options went
+  // unchecked while the ts-migrate-full script forwarded one argument list to
+  // both rename and migrate, which accept different flags; `full` declares that
+  // union itself now, so a flag nothing accepts is a typo, and silently
+  // ignoring one costs a whole migration run to notice.
+  // Kept apart rather than as .strict(): that reports an unknown command name
+  // as an unknown argument and drops the "Unknown command" line these two
+  // produce, which is what names the thing that was actually mistyped.
   .strictCommands()
+  .strictOptions()
   // Near misses fail with the command they were probably meant to be, before
   // strictCommands reports them as unknown.
   .recommendCommands()

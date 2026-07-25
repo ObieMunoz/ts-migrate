@@ -111,9 +111,11 @@ An argument past the ones a command declares is reported the same way, so
 `ts-migrate report frontend/foo extra` exits 1 naming `extra` instead of
 ignoring it.
 
-An option a command does not declare is still accepted and ignored, because
-`ts-migrate full` forwards one argument list to both `rename` and `migrate` and
-the two accept different flags.
+An option no command declares is reported the same way and exits 1, so a
+mistyped `--plguin jsdoc` fails immediately instead of running a whole
+migration that ignored it. `ts-migrate full` forwards one argument list to both
+`rename` and `migrate`, and declares the union of what the two accept, so every
+flag either step takes is one it recognizes.
 
 Every command above takes a `<folder>`, and every one of them exits 255 before
 reading or writing anything when that folder does not exist or is a file rather
@@ -205,7 +207,10 @@ the flag to the migrate step, like any other migrate option.
 
 `--plugin <name>` runs one plugin on its own instead of the pipeline. It takes
 a single name; to run the pipeline without some of its plugins, use
-`--exclude-plugin`. The plugin receives the same options it would receive in
+`--exclude-plugin`. It is a `migrate` flag only: `ts-migrate full` rejects it,
+because one plugin leaves the errors the rest of the pipeline would have
+resolved and the `tsc --noEmit` check that closes a full run would then fail by
+construction. `--exclude-plugin` is accepted on both. The plugin receives the same options it would receive in
 the pipeline, so a plugin flag applies the same way in both:
 
 ```sh
@@ -924,7 +929,7 @@ step summaries nested whole under keys of those names.
 
 # Using `--sources` for partial migrations
 
-There are times in which migrating an entire project is too large a change. The `--sources` flag (or `-s` for short) allows you to run `ts-migrate` on a subset of your project by providing a set of sources to override the defaults specified in your tsconfig. `--sources` takes a relative path from the root of your project. It accepts globs, but remember to wrap any globs with quotes.
+There are times in which migrating an entire project is too large a change. The `--sources` flag (or `-s` for short) allows you to run `ts-migrate` on a subset of your project by providing a set of sources to override the defaults specified in your tsconfig. On `ts-migrate full` one `--sources` deliberately reaches both the rename and the migrate step: a scoped migration needs the same subset renamed and then migrated, so passing it once is what keeps the two in agreement. `--sources` takes a relative path from the root of your project. It accepts globs, but remember to wrap any globs with quotes.
 
 ```sh
 # Run everything on a sub-directory
