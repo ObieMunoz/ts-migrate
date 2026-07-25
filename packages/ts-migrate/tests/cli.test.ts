@@ -91,6 +91,62 @@ describe('command names', () => {
   }, 30000);
 });
 
+describe('a <folder> that is not a directory', () => {
+  it.each([
+    ['init'],
+    ['init:extended'],
+    ['rename'],
+    ['migrate'],
+    ['reignore'],
+    ['report'],
+    ['check'],
+  ])('makes %s name the folder and exit nonzero', (name) => {
+    const missing = path.join(projectDir, 'not-here');
+
+    const { status, output } = runCli([name, missing]);
+
+    expect(output).toContain(`${missing} does not exist`);
+    // The commands that read a config named tsconfig.json inside a directory
+    // that is not there, which points at the wrong thing to fix.
+    expect(output).not.toContain('tsconfig.json');
+    expect(status).toBe(255);
+  }, 30000);
+
+  it('rejects a path that exists but is a file', () => {
+    const filePath = path.join(projectDir, 'a.ts');
+
+    const { status, output } = runCli(['init', filePath]);
+
+    expect(output).toContain(`${filePath} is not a directory`);
+    expect(status).toBe(255);
+  }, 30000);
+});
+
+// An empty directory is a directory: init writes the config a migration of it
+// will need, so it is not the missing-folder case.
+describe('a <folder> that exists', () => {
+  it('initializes an empty one', () => {
+    const emptyDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-empty-'));
+
+    try {
+      const { status, output } = runCli(['init', emptyDir]);
+
+      expect(status).toBe(0);
+      expect(output).toContain('Config file created at');
+      expect(fs.existsSync(path.join(emptyDir, 'tsconfig.json'))).toBe(true);
+    } finally {
+      fs.rmSync(emptyDir, { recursive: true, force: true });
+    }
+  }, 30000);
+
+  it('leaves an existing tsconfig.json alone', () => {
+    const { status, output } = runCli(['init', projectDir]);
+
+    expect(status).toBe(0);
+    expect(output).toContain('Config file already exists at');
+  }, 30000);
+});
+
 describe('help output off a terminal', () => {
   it.each([
     ['ts-migrate', []],

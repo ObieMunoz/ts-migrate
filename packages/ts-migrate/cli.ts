@@ -90,6 +90,26 @@ const TYPESCRIPT_FLAG_DESCRIPTION =
   'with ts-migrate.';
 
 /**
+ * The <folder> positional every command takes, resolved against the working
+ * directory. A path that is not a directory holds no tsconfig.json, so the
+ * commands that go looking for one next would report the config file rather
+ * than the path that was actually mistyped. -1 is the code the other commands
+ * already exit with when they cannot start.
+ */
+function resolveRootDir(folder: string): string {
+  const rootDir = path.resolve(process.cwd(), folder);
+  if (!fs.existsSync(rootDir)) {
+    log.error(`${rootDir} does not exist`);
+    process.exit(-1);
+  }
+  if (!fs.statSync(rootDir).isDirectory()) {
+    log.error(`${rootDir} is not a directory`);
+    process.exit(-1);
+  }
+  return rootDir;
+}
+
+/**
  * Printed twice: with the banner, and again on the last screen. The banner is
  * in the first three lines of a run that can take many minutes, so by the time
  * the suppressions this qualifies exist it has long scrolled away.
@@ -261,7 +281,7 @@ yargs
     'Initialize tsconfig.json file in <folder>',
     (cmd) => cmd.positional('folder', { type: 'string' }).require(['folder']),
     (args) => {
-      const rootDir = path.resolve(process.cwd(), args.folder);
+      const rootDir = resolveRootDir(args.folder);
       init({ rootDir, isExtendedConfig: false });
     },
   )
@@ -270,7 +290,7 @@ yargs
     'Initialize tsconfig.json in <folder> extending a shared base config',
     (cmd) => cmd.positional('folder', { type: 'string' }).require(['folder']),
     (args) => {
-      const rootDir = path.resolve(process.cwd(), args.folder);
+      const rootDir = resolveRootDir(args.folder);
       init({ rootDir, isExtendedConfig: true });
     },
   )
@@ -304,7 +324,7 @@ yargs
         )
         .require(['folder']),
     (args) => {
-      const rootDir = path.resolve(process.cwd(), args.folder);
+      const rootDir = resolveRootDir(args.folder);
       const { sources } = args;
       const dryRun = args['dry-run'];
       const result = rename({
@@ -498,7 +518,7 @@ yargs
         )
         .require(['folder']),
     async (args) => {
-      const rootDir = path.resolve(process.cwd(), args.folder);
+      const rootDir = resolveRootDir(args.folder);
       const { sources } = args;
       const dryRun = args['dry-run'];
       logTypeScriptDecision();
@@ -702,7 +722,7 @@ yargs
         )
         .require(['folder']),
     async (args) => {
-      const rootDir = path.resolve(process.cwd(), args.folder);
+      const rootDir = resolveRootDir(args.folder);
       const { sources } = args;
       const dryRun = args['dry-run'];
       logTypeScriptDecision();
@@ -782,7 +802,7 @@ yargs
         .example('$0 report /frontend/foo --json', 'Same counts as JSON')
         .require(['folder']),
     (args) => {
-      const rootDir = path.resolve(process.cwd(), args.folder);
+      const rootDir = resolveRootDir(args.folder);
       process.exit(
         report({ rootDir, folder: args.folder, json: args.json, gitignore: args.gitignore }),
       );
@@ -820,7 +840,7 @@ yargs
         )
         .require(['folder']),
     (args) => {
-      const rootDir = path.resolve(process.cwd(), args.folder);
+      const rootDir = resolveRootDir(args.folder);
       process.exit(
         check({
           rootDir,
