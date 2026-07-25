@@ -669,6 +669,43 @@ describe('package manager detection', () => {
         ),
       ).toContain(`Install: ${command} @types/node`);
     });
+
+    it('reads the generation off the lockfile the tie-break settled on', () => {
+      // The yarn generation is read from whichever lockfile detection chose, so
+      // it has to follow the tie-break rather than the first yarn.lock seen.
+      const rootDir = makeFixture({
+        'package.json': JSON.stringify({ workspaces: ['packages/*'] }),
+        'yarn.lock': V1_LOCK,
+        'package-lock.json': '',
+      });
+      // npm's lockfile is the newer one, so mtime alone would pick npm; the
+      // pin is what makes this a yarn project.
+      fs.utimesSync(path.join(rootDir, 'package-lock.json'), new Date(), new Date());
+      fs.writeFileSync(
+        path.join(rootDir, 'package.json'),
+        JSON.stringify({ workspaces: ['packages/*'], packageManager: 'yarn@1.22.19' }),
+      );
+
+      const report = summarizeTypesEvidence(nodeAndTestRunnerEvidence(), rootDir);
+
+      expect(report.packageManager).toBe('yarn');
+      expect(report.workspaceRootFlag).toBe('-W');
+    });
+
+    it('flags a workspace root the migration root is a subfolder of', () => {
+      // `ts-migrate migrate src` run at a workspace root: the search starts in
+      // src while the install, and so the flag, belongs to the root above it.
+      const rootDir = makeFixture({
+        'package.json': JSON.stringify({ workspaces: ['packages/*'] }),
+        'yarn.lock': V1_LOCK,
+        'src/a.ts': '',
+      });
+
+      const report = summarizeTypesEvidence(nodeAndTestRunnerEvidence(), path.join(rootDir, 'src'));
+
+      expect(report.packageManager).toBe('yarn');
+      expect(report.workspaceRootFlag).toBe('-W');
+    });
   });
 
   describe('install directory', () => {
