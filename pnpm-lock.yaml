@@ -131,6 +131,9 @@ importers:
       typescript:
         specifier: '>=5.0 <7'
         version: 5.9.3
+      updatable-log:
+        specifier: ^0.2.0
+        version: 0.2.0
     devDependencies:
       '@types/json-schema':
         specifier: ^7.0.7
