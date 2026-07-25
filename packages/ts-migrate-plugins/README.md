@@ -209,7 +209,10 @@ than a suppressed line.
   files they did not. Skipping those declarations instead left 38 more
   suppressions than widening them. On JavaScript typed with JSDoc the split is
   not a tail: every `@typedef` becomes an exported type, so every member a
-  widening can reach is one other files can see.
+  widening can reach is one other files can see. Those counts were measured
+  before `void` was refused, and 10 of webpack's 31 widenings were the
+  `| void` ones the printer now leaves for ts-ignore, so the widenings written
+  today are fewer and the suppressions they remove are fewer with them.
 
 ## What retry-conversions will and will not write
 
