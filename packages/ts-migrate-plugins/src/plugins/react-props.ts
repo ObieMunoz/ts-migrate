@@ -16,6 +16,7 @@ import getTypeFromPropTypesObjectLiteral, {
   unpackInitializer,
 } from './utils/react-props';
 import { getTextPreservingWhitespace } from './utils/text';
+import { isStatic } from './utils/modifiers';
 import { updateImports, DefaultImport, NamedImport } from './utils/imports';
 import {
   AnyAliasOptions,
@@ -566,8 +567,7 @@ function deleteIdRef(idenifier: ts.Identifier, sourceFile: ts.SourceFile) {
 function isPropTypesStatic(member: ts.ClassElement): member is ts.PropertyDeclaration {
   return (
     ts.isPropertyDeclaration(member) &&
-    member.modifiers != null &&
-    member.modifiers.some((modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword) &&
+    isStatic(member) &&
     ts.isIdentifier(member.name) &&
     member.name.text === 'propTypes' &&
     member.initializer != null

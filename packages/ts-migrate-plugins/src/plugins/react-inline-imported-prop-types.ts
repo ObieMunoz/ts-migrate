@@ -5,6 +5,7 @@ import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { updateImports, DefaultImport, NamedImport, ModuleImport } from './utils/imports';
 import { collectIdentifiers } from './utils/identifiers';
 import { unpackInitializer } from './utils/react-props';
+import { isStatic } from './utils/modifiers';
 
 /**
  * Copies propTypes objects imported from other modules into the file that
@@ -289,8 +290,7 @@ function findCandidates(
       for (const member of statement.members) {
         if (
           ts.isPropertyDeclaration(member) &&
-          member.modifiers != null &&
-          member.modifiers.some((modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword) &&
+          isStatic(member) &&
           ts.isIdentifier(member.name) &&
           member.name.text === 'propTypes' &&
           member.initializer != null
