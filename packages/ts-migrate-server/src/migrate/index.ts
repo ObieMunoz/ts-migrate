@@ -247,6 +247,11 @@ export default async function migrate({
   const pluginFailures: MigrateResult['pluginFailures'] = [];
   const pluginNotices: MigrateResult['pluginNotices'] = [];
   const pluginErrors: MigrateResult['pluginErrors'] = [];
+  // Per pipeline position, so a repeated group's passes share them: what the
+  // plugin has already printed, and the files it could not process with the
+  // text they held then. A later pass repeats neither.
+  const reportedNoticesByPlugin = config.plugins.map(() => new Set<string>());
+  const unprocessedFilesByPlugin = config.plugins.map(() => new Map<string, string>());
 
   // Consecutive repeatUntilStable plugins form one group; other plugins are
   // groups of one that run a single pass.
@@ -282,18 +287,36 @@ export default async function migrate({
             : `Plugin ${i + 1} of ${config.plugins.length}`;
         log.info(`${pluginLogPrefix} ${banner}. Start...`);
 
-        const sourceFiles = getSourceFilesToMigrate(project).filter(
+        const candidateFiles = getSourceFilesToMigrate(project).filter(
           ({ fileName }) =>
             originalSourceFilesToMigrate.has(fileName) &&
             (dirtyFilesThisPass === null || dirtyFilesThisPass.has(fileName)),
         );
+        // A file the plugin could not process is worth another pass only once
+        // something in it has changed; until then the pass would spend the
+        // same work reaching the same failure it already reported.
+        const unprocessedFiles = unprocessedFilesByPlugin[i];
+        const sourceFiles = candidateFiles.filter(({ fileName, text }) => {
+          const textWhenLeftUnchanged = unprocessedFiles.get(fileName);
+          if (textWhenLeftUnchanged === undefined) return true;
+          if (textWhenLeftUnchanged === text) return false;
+          unprocessedFiles.delete(fileName);
+          return true;
+        });
+        const skippedFiles = candidateFiles.length - sourceFiles.length;
+        if (skippedFiles > 0) {
+          log.info(
+            `${pluginLogPrefix} Skipping ${skippedFiles} file(s) an earlier pass could not ` +
+              `process, unchanged since.`,
+          );
+        }
 
         const progress = new PassProgress({
           prefix: pluginLogPrefix,
           total: sourceFiles.length,
           showCurrentFile: !plugin.independentFiles,
         });
-        const notices = new PassNotices(rootDir);
+        const notices = new PassNotices(rootDir, reportedNoticesByPlugin[i]);
 
         // A plugin whose edits never change any file's types can run its whole
         // pass against one program: holding its overlay writes until the pass
@@ -320,7 +343,10 @@ export default async function migrate({
             options: pluginOptions,
             getLanguageService,
             addGeneratedFile,
-            reportFileNotice: (notice) => notices.add(fileName, notice),
+            reportFileNotice: (notice) => {
+              notices.add(fileName, notice);
+              if (!notice.recovered) unprocessedFiles.set(fileName, sourceFile.text);
+            },
           };
           try {
             const newText = await plugin.run(params, lintConfig);
@@ -342,6 +368,7 @@ export default async function migrate({
               file: relFile,
               message: boundedErrorMessage(pluginErr),
             });
+            unprocessedFiles.set(fileName, sourceFile.text);
             exitCode = -1;
           }
           progress.fileFinished();

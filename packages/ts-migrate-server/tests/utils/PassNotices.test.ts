@@ -116,6 +116,78 @@ describe('PassNotices', () => {
     expect(warnings()[11]).toBe('[p] and 2 more distinct cause(s).');
   });
 
+  it('leaves out what an earlier pass reported for the same file', () => {
+    const reported = new Set<string>();
+    const first = new PassNotices(rootDir, reported);
+    first.add(file('a.ts'), { reason: 'boom' });
+    first.report('[p]');
+
+    const second = new PassNotices(rootDir, reported);
+    second.add(file('a.ts'), { reason: 'boom' });
+    second.add(file('b.ts'), { reason: 'boom' });
+    second.report('[p]');
+
+    expect(warnings()).toEqual([
+      '[p] 1 file(s) could not be processed and were left unchanged:',
+      '[p]   1 file(s): boom. First: a.ts.',
+      '[p] 1 file(s) could not be processed and were left unchanged:',
+      '[p]   1 file(s): boom. First: b.ts.',
+    ]);
+  });
+
+  it('prints nothing for a pass that repeats what the pass before it reported', () => {
+    const reported = new Set<string>();
+    const first = new PassNotices(rootDir, reported);
+    first.add(file('a.ts'), { reason: 'boom' });
+    first.report('[p]');
+    mockedLog.warn.mockClear();
+
+    const second = new PassNotices(rootDir, reported);
+    second.add(file('a.ts'), { reason: 'boom' });
+    second.report('[p]');
+
+    expect(mockedLog.warn).not.toHaveBeenCalled();
+  });
+
+  it('still reports a file an earlier pass reported for a different cause', () => {
+    const reported = new Set<string>();
+    const first = new PassNotices(rootDir, reported);
+    first.add(file('a.ts'), { reason: 'boom' });
+    first.report('[p]');
+    mockedLog.warn.mockClear();
+
+    const second = new PassNotices(rootDir, reported);
+    second.add(file('a.ts'), { reason: 'a different boom' });
+    second.report('[p]');
+
+    expect(warnings()).toEqual([
+      '[p] 1 file(s) could not be processed and were left unchanged:',
+      '[p]   1 file(s): a different boom. First: a.ts.',
+    ]);
+  });
+
+  it('exposes every group it collected, reported before or not', () => {
+    const reported = new Set<string>();
+    const first = new PassNotices(rootDir, reported);
+    first.add(file('a.ts'), { reason: 'boom' });
+    first.report('[p]');
+
+    const second = new PassNotices(rootDir, reported);
+    second.add(file('a.ts'), { reason: 'boom' });
+
+    expect(second.groups()).toEqual([
+      {
+        reason: 'boom',
+        ruleId: undefined,
+        hint: undefined,
+        recovered: false,
+        marked: false,
+        fileCount: 1,
+        files: ['a.ts'],
+      },
+    ]);
+  });
+
   it('exposes the groups with rootDir-relative, sorted file names', () => {
     const notices = new PassNotices(rootDir);
     notices.add(file(path.join('src', 'b.ts')), { reason: 'boom', ruleId: 'r' });

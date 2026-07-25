@@ -17,7 +17,8 @@ export interface PluginFileNotice {
   hint?: string;
   /**
    * Set when the plugin still produced its normal result for the file. Those
-   * are reported without being counted as files left unchanged.
+   * are reported without being counted as files left unchanged, and the file
+   * stays in the passes that follow.
    */
   recovered?: boolean;
   /**
@@ -51,6 +52,10 @@ export interface PluginParams<TPluginOptions> {
    * The runner groups identical causes across the pass and prints one line per
    * cause once the progress counter is out of the way; printing from inside a
    * pass both repeats the cause per file and gets overwritten by the counter.
+   *
+   * A notice that is not `recovered` says the plugin could not process the
+   * file, so a repeating group leaves that file out of its later passes for as
+   * long as its text stays as it was, and prints the cause for it once.
    */
   reportFileNotice?: (notice: PluginFileNotice) => void;
 }
