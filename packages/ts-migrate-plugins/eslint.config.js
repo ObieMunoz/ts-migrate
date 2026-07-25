@@ -16,4 +16,11 @@ module.exports = tseslint.config(
       ],
     },
   },
+  {
+    // Writes go through updatable-log; `important` prints regardless of quiet.
+    files: ['src/**/*.ts'],
+    rules: {
+      'no-console': 'error',
+    },
+  },
 );
