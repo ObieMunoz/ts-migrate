@@ -1512,7 +1512,7 @@ const defaultProps = {
 
 type PrivateProps = WithDefaultProps<Props, typeof defaultProps>;
 
-function ExampleComponent({ test }:PrivateProps) {
+function ExampleComponent({ test }: PrivateProps) {
   return <React.Fragment>{test}</React.Fragment>;
 }
 ExampleComponent.defaultProps = defaultProps;
@@ -1566,6 +1566,91 @@ class Foo extends React.Component<PrivateMyProps, MyState> {
 }
 
 export default Foo;`);
+  });
+
+  it('keeps the space before the renamed annotation of an exported props type', async () => {
+    const declaration = `import React from 'react';
+
+export type Props = {
+  title: string;
+};
+
+function Greeting({ title }: Props) {
+  return <div>{title}</div>;
+}
+Greeting.defaultProps = {
+  title: 'hi',
+};
+
+export default Greeting;`;
+
+    const fromDeclaration = (await reactDefaultPropsPlugin.run(
+      mockPluginParams({ text: declaration, fileName: 'file.tsx' }),
+    )) as string;
+
+    expect(fromDeclaration).toBe(`import React from 'react';
+
+export type Props = {
+    title: string;
+};
+
+type PrivateProps = Props & (typeof Greeting)["defaultProps"];
+
+function Greeting({ title }: PrivateProps) {
+  return <div>{title}</div>;
+}
+Greeting.defaultProps = {
+  title: 'hi',
+};
+
+export default Greeting;`);
+    expect(typeCheck({ '/file.tsx': fromDeclaration })).toEqual([]);
+
+    const arrow = `import React from 'react';
+
+export type Props = {
+  title: string;
+};
+
+const Greeting = ({ title }: Props) => {
+  return <div>{title}</div>;
+};
+Greeting.defaultProps = {
+  title: 'hi',
+};
+
+export default Greeting;`;
+
+    const fromArrow = (await reactDefaultPropsPlugin.run(
+      mockPluginParams({ text: arrow, fileName: 'file.tsx' }),
+    )) as string;
+
+    expect(fromArrow).toBe(`import React from 'react';
+
+export type Props = {
+    title: string;
+};
+
+const GreetingDefaultProps = {
+  title: 'hi',
+};
+
+type PrivateProps = Props & typeof GreetingDefaultProps;
+
+const Greeting = ({ title }: PrivateProps) => {
+  return <div>{title}</div>;
+};
+Greeting.defaultProps = GreetingDefaultProps;
+
+export default Greeting;`);
+    expect(typeCheck({ '/file.tsx': fromArrow })).toEqual([]);
+
+    const withHelper = (await reactDefaultPropsPlugin.run(
+      mockPluginParams({ text: arrow, fileName: 'file.tsx', options }),
+    )) as string;
+
+    expect(withHelper).toContain('const Greeting = ({ title }: PrivateProps) => {');
+    expect(typeCheck({ '/file.tsx': withHelper })).toEqual([]);
   });
 
   it(`don't fix existing prop types`, async () => {
@@ -2521,6 +2606,103 @@ function Chip({ tone = 'info' }: ChipProps) {
 
 export { Button, Chip };`);
     expect(typeCheck({ '/file.tsx': result })).toEqual([]);
+  });
+
+  it('leaves the annotation of an exported props type alone when it converts', async () => {
+    const text = `import React from 'react';
+
+export type Props = {
+  title: string;
+};
+
+function Greeting({ title }: Props) {
+  return <div>{title}</div>;
+}
+Greeting.defaultProps = {
+  title: 'hi',
+};
+
+export default Greeting;`;
+
+    const result = (await modernize(text)) as string;
+    expect(result).toBe(`import React from 'react';
+
+export type Props = {
+  title?: string;
+};
+
+function Greeting({ title = 'hi' }: Props) {
+  return <div>{title}</div>;
+}
+
+export default Greeting;`);
+    expect(typeCheck({ '/file.tsx': result })).toEqual([]);
+  });
+
+  it('keeps the space before a renamed annotation on the components it left', async () => {
+    const declaration = `import React from 'react';
+
+const DEFAULT_TITLE = 'hi';
+
+export type Props = {
+  title: string;
+};
+
+function Greeting({ title }: Props) {
+  return <div>{title}</div>;
+}
+Greeting.defaultProps = {
+  title: DEFAULT_TITLE,
+};
+
+export default Greeting;`;
+
+    const notices: PluginFileNotice[] = [];
+    const fromDeclaration = (await modernize(declaration, notices)) as string;
+
+    expect(fromDeclaration).toBe(`import React from 'react';
+
+const DEFAULT_TITLE = 'hi';
+
+export type Props = {
+    title: string;
+};
+
+type PrivateProps = Props & (typeof Greeting)["defaultProps"];
+
+function Greeting({ title }: PrivateProps) {
+  return <div>{title}</div>;
+}
+Greeting.defaultProps = {
+  title: DEFAULT_TITLE,
+};
+
+export default Greeting;`);
+    expect(notices.map((notice) => notice.reason)).toEqual([
+      'Left defaultProps in place: a default value is not a literal.',
+    ]);
+    expect(typeCheck({ '/file.tsx': fromDeclaration })).toEqual([]);
+
+    const arrow = `import React from 'react';
+
+const DEFAULT_TITLE = 'hi';
+
+export type Props = {
+  title: string;
+};
+
+const Greeting = ({ title }: Props) => {
+  return <div>{title}</div>;
+};
+Greeting.defaultProps = {
+  title: DEFAULT_TITLE,
+};
+
+export default Greeting;`;
+
+    const fromArrow = (await modernize(arrow)) as string;
+    expect(fromArrow).toContain('const Greeting = ({ title }: PrivateProps) => {');
+    expect(typeCheck({ '/file.tsx': fromArrow })).toEqual([]);
   });
 
   it('is off unless the option is set', async () => {
