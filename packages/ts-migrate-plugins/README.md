@@ -200,6 +200,12 @@ does:
   at runtime (`half(n) { return n / 2; }` infers `number` even though a
   numeric string would not crash), and callers the program cannot see
   (consumers of a published library) contribute no evidence.
+- A type TypeScript cannot print costs that one annotation, not the file.
+  The compiler produces a file's annotations as a single edit, and asserts
+  while printing some inferred types (a React component with both a props
+  type and `propTypes` is one). The plugin then asks for them one position
+  at a time, writes the ones that come back, and the run reports at the end
+  that the file got fewer types than it asked for.
 
 ## What widen-annotations will and will not write
 
