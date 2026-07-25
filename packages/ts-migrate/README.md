@@ -120,9 +120,11 @@ plugin: relative imports that still name the pre-rename file, like
 `import foo from './foo.js'` or `'./foo.jsx'`, are re-pointed at the renamed
 `.ts`/`.tsx` file (the extension is dropped, or kept as `.js` when the
 importing file is ESM, either by its own `.mts` extension or by its package's
-`"type": "module"`). Imports whose target still exists on disk are left alone,
-as are `./foo.mjs` and `./foo.cjs` imports: `.mts` and `.cts` emit those same
-extensions, so the import already names the file that ships.
+`"type": "module"`; a `.cts` file emits `.cjs` and stays CommonJS whatever
+its package says, so its own imports keep the extensionless form). Imports
+whose target still exists on disk are left alone, as are `./foo.mjs` and
+`./foo.cjs` imports: `.mts` and `.cts` emit those same extensions, so the
+import already names the file that ships.
 
 The [convert-commonjs](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/convert-commonjs.ts)
 plugin runs next, on the specifiers update-import-paths has already re-pointed.
@@ -145,12 +147,13 @@ default-imports the whole module object through Babel-style interop sees
 
 A file that is already ESM, by its `.mts` extension, by module syntax it
 already contains, or by its package's `"type": "module"`, gets
-`import x from 'm'` and `export default` instead. Requires and exports that are
-not statically analyzable top level statements, including a require inside a
-function or a branch and a file that mixes `module.exports = x` with
-`exports.foo = y`, are left for ts-ignore; the run reports each file it left
-alone and why. Pass `--exclude-plugin convert-commonjs` to keep the CommonJS
-syntax as it is.
+`import x from 'm'` and `export default` instead; a `.cts` file never counts
+as ESM here, whatever its package says or its syntax already looks like.
+Requires and exports that are not statically analyzable top level statements,
+including a require inside a function or a branch and a file that mixes
+`module.exports = x` with `exports.foo = y`, are left for ts-ignore; the run
+reports each file it left alone and why. Pass
+`--exclude-plugin convert-commonjs` to keep the CommonJS syntax as it is.
 
 The `migrate` command also accepts flags controlling the type-inference stage,
 the most expensive part of a migration:
@@ -420,6 +423,11 @@ shims, and a CommonJS package carries `.mjs` scripts. `rename` converts
 original extension pinned and emit back to `.mjs` and `.cjs`. Relative
 imports naming those files therefore stay correct and `migrate` leaves them
 untouched.
+
+The same pinning decides the imports written inside a renamed file. A `.cts`
+file resolves its own relative imports the CommonJS way, so `migrate` drops
+the extension there (`./foo`) even inside a `"type": "module"` package, where
+a `.ts` or `.mts` file in the same folder keeps `./foo.js`.
 
 Two kinds of file keep the extension they have:
 
