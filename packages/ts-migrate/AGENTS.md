@@ -259,9 +259,10 @@ JavaScript, so a `bin` pointing at it stays valid and needs no notice.
 Runs the codemod pipeline on an already-renamed project: re-points stale
 relative imports, rewrites CommonJS `require`/`module.exports` into TypeScript
 module syntax, declares the properties the code assigns to `window` and
-`globalThis`, converts React propTypes to types, writes the type arguments
-React hook calls need, infers types from usage, declares the properties
-assigned onto empty object literals, annotates remaining implicit `any`s,
+`globalThis`, converts React propTypes to types, names the props of the
+components that never had propTypes, writes the type arguments React hook
+calls need, infers types from usage, declares the properties assigned onto
+empty object literals, annotates remaining implicit `any`s,
 widens the annotations the file's own assignments contradict, and suppresses
 residual compiler errors with `@ts-expect-error` so the project compiles.
 Only TypeScript files are
