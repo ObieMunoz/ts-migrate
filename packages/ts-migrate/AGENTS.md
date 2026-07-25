@@ -304,7 +304,15 @@ setter is called with (or, for a ref, the intrinsic tag it is attached to) as
 the type, and writes it only when re-checking the file reports no new error.
 A hook whose evidence leaves the file gets an `any` (`$TSFixMe`) type
 argument, which is one visible any in place of the suppressions the call would
-otherwise earn. Pass `--exclude-plugin react-hook-types` to leave hook calls
+otherwise earn. The same step types `createContext()`, `createContext(null)`
+and `createContext(undefined)` from a `<Ctx.Provider value={...}>` in the same
+file, writing a union that keeps the default
+(`createContext<Theme | null>(null)`) and supplying `undefined` as the
+argument of the zero argument form, which a type argument alone leaves as
+TS2554. A context provided from another file takes the any type argument
+instead, since one file cannot see it, and `createContext({})` always does: a
+`{}` default accepts every value, so narrowing it would break a caller the run
+cannot see. Pass `--exclude-plugin react-hook-types` to leave hook calls
 as they are.
 
 The widening step unions an annotation with what the assignments in its own
@@ -517,18 +525,29 @@ machine-readable preview. Per command:
   `{"file", "key", "from", "to"}`), and `packageJsonNotices` (the entry point
   fields that still name a renamed file and were left for a build step, as
   `{"file", "key", "value", "target"}`).
-- `migrate` and `reignore`: `changedFiles` (every file the run modified),
+- `migrate` and `reignore`: `filesToMigrate` (how many files the plugins were
+  handed, counted before the first one ran; `0` means the run touched nothing
+  whatever the rest of the summary says),
+  `changedFiles` (every file the run modified),
   `generatedFiles` (declaration files the run wrote itself, e.g.
   `types/ts-migrate-modules.d.ts` and `types/ts-migrate-globals.d.ts`, which
   are new files rather than edits),
+  `migratedFilesWithSyntaxErrors` (migrated files that still do not parse),
   `nonMigratedFilesWithSyntaxErrors` (files that will keep failing `tsc` and
   that re-running cannot fix), `plugins` (`{"name", "changedFileCount"}` per
   pipeline step, in order), `pluginFailures` (files a plugin could not
   process, grouped by cause, as `{"plugin", "reason", "ruleId", "fileCount",
-  "files"}`; empty when every plugin processed every file), and
+  "files"}`; empty when every plugin processed every file), `pluginErrors`
+  (one entry per file whose plugin threw, as `{"plugin", "file", "message"}`,
+  with the message capped and the full error left in the run log), and
   `changedFilesTypeDebt` (the suppression, any-alias, and `any` totals now
   present in the changed files, with the suppressed error codes; `null` if
   that scan failed).
+- Four of those fields have confusable names and different consequences.
+  `migratedFilesWithSyntaxErrors` and `pluginErrors` fail the run;
+  `nonMigratedFilesWithSyntaxErrors` and `pluginFailures` do not. So a run can
+  exit `0` with entries in the second pair, and a nonzero exit means entries in
+  the first pair or a `filesToMigrate` of `0`.
 - All three also report `skippedGitignoredFiles`, the number of files the
   run left untouched because git ignores them (0 with `--no-gitignore`),
   and `skippedBootstrapFiles`, the build system files kept as JavaScript
@@ -541,7 +560,10 @@ How to read a run from the outside:
   files unchanged without failing the run, so a successful exit can still hide
   files no plugin could touch.
 - Nonzero exit and the file exists: the run completed with errors; the file's
-  `exitCode` field matches the process exit code.
+  `exitCode` field matches the process exit code. The last line the run printed
+  names the counts (`Migration failed: 3 file(s) errored in plugins, 1 file(s)
+  still have syntax errors.`), and the two arrays above name the files. A
+  successful run prints no such line.
 - Nonzero exit and no file: the command failed before running (bad flags,
   missing tsconfig.json), or the summary file itself could not be written.
 
@@ -562,6 +584,14 @@ need both summaries.
   `rename` and `migrate` and the two accept different flags.
 - `migrate`/`reignore` exit `0` on success and nonzero (255) if a plugin
   errored or a file still has syntax errors after migration.
+- `migrate` exits nonzero when it has nothing to migrate, and names the signal
+  that produced the empty set: a tsconfig `include` that matched no file
+  (reported as TS18003, and the usual cause is that `rename` has not run yet),
+  a `--sources` glob that matched nothing, a tsconfig matching only declaration
+  files or only JavaScript, or every candidate skipped as gitignored or as a
+  build system file. The run prints the size of the migration set before the
+  first plugin banner, so a scoped run that selected less than intended is
+  visible from the first screen rather than from a diff that never appeared.
 - `check` exits `1` when a per-file count exceeds the baseline; `report` and
   `check` exit nonzero (255) if the tsconfig cannot be read.
 - `ts-migrate-full` stops at the first failing step; the final `tsc` check
