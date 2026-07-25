@@ -133,19 +133,14 @@ const jsDocTransformerFactory =
     }
 
     function visitFunctionLike(node: ts.SignatureDeclaration, insideClass: boolean): void {
-      // `modifiers` is not on every SignatureDeclaration member in TS5;
-      // `canHaveModifiers` narrows while preserving the array's identity.
-      const nodeModifiers = ts.canHaveModifiers(node) ? node.modifiers : undefined;
-      const modifiers =
-        ts.isMethodDeclaration(node) && insideClass
-          ? modifiersFromJSDoc(node, factory)
-          : nodeModifiers;
+      const method = ts.isMethodDeclaration(node) && insideClass ? node : undefined;
+      const accessibility = method && accessibilityFromJSDoc(method);
       const typeParameters =
         node.typeParameters || !acceptsTypeParameters(node) ? undefined : visitTypeParameters(node);
       const parameters = visitParameters(node);
       const returnType = annotateReturns ? visitReturnType(node) : node.type;
       if (
-        modifiers === nodeModifiers &&
+        !accessibility &&
         !typeParameters &&
         parameters === node.parameters &&
         returnType === node.type
@@ -153,14 +148,11 @@ const jsDocTransformerFactory =
         return;
       }
 
-      const newModifiers = modifiers ? factory.createNodeArray(modifiers) : undefined;
-      if (newModifiers) {
-        if (nodeModifiers) {
-          updates.replaceNodes(nodeModifiers, newModifiers);
-        } else {
-          const pos = node.name!.getStart();
-          updates.insertNodes(pos, newModifiers);
-        }
+      if (method && accessibility) {
+        // Ahead of the keyword modifiers the member already has, and of its
+        // name when it has only decorators.
+        const pos = modifierPos(method);
+        updates.replaceText(pos, pos, `${accessibility} `);
       }
 
       if (typeParameters) {
@@ -271,6 +263,11 @@ const jsDocTransformerFactory =
         });
       });
       return typeParameters;
+    }
+
+    function modifierPos(node: ts.MethodDeclaration): number {
+      const keyword = node.modifiers?.find((modifier) => !ts.isDecorator(modifier));
+      return (keyword ?? node.name).getStart(sourceFile);
     }
 
     function typeParameterPos(node: ts.SignatureDeclaration): number {
@@ -690,27 +687,22 @@ const jsDocTransformerFactory =
 const accessibilityMask =
   ts.ModifierFlags.Private | ts.ModifierFlags.Protected | ts.ModifierFlags.Public;
 
-function modifiersFromJSDoc(
-  methodDeclaration: ts.MethodDeclaration,
-  factory: ts.NodeFactory,
-): ReadonlyArray<ts.ModifierLike> | undefined {
-  let modifierFlags = ts.getCombinedModifierFlags(methodDeclaration);
-  if ((modifierFlags & accessibilityMask) !== 0) {
+/** The accessibility keyword a method's JSDoc asks for, if it declares none. */
+function accessibilityFromJSDoc(methodDeclaration: ts.MethodDeclaration): string | undefined {
+  if ((ts.getCombinedModifierFlags(methodDeclaration) & accessibilityMask) !== 0) {
     // Don't overwrite existing accessibility modifier.
-    return methodDeclaration.modifiers;
+    return undefined;
   }
-
   if (ts.getJSDocPrivateTag(methodDeclaration)) {
-    modifierFlags |= ts.ModifierFlags.Private;
-  } else if (ts.getJSDocProtectedTag(methodDeclaration)) {
-    modifierFlags |= ts.ModifierFlags.Protected;
-  } else if (ts.getJSDocPublicTag(methodDeclaration)) {
-    modifierFlags |= ts.ModifierFlags.Public;
-  } else {
-    return methodDeclaration.modifiers;
+    return 'private';
   }
-
-  return factory.createModifiersFromModifierFlags(modifierFlags);
+  if (ts.getJSDocProtectedTag(methodDeclaration)) {
+    return 'protected';
+  }
+  if (ts.getJSDocPublicTag(methodDeclaration)) {
+    return 'public';
+  }
+  return undefined;
 }
 
 /** Constructors and accessors take none, whatever their comment says. */

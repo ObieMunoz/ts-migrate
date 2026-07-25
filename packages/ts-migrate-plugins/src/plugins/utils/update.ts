@@ -68,11 +68,6 @@ class UpdateTracker {
     }
   }
 
-  public insertNodes<T extends ts.Node>(pos: number, nodes: ts.NodeArray<T>): void {
-    const text = this.printer.printList(ts.ListFormat.SpaceAfterList, nodes, this.sourceFile);
-    this.insert(pos, text);
-  }
-
   private replace(pos: number, length: number, text: string): void {
     this.updates.push({
       kind: 'replace',

@@ -465,6 +465,40 @@ class C {
 `);
   });
 
+  it('adds an accessibility modifier before the modifiers a method already has', () => {
+    const text = `\
+class C {
+  /**
+   * @param {Number} a
+   * @private
+   */
+  static A(a) {}
+  /** @protected */
+  async B() {}
+  /** @private */
+  @dec
+  C() {}
+}
+`;
+
+    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
+
+    expect(result).toBe(`\
+class C {
+  /**
+   * @param {Number} a
+   * @private
+   */
+  private static A(a: number) {}
+  /** @protected */
+  protected async B() {}
+  /** @private */
+  @dec
+  private C() {}
+}
+`);
+  });
+
   it('annotates object literal methods', () => {
     const text = `\
 const O = {
