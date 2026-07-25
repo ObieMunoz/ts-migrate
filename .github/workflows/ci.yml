@@ -67,6 +67,23 @@ jobs:
       - name: Lint
         run: pnpm run lint
 
+  # pnpm-lock.yaml is not in the paths-ignore lists above, so every pull
+  # request that can flip a resolution reaches this job. It reads committed
+  # refs only: the build matrix below runs `pnpm add` to swap the compiler on
+  # its own runner, and that mutation never reaches a diff.
+  lockfile:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check the TypeScript resolutions
+        run: scripts/check-lockfile-typescript.sh ${{ github.event.pull_request.base.sha }}
+
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
