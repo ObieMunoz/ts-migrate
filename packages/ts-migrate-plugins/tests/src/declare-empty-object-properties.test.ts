@@ -1,10 +1,18 @@
 import ts from 'typescript';
 import { mockPluginParams, realPluginParams } from '../test-utils';
 import declareEmptyObjectPropertiesPlugin from '../../src/plugins/declare-empty-object-properties';
+import declareMissingClassPropertiesPlugin from '../../src/plugins/declare-missing-class-properties';
 
 async function run(text: string, compilerOptions?: ts.CompilerOptions): Promise<string> {
   const result = await declareEmptyObjectPropertiesPlugin.run(
     await realPluginParams({ text, options: { anyAlias: '$TSFixMe' }, compilerOptions }),
+  );
+  return result ?? text;
+}
+
+async function declareMissingProperties(text: string): Promise<string> {
+  const result = await declareMissingClassPropertiesPlugin.run(
+    await realPluginParams({ text, options: { anyAlias: '$TSFixMe' } }),
   );
   return result ?? text;
 }
@@ -238,5 +246,221 @@ cache.total = 1;
 `;
 
     expect(declareEmptyObjectPropertiesPlugin.run(mockPluginParams({ text }))).toBe(text);
+  });
+
+  describe('class properties', () => {
+    it('types a property from the writes through this', async () => {
+      const text = `class C {
+  cache = {};
+  load() {
+    this.cache.total = 1;
+    this.cache.label = 'x';
+  }
+}
+export default C;
+`;
+
+      const result = await run(text);
+
+      expect(result).toContain('cache: { total?: number; label?: string } = {};');
+      expect(typeCheck(result)).toEqual([]);
+    });
+
+    it('is idempotent', async () => {
+      const text = `class C {
+  cache = {};
+  load() {
+    this.cache.total = 1;
+  }
+}
+export default C;
+`;
+
+      const once = await run(text);
+      expect(await run(once)).toBe(once);
+    });
+
+    it('types a static property from the writes through the class', async () => {
+      const text = `class C {
+  static cache = {};
+}
+C.cache.total = 1;
+export default C;
+`;
+
+      const result = await run(text);
+
+      expect(result).toContain('static cache: { total?: number } = {};');
+      expect(typeCheck(result)).toEqual([]);
+    });
+
+    it('types a private property', async () => {
+      const text = `class C {
+  #cache = {};
+  load() {
+    this.#cache.total = 1;
+  }
+  read() {
+    return this.#cache;
+  }
+}
+export default C;
+`;
+
+      const result = await run(text, { target: ts.ScriptTarget.ES2020 });
+
+      expect(result).toContain('#cache: { total?: number } = {};');
+      expect(typeCheck(result)).toEqual([]);
+    });
+
+    it('takes the alias for a value the checker only types any', async () => {
+      const text = `class C {
+  cache = {};
+  load(thing: any) {
+    this.cache.total = thing;
+  }
+}
+export default C;
+`;
+
+      const result = await run(text);
+
+      expect(result).toContain('cache: { total?: $TSFixMe } = {};');
+    });
+
+    it('leaves the property alone when the annotation would introduce an error', async () => {
+      const text = `class C {
+  cache = {};
+  load() {
+    this.cache.total = 1;
+    this.cache = { label: 'x' };
+  }
+}
+export default C;
+`;
+
+      expect(await run(text)).toBe(text);
+    });
+  });
+
+  describe('deferred assignment', () => {
+    it('types a let whose first assignment is the empty object', async () => {
+      const text = `let cache;
+cache = {};
+cache.total = 1;
+cache.label = 'x';
+export default cache;
+`;
+
+      const result = await run(text);
+
+      expect(result).toBe(`let cache: { total?: number; label?: string };
+cache = {};
+cache.total = 1;
+cache.label = 'x';
+export default cache;
+`);
+      expect(typeCheck(result)).toEqual([]);
+    });
+
+    it('is idempotent', async () => {
+      const text = `let cache;
+cache = {};
+cache.total = 1;
+export default cache;
+`;
+
+      const once = await run(text);
+      expect(await run(once)).toBe(once);
+    });
+
+    it('takes the alias for a value the checker found nothing for', async () => {
+      const text = `let cache;
+cache = {};
+cache.items = [];
+export default cache;
+`;
+
+      const result = await run(text);
+
+      expect(result).toContain('let cache: { items?: $TSFixMe };');
+    });
+
+    it('leaves a let whose first assignment is not the empty object alone', async () => {
+      const text = `let cache;
+cache = { total: 0 };
+cache.label = 'x';
+export default cache;
+`;
+
+      expect(await run(text)).toBe(text);
+    });
+
+    it('leaves the declaration alone when the annotation would introduce an error', async () => {
+      const text = `let cache;
+cache = {};
+cache.total = 1;
+cache = 'x';
+export default cache;
+`;
+
+      expect(await run(text)).toBe(text);
+    });
+
+    it('leaves the declaration alone without noImplicitAny, where nothing reports', async () => {
+      const text = `let cache;
+cache = {};
+cache.total = 1;
+export default cache;
+`;
+
+      expect(await run(text, { strict: false, noImplicitAny: false })).toBe(text);
+    });
+  });
+
+  describe('alongside declare-missing-class-properties', () => {
+    it('types the empty object property it skipped', async () => {
+      const text = `class C {
+  cache = {};
+  constructor() {
+    this.pending = true;
+  }
+  load() {
+    this.cache.total = 1;
+  }
+}
+export default C;
+`;
+
+      const declared = await declareMissingProperties(text);
+      expect(declared).toContain('pending;');
+      expect(declared).toContain('cache = {};');
+
+      const result = await run(declared);
+
+      expect(result).toContain('cache: { total?: number } = {};');
+      expect(result).toContain('pending;');
+      expect(typeCheck(result)).toEqual([]);
+    });
+
+    it('leaves the declarations it added alone', async () => {
+      const text = `class C {
+  constructor() {
+    this.pending = true;
+    this.cache = {};
+  }
+  load() {
+    this.cache.total = 1;
+  }
+}
+export default C;
+`;
+
+      const declared = await declareMissingProperties(text);
+      expect(declared).toContain('pending;');
+      expect(declared).toContain('cache: $TSFixMe;');
+
+      expect(await run(declared)).toBe(declared);
+    });
   });
 });

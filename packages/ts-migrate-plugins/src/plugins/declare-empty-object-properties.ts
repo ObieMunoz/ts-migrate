@@ -44,6 +44,9 @@ interface Candidate {
   properties: Property[];
 }
 
+/** A declaration the annotation can go on. */
+type Target = ts.VariableDeclaration | ts.PropertyDeclaration;
+
 /** A `name.key = value` or `name['key'] = value` assignment. */
 interface Write {
   key: string;
@@ -55,6 +58,14 @@ interface Write {
  * Types the accumulator idiom `const cache = {}; cache.total = 1;` from the
  * values assigned to it, so one annotation replaces the cast add-conversions
  * would otherwise write at every access site.
+ *
+ * The same idiom on a class property, `foo = {}` written through `this.foo.x`,
+ * and on a `let` whose value arrives later, `let cache; cache = {};`, are the
+ * same declaration with the empty object literal somewhere else. All three take
+ * the annotation after the declared name. Writes are matched to a declaration
+ * by symbol, so a class property is reached through `this`, through an
+ * instance, or through the class for a static, without each spelling needing
+ * its own rule.
  *
  * Properties are declared optional: required ones would not match the empty
  * initializer, and optional reads the same whether or not strictNullChecks is
@@ -68,6 +79,17 @@ interface Write {
  * add-conversions as before. What is re-checked spells the alias `any`: the
  * alias is declared elsewhere in the project, so a single-file check would
  * reject every annotation that used it by name.
+ *
+ * declare-missing-class-properties runs earlier in the pipeline and covers the
+ * properties a class assigns but never declares. The two cannot propose a type
+ * for the same property: it skips the names the class already declares, so a
+ * `foo = {}` is invisible to it, and what it adds carries no initializer, so
+ * neither the bare declaration it leaves where the checker can type one nor the
+ * aliased declaration it falls back to is a candidate here.
+ *
+ * A deferred declaration only reports under `noImplicitAny`. Without it
+ * `let cache;` is a plain any, the writes contradict nothing, and with no
+ * diagnostic to blame the declaration is left alone.
  */
 const declareEmptyObjectPropertiesPlugin: Plugin<Options> = {
   name: 'declare-empty-object-properties',
@@ -131,22 +153,32 @@ function collectCandidates(
   checker: ts.TypeChecker,
   diagnostics: ts.Diagnostic[],
 ): Candidate[] {
-  const declarations: ts.VariableDeclaration[] = [];
+  const declarations: Target[] = [];
   const writes = new Map<ts.Symbol, Write[]>();
+  const assignments = new Map<ts.Symbol, ts.Expression[]>();
+
+  const record = <T>(map: Map<ts.Symbol, T[]>, symbol: ts.Symbol, value: T): void => {
+    const existing = map.get(symbol);
+    if (existing) {
+      existing.push(value);
+    } else {
+      map.set(symbol, [value]);
+    }
+  };
 
   const visit = (node: ts.Node): void => {
-    if (isEmptyObjectDeclaration(node)) {
+    if (isEmptyObjectDeclaration(node) || isDeferredDeclaration(node)) {
       declarations.push(node);
     }
     const write = asWrite(node);
-    const symbol = write && checker.getSymbolAtLocation(write.access.expression);
-    if (write && symbol) {
-      const existing = writes.get(symbol);
-      if (existing) {
-        existing.push(write);
-      } else {
-        writes.set(symbol, [write]);
-      }
+    const written = write && checker.getSymbolAtLocation(write.access.expression);
+    if (write && written) {
+      record(writes, written, write);
+    }
+    const assignment = asAssignment(node);
+    const assigned = assignment && checker.getSymbolAtLocation(assignment.name);
+    if (assignment && assigned) {
+      record(assignments, assigned, assignment.value);
     }
     node.forEachChild(visit);
   };
@@ -156,7 +188,16 @@ function collectCandidates(
   const candidates: Candidate[] = [];
   declarations.forEach((declaration) => {
     const symbol = checker.getSymbolAtLocation(declaration.name);
-    const declarationWrites = (symbol && writes.get(symbol)) ?? [];
+    if (!symbol) {
+      return;
+    }
+    // A declaration with no initializer is the idiom only where the first
+    // value it takes is the empty object literal.
+    if (declaration.initializer === undefined && !isEmptyObject(assignments.get(symbol)?.[0])) {
+      return;
+    }
+
+    const declarationWrites = writes.get(symbol) ?? [];
     if (!declarationWrites.some((write) => isBlamed(write, source, diagnostics))) {
       return;
     }
@@ -168,43 +209,81 @@ function collectCandidates(
       printer,
     });
     if (properties.length > 0) {
-      candidates.push({ index: declaration.name.end, properties });
+      candidates.push({ index: annotationIndex(declaration), properties });
     }
   });
 
   return candidates;
 }
 
-function isEmptyObjectDeclaration(node: ts.Node): node is ts.VariableDeclaration {
+function isEmptyObject(node: ts.Node | undefined): boolean {
+  return node !== undefined && ts.isObjectLiteralExpression(node) && node.properties.length === 0;
+}
+
+/** A name a symbol can be looked up from, as opposed to a binding or computed one. */
+function isDeclaredName(name: ts.Node): boolean {
+  return ts.isIdentifier(name) || ts.isPrivateIdentifier(name);
+}
+
+/** `const cache = {}` and the `foo = {}` class property. */
+function isEmptyObjectDeclaration(node: ts.Node): node is Target {
+  return (
+    (ts.isVariableDeclaration(node) || ts.isPropertyDeclaration(node)) &&
+    isDeclaredName(node.name) &&
+    node.type === undefined &&
+    isEmptyObject(node.initializer)
+  );
+}
+
+/** `let cache;`, whose value arrives in a later assignment. */
+function isDeferredDeclaration(node: ts.Node): node is ts.VariableDeclaration {
   return (
     ts.isVariableDeclaration(node) &&
     ts.isIdentifier(node.name) &&
     node.type === undefined &&
-    node.initializer !== undefined &&
-    ts.isObjectLiteralExpression(node.initializer) &&
-    node.initializer.properties.length === 0
+    node.initializer === undefined &&
+    // `for` bindings and catch parameters are variable declarations too, and
+    // an assignment to either stands in for no initializer.
+    ts.isVariableDeclarationList(node.parent) &&
+    ts.isVariableStatement(node.parent.parent)
   );
 }
 
-/** Assignments through an identifier and a fixed key: the ones a property list can describe. */
+/** Where the annotation goes, past whatever follows the declared name. */
+function annotationIndex(declaration: Target): number {
+  const token = ts.isPropertyDeclaration(declaration)
+    ? (declaration.questionToken ?? declaration.exclamationToken)
+    : declaration.exclamationToken;
+  return (token ?? declaration.name).end;
+}
+
+/**
+ * Assignments through a fixed key: the ones a property list can describe. What
+ * is written to is left to the checker, so `this.foo.x`, `C.foo.x` and
+ * `cache.x` all resolve to whichever declaration owns the symbol.
+ */
 function asWrite(node: ts.Node): Write | undefined {
   if (!ts.isBinaryExpression(node) || node.operatorToken.kind !== ts.SyntaxKind.EqualsToken) {
     return undefined;
   }
   const { left } = node;
-  if (
-    ts.isPropertyAccessExpression(left) &&
-    ts.isIdentifier(left.expression) &&
-    ts.isIdentifier(left.name)
-  ) {
+  if (ts.isPropertyAccessExpression(left) && ts.isIdentifier(left.name)) {
     return { key: left.name.text, access: left, value: node.right };
   }
-  if (
-    ts.isElementAccessExpression(left) &&
-    ts.isIdentifier(left.expression) &&
-    ts.isStringLiteralLike(left.argumentExpression)
-  ) {
+  if (ts.isElementAccessExpression(left) && ts.isStringLiteralLike(left.argumentExpression)) {
     return { key: left.argumentExpression.text, access: left, value: node.right };
+  }
+  return undefined;
+}
+
+/** `cache = value`, the assignment that can carry a deferred declaration's first value. */
+function asAssignment(node: ts.Node): { name: ts.Identifier; value: ts.Expression } | undefined {
+  if (
+    ts.isBinaryExpression(node) &&
+    node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+    ts.isIdentifier(node.left)
+  ) {
+    return { name: node.left, value: node.right };
   }
   return undefined;
 }
@@ -221,7 +300,7 @@ function isBlamed(write: Write, source: ts.SourceFile, diagnostics: ts.Diagnosti
 }
 
 interface PrintContext {
-  declaration: ts.VariableDeclaration;
+  declaration: Target;
   source: ts.SourceFile;
   checker: ts.TypeChecker;
   printer: ts.Printer;
