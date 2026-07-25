@@ -567,6 +567,112 @@ describe('init command', () => {
     });
   });
 
+  describe('module resolution', () => {
+    const writeFile = (relPath: string, text: string) => {
+      const filePath = path.join(rootDir, relPath);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, text);
+    };
+
+    /** A project whose absolute imports only the bundler resolves. */
+    const writeAbsoluteImportProject = () => {
+      writeFile(
+        'package.json',
+        JSON.stringify({ devDependencies: { webpack: '^5.90.0' } }),
+      );
+      writeFile('src/shared/keyCodes.ts', 'export const ESCAPE = 27;\n');
+      writeFile(
+        'src/App/index.ts',
+        "import { ESCAPE } from 'shared/keyCodes';\n\nexport const key: number = ESCAPE;\n",
+      );
+    };
+
+    it('type-checks the absolute imports a webpack resolve.modules resolves', () => {
+      writeAbsoluteImportProject();
+      writeFile(
+        'webpack.config.js',
+        "const path = require('path');\n\nmodule.exports = {\n  resolve: { modules: [path.join(__dirname, 'src'), 'node_modules'] },\n};\n",
+      );
+
+      init({ rootDir, isExtendedConfig: false });
+
+      expect(readConfig(rootDir).compilerOptions.baseUrl).toBe('src');
+      // Without the baseUrl this is a TS2307 that migrates into a suppression.
+      expect(typeCheck(rootDir)).toEqual([]);
+    }, 60000);
+
+    it('copies the baseUrl and paths a jsconfig.json already declares', () => {
+      writeAbsoluteImportProject();
+      // What Create React App projects with absolute imports carry, since
+      // react-scripts keeps its webpack config to itself.
+      writeFile(
+        'package.json',
+        JSON.stringify({ dependencies: { 'react-scripts': '5.0.1' } }),
+      );
+      writeFile('jsconfig.json', '{\n  "compilerOptions": { "baseUrl": "src" }\n}\n');
+
+      init({ rootDir, isExtendedConfig: false });
+
+      expect(readConfig(rootDir).compilerOptions.baseUrl).toBe('src');
+      expect(typeCheck(rootDir)).toEqual([]);
+    }, 60000);
+
+    it('maps a named alias onto paths', () => {
+      writeAbsoluteImportProject();
+      writeFile(
+        'webpack.config.js',
+        "const path = require('path');\nconst appPath = path.join(__dirname, 'src');\n\nmodule.exports = { resolve: { alias: { '@': appPath } } };\n",
+      );
+      writeFile(
+        'src/App/index.ts',
+        "import { ESCAPE } from '@/shared/keyCodes';\n\nexport const key: number = ESCAPE;\n",
+      );
+
+      init({ rootDir, isExtendedConfig: false });
+
+      expect(readConfig(rootDir).compilerOptions.paths).toEqual({
+        '@': ['./src'],
+        '@/*': ['./src/*'],
+      });
+      expect(typeCheck(rootDir)).toEqual([]);
+    }, 60000);
+
+    it('leaves out an alias whose target it cannot establish, and names it', () => {
+      const info = jest.spyOn(log, 'info');
+      writeAbsoluteImportProject();
+      writeFile(
+        'webpack.config.js',
+        "module.exports = { resolve: { alias: { '@': process.env.APP_PATH } } };\n",
+      );
+
+      init({ rootDir, isExtendedConfig: false });
+
+      const { compilerOptions } = readConfig(rootDir);
+      expect(compilerOptions.baseUrl).toBeUndefined();
+      expect(compilerOptions.paths).toBeUndefined();
+      expect(info.mock.calls.map((call) => call.join(' ')).join('\n')).toContain(
+        'Leaving resolve.alias "@" out of the generated tsconfig',
+      );
+      info.mockRestore();
+    });
+
+    it('writes a byte-identical config when it can map nothing', () => {
+      writeAbsoluteImportProject();
+      writeFile('webpack.config.js', 'module.exports = { mode: "development" };\n');
+      init({ rootDir, isExtendedConfig: false });
+      const withoutResolve = fs.readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf-8');
+
+      fs.rmSync(path.join(rootDir, 'tsconfig.json'));
+      writeFile(
+        'webpack.config.js',
+        "module.exports = { resolve: { alias: { '@': process.env.APP_PATH } } };\n",
+      );
+      init({ rootDir, isExtendedConfig: false });
+
+      expect(fs.readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf-8')).toBe(withoutResolve);
+    });
+  });
+
   it('uses the automatic JSX runtime for React 17+ projects', () => {
     fs.writeFileSync(
       path.join(rootDir, 'package.json'),

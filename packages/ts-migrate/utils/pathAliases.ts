@@ -338,6 +338,21 @@ function sortPaths(paths: Record<string, string[]>): Record<string, string[]> {
 }
 
 /**
+ * Without a baseUrl the compiler reads a `paths` value from the tsconfig and
+ * rejects one that is not written as a relative path (TS5090).
+ */
+function relativeToConfig(paths: Record<string, string[]>): Record<string, string[]> {
+  return Object.fromEntries(
+    Object.entries(paths).map(([pattern, values]) => [
+      pattern,
+      values.map((value) =>
+        value.startsWith('.') || path.isAbsolute(value) ? value : `./${value}`,
+      ),
+    ]),
+  );
+}
+
+/**
  * What a webpack config's `resolve` says, read without running it. A config
  * that computes its aliases, composes them or exports a function is only
  * partly readable, so each entry is translated on its own and the rest is
@@ -368,16 +383,15 @@ function webpackAliases(rootDir: string): PathAliases | null {
   if (moduleDirectories.length === 1 && Object.keys(paths).length === 0) {
     return { baseUrl: moduleDirectories[0], source, skipped };
   }
-  // Without a baseUrl the compiler reads these relative to the tsconfig, and
-  // a bare specifier no pattern answers falls through to node_modules, which
-  // is the order webpack resolves in.
+  // No baseUrl beside them: a bare specifier no pattern answers then falls
+  // through to node_modules, which is the order webpack resolves in.
   if (moduleDirectories.length > 0) {
     paths['*'] = moduleDirectories.map((directory) => `${directory}/*`);
   }
   if (Object.keys(paths).length === 0) {
     return skipped.length > 0 ? { source, skipped } : null;
   }
-  return { paths: sortPaths(paths), source, skipped };
+  return { paths: relativeToConfig(sortPaths(paths)), source, skipped };
 }
 
 /**
@@ -427,7 +441,10 @@ function jsConfigAliases(rootDir: string): PathAliases | null {
       }
       kept[pattern] = values as string[];
     });
-    if (Object.keys(kept).length > 0) result.paths = sortPaths(kept);
+    if (Object.keys(kept).length > 0) {
+      const sorted = sortPaths(kept);
+      result.paths = result.baseUrl === undefined ? relativeToConfig(sorted) : sorted;
+    }
   }
   if (result.baseUrl === undefined && result.paths === undefined && skipped.length === 0) {
     return null;
