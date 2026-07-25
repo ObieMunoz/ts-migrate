@@ -257,7 +257,11 @@ migratable.
   faster; use on very large projects or when annotation quality is secondary.
 - `--maxStablePasses <n>` (default 5): cap the repeat passes of the
   inference stage.
-- `--plugin <name>`: run a single plugin instead of the pipeline.
+- `--plugin <name>`: run a single plugin instead of the pipeline. Takes one
+  name; repeating the flag is an error, since the subtractive case is
+  `--exclude-plugin`. The plugin gets the same options it would get in the
+  pipeline, so plugin flags such as `--defaultAccessibility` apply here too.
+  A flag the named plugin has no option for is reported and ignored.
 - `--exclude-plugin <name>` (repeatable): run the default pipeline without the
   named plugin; every occurrence is removed (`eslint-fix` runs twice). Unknown
   names error and list the valid ones. For a staged migration that surfaces
