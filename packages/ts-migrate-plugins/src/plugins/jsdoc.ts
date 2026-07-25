@@ -127,6 +127,8 @@ const jsDocTransformerFactory =
         visitFunctionLike(origNode, ts.isClassDeclaration(origNode.parent));
       } else if (ts.isVariableDeclaration(origNode) || ts.isPropertyDeclaration(origNode)) {
         visitTypeTag(origNode);
+      } else if (ts.isClassLike(origNode)) {
+        visitClassLike(origNode);
       }
     }
 
@@ -164,7 +166,9 @@ const jsDocTransformerFactory =
       if (typeParameters) {
         // Before the parameter list, which an arrow function without parentheses replaces.
         const pos = typeParameterPos(node);
-        updates.replaceText(pos, pos, printTypeParameters(node, typeParameters));
+        // `<T>` on an arrow function reads as a JSX element in a .tsx file.
+        const trailingComma = ts.isArrowFunction(node) && /\.[jt]sx$/.test(sourceFile.fileName);
+        updates.replaceText(pos, pos, printTypeParameters(typeParameters, trailingComma));
       }
 
       const newParameters = factory.createNodeArray(parameters);
@@ -197,11 +201,52 @@ const jsDocTransformerFactory =
       updates.replaceText(pos, pos, `: ${type}`);
     }
 
-    function visitTypeParameters(
-      node: ts.SignatureDeclaration,
-    ): ts.TypeParameterDeclaration[] | undefined {
+    /**
+     * Writes the `@template` tags of a class after its name. Every parameter
+     * is given a default, so a reference that passes no type arguments keeps
+     * the meaning it had while the class was not generic, whatever file it is
+     * in. An anonymous class has no name to write after.
+     */
+    function visitClassLike(node: ts.ClassLikeDeclaration): void {
+      if (node.typeParameters) {
+        // Don't overwrite existing type parameters.
+        return;
+      }
+      const typeParameters = visitTypeParameters(node);
+      if (!typeParameters) {
+        return;
+      }
+      if (!node.name) {
+        const names = typeParameters.map((typeParameter) => typeParameter.name.text).join(', ');
+        report({
+          reason: `@template ${names} stays a comment because the class has no name`,
+          hint: 'Members that reference it keep the name the comment declared.',
+          recovered: true,
+        });
+        return;
+      }
+      const pos = node.name.end;
+      updates.replaceText(pos, pos, printTypeParameters(withAnyDefaults(typeParameters)));
+    }
+
+    function visitTypeParameters(node: ts.Node): ts.TypeParameterDeclaration[] | undefined {
       return typeParametersFromTags(
         ts.getAllJSDocTags(node, ts.isJSDocTemplateTag).filter(isHostTemplateTag),
+      );
+    }
+
+    function withAnyDefaults(
+      typeParameters: ts.TypeParameterDeclaration[],
+    ): ts.TypeParameterDeclaration[] {
+      return typeParameters.map((typeParameter) =>
+        typeParameter.default
+          ? typeParameter
+          : factory.createTypeParameterDeclaration(
+              typeParameter.modifiers,
+              typeParameter.name,
+              typeParameter.constraint,
+              anyType,
+            ),
       );
     }
 
@@ -236,11 +281,9 @@ const jsDocTransformerFactory =
     }
 
     function printTypeParameters(
-      node: ts.SignatureDeclaration,
       typeParameters: ts.TypeParameterDeclaration[],
+      trailingComma = false,
     ): string {
-      // `<T>` on an arrow function reads as a JSX element in a .tsx file.
-      const trailingComma = ts.isArrowFunction(node) && /\.[jt]sx$/.test(sourceFile.fileName);
       return printer.printList(
         trailingComma
           ? ts.ListFormat.TypeParameters | ts.ListFormat.AllowTrailingComma

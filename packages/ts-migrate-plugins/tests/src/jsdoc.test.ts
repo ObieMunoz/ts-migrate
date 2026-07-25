@@ -757,6 +757,150 @@ function box<K extends string>(key: K): Box<K> {
 `);
   });
 
+  it('converts templates on a class into type parameters', () => {
+    const text = `\
+/**
+ * @template T
+ * @template {string} K
+ * @template [D=number]
+ */
+export class Box extends Base {
+  /**
+   * @param {T} value
+   * @param {K} key
+   * @param {D} depth
+   */
+  add(value, key, depth) {}
+}
+`;
+
+    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
+
+    expect(result).toBe(`\
+/**
+ * @template T
+ * @template {string} K
+ * @template [D=number]
+ */
+export class Box<T = any, K extends string = any, D = number> extends Base {
+  /**
+   * @param {T} value
+   * @param {K} key
+   * @param {D} depth
+   */
+  add(value: T, key: K, depth: D) {}
+}
+`);
+  });
+
+  it('writes the any alias as the type parameter default', () => {
+    const text = `\
+/**
+ * @template T
+ */
+const Box = class Inner {
+  /** @param {T} v */
+  add(v) {}
+};
+`;
+
+    const result = jsDocPlugin.run(
+      mockPluginParams({ text, fileName: 'file.ts', options: { anyAlias: '$TSFixMe' } }),
+    );
+
+    expect(result).toBe(`\
+/**
+ * @template T
+ */
+const Box = class Inner<T = $TSFixMe> {
+  /** @param {T} v */
+  add(v: T) {}
+};
+`);
+  });
+
+  it('leaves a class that declares its own type parameters', () => {
+    const text = `\
+/**
+ * @template T
+ */
+class Box<U> {
+  /** @param {U} v */
+  add(v) {}
+}
+`;
+
+    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
+
+    expect(result).toBe(`\
+/**
+ * @template T
+ */
+class Box<U> {
+  /** @param {U} v */
+  add(v: U) {}
+}
+`);
+  });
+
+  it('reports a template on a class with no name', () => {
+    const text = `\
+/**
+ * @template T
+ */
+export default class {
+  /** @param {T} v */
+  add(v) {}
+}
+`;
+    const notices: PluginFileNotice[] = [];
+
+    const result = jsDocPlugin.run(
+      mockPluginParams({
+        text,
+        fileName: 'file.ts',
+        reportFileNotice: (notice) => notices.push(notice),
+      }),
+    );
+
+    expect(result).toBe(`\
+/**
+ * @template T
+ */
+export default class {
+  /** @param {T} v */
+  add(v: T) {}
+}
+`);
+    expect(notices).toEqual([
+      {
+        reason: '@template T stays a comment because the class has no name',
+        hint: 'Members that reference it keep the name the comment declared.',
+        recovered: true,
+      },
+    ]);
+  });
+
+  it('leaves a template that belongs to a typedef off the class it documents', () => {
+    const text = `\
+/**
+ * @template T
+ * @typedef {Object} Wrap
+ * @property {T} value
+ */
+class Box {}
+`;
+
+    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
+
+    expect(result).toBe(`\
+type Wrap<T> = {
+    value: T;
+};
+class Box {}
+`);
+  });
+
   it('adds a trailing comma to type parameters of an arrow function in a tsx file', () => {
     const text = `\
 /**
@@ -1012,6 +1156,66 @@ export function use(opts) {
     };
 
     expect(files['/consumer.ts']).toContain('export function use(opts: import(\'./file\').Opts)');
+    expect(typeCheck(files)).toEqual([]);
+  });
+
+  it('type-checks the generic class it converts and every reference to it', () => {
+    const text = `\
+/**
+ * @template T
+ */
+export class Box {
+  /** @type {T} */
+  value;
+
+  /** @param {T} value */
+  constructor(value) {
+    this.value = value;
+  }
+
+  /** @returns {T} */
+  get() {
+    return this.value;
+  }
+}
+
+/** @param {Box} b */
+export function unwrap(b) {
+  return b.get();
+}
+`;
+    const consumer = `\
+import { Box } from './file';
+
+/** @param {Box} b */
+export function bare(b) {
+  return b.get();
+}
+
+/** @param {Box<string>} b */
+export function typed(b) {
+  /** @type {string} */
+  const s = b.get();
+  return s;
+}
+
+export class Crate extends Box {}
+
+export const crate = new Crate(1);
+`;
+
+    const options = { annotateReturns: true };
+    const files = {
+      '/file.ts': jsDocPlugin.run(
+        mockPluginParams({ text, fileName: '/file.ts', options }),
+      ) as string,
+      '/consumer.ts': jsDocPlugin.run(
+        mockPluginParams({ text: consumer, fileName: '/consumer.ts', options }),
+      ) as string,
+    };
+
+    expect(files['/file.ts']).toContain('export class Box<T = any> {');
+    expect(files['/file.ts']).toContain('get(): T {');
     expect(typeCheck(files)).toEqual([]);
   });
 });
