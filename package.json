@@ -21,7 +21,7 @@
     "@types/jest": "^29.5.0",
     "@types/node": "^22",
     "@types/react": "^16.9.16",
-    "@types/yargs": "^13.0.3",
+    "@types/yargs": "^17.0.35",
     "cross-env": "^7.0.3",
     "eslint": "^9.18.0",
     "glob": "^7.1.6",
