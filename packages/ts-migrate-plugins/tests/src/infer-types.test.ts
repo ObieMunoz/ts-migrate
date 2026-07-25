@@ -559,37 +559,27 @@ add(1, 2);
 
     /**
      * Models the state a migration is in when it reaches a file: the run has
-     * already produced new text for a dependency, but nothing is persisted
-     * until the run ends, so the copy on disk is still the original.
+     * already produced new text for some files, but nothing is persisted until
+     * the run ends, so the copies on disk are still the originals.
      */
-    function midRunParams({
-      mainText,
-      depOnDisk,
-      depInRun,
-    }: {
-      mainText: string;
-      depOnDisk: string;
-      depInRun: string;
-    }): PluginParams<unknown> {
-      const mainFile = path.join(tmpDir, 'main.ts');
-      const depFile = path.join(tmpDir, 'dep.ts');
-      fs.writeFileSync(depFile, depOnDisk);
-      fs.writeFileSync(mainFile, mainText);
+    function midRunProject(files: { [name: string]: { onDisk: string; inRun?: string } }) {
+      const inRun = new Map<string, string>();
+      const versions = new Map<string, number>();
+      const fileOf = (name: string) => path.join(tmpDir, name);
+      Object.entries(files).forEach(([name, texts]) => {
+        fs.writeFileSync(fileOf(name), texts.onDisk);
+        inRun.set(fileOf(name), texts.inRun ?? texts.onDisk);
+      });
 
       const compilerOptions: ts.CompilerOptions = {
         strict: true,
         target: ts.ScriptTarget.Latest,
       };
-      const inRun = new Map([
-        [mainFile, mainText],
-        [depFile, depInRun],
-      ]);
       const read = (name: string) => (inRun.has(name) ? inRun.get(name) : ts.sys.readFile(name));
-
       const serviceHost: ts.LanguageServiceHost = {
         getCompilationSettings: () => compilerOptions,
         getScriptFileNames: () => Array.from(inRun.keys()),
-        getScriptVersion: () => '0',
+        getScriptVersion: (name) => String(versions.get(name) ?? 0),
         getScriptSnapshot: (name) => {
           const text = read(name);
           return text !== undefined ? ts.ScriptSnapshot.fromString(text) : undefined;
@@ -600,37 +590,50 @@ add(1, 2);
         readFile: read,
       };
       const languageService = ts.createLanguageService(serviceHost);
-      const sourceFile = languageService.getProgram()?.getSourceFile(mainFile);
-      if (!sourceFile) throw new Error('Failed to create source file');
 
       return {
-        options: {},
-        fileName: mainFile,
-        rootDir: tmpDir,
-        text: mainText,
-        sourceFile,
-        getLanguageService: () => languageService,
+        // What the runner does with a plugin's result: the new text lives in
+        // the run and nothing reaches disk.
+        rewrite(name: string, text: string) {
+          inRun.set(fileOf(name), text);
+          versions.set(fileOf(name), (versions.get(fileOf(name)) ?? 0) + 1);
+        },
+        paramsFor(name: string): PluginParams<unknown> {
+          const sourceFile = languageService.getProgram()?.getSourceFile(fileOf(name));
+          if (!sourceFile) throw new Error(`Failed to create source file: ${name}`);
+          return {
+            options: {},
+            fileName: fileOf(name),
+            rootDir: tmpDir,
+            text: sourceFile.text,
+            sourceFile,
+            getLanguageService: () => languageService,
+          };
+        },
       };
     }
 
     it('keeps an annotation the dependency text the run will write agrees with', async () => {
-      const result = await inferTypesPlugin.run(
-        midRunParams({
-          depOnDisk: `export const sink = { write( s: number ) { return s; } };
+      const project = midRunProject({
+        'dep.ts': {
+          onDisk: `export const sink = { write( s: number ) { return s; } };
 `,
-          depInRun: `export const sink = { write( s: string ) { return s; } };
+          inRun: `export const sink = { write( s: string ) { return s; } };
 `,
-          mainText: `import { sink } from './dep';
+        },
+        'main.ts': {
+          onDisk: `import { sink } from './dep';
 
 export function forward( value ) {
   sink.write( value );
   return value.toUpperCase();
 }
 `,
-        }),
-      );
+        },
+      });
 
-      expect(result).toBe(`import { sink } from './dep';
+      expect(await inferTypesPlugin.run(project.paramsFor('main.ts')))
+        .toBe(`import { sink } from './dep';
 
 export function forward( value: string ) {
   sink.write( value );
@@ -640,13 +643,15 @@ export function forward( value: string ) {
     });
 
     it('recomputes an annotation the dependency text the run will write contradicts', async () => {
-      const result = await inferTypesPlugin.run(
-        midRunParams({
-          depOnDisk: `export function send( value: string | number ) { return value; }
+      const project = midRunProject({
+        'dep.ts': {
+          onDisk: `export function send( value: string | number ) { return value; }
 `,
-          depInRun: `export function send( value: string ) { return value; }
+          inRun: `export function send( value: string ) { return value; }
 `,
-          mainText: `import { send } from './dep';
+        },
+        'main.ts': {
+          onDisk: `import { send } from './dep';
 
 export function relay( value ) {
   send( value );
@@ -654,16 +659,48 @@ export function relay( value ) {
 relay( 1 );
 relay( 'a' );
 `,
-        }),
-      );
+        },
+      });
 
-      expect(result).toBe(`import { send } from './dep';
+      expect(await inferTypesPlugin.run(project.paramsFor('main.ts')))
+        .toBe(`import { send } from './dep';
 
 export function relay( value: string ) {
   send( value );
 }
 relay( 1 );
 relay( 'a' );
+`);
+    });
+
+    it('reads a dependency rewritten between two files at its new text', async () => {
+      const consumer = (name: string) => `import { sink } from './dep';
+
+export function ${name}( value ) {
+  sink.write( value );
+  return value.toUpperCase();
+}
+`;
+      const project = midRunProject({
+        'dep.ts': { onDisk: `export const sink = { write( s: number ) { return s; } };\n` },
+        'first.ts': { onDisk: consumer('first') },
+        'second.ts': { onDisk: consumer('second') },
+      });
+
+      // The dependency still takes a number, so string contradicts it.
+      expect(await inferTypesPlugin.run(project.paramsFor('first.ts'))).toBeUndefined();
+
+      project.rewrite('dep.ts', `export const sink = { write( s: string ) { return s; } };\n`);
+
+      // Serving the earlier parse from the shared document registry would drop
+      // this annotation the same way.
+      expect(await inferTypesPlugin.run(project.paramsFor('second.ts')))
+        .toBe(`import { sink } from './dep';
+
+export function second( value: string ) {
+  sink.write( value );
+  return value.toUpperCase();
+}
 `);
     });
   });
