@@ -35,9 +35,15 @@ import { hasDefaultExport, isEsmSourceFile } from '../utils/moduleFormat';
  * or by its package's `"type": "module"`. The `esm` option overrides the
  * detection.
  *
+ * A file that calls its own `exports.foo()` from inside a function reads the
+ * binding the conversion leaves behind instead, which is what TypeScript's own
+ * emit does. That read is a plain call, so a function reaching sibling exports
+ * through `this` has to stay as it is; the conversion is skipped when the name
+ * is also declared somewhere inside the file.
+ *
  * Only top level statements convert. A require inside a function or a branch,
- * an assignment to `exports` the file also reads, and a file that mixes
- * `module.exports = x` with `exports.foo = y` are all left for ts-ignore.
+ * a read of `exports` as a whole, and a file that mixes `module.exports = x`
+ * with `exports.foo = y` are all left for ts-ignore.
  */
 type Options = {
   esm?: boolean;
@@ -195,41 +201,54 @@ function convertExports(
     }
     if (!ts.isPropertyAccessExpression(left) || !ts.isIdentifier(left.name)) return;
     const target = left.expression;
-    if (isExportsIdentifier(target)) {
+    if (isExportsIdentifier(target) || isModuleExports(target)) {
       named.push({ statement, value: right, name: left.name.text });
-      recognized.add(target);
-    } else if (isModuleExports(target)) {
-      named.push({ statement, value: right, name: left.name.text });
+      recognized.add(left);
       recognized.add(target);
     }
   });
 
   if (whole.length === 0 && named.length === 0) return [];
 
-  const blocked = blockingReason(scope, recognized, whole, named);
-  if (blocked) {
-    report({ reason: blocked, hint: 'Its exports are left as they are.', recovered: true });
-    return [];
+  const structural = structuralBlockingReason(scope, whole, named);
+  if (structural) return leaveExports(report, structural);
+
+  const plan =
+    whole.length === 1
+      ? { updates: wholeExportUpdates(scope, whole[0]), locals: new Map<string, string>() }
+      : namedExportPlan(scope, named);
+  if (!plan) return leaveExports(report, 'an export name is already declared in the file');
+
+  const references = scanExportsReferences(sourceFile, recognized, plan.locals);
+  if (references.reason) return leaveExports(report, references.reason);
+
+  const nested = collectNestedBindingNames(sourceFile);
+  const shadowed = references.reads.some((read) => nested.has(plan.locals.get(read.name.text)!));
+  if (shadowed) {
+    return leaveExports(report, 'an exported name is also declared inside the file');
   }
 
-  const updates =
-    whole.length === 1
-      ? wholeExportUpdates(scope, whole[0])
-      : namedExportUpdates(scope, named);
-  if (!updates) {
-    report({
-      reason: 'an export name is already declared in the file',
-      hint: 'Its exports are left as they are.',
-      recovered: true,
-    });
-    return [];
-  }
-  return updates;
+  return [
+    ...plan.updates,
+    ...references.reads.map((read) => ({
+      kind: 'replace' as const,
+      index: read.getStart(sourceFile),
+      length: read.getEnd() - read.getStart(sourceFile),
+      text: plan.locals.get(read.name.text) as string,
+    })),
+  ];
 }
 
-function blockingReason(
+function leaveExports(
+  report: (notice: PluginFileNotice) => void,
+  reason: string,
+): SourceTextUpdate[] {
+  report({ reason, hint: 'Its exports are left as they are.', recovered: true });
+  return [];
+}
+
+function structuralBlockingReason(
   scope: Scope,
-  recognized: Set<ts.Node>,
   whole: ExportAssignment[],
   named: ExportAssignment[],
 ): string | undefined {
@@ -237,9 +256,6 @@ function blockingReason(
     return 'the file assigns both module.exports and exports.<name>';
   }
   if (whole.length > 1) return 'the file assigns module.exports more than once';
-
-  const unrecognized = findUnrecognizedExportsReference(scope.sourceFile, recognized);
-  if (unrecognized) return unrecognized;
 
   if (whole.length === 0) {
     const names = named.map((assignment) => assignment.name as string);
@@ -257,16 +273,37 @@ function blockingReason(
 }
 
 /**
- * Any `exports` or `module.exports` reference outside the assignments above:
- * a read, a nested assignment, or an assignment through an element access.
+ * Walks the `exports` and `module.exports` references the assignments above did
+ * not account for. A read of a name the file itself exports is answered by the
+ * binding the conversion leaves behind, the way TypeScript's own emit reads a
+ * module's exports. Anything else, a read of `exports` as a whole or an
+ * assignment the conversion did not see, leaves the file as it is.
  */
-function findUnrecognizedExportsReference(
+function scanExportsReferences(
   sourceFile: ts.SourceFile,
   recognized: Set<ts.Node>,
-): string | undefined {
+  locals: Map<string, string>,
+): { reason?: string; reads: ts.PropertyAccessExpression[] } {
+  const reads: ts.PropertyAccessExpression[] = [];
   let reason: string | undefined;
-  const visit = (node: ts.Node, parent: ts.Node) => {
+
+  const visit = (node: ts.Node, parent: ts.Node, inFunction: boolean) => {
     if (reason) return;
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      !recognized.has(node) &&
+      ts.isIdentifier(node.name) &&
+      locals.has(node.name.text) &&
+      (isExportsIdentifier(node.expression) || isModuleExports(node.expression))
+    ) {
+      // A top level read runs before the binding it would become exists.
+      if (!inFunction) {
+        reason = 'an export is read at the top level of the file';
+        return;
+      }
+      reads.push(node);
+      return;
+    }
     if (isModuleExports(node) && !recognized.has(node)) {
       reason = 'module.exports is used outside a top level assignment';
       return;
@@ -280,10 +317,12 @@ function findUnrecognizedExportsReference(
       reason = 'exports is used outside a top level assignment';
       return;
     }
-    ts.forEachChild(node, (child) => visit(child, node));
+    const nested = inFunction || ts.isFunctionLike(node);
+    ts.forEachChild(node, (child) => visit(child, node, nested));
   };
-  ts.forEachChild(sourceFile, (child) => visit(child, sourceFile));
-  return reason;
+
+  ts.forEachChild(sourceFile, (child) => visit(child, sourceFile, false));
+  return { reason, reads };
 }
 
 function wholeExportUpdates(scope: Scope, assignment: ExportAssignment): SourceTextUpdate[] {
@@ -313,18 +352,39 @@ function wholeExportUpdates(scope: Scope, assignment: ExportAssignment): SourceT
   return [replaceStatement(scope, statement, [`${exportKeyword} ${textOf(scope, value)};`])];
 }
 
-function namedExportUpdates(
+/**
+ * One statement per `exports.<name>` assignment, plus the binding each export
+ * name is readable through afterwards.
+ */
+function namedExportPlan(
   scope: Scope,
   assignments: ExportAssignment[],
-): SourceTextUpdate[] | undefined {
+): { updates: SourceTextUpdate[]; locals: Map<string, string> } | undefined {
   const updates: SourceTextUpdate[] = [];
+  const locals = new Map<string, string>();
   for (const assignment of assignments) {
     const name = assignment.name as string;
-    const line = namedExportLine(scope, name, assignment.value);
-    if (!line) return undefined;
-    updates.push(replaceStatement(scope, assignment.statement, [line]));
+    const { value } = assignment;
+    const reexport = reexportSpecifier(scope, name, value);
+    if (reexport) {
+      updates.push(replaceStatement(scope, assignment.statement, [`export { ${reexport} };`]));
+      locals.set(name, (value as ts.Identifier).text);
+    } else if (scope.names.has(name)) {
+      return undefined;
+    } else {
+      // Only the assignment target is replaced, so a sibling export read
+      // inside the value stays a separate, non-overlapping update.
+      const index = assignment.statement.getStart(scope.sourceFile);
+      updates.push({
+        kind: 'replace',
+        index,
+        length: value.getStart(scope.sourceFile) - index,
+        text: `export const ${name} = `,
+      });
+      locals.set(name, name);
+    }
   }
-  return updates;
+  return { updates, locals };
 }
 
 function objectLiteralExportLines(
@@ -361,17 +421,6 @@ function objectLiteralExportLines(
 
   if (reexports.length > 0) lines.push(`export { ${reexports.join(', ')} };`);
   return lines;
-}
-
-function namedExportLine(
-  scope: Scope,
-  name: string,
-  value: ts.Expression,
-): string | undefined {
-  const reexport = reexportSpecifier(scope, name, value);
-  if (reexport) return `export { ${reexport} };`;
-  if (scope.names.has(name)) return undefined;
-  return `export const ${name} = ${textOf(scope, value)};`;
 }
 
 /**
@@ -427,6 +476,55 @@ function collectTopLevelNames(sourceFile: ts.SourceFile): Map<string, BindingKin
       }
     }
   });
+  return names;
+}
+
+/** Every name bound somewhere other than by a top level statement. */
+function collectNestedBindingNames(sourceFile: ts.SourceFile): Set<string> {
+  const names = new Set<string>();
+  const topLevel = new Set<ts.Node>();
+  sourceFile.statements.forEach((statement) => {
+    if (ts.isVariableStatement(statement)) {
+      statement.declarationList.declarations.forEach((declaration) =>
+        topLevel.add(declaration.name),
+      );
+    } else if (
+      (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) &&
+      statement.name
+    ) {
+      topLevel.add(statement.name);
+    }
+  });
+
+  const add = (name: ts.BindingName) => {
+    if (topLevel.has(name)) return;
+    if (ts.isIdentifier(name)) {
+      names.add(name.text);
+      return;
+    }
+    name.elements.forEach((element) => {
+      if (ts.isBindingElement(element)) add(element.name);
+    });
+  };
+
+  const visit = (node: ts.Node) => {
+    if (ts.isVariableDeclaration(node) || ts.isParameter(node) || ts.isBindingElement(node)) {
+      add(node.name);
+    } else if (ts.isCatchClause(node) && node.variableDeclaration) {
+      add(node.variableDeclaration.name);
+    } else if (
+      (ts.isFunctionDeclaration(node) ||
+        ts.isFunctionExpression(node) ||
+        ts.isClassDeclaration(node) ||
+        ts.isClassExpression(node)) &&
+      node.name &&
+      !topLevel.has(node.name)
+    ) {
+      names.add(node.name.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
   return names;
 }
 

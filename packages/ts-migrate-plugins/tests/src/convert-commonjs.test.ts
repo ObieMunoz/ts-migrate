@@ -152,6 +152,51 @@ export const compute = (a, b) => a + b;
 `);
   });
 
+  it('reads a sibling export through the binding the conversion leaves', async () => {
+    const text = `exports.operation = function (options) {
+  return exports.timeouts(options).length;
+};
+exports.timeouts = function (options) {
+  return [module.exports.createTimeout(options)];
+};
+exports.createTimeout = (options) => options;
+`;
+
+    expect(await run(text)).toBe(`export const operation = function (options) {
+  return timeouts(options).length;
+};
+export const timeouts = function (options) {
+  return [createTimeout(options)];
+};
+export const createTimeout = (options) => options;
+`);
+  });
+
+  it('leaves a file whose exported name is shadowed at the read', async () => {
+    const text = `exports.operation = function (options) {
+  var timeouts = exports.timeouts(options);
+  return timeouts;
+};
+exports.timeouts = function (options) {
+  return [options];
+};
+`;
+
+    const { result, notices } = runWithNotices(text);
+    expect(result).toBe(text);
+    expect(notices[0].reason).toBe('an exported name is also declared inside the file');
+  });
+
+  it('leaves a file that reads an export at the top level', async () => {
+    const text = `exports.limit = 10;
+const doubled = exports.limit * 2;
+`;
+
+    const { result, notices } = runWithNotices(text);
+    expect(result).toBe(text);
+    expect(notices[0].reason).toBe('an export is read at the top level of the file');
+  });
+
   it('leaves a file that assigns both module.exports and exports.<name>', async () => {
     const text = `module.exports = run;
 module.exports.helper = helper;
