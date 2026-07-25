@@ -1004,6 +1004,103 @@ describe('migrate command', () => {
     });
   });
 
+  describe('declaration files', () => {
+    const declarationFiles = {
+      'types/globals.d.ts': 'declare type AppString = string;\n',
+      'types/globals.d.mts': 'declare type AppNumber = number;\n',
+      'types/legacy.d.cts': 'declare type AppBoolean = boolean;\n',
+    };
+    const appText =
+      "export const s: AppString = 's';\nexport const n: AppNumber = 1;\nexport const b: AppBoolean = true;\n";
+
+    beforeEach(() => {
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            module: 'commonjs',
+            target: 'es2019',
+            strict: true,
+            noEmit: true,
+            types: [],
+          },
+          include: ['.'],
+        }),
+      );
+      fs.writeFileSync(path.resolve(rootDir, 'app.ts'), appText);
+      fs.mkdirSync(path.resolve(rootDir, 'types'));
+      Object.entries(declarationFiles).forEach(([relPath, text]) => {
+        fs.writeFileSync(path.resolve(rootDir, relPath), text);
+      });
+    });
+
+    // Records the files it is handed and rewrites each one, so anything in the
+    // migration set is both named and edited.
+    const rewritingConfig = () => {
+      const visited: string[] = [];
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'rewriting-plugin',
+          run({ fileName, text }) {
+            visited.push(path.relative(rootDir, fileName).split(path.sep).join('/'));
+            return `${text}// touched\n`;
+          },
+        },
+        {},
+      );
+      return { config, visited };
+    };
+
+    it('leaves every declaration file extension out of the migration set', async () => {
+      const { config, visited } = rewritingConfig();
+
+      const { exitCode, updatedSourceFiles } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      expect(visited).toEqual(['app.ts']);
+      expect([...updatedSourceFiles]).toEqual([path.resolve(rootDir, 'app.ts')]);
+      Object.entries(declarationFiles).forEach(([relPath, text]) => {
+        expect(fs.readFileSync(path.resolve(rootDir, relPath), 'utf8')).toBe(text);
+      });
+    });
+
+    it('leaves them out of a sources-scoped run that globs them in', async () => {
+      const { config, visited } = rewritingConfig();
+
+      const { exitCode } = await migrate({ rootDir, config, sources: '**/*' });
+
+      expect(exitCode).toBe(0);
+      expect(visited).toEqual(['app.ts']);
+      Object.entries(declarationFiles).forEach(([relPath, text]) => {
+        expect(fs.readFileSync(path.resolve(rootDir, relPath), 'utf8')).toBe(text);
+      });
+    });
+
+    it('retains every declaration file extension as an ambient source', async () => {
+      const diagnostics: number[] = [];
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'record-diagnostics',
+          run({ fileName, getLanguageService }) {
+            diagnostics.push(
+              ...getLanguageService()
+                .getSemanticDiagnostics(fileName)
+                .map((diagnostic) => diagnostic.code),
+            );
+            return undefined;
+          },
+        },
+        {},
+      );
+
+      const { exitCode } = await migrate({ rootDir, config, sources: 'app.ts' });
+
+      expect(exitCode).toBe(0);
+      // Every global the .d.ts, .d.mts and .d.cts files declare still resolves.
+      expect(diagnostics).toEqual([]);
+    });
+  });
+
   describe('filterMigrationFiles', () => {
     it('keeps filtered files out of the migration and the program, except as dependencies', async () => {
       const writeFile = (relPath: string, text: string) =>
