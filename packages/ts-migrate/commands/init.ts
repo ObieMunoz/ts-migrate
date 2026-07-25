@@ -2,11 +2,19 @@ import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 import { logApplicationEntries, partitionBootstrapFiles } from '../utils/bootstrapFiles';
+import { detectBundler, hasViteClientTypes } from '../utils/bundler';
 import { listGitignoredDirectories, partitionGitignored } from '../utils/gitignore';
 
 interface InitParams {
   rootDir: string;
   isExtendedConfig: boolean;
+}
+
+interface PackageJson {
+  type?: string;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
 }
 
 const extendedConfig = `{
@@ -109,13 +117,14 @@ function defaultConfig(rootDir: string): string {
   // The classic transform expects `import React` in scope, which is how
   // pre-17 code is written; 17+ may rely on the automatic runtime instead.
   let jsx = 'react';
+  let packageJson: PackageJson | null = null;
   try {
-    const packageJson = JSON.parse(fs.readFileSync(path.resolve(rootDir, 'package.json'), 'utf-8'));
-    isEsm = packageJson.type === 'module';
+    packageJson = JSON.parse(fs.readFileSync(path.resolve(rootDir, 'package.json'), 'utf-8'));
+    isEsm = packageJson?.type === 'module';
     const reactRange: string =
-      packageJson.dependencies?.react ??
-      packageJson.devDependencies?.react ??
-      packageJson.peerDependencies?.react ??
+      packageJson?.dependencies?.react ??
+      packageJson?.devDependencies?.react ??
+      packageJson?.peerDependencies?.react ??
       '';
     const reactMajor = parseInt(reactRange.replace(/^[^0-9]*/, ''), 10);
     if (reactMajor >= 17) {
@@ -125,14 +134,46 @@ function defaultConfig(rootDir: string): string {
     // No parseable package.json; keep the CommonJS + classic-JSX defaults.
   }
 
+  const bundler = detectBundler(rootDir, packageJson);
+  const nodeModuleSetting = isEsm ? 'nodenext' : 'commonjs';
+  const moduleSetting = bundler ? 'esnext' : nodeModuleSetting;
+  const moduleResolutionField = bundler
+    ? `
+    // The bundler, not node, resolves this project's imports: extensionless
+    // relative paths stay valid and import.meta is available.
+    "moduleResolution": "bundler",`
+    : '';
+  if (bundler) {
+    log.info(`Detected ${bundler.name} (${bundler.evidence}); writing bundler module settings.`);
+  }
+
   const typesPackages = installedTypesPackages(rootDir);
+  const viteClient = bundler?.name === 'vite' && hasViteClientTypes(rootDir);
+  const typesEntries = viteClient ? [...typesPackages, 'vite/client'] : typesPackages;
+  if (bundler?.name === 'webpack' && !typesPackages.includes('webpack-env')) {
+    log.warn(
+      'webpack-only globals (require.context, module.hot, __webpack_public_path__) have no ' +
+        'types here, so every use collects a suppression. Install @types/webpack-env ' +
+        '(npm i -D @types/webpack-env)' +
+        (typesEntries.length > 0
+          ? ' and add "webpack-env" to the "types" array in the generated tsconfig.json'
+          : '') +
+        '.',
+    );
+  }
   const typesField =
-    typesPackages.length > 0
+    typesEntries.length > 0
       ? `,
     // @types packages present at migration time, pinned because TypeScript 6
     // no longer loads node_modules/@types automatically. Add new @types
-    // packages here after installing them.
-    "types": [${typesPackages.map((name) => `"${name}"`).join(', ')}]`
+    // packages here after installing them.${
+      viteClient
+        ? `
+    // "vite/client" declares import.meta.env and the asset imports Vite
+    // resolves (*.svg, *.css, ?raw, and the rest).`
+        : ''
+    }
+    "types": [${typesEntries.map((name) => `"${name}"`).join(', ')}]`
       : '';
 
   // An explicit "exclude" replaces TypeScript's built-in one, so its entries
@@ -168,7 +209,7 @@ function defaultConfig(rootDir: string): string {
   // adjust as your codebase needs (see the ts-migrate README FAQ).
   "compilerOptions": {
     "target": "esnext",
-    "module": "${isEsm ? 'nodenext' : 'commonjs'}",
+    "module": "${moduleSetting}",${moduleResolutionField}
     // Renamed CommonJS files often have no import/export statements yet;
     // without this they would be treated as scripts sharing one global scope.
     "moduleDetection": "force",
