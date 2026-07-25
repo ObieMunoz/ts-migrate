@@ -749,7 +749,7 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --jsonSummary migrate-s
 ```json
 {
   "command": "migrate",
-  "tsMigrateVersion": "0.11.0",
+  "tsMigrateVersion": "<the installed version>",
   "rootDir": "/repo/frontend/foo",
   "exitCode": 0,
   "dryRun": false,
