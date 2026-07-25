@@ -157,6 +157,7 @@ interface PackageJson {
   exports?: unknown;
   engines?: { node?: string };
   workspaces?: unknown;
+  packageManager?: unknown;
   dependencies?: { [name: string]: string };
   devDependencies?: { [name: string]: string };
 }
@@ -236,21 +237,78 @@ const LOCKFILES: [string, PackageManager][] = [
 ];
 
 /**
+ * Corepack's pin: a tool name, optionally an `@version`, optionally a `+hash`
+ * suffix. The value is user-controlled text, so anything that does not name a
+ * manager this module knows is treated as absent rather than guessed at.
+ */
+const PACKAGE_MANAGER_PIN = /^(npm|yarn|pnpm|bun)(?:@([^+\s]+))?(?:\+\S+)?$/;
+
+interface PinnedPackageManager {
+  packageManager: PackageManager;
+  version?: string;
+}
+
+function parsePackageManagerField(value: unknown): PinnedPackageManager | undefined {
+  if (typeof value !== 'string') return undefined;
+  const match = PACKAGE_MANAGER_PIN.exec(value.trim());
+  if (!match) return undefined;
+  return { packageManager: match[1] as PackageManager, version: match[2] };
+}
+
+/**
+ * In a monorepo the pin sits at the workspace root, above the package being
+ * migrated, so this is a walk rather than a single read.
+ */
+function findPinnedPackageManager(startDir: string): PinnedPackageManager | undefined {
+  return findUp(
+    startDir,
+    (dir) => parsePackageManagerField(readJson(path.join(dir, 'package.json'))?.packageManager),
+    isProjectRoot,
+  );
+}
+
+/**
  * The lockfile can sit several levels above the migration root, since in a
  * monorepo it only exists at the workspace root. It stops being the project's
  * lockfile above the project root, and recommending the wrong manager writes a
  * second lockfile into the repository, so the walk stops there.
  */
-function detectPackageManager(startDir: string): PackageManager {
-  const found = findUp(
+function findLockfile(
+  startDir: string,
+): { file: string; packageManager: PackageManager } | undefined {
+  return findUp(
     startDir,
     (dir) => {
       const entry = LOCKFILES.find(([file]) => fs.existsSync(path.join(dir, file)));
-      return entry ? entry[1] : undefined;
+      return entry ? { file: entry[0], packageManager: entry[1] } : undefined;
     },
     isProjectRoot,
   );
-  return found ?? 'npm';
+}
+
+interface PackageManagerDetection extends PinnedPackageManager {
+  /** Said when the pin and the lockfile name different managers. */
+  note?: string;
+}
+
+/**
+ * A pinned `packageManager` is a deliberate statement about which tool the
+ * project uses; a lockfile is a byproduct of having run one. The pin wins when
+ * they disagree, which usually means a half finished switch between managers
+ * and is worth saying out loud rather than resolving silently.
+ */
+function detectPackageManager(startDir: string): PackageManagerDetection {
+  const lockfile = findLockfile(startDir);
+  const pinned = findPinnedPackageManager(startDir);
+  if (!pinned) return { packageManager: lockfile?.packageManager ?? 'npm' };
+
+  const pin = pinned.version ? `${pinned.packageManager}@${pinned.version}` : pinned.packageManager;
+  const note =
+    lockfile && lockfile.packageManager !== pinned.packageManager
+      ? `package.json pins "packageManager": "${pin}" but a ${lockfile.file} was found; ` +
+        'the install command follows the pinned field.'
+      : undefined;
+  return { ...pinned, note };
 }
 
 const INSTALL_COMMANDS: { [key in PackageManager]: string } = {
@@ -326,6 +384,8 @@ export interface TypesPackageRecommendation {
 
 export interface TypesPackageReport {
   packageManager: PackageManager;
+  /** The version off the `packageManager` pin, when the project has one. */
+  packageManagerVersion?: string;
   missing: TypesPackageRecommendation[];
   untyped: TypesPackageRecommendation[];
   notLoaded: { packageName: string; advice: string }[];
@@ -380,8 +440,10 @@ export function summarizeTypesEvidence(
   evidence: TypesEvidence,
   rootDir: string,
 ): TypesPackageReport {
+  const detected = detectPackageManager(rootDir);
   const report: TypesPackageReport = {
-    packageManager: detectPackageManager(rootDir),
+    packageManager: detected.packageManager,
+    packageManagerVersion: detected.version,
     missing: [],
     untyped: [],
     notLoaded: [],
@@ -532,6 +594,11 @@ export function summarizeTypesEvidence(
         report.redundant.push({ packageName: typesName, libName });
       }
     });
+
+  // Only worth saying when an install command is actually being printed.
+  if (detected.note && (report.missing.length > 0 || report.untyped.length > 0)) {
+    report.notes.push(detected.note);
+  }
 
   return report;
 }

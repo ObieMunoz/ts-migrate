@@ -415,7 +415,9 @@ resolve. The report only recommends what the diagnostics prove is missing:
   map to their `@types` packages; vitest projects are pointed at
   `"types": ["vitest/globals"]` instead.
 - The install command matches your project's package manager: npm, yarn, pnpm,
-  and bun are recognized by their lockfiles.
+  and bun are recognized by the `packageManager` field in your package.json, and
+  by their lockfiles when the field is absent. A field that disagrees with the
+  lockfile wins, and the report says which lockfile it passed over.
 
 The `Then try` line is separate because `@types` packages derived from untyped
 imports (rather than well-known globals) aren't guaranteed to exist on npm.
