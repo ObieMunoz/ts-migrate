@@ -6,6 +6,11 @@ import ts from 'typescript';
 const ESM_EXTENSION_REGEX = /\.m[jt]s$/;
 const CJS_EXTENSION_REGEX = /\.c[jt]s$/;
 
+/** Whether the extension alone makes the file ECMAScript modules. */
+export function isEsmFileName(fileName: string): boolean {
+  return ESM_EXTENSION_REGEX.test(fileName);
+}
+
 /**
  * Whether a file is ECMAScript modules: by its own `.mts`/`.mjs` extension, by
  * module syntax it already contains, or by belonging to a `"type": "module"`
@@ -13,7 +18,7 @@ const CJS_EXTENSION_REGEX = /\.c[jt]s$/;
  */
 export function isEsmSourceFile(fileName: string, sourceFile: ts.SourceFile): boolean {
   if (CJS_EXTENSION_REGEX.test(fileName)) return false;
-  if (ESM_EXTENSION_REGEX.test(fileName)) return true;
+  if (isEsmFileName(fileName)) return true;
   if (hasEsmSyntax(sourceFile)) return true;
   return isEsmPackageDir(path.dirname(fileName));
 }
@@ -67,7 +72,8 @@ function hasExportModifier(statement: ts.Statement): boolean {
 
 const esmPackageDirCache = new Map<string, boolean>();
 
-function isEsmPackageDir(dir: string): boolean {
+/** Whether the nearest enclosing package.json declares `"type": "module"`. */
+export function isEsmPackageDir(dir: string): boolean {
   const cached = esmPackageDirCache.get(dir);
   if (cached !== undefined) return cached;
 
