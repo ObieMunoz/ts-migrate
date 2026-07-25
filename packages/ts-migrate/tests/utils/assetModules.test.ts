@@ -105,6 +105,10 @@ describe('buildAssetDeclarations', () => {
     expect(plan("import logo from './logo.svg?url';\nimport css from '!raw!./a.css';\n")).toBeNull();
   });
 
+  it('ignores a specifier with nothing a wildcard could name', () => {
+    expect(plan("import a from './trailing.';\nimport b from './no-extension';\n")).toBeNull();
+  });
+
   it('ignores bare specifiers and code extensions', () => {
     expect(
       plan("import 'normalize.css';\nimport data from './fixture.json';\nimport './a.jsx';\n"),

@@ -57,6 +57,9 @@ const SVG_COMPONENT_PACKAGES = [
 
 const CODE_EXTENSION_REGEX = /^\.([cm]?[jt]sx?|json)$/;
 
+/** What a `*.ext` pattern can be written for at all. */
+const EXTENSION_REGEX = /^\.\w+$/;
+
 export interface AssetPackageJson {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
@@ -112,7 +115,9 @@ function assetExtension(specifier: string): string | null {
   // neither is what a wildcard pattern matches.
   if (specifier.includes('?') || specifier.includes('!')) return null;
   const extension = path.extname(specifier);
-  if (extension === '' || CODE_EXTENSION_REGEX.test(extension.toLowerCase())) return null;
+  if (!EXTENSION_REGEX.test(extension) || CODE_EXTENSION_REGEX.test(extension.toLowerCase())) {
+    return null;
+  }
   return extension;
 }
 
