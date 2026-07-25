@@ -224,7 +224,18 @@ with that step's exit code; the partial result stays in the working tree.
 - All other flags are forwarded to the underlying `rename` and `migrate`
   commands (e.g. `--sources`, `--no-inferTypes`, `--exclude-plugin`,
   `--no-projectEslint`, which is also repeated in the reignore hint printed
-  on failure). `ts-migrate full --help` lists every one of them.
+  on failure). `ts-migrate full --help` lists every one of them, and a flag
+  none of them declares exits `1` rather than being ignored.
+  One `--sources` deliberately reaches both the rename and the migrate step: a
+  scoped migration needs the same subset renamed and then migrated, so passing
+  it once is what makes the two agree. `--typesReportFile` and
+  `--suppressionReportFile` are likewise deliberate here even though only the
+  migrate step acts on them, since a full run is otherwise the one path that
+  cannot produce either file.
+- `--plugin` is **not** accepted here, only on `ts-migrate migrate`. It runs a
+  single plugin instead of the pipeline, which leaves the errors the rest of the
+  pipeline would have resolved, so Step 4's `tsc --noEmit` check would fail by
+  construction. `--exclude-plugin` is the flag for a staged migration.
 
 ### `ts-migrate init <folder>` / `ts-migrate init:extended <folder>`
 
@@ -719,10 +730,12 @@ come from `report --json`.
 - A name that is not a command exits `1` and prints `Unknown command: <name>`,
   or `Did you mean <command>?` when it is close to a real one. An argument past
   the ones a command declares is reported the same way, so
-  `ts-migrate report <folder> extra` exits `1` naming `extra`. Options are not
-  checked the same way: one the command does not declare is accepted and
-  ignored, because `ts-migrate full` forwards a single argument list to both
-  `rename` and `migrate` and the two accept different flags.
+  `ts-migrate report <folder> extra` exits `1` naming `extra`. An option no
+  command declares exits `1` the same way, printing `Unknown argument`, so a
+  mistyped flag fails before the run rather than being silently ignored for the
+  length of a migration. `ts-migrate full` forwards a single argument list to
+  both `rename` and `migrate` and declares the union of what the two accept, so
+  every flag either step takes is one it recognizes.
 - `migrate`/`reignore` exit `0` on success and nonzero (255) if a plugin
   errored or a file still has syntax errors after migration.
 - `migrate` exits nonzero when it has nothing to migrate, and names the signal
