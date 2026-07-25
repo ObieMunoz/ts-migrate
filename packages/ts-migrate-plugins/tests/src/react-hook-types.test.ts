@@ -331,6 +331,23 @@ export default function Wrapper() {
     expect(errorsIn(result)).toEqual([]);
   });
 
+  it('gives a setter a custom hook returns the any argument', () => {
+    const text = `\
+import { useState } from 'react';
+
+export function useSelection(fallback: string) {
+  const [selected, setSelected] = useState(null);
+  return { setSelected, label: selected === null ? fallback : selected.toUpperCase() };
+}
+`;
+
+    expect(errorsIn(text)).not.toEqual([]);
+    const result = run(text);
+
+    expect(result).toContain('useState<any>(null)');
+    expect(errorsIn(result)).toEqual([]);
+  });
+
   it('writes the configured alias instead of any', () => {
     const text = `\
 import React, { useState } from 'react';
