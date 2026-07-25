@@ -543,6 +543,7 @@ function memberLines(components: Component[], changes: TextChange[]): MemberLine
   return lines;
 }
 
+/** Two changes per component, alias then annotation; memberLines reads them positionally. */
 function changesFor(components: Component[], anyType: string): TextChange[] {
   const changes: TextChange[] = [];
   components.forEach((component) => {
