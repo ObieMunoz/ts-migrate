@@ -350,6 +350,117 @@ describe('package manager detection', () => {
     });
   });
 
+  describe('more than one lockfile in a directory', () => {
+    /**
+     * Fixture writes land within the same millisecond, so the mtimes that
+     * decide the tie have to be set rather than inherited. Order is newest
+     * first.
+     */
+    function withLockfiles(files: string[], extra: { [filePath: string]: string } = {}): string {
+      const rootDir = makeFixture({
+        'package.json': JSON.stringify({ devDependencies: { jest: '^29.0.0' } }),
+        ...Object.fromEntries(files.map((file) => [file, ''])),
+        ...extra,
+      });
+      files.forEach((file, index) => {
+        const time = new Date(2026, 0, 1 + files.length - index);
+        fs.utimesSync(path.join(rootDir, file), time, time);
+      });
+      return rootDir;
+    }
+
+    it('follows the most recently modified lockfile and names the ones it passed over', () => {
+      const report = summarizeTypesEvidence(
+        nodeAndTestRunnerEvidence(),
+        withLockfiles(['pnpm-lock.yaml', 'yarn.lock']),
+      );
+
+      expect(report.packageManager).toBe('pnpm');
+      const formatted = formatTypesPackageReport(report, 'src')!;
+      expect(formatted).toContain('Install: pnpm add -D @types/jest @types/node');
+      expect(formatted).toContain(
+        'Note: more than one lockfile is present; the install command follows pnpm-lock.yaml ' +
+          'as the most recently modified, over yarn.lock.',
+      );
+    });
+
+    it('names every lockfile it passed over', () => {
+      const report = summarizeTypesEvidence(
+        nodeAndTestRunnerEvidence(),
+        withLockfiles(['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml']),
+      );
+
+      expect(report.packageManager).toBe('npm');
+      expect(report.notes[0]).toContain('over yarn.lock and pnpm-lock.yaml.');
+    });
+
+    it('lets pnpm-workspace.yaml decide, whichever lockfile is newer', () => {
+      const report = summarizeTypesEvidence(
+        nodeAndTestRunnerEvidence(),
+        withLockfiles(['yarn.lock', 'pnpm-lock.yaml'], {
+          'pnpm-workspace.yaml': "packages:\n  - 'pkg'\n",
+        }),
+      );
+
+      expect(report.packageManager).toBe('pnpm');
+      expect(report.notes).toEqual([]);
+    });
+
+    it('treats bun.lock and bun.lockb as one lockfile', () => {
+      const report = summarizeTypesEvidence(
+        nodeAndTestRunnerEvidence(),
+        withLockfiles(['bun.lock', 'bun.lockb']),
+      );
+
+      expect(report.packageManager).toBe('bun');
+      expect(report.notes).toEqual([]);
+    });
+
+    it('lets the packageManager pin decide, with no note either way', () => {
+      const report = summarizeTypesEvidence(
+        nodeAndTestRunnerEvidence(),
+        withLockfiles(['yarn.lock', 'pnpm-lock.yaml'], {
+          'package.json': JSON.stringify({
+            packageManager: 'pnpm@10.34.5',
+            devDependencies: { jest: '^29.0.0' },
+          }),
+        }),
+      );
+
+      expect(report.packageManager).toBe('pnpm');
+      expect(report.notes).toEqual([]);
+    });
+
+    it('says the pin passed the lockfiles over when it names none of them', () => {
+      const report = summarizeTypesEvidence(
+        nodeAndTestRunnerEvidence(),
+        withLockfiles(['pnpm-lock.yaml', 'yarn.lock'], {
+          'package.json': JSON.stringify({
+            packageManager: 'bun@1.2.0',
+            devDependencies: { jest: '^29.0.0' },
+          }),
+        }),
+      );
+
+      expect(report.packageManager).toBe('bun');
+      expect(report.notes).toEqual([
+        'package.json pins "packageManager": "bun@1.2.0" but a pnpm-lock.yaml was found; ' +
+          'the install command follows the pinned field.',
+      ]);
+    });
+
+    it('resolves the tie in the directory the upward walk lands on', () => {
+      const rootDir = withLockfiles(['yarn.lock', 'pnpm-lock.yaml'], {
+        'packages/app/package.json': JSON.stringify({}),
+      });
+
+      expect(
+        summarizeTypesEvidence(nodeAndTestRunnerEvidence(), path.join(rootDir, 'packages', 'app'))
+          .packageManager,
+      ).toBe('yarn');
+    });
+  });
+
   describe('packageManager field', () => {
     const pinned = (value: unknown, files: { [filePath: string]: string } = {}) =>
       summarizeTypesEvidence(

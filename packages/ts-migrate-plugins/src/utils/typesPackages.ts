@@ -267,6 +267,84 @@ function findPinnedPackageManager(startDir: string): PinnedPackageManager | unde
   );
 }
 
+interface LockfileChoice {
+  file: string;
+  packageManager: PackageManager;
+  /** Said when mtime, the weakest of the signals, is what settled the choice. */
+  note?: string;
+}
+
+interface LockfileCandidate {
+  file: string;
+  packageManager: PackageManager;
+  mtimeMs: number;
+}
+
+function modifiedAt(filePath: string): number | undefined {
+  try {
+    return fs.statSync(filePath).mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * One candidate per manager, each carrying that manager's newest file. Bun 1.2
+ * writes the text `bun.lock` and can keep the binary `bun.lockb` beside it, so
+ * the pair is one candidate rather than a conflict.
+ */
+function lockfileCandidatesIn(dir: string): LockfileCandidate[] {
+  const candidates: LockfileCandidate[] = [];
+  LOCKFILES.forEach(([file, packageManager]) => {
+    const mtimeMs = modifiedAt(path.join(dir, file));
+    if (mtimeMs === undefined) return;
+    const existing = candidates.find((candidate) => candidate.packageManager === packageManager);
+    if (!existing) {
+      candidates.push({ file, packageManager, mtimeMs });
+    } else if (mtimeMs > existing.mtimeMs) {
+      existing.file = file;
+      existing.mtimeMs = mtimeMs;
+    }
+  });
+  return candidates;
+}
+
+function chosen({ file, packageManager }: LockfileCandidate): LockfileChoice {
+  return { file, packageManager };
+}
+
+/**
+ * Two lockfiles in one directory is the normal condition of a repository
+ * partway through switching managers, and the accidental one left behind by
+ * running the wrong tool once. Which manager gets reported should not come down
+ * to the order of the table above.
+ */
+function chooseLockfile(
+  dir: string,
+  candidates: LockfileCandidate[],
+  pinned: PackageManager | undefined,
+): LockfileChoice {
+  if (candidates.length === 1) return chosen(candidates[0]);
+
+  const pinnedCandidate = candidates.find(({ packageManager }) => packageManager === pinned);
+  if (pinnedCandidate) return chosen(pinnedCandidate);
+
+  // Only pnpm reads it, so it decides for pnpm whatever the mtimes say.
+  if (fs.existsSync(path.join(dir, 'pnpm-workspace.yaml'))) {
+    const pnpm = candidates.find(({ packageManager }) => packageManager === 'pnpm');
+    if (pnpm) return chosen(pnpm);
+  }
+
+  // Whichever tool ran last, as a proxy for the one the project is on.
+  const [newest, ...rest] = [...candidates].sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return {
+    ...chosen(newest),
+    note:
+      `more than one lockfile is present; the install command follows ${newest.file} as the ` +
+      `most recently modified, over ${rest.map(({ file }) => file).join(' and ')}.`,
+  };
+}
+
 /**
  * The lockfile can sit several levels above the migration root, since in a
  * monorepo it only exists at the workspace root. It stops being the project's
@@ -275,19 +353,20 @@ function findPinnedPackageManager(startDir: string): PinnedPackageManager | unde
  */
 function findLockfile(
   startDir: string,
-): { file: string; packageManager: PackageManager } | undefined {
+  pinned: PackageManager | undefined,
+): LockfileChoice | undefined {
   return findUp(
     startDir,
     (dir) => {
-      const entry = LOCKFILES.find(([file]) => fs.existsSync(path.join(dir, file)));
-      return entry ? { file: entry[0], packageManager: entry[1] } : undefined;
+      const candidates = lockfileCandidatesIn(dir);
+      return candidates.length > 0 ? chooseLockfile(dir, candidates, pinned) : undefined;
     },
     isProjectRoot,
   );
 }
 
 interface PackageManagerDetection extends PinnedPackageManager {
-  /** Said when the pin and the lockfile name different managers. */
+  /** Said when the sources disagreed and something had to break the tie. */
   note?: string;
 }
 
@@ -298,10 +377,12 @@ interface PackageManagerDetection extends PinnedPackageManager {
  * and is worth saying out loud rather than resolving silently.
  */
 function detectPackageManager(startDir: string): PackageManagerDetection {
-  const lockfile = findLockfile(startDir);
   const pinned = findPinnedPackageManager(startDir);
-  if (!pinned) return { packageManager: lockfile?.packageManager ?? 'npm' };
+  const lockfile = findLockfile(startDir, pinned?.packageManager);
+  if (!pinned) return { packageManager: lockfile?.packageManager ?? 'npm', note: lockfile?.note };
 
+  // Any tie between lockfiles is moot here: the pin, not an mtime, is what the
+  // install command follows.
   const pin = pinned.version ? `${pinned.packageManager}@${pinned.version}` : pinned.packageManager;
   const note =
     lockfile && lockfile.packageManager !== pinned.packageManager
