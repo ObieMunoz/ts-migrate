@@ -75,6 +75,7 @@ interface BuildMigrateConfigParams {
   protectedRegex?: string;
   publicRegex?: string;
   inferTypes?: boolean;
+  jsdoc?: boolean;
   projectEslint?: boolean;
   declareUntypedModules?: boolean;
   declareGlobals?: boolean;
@@ -245,6 +246,12 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     // this restores.
     .addPlugin(convertCommonjsPlugin, optionsFor(convertCommonjsPlugin))
     .addPlugin(stripTSIgnorePlugin, optionsFor(stripTSIgnorePlugin));
+  if (params.jsdoc ?? true) {
+    // Before member-accessibility, which writes the modifiers that make jsdoc
+    // leave `@private` and `@protected` alone, and before the passes that
+    // annotate a parameter the comment already types.
+    config.addPlugin(jsDocPlugin, optionsFor(jsDocPlugin));
+  }
   if (globalDeclarations) {
     // Declares the properties the code hangs off window and globalThis. Both
     // passes run before add-conversions, which would otherwise cast every one

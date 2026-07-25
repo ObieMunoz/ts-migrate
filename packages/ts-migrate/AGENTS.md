@@ -325,6 +325,19 @@ run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
   faster; use on very large projects or when annotation quality is secondary.
 - `--maxStablePasses <n>` (default 5): cap the repeat passes of the
   inference stage.
+- `--no-jsdoc`: skip the JSDoc conversion. By default the pipeline reads the
+  types the comments document, so a `@param {number}` becomes `: number`
+  instead of falling back to `any`, `@type` annotates variables and class
+  properties, `@typedef` and `@callback` become type aliases, and `@template`
+  becomes type parameters. It is a no-op on files with no JSDoc tags.
+- `--annotateReturns`: also take return types from `@returns`. Off by
+  default, and not implied by the JSDoc conversion above: a return type is
+  inferred from the body and recomputed on every build, so a stale `@returns`
+  replaces a better signal, while a stale `@param` still beats `any`. Turn it
+  on for projects whose comments are known to be maintained.
+- `--typeMap <json>`: map JSDoc type names to TypeScript types, e.g.
+  `--typeMap '{"Object":"any"}'`. Merged over the defaults, which already
+  map `String`, `Number`, `Boolean`, `Object`, `date`, `array` and `promise`.
 - `--plugin <name>`: run a single plugin instead of the pipeline. Takes one
   name; repeating the flag is an error, since the subtractive case is
   `--exclude-plugin`. The plugin gets the same options it would get in the

@@ -465,6 +465,40 @@ class C {
 `);
   });
 
+  it('adds an accessibility modifier before the modifiers a method already has', () => {
+    const text = `\
+class C {
+  /**
+   * @param {Number} a
+   * @private
+   */
+  static A(a) {}
+  /** @protected */
+  async B() {}
+  /** @private */
+  @dec
+  C() {}
+}
+`;
+
+    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
+
+    expect(result).toBe(`\
+class C {
+  /**
+   * @param {Number} a
+   * @private
+   */
+  private static A(a: number) {}
+  /** @protected */
+  protected async B() {}
+  /** @private */
+  @dec
+  private C() {}
+}
+`);
+  });
+
   it('annotates object literal methods', () => {
     const text = `\
 const O = {
@@ -742,7 +776,7 @@ function box(key) {
     );
 
     expect(result).toBe(`\
-type Box<T> = {
+type Box<T = any> = {
     value: T;
 };
 
@@ -894,10 +928,33 @@ class Box {}
     const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
 
     expect(result).toBe(`\
-type Wrap<T> = {
+type Wrap<T = any> = {
     value: T;
 };
 class Box {}
+`);
+  });
+
+  it('keeps the default a template tag writes on an alias', () => {
+    const text = `\
+/**
+ * @template [T=string]
+ * @template U
+ * @typedef {Object} Wrap
+ * @property {T} value
+ * @property {U} extra
+ */
+`;
+
+    const result = jsDocPlugin.run(
+      mockPluginParams({ text, fileName: 'file.ts', options: { anyAlias: '$TSFixMe' } }),
+    );
+
+    expect(result).toBe(`\
+type Wrap<T = string, U = $TSFixMe> = {
+    value: T;
+    extra: U;
+};
 `);
   });
 
@@ -1216,6 +1273,62 @@ export const crate = new Crate(1);
 
     expect(files['/file.ts']).toContain('export class Box<T = any> {');
     expect(files['/file.ts']).toContain('get(): T {');
+    expect(typeCheck(files)).toEqual([]);
+  });
+
+  it('type-checks the generic alias it converts and every reference to it', () => {
+    const text = `\
+/**
+ * @template T
+ * @typedef {Object} Wrap
+ * @property {T} value
+ */
+
+/**
+ * @template T
+ * @callback Read
+ * @param {Wrap<T>} w
+ * @returns {T}
+ */
+
+/** @param {Wrap} w */
+export function unwrap(w) {
+  return w.value;
+}
+`;
+    const consumer = `\
+/** @param {import('./file').Wrap} w */
+export function bare(w) {
+  return w.value;
+}
+
+/** @param {import('./file').Wrap<string>} w */
+export function typed(w) {
+  /** @type {string} */
+  const s = w.value;
+  return s;
+}
+
+/** @param {import('./file').Read} r */
+export function read(r) {
+  return r({ value: 1 });
+}
+`;
+
+    const options = { annotateReturns: true };
+    const files = {
+      '/file.ts': jsDocPlugin.run(
+        mockPluginParams({ text, fileName: '/file.ts', options }),
+      ) as string,
+      '/consumer.ts': jsDocPlugin.run(
+        mockPluginParams({ text: consumer, fileName: '/consumer.ts', options }),
+      ) as string,
+    };
+
+    expect(files['/file.ts']).toContain('export type Wrap<T = any> = {');
+    expect(files['/file.ts']).toContain('export type Read<T = any> = (w: Wrap<T>) => T;');
+    expect(files['/file.ts']).toContain('export function unwrap(w: Wrap) {');
+    expect(files['/consumer.ts']).toContain("w: import('./file').Wrap<string>");
     expect(typeCheck(files)).toEqual([]);
   });
 });

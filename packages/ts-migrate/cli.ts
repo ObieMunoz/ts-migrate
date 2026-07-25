@@ -378,15 +378,12 @@ yargs
           'Annotate with the $TSFixMe/$TSFixMeFunction aliases instead of plain any. The ambient declarations are generated if the project does not already declare them.',
         )
         .string('typeMap')
-        .describe(
-          'typeMap',
-          'JSON object mapping JSDoc types to TypeScript types, used with --plugin jsdoc.',
-        )
+        .describe('typeMap', 'JSON object mapping JSDoc types to TypeScript types.')
         .boolean('annotateReturns')
         .default('annotateReturns', false)
         .describe(
           'annotateReturns',
-          'Also annotate return types from JSDoc @returns, used with --plugin jsdoc. Off by default: a documented return type replaces the one TypeScript infers from the body, which a parameter type does not.',
+          'Also annotate return types from JSDoc @returns. Off by default: a documented return type replaces the one TypeScript infers from the body, which a parameter type does not.',
         )
         .boolean('useDefaultPropsHelper')
         .default('useDefaultPropsHelper', false)
@@ -441,6 +438,12 @@ yargs
         .describe(
           'inferTypes',
           'Infer types from usage before falling back to any. Disable with --no-inferTypes.',
+        )
+        .boolean('jsdoc')
+        .default('jsdoc', true)
+        .describe(
+          'jsdoc',
+          'Convert the types JSDoc documents into annotations, so a documented parameter keeps its type instead of falling back to any. Disable with --no-jsdoc.',
         )
         .boolean('projectEslint')
         .default('projectEslint', true)
@@ -528,6 +531,7 @@ yargs
           protectedRegex: args.protectedRegex,
           publicRegex: args.publicRegex,
           inferTypes: args.inferTypes,
+          jsdoc: args.jsdoc,
           projectEslint: args.projectEslint,
           declareUntypedModules: args.declareUntypedModules,
           declareGlobals: args.declareGlobals,
