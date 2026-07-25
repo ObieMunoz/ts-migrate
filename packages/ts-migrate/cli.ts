@@ -108,7 +108,6 @@ function resolveRootDir(folder: string): string {
   return rootDir;
 }
 
-
 /**
  * The flags the migration pipeline takes. `migrate` runs the pipeline directly
  * and `full` runs it as one of four steps, so both declare this set; generic
@@ -117,137 +116,137 @@ function resolveRootDir(folder: string): string {
 function migrationFlags<T>(cmd: Argv<T>) {
   return cmd
     .choices('defaultAccessibility', ['private', 'protected', 'public'] as const)
-        .describe(
-          'defaultAccessibility',
-          'Give every class member that declares no accessibility modifier this one. Members matched by one of the regex flags below take that modifier instead.',
-        )
-        .string('plugin')
-        .choices(
-          'plugin',
-          availablePlugins.map((p) => p.name),
-        )
-        .describe('plugin', 'Run a specific plugin')
-        .string('exclude-plugin')
-        .choices(
-          'exclude-plugin',
-          availablePlugins.map((p) => p.name),
-        )
-        .describe(
-          'exclude-plugin',
-          'Skip a plugin of the default pipeline. Repeat the flag to skip several. Excluding infer-types is equivalent to --no-inferTypes.',
-        )
-        .conflicts('plugin', 'exclude-plugin')
-        .string('aliases')
-        .choices('aliases', ['tsfixme'] as const)
-        .describe(
-          'aliases',
-          'Annotate with the $TSFixMe/$TSFixMeFunction aliases instead of plain any. The ambient declarations are generated if the project does not already declare them.',
-        )
-        .string('typeMap')
-        .describe('typeMap', 'JSON object mapping JSDoc types to TypeScript types.')
-        .boolean('annotateReturns')
-        .default('annotateReturns', false)
-        .describe(
-          'annotateReturns',
-          'Also annotate return types from JSDoc @returns. Off by default: a documented return type replaces the one TypeScript infers from the body, which a parameter type does not.',
-        )
-        .boolean('useDefaultPropsHelper')
-        .default('useDefaultPropsHelper', false)
-        .describe(
-          'useDefaultPropsHelper',
-          'Type React defaultProps with a WithDefaultProps helper type. The helper is generated into each migrated file, so no extra module is required.',
-        )
-        .boolean('modernizeDefaultProps')
-        .default('modernizeDefaultProps', true)
-        .describe(
-          'modernizeDefaultProps',
-          'Move the defaultProps of a function component into its props destructuring, which React 19 requires. Only conversions that keep the same behavior are made; the rest keep the assignment and are typed instead. Disable with --no-modernizeDefaultProps.',
-        )
-        .string('privateRegex')
-        .describe(
-          'privateRegex',
-          'Mark class members whose name matches this regular expression private.',
-        )
-        .string('protectedRegex')
-        .describe(
-          'protectedRegex',
-          'Mark class members whose name matches this regular expression protected, unless --privateRegex already matched.',
-        )
-        .string('publicRegex')
-        .describe(
-          'publicRegex',
-          'Mark class members whose name matches this regular expression public, unless one of the two flags above already matched.',
-        )
-        .string('sources')
-        .alias('sources', 's')
-        .describe('sources', 'Path to a subset of your project to migrate (globs are ok).')
-        .boolean('ambientSources')
-        .default('ambientSources', true)
-        .describe(
-          'ambientSources',
-          'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --no-ambientSources.',
-        )
-        .boolean('gitignore')
-        .default('gitignore', true)
-        .describe(
-          'gitignore',
-          'Skip gitignored files: they are neither migrated nor added to the program. Disable with --no-gitignore.',
-        )
-        .boolean('bootstrap')
-        .default('bootstrap', true)
-        .describe(
-          'bootstrap',
-          'Skip build system files (configs and node-run scripts): they are kept out of the program. They stay JavaScript either way, since migrate never edits JavaScript files. Disable with --no-bootstrap.',
-        )
-        .boolean('inferTypes')
-        .default('inferTypes', true)
-        .describe(
-          'inferTypes',
-          'Infer types from usage before falling back to any. Disable with --no-inferTypes.',
-        )
-        .boolean('jsdoc')
-        .default('jsdoc', true)
-        .describe(
-          'jsdoc',
-          'Convert the types JSDoc documents into annotations, so a documented parameter keeps its type instead of falling back to any. Disable with --no-jsdoc.',
-        )
-        .boolean('projectEslint')
-        .default('projectEslint', true)
-        .describe('projectEslint', PROJECT_ESLINT_FLAG_DESCRIPTION)
-        .number('maxStablePasses')
-        .default('maxStablePasses', 5)
-        .describe(
-          'maxStablePasses',
-          'Maximum number of passes for plugins that repeat until files stop changing.',
-        )
-        .boolean('incrementalPasses')
-        .default('incrementalPasses', true)
-        .describe(
-          'incrementalPasses',
-          'Revisit only files affected by the previous pass when repeating plugins. Disable with --no-incrementalPasses.',
-        )
-        .boolean('declareUntypedModules')
-        .default('declareUntypedModules', true)
-        .describe(
-          'declareUntypedModules',
-          'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --no-declareUntypedModules.',
-        )
-        .boolean('declareGlobals')
-        .default('declareGlobals', true)
-        .describe(
-          'declareGlobals',
-          'Declare the properties the code assigns to window, global and globalThis in types/ts-migrate-globals.d.ts, instead of casting every read and write of them. The file is added to the tsconfig if it does not already match it. Disable with --no-declareGlobals.',
-        )
-        .string('typescript')
-        .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
-        .boolean('typesPreflight')
-        .default('typesPreflight', true)
-        .describe('typesPreflight', TYPES_PREFLIGHT_FLAG_DESCRIPTION)
-        .string('suppressionReportFile')
-        .describe(
-          'suppressionReportFile',
-          'Write what the compiler knew about every suppressed diagnostic to this file: the full message and its chain, the related information, and the resolved signatures and types. The comment keeps the code and 50 characters of the message, and nothing can recover the rest afterwards.',
-        );
+    .describe(
+      'defaultAccessibility',
+      'Give every class member that declares no accessibility modifier this one. Members matched by one of the regex flags below take that modifier instead.',
+    )
+    .string('plugin')
+    .choices(
+      'plugin',
+      availablePlugins.map((p) => p.name),
+    )
+    .describe('plugin', 'Run a specific plugin')
+    .string('exclude-plugin')
+    .choices(
+      'exclude-plugin',
+      availablePlugins.map((p) => p.name),
+    )
+    .describe(
+      'exclude-plugin',
+      'Skip a plugin of the default pipeline. Repeat the flag to skip several. Excluding infer-types is equivalent to --no-inferTypes.',
+    )
+    .conflicts('plugin', 'exclude-plugin')
+    .string('aliases')
+    .choices('aliases', ['tsfixme'] as const)
+    .describe(
+      'aliases',
+      'Annotate with the $TSFixMe/$TSFixMeFunction aliases instead of plain any. The ambient declarations are generated if the project does not already declare them.',
+    )
+    .string('typeMap')
+    .describe('typeMap', 'JSON object mapping JSDoc types to TypeScript types.')
+    .boolean('annotateReturns')
+    .default('annotateReturns', false)
+    .describe(
+      'annotateReturns',
+      'Also annotate return types from JSDoc @returns. Off by default: a documented return type replaces the one TypeScript infers from the body, which a parameter type does not.',
+    )
+    .boolean('useDefaultPropsHelper')
+    .default('useDefaultPropsHelper', false)
+    .describe(
+      'useDefaultPropsHelper',
+      'Type React defaultProps with a WithDefaultProps helper type. The helper is generated into each migrated file, so no extra module is required.',
+    )
+    .boolean('modernizeDefaultProps')
+    .default('modernizeDefaultProps', true)
+    .describe(
+      'modernizeDefaultProps',
+      'Move the defaultProps of a function component into its props destructuring, which React 19 requires. Only conversions that keep the same behavior are made; the rest keep the assignment and are typed instead. Disable with --no-modernizeDefaultProps.',
+    )
+    .string('privateRegex')
+    .describe(
+      'privateRegex',
+      'Mark class members whose name matches this regular expression private.',
+    )
+    .string('protectedRegex')
+    .describe(
+      'protectedRegex',
+      'Mark class members whose name matches this regular expression protected, unless --privateRegex already matched.',
+    )
+    .string('publicRegex')
+    .describe(
+      'publicRegex',
+      'Mark class members whose name matches this regular expression public, unless one of the two flags above already matched.',
+    )
+    .string('sources')
+    .alias('sources', 's')
+    .describe('sources', 'Path to a subset of your project to migrate (globs are ok).')
+    .boolean('ambientSources')
+    .default('ambientSources', true)
+    .describe(
+      'ambientSources',
+      'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --no-ambientSources.',
+    )
+    .boolean('gitignore')
+    .default('gitignore', true)
+    .describe(
+      'gitignore',
+      'Skip gitignored files: they are neither migrated nor added to the program. Disable with --no-gitignore.',
+    )
+    .boolean('bootstrap')
+    .default('bootstrap', true)
+    .describe(
+      'bootstrap',
+      'Skip build system files (configs and node-run scripts): they are kept out of the program. They stay JavaScript either way, since migrate never edits JavaScript files. Disable with --no-bootstrap.',
+    )
+    .boolean('inferTypes')
+    .default('inferTypes', true)
+    .describe(
+      'inferTypes',
+      'Infer types from usage before falling back to any. Disable with --no-inferTypes.',
+    )
+    .boolean('jsdoc')
+    .default('jsdoc', true)
+    .describe(
+      'jsdoc',
+      'Convert the types JSDoc documents into annotations, so a documented parameter keeps its type instead of falling back to any. Disable with --no-jsdoc.',
+    )
+    .boolean('projectEslint')
+    .default('projectEslint', true)
+    .describe('projectEslint', PROJECT_ESLINT_FLAG_DESCRIPTION)
+    .number('maxStablePasses')
+    .default('maxStablePasses', 5)
+    .describe(
+      'maxStablePasses',
+      'Maximum number of passes for plugins that repeat until files stop changing.',
+    )
+    .boolean('incrementalPasses')
+    .default('incrementalPasses', true)
+    .describe(
+      'incrementalPasses',
+      'Revisit only files affected by the previous pass when repeating plugins. Disable with --no-incrementalPasses.',
+    )
+    .boolean('declareUntypedModules')
+    .default('declareUntypedModules', true)
+    .describe(
+      'declareUntypedModules',
+      'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --no-declareUntypedModules.',
+    )
+    .boolean('declareGlobals')
+    .default('declareGlobals', true)
+    .describe(
+      'declareGlobals',
+      'Declare the properties the code assigns to window, global and globalThis in types/ts-migrate-globals.d.ts, instead of casting every read and write of them. The file is added to the tsconfig if it does not already match it. Disable with --no-declareGlobals.',
+    )
+    .string('typescript')
+    .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
+    .boolean('typesPreflight')
+    .default('typesPreflight', true)
+    .describe('typesPreflight', TYPES_PREFLIGHT_FLAG_DESCRIPTION)
+    .string('suppressionReportFile')
+    .describe(
+      'suppressionReportFile',
+      'Write what the compiler knew about every suppressed diagnostic to this file: the full message and its chain, the related information, and the resolved signatures and types. The comment keeps the code and 50 characters of the message, and nothing can recover the rest afterwards.',
+    );
 }
 
 /**
