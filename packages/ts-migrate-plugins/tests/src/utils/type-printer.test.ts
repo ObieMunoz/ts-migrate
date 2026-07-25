@@ -125,6 +125,15 @@ describe('printType', () => {
     expect(refusal('declare function f(): never;', 'f()')).toBe('never');
   });
 
+  // Only `undefined` is assignable to `void`, so a member widened to hold it is
+  // harder to use than it was, and the union around it is refused with it.
+  it('refuses void wherever it appears, and keeps undefined', () => {
+    expect(refusal('declare function f(): void;', 'f()')).toBe('void');
+    expect(refusal('declare function f(): string | void;', 'f()')).toBe('void');
+    expect(refusal('declare function f(): void[];', 'f()')).toBe('void');
+    expect(printed('declare function f(): string | undefined;', 'f()')).toBe('undefined | string');
+  });
+
   it('refuses anonymous object and function shapes', () => {
     expect(refusal('', '{ id: 1 }')).toBe('anonymous');
     expect(refusal('', '(() => {}) as () => void')).toBe('anonymous');
