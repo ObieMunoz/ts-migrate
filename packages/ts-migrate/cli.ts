@@ -67,6 +67,16 @@ function logTypeScriptDecision(): void {
   if (warning) log.warn(warning);
 }
 
+/**
+ * The compiler warning again, on the last screen. The banner prints in the
+ * first three lines of a run that can take many minutes, so by the time the
+ * suppressions it qualifies exist it has long scrolled away.
+ */
+function logTypeScriptWarningAgain(): void {
+  const warning = typeScriptWarning(typeScriptDecision());
+  if (warning) log.warn(warning);
+}
+
 /** A recommendation report must never fail an otherwise successful run. */
 function printTypesPackageReport(
   detector: TypesPackageDetector,
@@ -463,6 +473,7 @@ yargs
       } else {
         printTypeDebtSummary(rootDir, args.folder, args.gitignore);
       }
+      logTypeScriptWarningAgain();
 
       let finalExitCode = exitCode;
       if (args.jsonSummary) {
@@ -582,6 +593,7 @@ yargs
       } else {
         printTypeDebtSummary(rootDir, args.folder, args.gitignore);
       }
+      logTypeScriptWarningAgain();
 
       let finalExitCode = exitCode;
       if (args.jsonSummary) {

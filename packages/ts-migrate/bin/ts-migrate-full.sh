@@ -100,6 +100,53 @@ if [ -n "$typescript_path" ]; then
   reignore_cmd+=" --typescript \"$typescript_path\""
 fi
 
+# Compares the compiler the check would run with the one the migrate step will
+# resolve, and refuses to start on a mismatch. A skew is only found at Step 4
+# otherwise, after every plugin pass has already derived its suppressions from
+# the other compiler. Reachable only through the custom tsc prompt below:
+# --typescript applies to both steps, and --yes sets no custom path.
+function preflight_checker_skew() {
+  # A path the check cannot execute is not used at Step 4 either; it falls back
+  # to the migration's compiler, which is by definition no skew.
+  if [ ! -x "$tsc_path" ]; then
+    return
+  fi
+  local check_version
+  check_version=$("$tsc_path" -v 2>/dev/null | awk 'NF { print $NF }')
+  if [ -z "$check_version" ]; then
+    return
+  fi
+  local skew
+  skew=$(node -e '
+    const path = require("path");
+    const [cliJs, folder, override, checkPath, checkVersion] = process.argv.slice(1);
+    const utils = require(path.join(path.dirname(cliJs), "utils", "resolveTypeScript.js"));
+    const migration = utils.resolveTypeScript({
+      rootDir: path.resolve(folder),
+      override: override || undefined,
+    });
+    const warning = utils.checkerSkewWarning(migration, {
+      version: checkVersion,
+      path: checkPath,
+    });
+    if (warning) process.stdout.write(warning);
+  ' "$cli_js" "$frontend_folder" "$typescript_path" "$tsc_path" "$check_version" 2>/dev/null)
+  if [ -z "$skew" ]; then
+    return
+  fi
+  echo "
+$skew
+"
+  read -p "Continue anyway? (y/N) " should_continue_with_skew || {
+    echo "No input available; nothing has been changed."
+    exit 1
+  }
+  if [ "$should_continue_with_skew" != "y" ] && [ "$should_continue_with_skew" != "Y" ]; then
+    echo "Stopping before Step 1; nothing has been changed."
+    exit 1
+  fi
+}
+
 step_i=1
 step_count=4
 # Set only by the prompt below; empty means the check runs whichever compiler
@@ -157,6 +204,7 @@ if [ "$auto_yes" != "true" ]; then
     echo "The check will run the same compiler the migration used."
   else
     tsc_path=$custom_tsc_path;
+    preflight_checker_skew
   fi
 fi
 
@@ -271,9 +319,12 @@ The TypeScript check failed. What the errors above usually mean:
   with the one the migration used. Both default to the project's own typescript
   (the migration log names the copy it ran), so a skew is left only when a
   custom tsc path was set above, or when the project's compiler is outside the
-  range ts-migrate supports and the bundled one was used instead. Run the check
-  with the compiler the migration named, make sure tsconfig.json pins a
-  \"types\" array, then strip and re-add the suppressions with:
+  range ts-migrate supports and the bundled one was used instead.
+  Align the two compilers first: re-run the check with the compiler the
+  migration named, or migrate with --typescript pointing at the one this check
+  ran. Reignoring under the skew does not converge, because it re-derives the
+  same suppressions from the migration's compiler. Once they agree, and once
+  tsconfig.json pins a \"types\" array, strip and re-add the suppressions with:
     $reignore_cmd
 - Syntax errors (TS1xxx) in generated or third-party .d.ts files: those files
   are outside the migration's control (the migration log lists them). Fix or
