@@ -6,6 +6,7 @@ import {
   getNumComponentsInSourceFile,
 } from './utils/react';
 import { collectIdentifiers } from './utils/identifiers';
+import { isStatic } from './utils/modifiers';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 
@@ -434,7 +435,7 @@ function isStateProperty(member: ts.ClassElement): member is ts.PropertyDeclarat
     ts.isPropertyDeclaration(member) &&
     ts.isIdentifier(member.name) &&
     member.name.text === 'state' &&
-    !member.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword)
+    !isStatic(member)
   );
 }
 
