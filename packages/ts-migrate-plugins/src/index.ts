@@ -53,10 +53,14 @@ import {
 } from './utils/typePrinter';
 import {
   createTypesPackageDetector,
+  formatTypesPackagePreflight,
   formatTypesPackageReport,
   MODULE_DECLARATIONS_FILE,
+  preflightTypesPackages,
   TypesPackageDetector as TypesPackageDetectorType,
+  TypesPackagePreflight as TypesPackagePreflightType,
   TypesPackageReport as TypesPackageReportType,
+  TypesPackageSuggestion as TypesPackageSuggestionType,
 } from './utils/typesPackages';
 
 export type Plugin<T = unknown> = PluginType<T>;
@@ -68,7 +72,9 @@ export type SuppressionExplainer = SuppressionExplainerType;
 export type SuppressionReport = SuppressionReportType;
 export type SuppressionSite = SuppressionSiteType;
 export type TypesPackageDetector = TypesPackageDetectorType;
+export type TypesPackagePreflight = TypesPackagePreflightType;
 export type TypesPackageReport = TypesPackageReportType;
+export type TypesPackageSuggestion = TypesPackageSuggestionType;
 export type PrintTypeOptions = PrintTypeOptionsType;
 export type PrintTypeResult = PrintTypeResultType;
 export type TypePrintRefusal = TypePrintRefusalType;
@@ -111,8 +117,10 @@ export {
   formatGlobalDeclarationsReport,
   formatSuppressionReport,
   formatSuppressionSummary,
+  formatTypesPackagePreflight,
   formatTypesPackageReport,
   collectModuleSpecifiers,
+  preflightTypesPackages,
   GLOBAL_DECLARATIONS_FILE,
   MODULE_DECLARATIONS_FILE,
 };

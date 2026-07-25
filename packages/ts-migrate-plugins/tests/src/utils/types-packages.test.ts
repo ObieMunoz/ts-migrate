@@ -6,8 +6,10 @@ import {
   collectTypesEvidence,
   createTypesEvidence,
   createTypesPackageDetector,
+  formatTypesPackagePreflight,
   formatTypesPackageReport,
   parseModuleDeclarations,
+  preflightTypesPackages,
   renderModuleDeclarations,
   summarizeTypesEvidence,
   TypesEvidence,
@@ -777,6 +779,150 @@ describe('package manager detection', () => {
     });
   });
 
+});
+
+describe('preflightTypesPackages', () => {
+  const installed = (...packageNames: string[]) =>
+    Object.fromEntries(
+      packageNames.map((packageName) => [
+        `node_modules/${packageName}/package.json`,
+        JSON.stringify({ name: packageName, version: '1.0.0' }),
+      ]),
+    );
+
+  const suggestedNames = (rootDir: string) =>
+    preflightTypesPackages(rootDir).suggested.map(({ packageName }) => packageName);
+
+  it('names the type packages a declared dependency implies', () => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({ devDependencies: { jest: '^29.0.0' } }),
+      'pnpm-lock.yaml': '',
+      ...installed('jest'),
+    });
+
+    const preflight = preflightTypesPackages(rootDir);
+
+    expect(preflight.suggested).toEqual([
+      {
+        packageName: '@types/node',
+        reason: 'node globals and imports of builtin modules have no types without it',
+      },
+      {
+        packageName: '@types/jest',
+        reason: 'jest is a dependency here and its test globals have no types without it',
+      },
+    ]);
+    expect(preflight.installCommand).toBe('pnpm add -D');
+  });
+
+  it('stays quiet when both are installed', () => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({ devDependencies: { jest: '^29.0.0' } }),
+      ...installed('jest', '@types/jest', '@types/node'),
+    });
+
+    expect(suggestedNames(rootDir)).toEqual([]);
+  });
+
+  // Yarn PnP, or a checkout nobody has installed yet: every package looks
+  // missing, and none of them are the project's problem.
+  it('stays quiet when no declared dependency resolves', () => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({ devDependencies: { jest: '^29.0.0' } }),
+    });
+
+    expect(suggestedNames(rootDir)).toEqual([]);
+  });
+
+  it('stays quiet about a runner that ships its own types', () => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({ devDependencies: { vitest: '^2.0.0' } }),
+      ...installed('vitest', '@types/node'),
+    });
+
+    expect(suggestedNames(rootDir)).toEqual([]);
+  });
+
+  it('stays quiet about a runner the project declares but has not installed', () => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({ dependencies: { react: '^18.0.0', mocha: '^10.0.0' } }),
+      ...installed('react', '@types/node'),
+    });
+
+    expect(suggestedNames(rootDir)).toEqual([]);
+  });
+
+  it('leaves a declared type package to the install rather than naming it again', () => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({
+        devDependencies: { jest: '^29.0.0', '@types/jest': '^29.5.0', '@types/node': '^22.0.0' },
+      }),
+      ...installed('jest'),
+    });
+
+    expect(suggestedNames(rootDir)).toEqual([]);
+  });
+
+  it('installs into the package the migration root belongs to', () => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({ workspaces: ['packages/*'] }),
+      'yarn.lock': '',
+      'packages/app/package.json': JSON.stringify({ dependencies: { react: '^18.0.0' } }),
+      'packages/app/node_modules/react/package.json': JSON.stringify({ name: 'react' }),
+    });
+
+    const preflight = preflightTypesPackages(path.join(rootDir, 'packages', 'app'));
+
+    expect(suggestedNames(path.join(rootDir, 'packages', 'app'))).toEqual(['@types/node']);
+    expect(preflight.installCommand).toBe('yarn add -D');
+    expect(preflight.installDir).toBe(path.join(rootDir, 'packages', 'app'));
+  });
+});
+
+describe('formatTypesPackagePreflight', () => {
+  it('renders the suggestions and skips an empty preflight', () => {
+    expect(
+      formatTypesPackagePreflight({ installCommand: 'npm install -D', suggested: [] }),
+    ).toBeNull();
+
+    expect(
+      formatTypesPackagePreflight({
+        installCommand: 'pnpm add -D',
+        installDir: 'packages/app',
+        suggested: [
+          {
+            packageName: '@types/node',
+            reason: 'node globals and imports of builtin modules have no types without it',
+          },
+          {
+            packageName: '@types/jest',
+            reason: 'jest is a dependency here and its test globals have no types without it',
+          },
+        ],
+      }),
+    ).toMatchInlineSnapshot(`
+      "Type packages worth installing before the migration:
+        @types/node is not installed: node globals and imports of builtin modules have no types without it.
+        @types/jest is not installed: jest is a dependency here and its test globals have no types without it.
+        Install: pnpm add -D @types/node @types/jest
+        Run from: packages/app
+        Installing them first keeps this migration from suppressing the errors they would fix."
+    `);
+  });
+
+  it('says to add the packages to a pinned types array', () => {
+    const formatted = formatTypesPackagePreflight(
+      {
+        installCommand: 'npm install -D',
+        suggested: [{ packageName: '@types/node', reason: 'no node globals without it' }],
+      },
+      true,
+    );
+
+    expect(formatted).toContain(
+      'Then add each one to the "types" array in the generated tsconfig.json',
+    );
+  });
 });
 
 describe('formatTypesPackageReport', () => {
