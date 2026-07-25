@@ -6,21 +6,25 @@ import ts from 'typescript';
 const ESM_EXTENSION_REGEX = /\.m[jt]s$/;
 const CJS_EXTENSION_REGEX = /\.c[jt]s$/;
 
-/** Whether the extension alone makes the file ECMAScript modules. */
-export function isEsmFileName(fileName: string): boolean {
-  return ESM_EXTENSION_REGEX.test(fileName);
+/**
+ * Whether a file is ECMAScript modules by its path alone: by its own
+ * `.mts`/`.mjs` extension, or by belonging to a `"type": "module"` package.
+ * `.cts`/`.cjs` are CommonJS whatever the package says, since they emit `.cjs`.
+ */
+export function isEsmFilePath(fileName: string): boolean {
+  if (CJS_EXTENSION_REGEX.test(fileName)) return false;
+  if (ESM_EXTENSION_REGEX.test(fileName)) return true;
+  return isEsmPackageDir(path.dirname(fileName));
 }
 
 /**
- * Whether a file is ECMAScript modules: by its own `.mts`/`.mjs` extension, by
- * module syntax it already contains, or by belonging to a `"type": "module"`
- * package. `.cts`/`.cjs` are CommonJS whatever else is true.
+ * Whether a file is ECMAScript modules: by its path, or by module syntax it
+ * already contains. `.cts`/`.cjs` are CommonJS whatever else is true.
  */
 export function isEsmSourceFile(fileName: string, sourceFile: ts.SourceFile): boolean {
   if (CJS_EXTENSION_REGEX.test(fileName)) return false;
-  if (isEsmFileName(fileName)) return true;
   if (hasEsmSyntax(sourceFile)) return true;
-  return isEsmPackageDir(path.dirname(fileName));
+  return isEsmFilePath(fileName);
 }
 
 /**
