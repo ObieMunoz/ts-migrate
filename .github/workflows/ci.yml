@@ -1,7 +1,8 @@
 name: CI
 
-# Docs and repo meta that no CI job reads. packages/ts-migrate/AGENTS.md is
-# deliberately not listed: agentsPlaybook.test.ts asserts on its content.
+# Docs and repo meta that no CI job reads. Neither AGENTS.md is listed:
+# agentsPlaybook.test.ts asserts on packages/ts-migrate/AGENTS.md, and the root
+# AGENTS.md carries the conventions the lockfile job below enforces.
 # lerna.json and .nxignore are release-only config; ci.yml never invokes lerna.
 on:
   push:
