@@ -775,7 +775,7 @@ Yes, and with ESLint 8 and `.eslintrc` too. The eslint-fix step loads your proje
 
 > It's slow on my big repo.
 
-Type inference is the expensive part, and it's several times faster now than it was when I forked the project. On a huge codebase you still have knobs: `--no-inferTypes` skips inference entirely, and `--maxStablePasses` caps how many times the repeating plugins re-run while files keep changing. Each plugin pass also shows a live processed/total counter while it runs (occasional plain lines when output is not a terminal), so you can tell a slow run from a hung one.
+Type inference is the expensive part, and it's several times faster now than it was when I forked the project. On a huge codebase you still have knobs: `--no-inferTypes` skips inference entirely, and `--maxStablePasses` caps how many times the repeating plugins re-run while files keep changing. Each plugin pass also shows a processed/total counter naming the file it is on (occasional plain lines when output is not a terminal), so you can see how far into the pass it is and which file it is working through. The counter only moves when a file starts or finishes, so a file that is taking a long time leaves it sitting still; when that file does finish, any file over 30 seconds gets a line of its own naming it and how long it took. Between passes the run reports how many files the pass changed, which is what tells a group that is settling from one that is going in circles.
 
 > Is ts-migrate React-specific?
 
