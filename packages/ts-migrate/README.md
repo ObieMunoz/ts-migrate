@@ -312,10 +312,14 @@ Detection, in order of confidence:
   requires are not followed; use the tsconfig `exclude` for those.
 
 Each run logs every kept file with its evidence, and `--jsonSummary` reports
-them as `skippedBootstrapFiles` with path and reason. Two overrides exist:
-`--no-bootstrap` renames and migrates them anyway (use it when the project
-already loads TypeScript configs through ts-node or tsx), and a tsconfig
-`exclude` entry keeps a specific file out of every run.
+them as `skippedBootstrapFiles` with path and reason. A kept file never enters
+the rename mapping, which is also what protects the package.json references to
+it: `"build": "node scripts/build.js"` still says `.js` when the run finishes,
+and a `bin` entry pointing at a file some script runs with `node` stays valid
+and is never reported, because that file was never renamed in the first place.
+Two overrides exist: `--no-bootstrap` renames and migrates them anyway (use it
+when the project already loads TypeScript configs through ts-node or tsx), and
+a tsconfig `exclude` entry keeps a specific file out of every run.
 
 Two safeguards bound the detection. A detected file whose require tree spans
 more than half the project (and more than eight files) is treated as an
@@ -544,7 +548,8 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --dry-run
 ```
 
 `rename --dry-run` prints the full old-to-new mapping, which also surfaces
-the `.ts` vs `.tsx` decision made for each `.js` file. `migrate` and
+the `.ts` vs `.tsx` decision made for each `.js` file, together with the
+package.json references a real run would rewrite. `migrate` and
 `reignore` print each file a real run would update, with the suppression and
 `any` counts it would then contain:
 
@@ -615,8 +620,12 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --jsonSummary migrate-s
 (`plugins` lists every step of the pipeline; the example is shortened.) Paths
 are relative to `<folder>`. `reignore` writes the same shape; `rename` writes
 `renamedFiles` as `{"from": "src/a.js", "to": "src/a.ts"}` pairs instead of
-the migrate fields. `skippedGitignoredFiles` counts the files the run left
-untouched because git ignores them (always 0 with `--no-gitignore`).
+the migrate fields, plus `packageJsonRewrites` (the script paths and test
+globs it repointed, as `{"file", "key", "from", "to"}`) and
+`packageJsonNotices` (the entry point fields that still name a renamed file
+and were left for you, as `{"file", "key", "value", "target"}`).
+`skippedGitignoredFiles` counts the files the run left untouched because git
+ignores them (always 0 with `--no-gitignore`).
 `skippedBootstrapFiles` lists the build system files the run kept as
 JavaScript, each with its detection evidence (always empty with
 `--no-bootstrap`). `generatedFiles` lists the declaration files the run wrote
@@ -671,14 +680,15 @@ npx -p @obiemunoz/ts-migrate ts-migrate reignore /path/to/your/project \
 
 # After the migration
 
-The tool's contract is narrow on purpose: when it finishes, `tsc` compiles your project with zero errors. It does not touch your package.json scripts, your test runner config, or your lint setup, and those still point at a world of `.js` files that no longer exists. When I ran the full pipeline against a plain CommonJS library as a smoke test, the migration itself was clean, and the test suite still wouldn't run until the project plumbing caught up. Expect to do these afterwards:
+The tool's contract is narrow on purpose: when it finishes, `tsc` compiles your project with zero errors. Nothing gives the project a way to *produce* JavaScript again, standalone runner configs (`jest.config.js`, `.mocharc.yml`) are left alone, and your lint setup still expects `.js`. When I ran the full pipeline against a plain CommonJS library as a smoke test, the migration itself was clean, and the test suite still wouldn't run until the project plumbing caught up.
 
-1. **Give the project a way to produce JS again.** Add a build step (`tsc`) or a TS-aware runner (ts-node, tsx). If package.json `main` pointed at a renamed file, point it at build output that actually exists.
-2. **Update scripts that reference old `.js` paths.** A mocha glob like `test/*.js` now matches nothing. Same idea for jest patterns and docs generators.
-3. **Teach ESLint about TypeScript.** Until the `@typescript-eslint` parser and plugin are in place, `eslint .` will either fail to parse `.ts` files or find no files at all. The eslint-fix step of the migration uses your project's own ESLint, so it skips unparseable files too until this is done.
-4. **Install missing `@types` packages, then re-run reignore.** `npm i -D @types/node` plus the types for your test runner, then `npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>` to drop the suppression comments you no longer need. If the migration was scoped with `--sources`, pass the same flags to reignore so it only touches that subset.
+`rename` does handle the package.json references that follow mechanically from the rename, so don't redo these by hand: the paths and globs in `scripts`, and in the `jest` block (`testMatch`, `collectCoverageFrom`, `setupFiles`, `setupFilesAfterEnv`, `globalSetup`, `globalTeardown`) and `mocha` block (`spec`, `require`). A mocha glob like `test/*.js` is rewritten to `test/*.ts`, or widened to `test/*.{js,ts}` when some of the files it matched are still JavaScript. Only references that resolve to a file the run actually renamed change, so `"build": "node scripts/build.js"` keeps its `.js` path. Every rewrite is logged, and edits are text splices, so your formatting and key order survive. Expect to do the rest afterwards:
 
-Honestly, item 4 is worth doing before you migrate at all. With the environment types in place, globals like `require` and `describe` resolve to real types instead of a wall of suppressed "Cannot find name" errors.
+1. **Give the project a way to produce JS again.** Add a build step (`tsc`) or a TS-aware runner (ts-node, tsx), then repoint the entry point fields `rename` listed for you — `main`, `module`, `browser`, `bin`, `exports`, `types`, `files` — at build output that actually exists. Those are deliberately reported rather than rewritten: they address your package from the outside, so pointing `main` at `src/index.ts` would leave it unloadable rather than merely stale.
+2. **Teach ESLint about TypeScript.** Until the `@typescript-eslint` parser and plugin are in place, `eslint .` will either fail to parse `.ts` files or find no files at all. The eslint-fix step of the migration uses your project's own ESLint, so it skips unparseable files too until this is done.
+3. **Install missing `@types` packages, then re-run reignore.** `npm i -D @types/node` plus the types for your test runner, then `npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>` to drop the suppression comments you no longer need. If the migration was scoped with `--sources`, pass the same flags to reignore so it only touches that subset.
+
+Honestly, item 3 is worth doing before you migrate at all. With the environment types in place, globals like `require` and `describe` resolve to real types instead of a wall of suppressed "Cannot find name" errors.
 
 # FAQ
 
