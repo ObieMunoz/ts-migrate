@@ -4,6 +4,11 @@
 build config across packages and
 [lerna](https://github.com/lerna/lerna/) is used to manage versioning and publishing.
 
+[AGENTS.md](./AGENTS.md) at the repo root is the short version of this document
+for coding agents; keep the two in step. It is unrelated to
+`packages/ts-migrate/AGENTS.md`, which is the published playbook for driving the
+CLI against another project.
+
 ## Pull request titles
 
 PRs are squash-merged, and the PR title becomes the commit message on master.

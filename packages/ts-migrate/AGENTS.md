@@ -379,23 +379,3 @@ need both summaries.
    `npx -p @obiemunoz/ts-migrate ts-migrate check <folder>` writes a
    `.ts-migrate-baseline.json`; commit it and run `check` in CI so the
    build fails when suppression or `any` counts creep back up.
-
-## Working on the ts-migrate repository
-
-This section applies to agents changing ts-migrate itself, not to migrating a
-project with the CLI. The full conventions are in
-[CONTRIBUTING.md](https://github.com/ObieMunoz/ts-migrate/blob/master/CONTRIBUTING.md).
-
-- **Do not run `pnpm add`.** It reruns peer resolution for the whole
-  workspace, and every package declares TypeScript as a peer with the range
-  `>=5.0 <7`. The pass satisfies those ranges with the 6.0.3 copy
-  `ts-migrate-server` keeps for its TypeScript 6 tests and rewrites the
-  committed 5.9.3 resolutions, which puts two copies of the compiler in one
-  type graph. The build then fails with cross-package `TypeChecker` and
-  `Symbol` assignability errors in files the change never touched. Add a
-  dependency by editing the `package.json` by hand, running `pnpm install`,
-  and confirming that `git diff --stat pnpm-lock.yaml` shows insertions only.
-  `scripts/check-lockfile-typescript.sh origin/master` runs the CI check
-  locally.
-- PR titles are Conventional Commits (`type(scope): subject`); lerna reads
-  them to build the release notes.
