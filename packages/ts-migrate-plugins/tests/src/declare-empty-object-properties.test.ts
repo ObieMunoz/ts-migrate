@@ -458,9 +458,10 @@ export default C;
 
       const declared = await declareMissingProperties(text);
       expect(declared).toContain('pending;');
-      expect(declared).toContain('cache: $TSFixMe;');
+      expect(declared).toContain('cache: { total?: number };');
 
       expect(await run(declared)).toBe(declared);
+      expect(typeCheck(declared)).toEqual([]);
     });
   });
 });
