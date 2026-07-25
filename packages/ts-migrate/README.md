@@ -664,6 +664,8 @@ npx -p @obiemunoz/ts-migrate ts-migrate rename /path/to/your/project -s "some/co
 
 When `--sources` is used, the tsconfig `include` no longer decides what gets migrated, but the ambient declaration files it matches (`vite-env.d.ts`, `react-app-env.d.ts`, a custom `globals.d.ts`) are kept in the program so the globals they declare still resolve instead of turning into bogus suppressions. The run logs which files it retained. Pass `--no-ambientSources` to opt out and build the program from exactly the sources you list.
 
+The directories you have not converted yet are still plain JavaScript, and the generated tsconfig sets `allowJs` so imports reaching into them resolve to the types TypeScript infers from the source instead of erroring and collecting a suppression each. Those suppressions would be pure churn: the next directory's migration removes the file they point at. `checkJs` stays off, and `migrate` never edits `.js`, `.jsx`, `.mjs` or `.cjs`, so nothing on the JavaScript side is type-checked or rewritten before `rename` reaches it. If your project has a hand-written tsconfig, add `"allowJs": true` to get the same behavior.
+
 `@types` packages are loaded through the tsconfig `types` array regardless of sources. The one case that still needs a manual re-include is a package that ships unimported global declarations outside `@types`:
 
 ```sh

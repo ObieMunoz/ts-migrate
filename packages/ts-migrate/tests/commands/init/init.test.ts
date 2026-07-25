@@ -84,10 +84,14 @@ describe('init command', () => {
       moduleDetection: 'force',
       jsx: 'react',
       esModuleInterop: true,
+      allowJs: true,
       resolveJsonModule: true,
       strict: true,
       skipLibCheck: true,
     });
+    // allowJs alone: type-checking the JavaScript side would report errors
+    // no plugin can fix, since those files are never migrated in place.
+    expect(config.compilerOptions.checkJs).toBeUndefined();
     // These recent `tsc --init` defaults block @types packages and flood a
     // freshly-converted CommonJS project with suppressions.
     expect(config.compilerOptions.types).toBeUndefined();

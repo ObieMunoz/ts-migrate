@@ -408,5 +408,45 @@ export const retries: number = config.retries;
       expect(exitCode).toBe(0);
       expect(fs.readFileSync(path.resolve(projectDir, 'app.ts'), 'utf8')).toBe(sourceText);
     }, 10000);
+
+    describe('with JavaScript the migration has not reached yet', () => {
+      const utilText = 'export const util = { n: 1 };\n';
+      const featureText = `import { util } from '../legacy/util';
+
+export const n: number = util.n;
+`;
+
+      beforeEach(() => {
+        fs.mkdirSync(path.resolve(projectDir, 'legacy'));
+        fs.writeFileSync(path.resolve(projectDir, 'legacy/util.js'), utilText);
+        fs.mkdirSync(path.resolve(projectDir, 'feature'));
+        fs.writeFileSync(path.resolve(projectDir, 'feature/index.ts'), featureText);
+        init({ rootDir: projectDir, isExtendedConfig: false });
+      });
+
+      it('resolves a staged migration\'s imports into it instead of suppressing them', async () => {
+        const config = new MigrateConfig().addPlugin(tsIgnorePlugin, { messagePrefix: 'FIXME' });
+
+        const { exitCode } = await migrate({
+          rootDir: projectDir,
+          config,
+          sources: 'feature/**/*',
+        });
+
+        expect(exitCode).toBe(0);
+        expect(fs.readFileSync(path.resolve(projectDir, 'feature/index.ts'), 'utf8')).toBe(
+          featureText,
+        );
+      }, 10000);
+
+      it('leaves it untouched on a full run', async () => {
+        const { config } = buildMigrateConfig({ inferTypes: false });
+
+        const { exitCode } = await migrate({ rootDir: projectDir, config });
+
+        expect(exitCode).toBe(0);
+        expect(fs.readFileSync(path.resolve(projectDir, 'legacy/util.js'), 'utf8')).toBe(utilText);
+      }, 30000);
+    });
   });
 });
