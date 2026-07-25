@@ -17,8 +17,9 @@ docs live in this package's README.md.
    package npx fetched.
 2. **`ts-migrate full` prompts before starting.** Pass `--yes` to skip the
    prompts. Without `--yes` and without stdin, the run exits nonzero before
-   doing anything. The separate `ts-migrate-full` bin this replaced is gone;
-   `ts-migrate full <folder>` takes the same arguments.
+   doing anything. There is no separate `ts-migrate-full` bin; it was removed
+   once the pipeline became a command, and `ts-migrate full <folder>` takes the
+   same arguments it did.
 3. **`ts-migrate full` creates git commits** after each step by default. Pass
    `--no-commit` to leave every change in the working tree instead — do this
    when you manage commits yourself or the target is not a git repository.
