@@ -824,6 +824,64 @@ describe('migrate command', () => {
         updateSpy.mockRestore();
       }
     });
+
+    it('reports a repeated pass without moving the pipeline ordinal backwards', async () => {
+      const configDir = path.resolve(__dirname, 'config');
+      copyDir(configDir, rootDir);
+      fs.writeFileSync(path.resolve(rootDir, 'index.ts'), 'x');
+
+      const infoSpy = jest.spyOn(log, 'info');
+      try {
+        const config = new MigrateConfig()
+          .addPlugin(
+            {
+              name: 'grow',
+              run({ text }) {
+                return text.length < 3 ? `${text}x` : text;
+              },
+            },
+            {},
+            { repeatUntilStable: true },
+          )
+          .addPlugin(
+            {
+              name: 'noop',
+              run({ text }) {
+                return text;
+              },
+            },
+            {},
+            { repeatUntilStable: true },
+          );
+
+        // Without incremental passes the revisit line never prints, so the
+        // changed count is the only convergence signal a pass leaves behind.
+        const { exitCode } = await migrate({ rootDir, config, incrementalPasses: false });
+
+        expect(exitCode).toBe(0);
+        const messages = infoSpy.mock.calls.map((call) => call.join(' '));
+        expect(messages.filter((message) => /\. Start\.\.\.$/.test(message))).toEqual([
+          '[grow] Plugin 1 of 2. Start...',
+          '[noop] Plugin 2 of 2. Start...',
+          '[grow] Re-running (pass 2 of 5). Start...',
+          '[noop] Re-running (pass 2 of 5). Start...',
+          '[grow] Re-running (pass 3 of 5). Start...',
+          '[noop] Re-running (pass 3 of 5). Start...',
+        ]);
+        const ordinals = messages
+          .map((message) => /Plugin (\d+) of \d+\./.exec(message))
+          .filter((match): match is RegExpExecArray => match !== null)
+          .map((match) => Number(match[1]));
+        expect(ordinals).toEqual([...ordinals].sort((a, b) => a - b));
+        expect(messages.filter((message) => message.startsWith('Pass '))).toEqual([
+          'Pass 1 of 5 changed 1 file(s).',
+          'Pass 2 of 5 changed 1 file(s).',
+        ]);
+        expect(messages.some((message) => message.startsWith('Next pass revisits'))).toBe(false);
+      } finally {
+        infoSpy.mockRestore();
+      }
+    }, 15000);
   });
 
   describe('pluginStats', () => {

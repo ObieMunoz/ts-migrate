@@ -191,10 +191,14 @@ export default async function migrate({
 
         const pluginLogPrefix = `[${plugin.name}]`;
         const pluginTimer = new PerfTimer();
-        const passSuffix = pass > 0 ? ` (pass ${pass + 1})` : '';
-        log.info(
-          `${pluginLogPrefix} Plugin ${i + 1} of ${config.plugins.length}${passSuffix}. Start...`,
-        );
+        // A repeating group re-enters the same pipeline indexes, so only the
+        // first pass reports one: an ordinal that moves backwards mid-run
+        // reads as a restart.
+        const banner =
+          pass > 0
+            ? `Re-running (pass ${pass + 1} of ${maxStablePasses})`
+            : `Plugin ${i + 1} of ${config.plugins.length}`;
+        log.info(`${pluginLogPrefix} ${banner}. Start...`);
 
         const sourceFiles = getSourceFilesToMigrate(project).filter(
           ({ fileName }) =>
@@ -274,7 +278,10 @@ export default async function migrate({
           project.updateSourceFile(fileName, text);
         }
 
-        log.info(`${pluginLogPrefix} Finished in ${pluginTimer.elapsedStr()}.`);
+        log.info(
+          `${pluginLogPrefix} Finished in ${pluginTimer.elapsedStr()}, ` +
+            `${pluginsTimer.elapsedStr()} into the run.`,
+        );
       }
 
       if (!pluginGroup.repeatUntilStable || !changedInPass) {
@@ -284,9 +291,15 @@ export default async function migrate({
         const names = pluginGroup.pluginIndexes
           .map((i) => config.plugins[i].plugin.name)
           .join(', ');
-        log.warn(`Plugin group [${names}] still changing files after ${maxStablePasses} passes.`);
+        log.warn(
+          `Plugin group [${names}] still changing files after ${maxStablePasses} passes, ` +
+            `${changedThisPass.size} in the last one.`,
+        );
         break;
       }
+      // Comparing this across passes is what tells a group that is settling
+      // from one that is thrashing.
+      log.info(`Pass ${pass + 1} of ${maxStablePasses} changed ${changedThisPass.size} file(s).`);
       dirtyFiles = incrementalPasses
         ? computeDirtyFiles(
             project.getSourceFiles(),
