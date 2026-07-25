@@ -99,7 +99,7 @@ export function setJSON5Key(
   for (let i = 0; i < keyPath.length; i += 1) {
     const member = node.members.find((m) => m.key === keyPath[i]);
     if (!member) {
-      return insertMember(sourceText, node, keyPath.slice(i), value);
+      return insertMember(sourceText, node, keyPath.slice(i), encodeValue(value));
     }
     if (i === keyPath.length - 1 || member.value.kind !== 'object') {
       const remainingPath = keyPath.slice(i + 1);
@@ -107,7 +107,7 @@ export function setJSON5Key(
         {
           start: member.value.start,
           end: member.value.end,
-          text: buildNestedValue(remainingPath, value),
+          text: buildNestedValue(remainingPath, encodeValue(value)),
         },
       ]);
     }
@@ -117,13 +117,108 @@ export function setJSON5Key(
   throw new Error('updateJSON5: failed to resolve keyPath');
 }
 
+/**
+ * Appends a string to the array at `keyPath`, creating `keyPath: [value]` when
+ * the key is absent and returning the text unchanged when the array already
+ * holds the value. Throws when the key holds something other than an array.
+ */
+export function appendJSON5ArrayItem(
+  sourceText: string,
+  keyPath: ReadonlyArray<string>,
+  value: string,
+): string {
+  if (keyPath.length === 0) {
+    throw new Error('updateJSON5: keyPath must not be empty');
+  }
+
+  const root = parseDocument(sourceText);
+  if (root.kind !== 'object') {
+    throw new Error('updateJSON5: root value must be an object');
+  }
+
+  let node = root;
+  for (let i = 0; i < keyPath.length; i += 1) {
+    const member = node.members.find((m) => m.key === keyPath[i]);
+    if (!member) {
+      return insertMember(sourceText, node, keyPath.slice(i), `[${encodeValue(value)}]`);
+    }
+    if (i === keyPath.length - 1) {
+      if (member.value.kind !== 'array') {
+        throw new Error(`updateJSON5: ${keyPath.join('.')} is not an array`);
+      }
+      if (member.value.elements.some((el) => el.kind === 'string' && el.value === value)) {
+        return sourceText;
+      }
+      return appendElement(sourceText, member.value, value);
+    }
+    if (member.value.kind !== 'object') {
+      throw new Error(`updateJSON5: ${keyPath.slice(0, i + 1).join('.')} is not an object`);
+    }
+    node = member.value;
+  }
+
+  throw new Error('updateJSON5: failed to resolve keyPath');
+}
+
+function appendElement(sourceText: string, node: ArrayNode, value: string): string {
+  const isMultiline = sourceText.slice(node.start, node.end).includes('\n');
+  const lastElement = node.elements[node.elements.length - 1];
+  // Match the quoting the array already uses rather than imposing this
+  // module's own, since the whole array is read back as one list by eye.
+  const quote =
+    lastElement && lastElement.kind === 'string' ? sourceText[lastElement.start] : '"';
+  const entryText = json5.stringify(value, { quote });
+
+  if (!lastElement) {
+    const inner = sourceText.slice(node.start + 1, node.end - 1);
+    // An empty array holding comments keeps them; the entry goes before the
+    // closing bracket rather than over them.
+    return inner.trim() === ''
+      ? applySplices(sourceText, [{ start: node.start + 1, end: node.end - 1, text: entryText }])
+      : applySplices(sourceText, [{ start: node.end - 1, end: node.end - 1, text: `${entryText} ` }]);
+  }
+
+  const triviaEnd = skipTrivia(sourceText, lastElement.end);
+  const hasTrailingComma = sourceText[triviaEnd] === ',';
+  const separator = isMultiline ? `\n${lineIndent(sourceText, lastElement.start)}` : ' ';
+
+  // A comment after the last element belongs to it, so the new entry starts
+  // below the whole line rather than between the element and its comment.
+  const afterLine = (offset: number): number => {
+    if (!isMultiline) return offset;
+    const lineEnd = sourceText.indexOf('\n', offset);
+    const limit = Math.min(lineEnd === -1 ? node.end - 1 : lineEnd, node.end - 1);
+    return limit > offset ? limit : offset;
+  };
+
+  if (hasTrailingComma) {
+    const insertAt = afterLine(triviaEnd + 1);
+    return applySplices(sourceText, [
+      { start: insertAt, end: insertAt, text: `${separator}${entryText},` },
+    ]);
+  }
+
+  // The comma has to sit against the element it follows, so a comment between
+  // them does not swallow it; the entry itself still goes below the line.
+  const insertAt = afterLine(lastElement.end);
+  return applySplices(
+    sourceText,
+    insertAt > lastElement.end
+      ? [
+          { start: lastElement.end, end: lastElement.end, text: ',' },
+          { start: insertAt, end: insertAt, text: `${separator}${entryText}` },
+        ]
+      : [{ start: lastElement.end, end: lastElement.end, text: `,${separator}${entryText}` }],
+  );
+}
+
 function insertMember(
   sourceText: string,
   node: ObjectNode,
   keyPath: ReadonlyArray<string>,
-  value: string | number | boolean | null,
+  valueText: string,
 ): string {
-  const entryText = `${encodeKey(keyPath[0])}: ${buildNestedValue(keyPath.slice(1), value)}`;
+  const entryText = `${encodeKey(keyPath[0])}: ${buildNestedValue(keyPath.slice(1), valueText)}`;
   const isMultiline = sourceText.slice(node.start, node.end).includes('\n');
 
   if (node.members.length === 0) {
@@ -156,15 +251,16 @@ function insertMember(
   ]);
 }
 
-function buildNestedValue(
-  keyPath: ReadonlyArray<string>,
-  value: string | number | boolean | null,
-): string {
-  let result = json5.stringify(value, { quote: '"' });
+function buildNestedValue(keyPath: ReadonlyArray<string>, valueText: string): string {
+  let result = valueText;
   for (let i = keyPath.length - 1; i >= 0; i -= 1) {
     result = `{ ${encodeKey(keyPath[i])}: ${result} }`;
   }
   return result;
+}
+
+function encodeValue(value: string | number | boolean | null): string {
+  return json5.stringify(value, { quote: '"' });
 }
 
 function encodeKey(key: string): string {

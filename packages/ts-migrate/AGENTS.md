@@ -155,6 +155,15 @@ later run keeps it. Delete an entry once something else declares that
 property, since two declarations of one global is an error. Do not add
 entries by hand: the file is rewritten from its own declarations every run.
 
+A generated declaration file only counts if the project's tsconfig matches it:
+otherwise it is in the migration's own program and no later one, and every
+error it resolved comes back on the next `tsc` run. A run that finds its
+tsconfig does not match one adds the path to that config's `"include"`, or to
+`"files"` when the config has no `"include"` of its own (appending to an
+inherited one would replace the base's list, and `"exclude"` does not filter
+`"files"`). The run says which key it edited. Review that edit with the rest of
+the diff.
+
 Afterwards, update the project plumbing the tool deliberately does not touch:
 
 - Add a way to produce/run JS again: a `tsc` build step or a TS-aware runner
@@ -437,7 +446,8 @@ run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
   checkable imports typed `any` rather than N `@ts-expect-error` comments.
   Entries are kept across runs and dropped once their types resolve, so
   installing a real `@types` package retires one. A file at that path that
-  ts-migrate did not write is never touched.
+  ts-migrate did not write is never touched. Kept in the project's tsconfig on
+  the same terms as `--no-declareGlobals` below.
 - `--no-declareGlobals`: cast every read and write of a property the code hangs
   off `window`, `global` or `globalThis`, instead of declaring those properties
   once in `types/ts-migrate-globals.d.ts`. By default the run generates that
@@ -446,7 +456,10 @@ run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
   the useful edit and a later run keeps it. Entries are never dropped
   automatically: delete one once something else declares that property, since
   two declarations of one global is an error. A file at that path that
-  ts-migrate did not write is never touched.
+  ts-migrate did not write is never touched. The run keeps the file in the
+  project's tsconfig, editing `"include"` or `"files"` when it has to; without
+  a tsconfig it can read, it casts at each site instead, since a declaration
+  file nothing includes would leave the project failing `tsc`.
 - `--dry-run`: run every plugin pass but write nothing to disk. Prints each
   file a real run would update, with the suppression and `any` counts it
   would then contain. The report matches a real run exactly (with
