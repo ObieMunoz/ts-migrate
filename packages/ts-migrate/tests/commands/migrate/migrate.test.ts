@@ -376,6 +376,50 @@ export const shape = itemShape;
     }, 30000);
   });
 
+  describe('a project whose tsconfig includes .d.mts and .d.cts files', () => {
+    // Implicit anys and an unresolvable type: the annotation and suppression
+    // plugins both have something to write here.
+    const declarationFiles = {
+      'types/globals.d.mts': 'declare function widen(value): void;\n',
+      'types/legacy.d.cts': 'declare function narrow(value): Unresolvable;\n',
+    };
+    const appText = 'export function app(value: string) {\n  return value;\n}\n';
+
+    beforeEach(() => {
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            module: 'commonjs',
+            target: 'es2019',
+            noEmit: true,
+            strict: true,
+            types: [],
+          },
+          include: ['.'],
+        }),
+      );
+      fs.writeFileSync(path.resolve(rootDir, 'app.ts'), appText);
+      fs.mkdirSync(path.resolve(rootDir, 'types'));
+      Object.entries(declarationFiles).forEach(([relPath, text]) => {
+        fs.writeFileSync(path.resolve(rootDir, relPath), text);
+      });
+    });
+
+    it('runs the default pipeline without writing into the declaration files', async () => {
+      const { config } = buildMigrateConfig({ inferTypes: false });
+
+      const { exitCode, updatedSourceFiles } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      Object.entries(declarationFiles).forEach(([relPath, text]) => {
+        const fileName = path.resolve(rootDir, relPath);
+        expect(fs.readFileSync(fileName, 'utf8')).toBe(text);
+        expect([...updatedSourceFiles]).not.toContain(fileName);
+      });
+    }, 30000);
+  });
+
   describe('under the tsconfig init generates', () => {
     // An OS temp dir rather than one inside this repo: init scans the project
     // directory and its ancestors for node_modules/@types, and the workspace's

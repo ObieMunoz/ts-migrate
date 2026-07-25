@@ -17,7 +17,7 @@ interface MigrateParams {
   config: MigrateConfig;
   sources?: string | string[];
   /**
-   * When sources are provided, keep the tsconfig's `.d.ts` files in the
+   * When sources are provided, keep the tsconfig's declaration files in the
    * program so the ambient types they declare still resolve. Default true.
    */
   ambientSources?: boolean;
@@ -118,11 +118,9 @@ export default async function migrate({
   if (sources) {
     // Manual sources replace the tsconfig include, which would drop ambient
     // declaration files and turn resolvable globals into bogus suppressions,
-    // so the include's .d.ts entries stay in the program unless opted out.
+    // so the include's declaration files stay in the program unless opted out.
     if (ambientSources) {
-      const ambientFiles = project
-        .getTsConfigFileNames()
-        .filter((fileName) => fileName.endsWith('.d.ts'));
+      const ambientFiles = project.getTsConfigFileNames().filter(isDeclarationFile);
       if (ambientFiles.length > 0) {
         project.addSourceFilesByPaths(ambientFiles);
         log.info(
@@ -139,9 +137,8 @@ export default async function migrate({
   // itself creates, which no filter should drop.
   if (filterMigrationFiles) {
     project.retainRootFiles((rootFiles) => {
-      const isDeclaration = (fileName: string) => /\.d\.[cm]?ts$/.test(fileName);
-      const declarationFiles = rootFiles.filter(isDeclaration);
-      const candidates = rootFiles.filter((fileName) => !isDeclaration(fileName));
+      const declarationFiles = rootFiles.filter(isDeclarationFile);
+      const candidates = rootFiles.filter((fileName) => !isDeclarationFile(fileName));
       return [...declarationFiles, ...filterMigrationFiles(candidates)];
     });
   }
@@ -422,6 +419,11 @@ function mergePluginFailures(
     });
 }
 
+/** A declaration file in any of its module formats: .d.ts, .d.mts, .d.cts. */
+function isDeclarationFile(fileName: string) {
+  return /\.d\.[cm]?ts$/.test(fileName);
+}
+
 /**
  * The program files plugins may edit. Declaration and JSON files hold nothing
  * to migrate, and TypeScript written into a JavaScript file stops that file
@@ -432,7 +434,10 @@ function mergePluginFailures(
 function getSourceFilesToMigrate(project: MigrationProject) {
   return project
     .getSourceFiles()
-    .filter(({ fileName }) => !/(\.d\.ts|\.json|\.[cm]?jsx?)$|node_modules/.test(fileName));
+    .filter(
+      ({ fileName }) =>
+        !isDeclarationFile(fileName) && !/(\.json|\.[cm]?jsx?)$|node_modules/.test(fileName),
+    );
 }
 
 export { MigrateConfig };
