@@ -438,8 +438,9 @@ resolve. The report only recommends what the diagnostics prove is missing:
 - A package that is installed but hidden by the tsconfig `types` array (or a
   `typeRoots` override) gets a config suggestion instead of an install.
 - When the tsconfig pins a `types` array (the config `ts-migrate init` writes
-  pins whichever `@types` packages it finds installed), the report reminds you
-  to add newly installed packages to that array as well.
+  pins whichever `@types` packages it finds installed, plus `vite/client` on a
+  Vite project), the report reminds you to add newly installed packages to that
+  array as well.
 - Installed `@types` packages whose major version lags the library (or Node
   version) they describe are listed as possibly outdated.
 - `@types` packages made redundant by a library that now ships its own types are
@@ -707,7 +708,13 @@ Upstream has been unmaintained since 2022 and tops out at TypeScript 4. I needed
 
 > Why does the generated tsconfig pin a `types` array?
 
-TypeScript 6 stopped loading `node_modules/@types` automatically (bulk inclusion now requires `types: ["*"]`, which TypeScript 5 rejects as a package name). Naming the installed packages is the only form both majors read identically. Without it, the TypeScript that ts-migrate runs and the `tsc` your project runs can disagree about whether globals like `require` and `describe` exist — one adds suppressions the other reports as unused (TS2578). The trade-off: after installing a new `@types` package, add it to the array.
+TypeScript 6 stopped loading `node_modules/@types` automatically (bulk inclusion now requires `types: ["*"]`, which TypeScript 5 rejects as a package name). Naming the installed packages is the only form both majors read identically. Without it, the TypeScript that ts-migrate runs and the `tsc` your project runs can disagree about whether globals like `require` and `describe` exist — one adds suppressions the other reports as unused (TS2578). The trade-off: after installing a new `@types` package, add it to the array. The array is not only `@types` packages — a Vite project also gets `vite/client`, so it can end up with a pinned array with no `@types` package installed at all.
+
+> Why does the generated tsconfig say `"moduleResolution": "bundler"`?
+
+Because on that project the bundler resolves the imports, not Node. `init` writes `"module": "esnext"` with `"moduleResolution": "bundler"` when it finds Vite or webpack in `dependencies`/`devDependencies`, or a `vite.config.*`/`webpack.config.*` file in the folder. Both of the settings it would otherwise pick break a bundled app, in different ways: under `commonjs`, every `import.meta.env` is a TS1343, and under the `nodenext` that a `"type": "module"` package gets, extensionless relative imports stop resolving (TS2835 on `import './util'`). A Vite project also gets `vite/client` in its `types` array, which is what declares `import.meta.env` and asset imports like `*.svg` and `*.css`; on webpack, install `@types/webpack-env` so `require.context` and `module.hot` type, which `init` tells you when it is missing.
+
+Detection is deliberately blunt, so a Node library that keeps webpack in devDependencies only to build a UMD bundle gets the bundler settings too. Setting those two fields back by hand is a one-time fix — `init` never touches a tsconfig that already exists.
 
 > Can it magically figure out all the types?
 
