@@ -82,14 +82,31 @@ function runFull(answers: string[], args: string[] = ['--no-commit']): {
   }
 }
 
+const git = (...args: string[]) =>
+  execFileSync('git', ['-C', projectDir, ...args], { stdio: 'ignore' });
+
 /** A git repository at the project, so a run without --no-commit can commit. */
 function initGitRepo(): void {
-  const git = (...args: string[]) =>
-    execFileSync('git', ['-C', projectDir, ...args], { stdio: 'ignore' });
   git('init', '-q');
   git('config', 'user.email', 'ts-migrate@example.com');
   git('config', 'user.name', 'ts-migrate');
   git('config', 'commit.gpgsign', 'false');
+}
+
+/** Commits the fixture, so a later status reports only what a test added. */
+function commitFixture(): void {
+  git('add', '.');
+  git('commit', '-q', '-m', 'fixture');
+}
+
+/**
+ * The compiler the check falls back to when no custom tsc is set, which is the
+ * path every non-interactive run takes.
+ */
+function writeMigrationTsc(): void {
+  const binDir = path.join(projectDir, 'node_modules', 'typescript', 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.writeFileSync(path.join(binDir, 'tsc'), 'process.exit(0);\n');
 }
 
 describe('the ts-migrate-full compiler preflight', () => {
@@ -171,6 +188,92 @@ describe('the ts-migrate-full commit step', () => {
     expect(output).toContain('This run created mechanical rewrite commits');
     const bareDirectories = output.split('\n').filter((line) => /^\/\S*$/.test(line.trim()));
     expect(bareDirectories).toEqual([]);
+  });
+});
+
+describe('the ts-migrate-full git tree preflight', () => {
+  it('names a folder outside a git repository instead of failing every commit', () => {
+    const { status, output } = runFull(['y', writeTsc('5.7.2')], []);
+
+    expect(status).toBe(0);
+    expect(output).toContain('is not in a git repository');
+    expect(output.indexOf('is not in a git repository')).toBeLessThan(
+      output.indexOf('Step 1 of 4'),
+    );
+  });
+
+  describe('in a git repository', () => {
+    beforeEach(() => {
+      writeMigrationTsc();
+      initGitRepo();
+      commitFixture();
+    });
+
+    it('says nothing about a clean tree', () => {
+      const { status, output } = runFull(['y', writeTsc('5.7.2')], []);
+
+      expect(status).toBe(0);
+      expect(output).not.toContain('Uncommitted changes');
+    });
+
+    it('lists what the run would sweep into its own commits', () => {
+      fs.writeFileSync(path.join(projectDir, 'wip.js'), 'module.exports = 1;\n');
+
+      const { status, output } = runFull(['y', writeTsc('5.7.2')], []);
+
+      expect(status).toBe(0);
+      expect(output).toContain('Uncommitted changes in');
+      expect(output).toContain('?? wip.js');
+      expect(output).toContain('git add .');
+      expect(output).toContain('git stash -u');
+      expect(output.indexOf('Uncommitted changes in')).toBeLessThan(
+        output.indexOf('Step 1 of 4'),
+      );
+    });
+
+    it('reports every path git add would stage, capped with a count', () => {
+      for (let i = 0; i < 12; i += 1) {
+        fs.writeFileSync(path.join(projectDir, `wip${i}.js`), '');
+      }
+
+      const { output } = runFull(['y', writeTsc('5.7.2')], []);
+
+      expect(output).toContain('Uncommitted changes in');
+      expect(output).toContain('(12)');
+      expect(output).toContain('... and 2 more');
+    });
+
+    it('warns under --no-commit, where nothing holds a copy of an untracked file', () => {
+      fs.writeFileSync(path.join(projectDir, 'wip.js'), '');
+
+      const { output } = runFull(['y', writeTsc('5.7.2')], ['--no-commit']);
+
+      expect(output).toContain('?? wip.js');
+      expect(output).toContain('no committed copy to recover it from');
+      expect(output).not.toContain('git add .');
+    });
+
+    it('warns and continues under --yes', () => {
+      fs.writeFileSync(path.join(projectDir, 'wip.js'), '');
+
+      const { status, output } = runFull([], ['--yes', '--no-commit']);
+
+      expect(status).toBe(0);
+      expect(output).toContain('?? wip.js');
+      expect(output).toContain('--yes was passed, so the run continues.');
+      expect(output).toContain('All done!');
+    });
+
+    it('adds no prompt of its own to the interactive path', () => {
+      fs.writeFileSync(path.join(projectDir, 'wip.js'), '');
+
+      const { status, output } = runFull(['n'], ['--no-commit']);
+
+      expect(status).toBe(0);
+      expect(output).toContain('?? wip.js');
+      expect(output).toContain('See you later.');
+      expect(output).not.toContain('Step 1 of 4');
+    });
   });
 });
 

@@ -21,6 +21,10 @@ docs live in this package's README.md.
 3. **`ts-migrate-full` creates git commits** after each step by default. Pass
    `--no-commit` to leave every change in the working tree instead — do this
    when you manage commits yourself or the target is not a git repository.
+   Commit or stash the target folder first either way. The run reports what is
+   uncommitted there and then renames and rewrites those files, and with
+   commits enabled `git add .` also puts them in the migration's commits.
+   Under `--yes` that report is a warning and the run continues.
 4. **Suppressions in the output are success, not failure.** The tool's
    contract is that `tsc` compiles with zero errors afterwards; it fulfills it
    by annotating what it can prove and suppressing the rest with
@@ -164,6 +168,9 @@ Afterwards, update the project plumbing the tool deliberately does not touch:
 
 Runs the whole pipeline: init tsconfig → rename JS/JSX to TS/TSX → migrate →
 verify with `tsc --noEmit`.
+
+Before Step 1 it names a `<folder>` that is not in a git repository once and
+then runs without commits, and reports anything uncommitted in `<folder>`.
 
 - `--yes` (`-y`): skip the interactive prompts (accept defaults).
 - `--no-commit`: do not create git commits after each step.

@@ -161,6 +161,47 @@ should_remove_eslintrc=false
 types_report_file=$(mktemp)
 trap 'rm -f "$types_report_file"' EXIT
 
+# The tree state that matters is what `git add .` in maybe_commit would stage,
+# so this asks the same question with the same scope.
+function preflight_git_tree() {
+  if ! git -C "$frontend_folder" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if [ "$no_commit" != "true" ]; then
+      echo "$frontend_folder is not in a git repository, so this run cannot commit its
+steps. Continuing as though --no-commit had been passed.
+"
+      no_commit=true
+    fi
+    return
+  fi
+
+  local dirty
+  dirty=$(git -C "$frontend_folder" status --porcelain .) || return
+  if [ -z "$dirty" ]; then
+    return
+  fi
+
+  local count
+  count=$(printf '%s\n' "$dirty" | wc -l | tr -d ' ')
+  echo "Uncommitted changes in $frontend_folder ($count):"
+  printf '%s\n' "$dirty" | head -10 | sed 's/^/  /'
+  if [ "$count" -gt 10 ]; then
+    echo "  ... and $((count - 10)) more"
+  fi
+  if [ "$no_commit" = "true" ]; then
+    echo "
+Steps 2 and 3 rename and rewrite those files in place, and an untracked one has
+no committed copy to recover it from. Set them aside with \`git stash -u\` first."
+  else
+    echo "
+Steps 2 and 3 rename and rewrite those files in place, and \`git add .\` puts them
+in this run's commits, attributed to the migration. Set them aside with
+\`git stash -u\` first."
+  fi
+  if [ "$auto_yes" = "true" ]; then
+    echo "--yes was passed, so the run continues."
+  fi
+  echo ""
+}
 
 echo "Welcome to TS Migrate! :D
 
@@ -189,6 +230,8 @@ It is recommended that you take the following steps before continuing...
 
 If you need help or have feedback, please file an issue at https://github.com/ObieMunoz/ts-migrate/issues
 "
+
+preflight_git_tree
 
 if [ "$auto_yes" != "true" ]; then
   read -p "Continue? (y/N) " should_fetch_and_reset || {
