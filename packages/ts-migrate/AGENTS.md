@@ -211,6 +211,20 @@ installed, which is what declares `import.meta.env` and the asset imports
 (`*.svg`, `*.css`). For a webpack project, install `@types/webpack-env` so
 `require.context` and `module.hot` type; init says so when it is missing.
 A webpack project also gets `types/ts-migrate-assets.d.ts`, described below.
+A project whose modules are imported by name rather than by relative path
+(`import App from 'shared/App'`) gets the `paths` that make those resolve,
+read from its `jsconfig.json` when it has one and otherwise from
+`resolve.modules`/`resolve.alias` in a root `webpack.config.*`. It is always
+`paths` and never `baseUrl`, even when the source was a `baseUrl`, because
+TypeScript 6 reports that option as deprecated (TS5101) and 7 drops it; a
+`"*"` pattern does the same job on every supported compiler. The
+webpack config is parsed, never executed, so only entries written as string
+literals, `__dirname`, `path.join`/`path.resolve` or `const` bindings of
+those are translated. An entry whose target is computed at build time, does
+not exist on disk, sits outside `<folder>`, or is contradicted by a second
+config is left out and named in the log, because a `paths` entry pointing at
+the wrong directory type-checks while a suppression is visibly unfinished.
+Read that log: an alias it names is one you may want to add by hand.
 Before writing the config, init also names the type packages the project's
 dependencies imply and does not have installed: `@types/node`, and the
 `@types` for a declared test runner, with the install command for the

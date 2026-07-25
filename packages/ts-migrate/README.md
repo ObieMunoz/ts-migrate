@@ -675,6 +675,69 @@ file of your own. A file already at `types/ts-migrate-assets.d.ts` that
 ts-migrate did not write is left alone, and so is the whole step on a project
 whose tsconfig already exists, since `init` never touches one.
 
+## Absolute imports on a bundled project
+
+A bundled app usually imports its own modules by name rather than by relative
+path: `import { KeyCodes } from 'shared/constants/keyCodes'`, `import App from
+'@/App'`. webpack resolves those through `resolve.modules` and `resolve.alias`,
+and TypeScript resolves neither, so each one is a TS2307 that the migration
+turns into a suppression. On one measured project (`oldboyxx/jira_clone`, 149
+files, hand-rolled webpack 4) that was 180 of 609 suppressions, 30% of the run.
+
+`init` writes the tsconfig equivalent, `paths`, from two sources:
+
+- `jsconfig.json`, if the project has one. It is the project stating what its
+  absolute imports mean, so its `baseUrl` and `paths` are taken as they are.
+  This is also what a Create React App project has, since `react-scripts` keeps
+  its webpack config to itself.
+- `webpack.config.*` at the project root, read as text. Each `resolve.modules`
+  root becomes a `"*"` pattern and each `resolve.alias` entry becomes a `paths`
+  entry.
+
+```jsonc
+"paths": {
+  "*": ["./src/*"],
+  "@": ["./client/app"],
+  "@/*": ["./client/app/*"]
+}
+```
+
+It is `paths` and never `baseUrl`, including where the source was a `baseUrl`:
+TypeScript 6 reports that option as deprecated (TS5101, an error unless the
+config also sets `ignoreDeprecations`) and TypeScript 7 drops it. A `"*"`
+pattern does the same job on every supported line, and a specifier no pattern
+answers still falls through to `node_modules` either way.
+
+**The config is never executed.** Running a project's build config to read it
+would run arbitrary code from the project being migrated. It is parsed instead,
+and only the forms a resolve entry is actually written in are understood: string
+literals, `__dirname`, `path.join`/`path.resolve` over those, template literals,
+and `const` bindings of the same. `webpack.config.js` and
+`webpack.config.prod.js` are both read, and so is a `resolve` built up before
+the config is exported.
+
+That leaves plenty unreadable, and a wrong `paths` entry is worse than none:
+the suppression it replaces is visibly unfinished, while an entry pointing at
+the wrong directory resolves to the wrong module and type-checks. So an entry is
+written only when it cannot be wrong, and everything else is named in the log
+rather than guessed at:
+
+```
+Read "paths" for * from webpack.config.js, so this project's absolute imports
+resolve instead of collecting a suppression.
+Leaving resolve.alias "extensions" out of the generated tsconfig: its target is
+computed when the config runs.
+```
+
+An alias is left out when its target is computed at build time (`process.env`, a
+function argument, a required helper), when the target does not exist on disk,
+when it points outside the migration root, or when two configs disagree about
+it. A project with no `jsconfig.json` and no readable `resolve` gets exactly the
+tsconfig it got before, byte for byte.
+
+Aliases are not rewritten into relative imports. They are the project's own
+convention and it keeps them.
+
 # Measuring type debt
 
 A migration that ends with `tsc` exiting 0 says nothing about how much of the
