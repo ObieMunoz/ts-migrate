@@ -352,6 +352,80 @@ describe('init command', () => {
     warn.mockRestore();
   });
 
+  describe('type package preflight', () => {
+    /** A project whose install layout the preflight can read. */
+    function writeProject(packageJson: Record<string, unknown>, installedPackages: string[]) {
+      fs.writeFileSync(path.join(rootDir, 'package.json'), JSON.stringify(packageJson));
+      fs.writeFileSync(path.join(rootDir, 'pnpm-lock.yaml'), '');
+      installedPackages.forEach((name) => {
+        const dir = path.join(rootDir, 'node_modules', ...name.split('/'));
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name }));
+      });
+    }
+
+    const warnings = (warn: jest.SpyInstance) =>
+      warn.mock.calls.map((call) => call.join(' ')).join('\n');
+
+    it('names the type packages to install before anything is migrated', () => {
+      const warn = jest.spyOn(log, 'warn');
+      writeProject({ devDependencies: { jest: '^29.0.0' } }, ['jest']);
+
+      init({ rootDir, isExtendedConfig: false });
+
+      const logged = warnings(warn);
+      expect(logged).toContain('@types/node is not installed');
+      expect(logged).toContain('@types/jest is not installed');
+      expect(logged).toContain('Install: pnpm add -D @types/node @types/jest');
+      // The config is still written: this is advice, not a precondition.
+      expect(readConfig(rootDir).compilerOptions.strict).toBe(true);
+      warn.mockRestore();
+    });
+
+    it('says to add them to the "types" array it is about to pin', () => {
+      const warn = jest.spyOn(log, 'warn');
+      writeProject({ dependencies: { react: '^18.2.0' } }, ['react', '@types/react']);
+
+      init({ rootDir, isExtendedConfig: false });
+
+      expect(readConfig(rootDir).compilerOptions.types).toEqual(['react']);
+      expect(warnings(warn)).toContain(
+        'Then add each one to the "types" array in the generated tsconfig.json',
+      );
+      warn.mockRestore();
+    });
+
+    it('stays quiet when the type packages are installed', () => {
+      const warn = jest.spyOn(log, 'warn');
+      writeProject({ devDependencies: { jest: '^29.0.0' } }, ['jest', '@types/jest', '@types/node']);
+
+      init({ rootDir, isExtendedConfig: false });
+
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('stays quiet for a project with nothing installed', () => {
+      const warn = jest.spyOn(log, 'warn');
+      writeProject({ devDependencies: { jest: '^29.0.0' } }, []);
+
+      init({ rootDir, isExtendedConfig: false });
+
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('writes nothing extra for the extended config', () => {
+      const warn = jest.spyOn(log, 'warn');
+      writeProject({ devDependencies: { jest: '^29.0.0' } }, ['jest']);
+
+      init({ rootDir, isExtendedConfig: true });
+
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+  });
+
   describe('asset module declarations', () => {
     const assetsFile = () => path.join(rootDir, 'types', 'ts-migrate-assets.d.ts');
 
