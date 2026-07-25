@@ -651,6 +651,12 @@ yargs
           'declareUntypedModules',
           'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. Disable with --no-declareUntypedModules.',
         )
+        .boolean('casts')
+        .default('casts', false)
+        .describe(
+          'casts',
+          'Retry the `as any` assertions ts-migrate inserted: drop each one, re-check the file, and keep the removal only where no new error appears. Off by default, since it costs a validation pass per file holding one.',
+        )
         .string('typescript')
         .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
         .string('suppressionReportFile')
@@ -698,6 +704,7 @@ yargs
         bootstrap: args.bootstrap,
         projectEslint: args.projectEslint,
         declareUntypedModules: args.declareUntypedModules,
+        casts: args.casts,
         dryRun,
       });
 
