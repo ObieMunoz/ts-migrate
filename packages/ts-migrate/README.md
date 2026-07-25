@@ -528,9 +528,18 @@ your package.json already declares is left to the install, and nothing at all is
 named in a project whose dependencies are not installed, where every package
 would look missing. Everything else waits for the compiler.
 
-`migrate` and `reignore` detect this from the compiler diagnostics themselves and
-end the run with a report (`ts-migrate-full` holds it back until the very end,
-after the compile check):
+`migrate` and `reignore` print the same block with their opening banner, before
+the pipeline they can spend hours in. `init` only writes a config when the
+folder has none, so a project that is already part TypeScript, or any re-run,
+would otherwise hear this for the first time at the end of the run that
+suppressed those errors. Pass `--no-typesPreflight` to skip it;
+`ts-migrate-full` passes that flag to its migrate step whenever Step 1 wrote the
+tsconfig and already said it. The `"types"` array reminder follows the tsconfig
+the run reads, not the one `init` would have written.
+
+They also detect this from the compiler diagnostics themselves and end the run
+with a report (`ts-migrate-full` holds it back until the very end, after the
+compile check):
 
 ```
 Type definition recommendations:
