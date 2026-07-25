@@ -45,6 +45,7 @@ process.exit(exitCode);
 | Name | Description |
 | ---- | ----------- |
 | [add-conversions](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/add-conversions.ts) | Add conversions to `any` (`$TSFixMe`) in the case of type errors. |
+| [convert-commonjs](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/convert-commonjs.ts) | Rewrite top level `require` and `module.exports` into TypeScript module syntax, so imports carry types across files instead of `any`. Emits the interop pair `import x = require('m')` / `export = x` by default, and named exports (`import { a } from 'm'`, `export const a`) where a named import has to reach them. `{ esm: true }` forces `import x from 'm'` / `export default`, which is also what a file already using ESM gets. Dynamic, conditional and non top level forms are left alone. |
 | [declare-missing-class-properties](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/declare-missing-class-properties.ts) | Declare missing class properties. |
 | [eslint-fix](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/eslint-fix.ts) | Run eslint fix to fix any eslint violations that happened along the way. |
 | [explicit-any](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/explicit-any.ts) | Annotate variables with `any` (`$TSFixMe`) in the case of an implicit any violation. |

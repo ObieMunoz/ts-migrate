@@ -232,13 +232,27 @@ JavaScript, so a `bin` pointing at it stays valid and needs no notice.
 ### `ts-migrate migrate <folder> [flags]`
 
 Runs the codemod pipeline on an already-renamed project: re-points stale
-relative imports, converts React propTypes to types, infers types from usage,
+relative imports, rewrites CommonJS `require`/`module.exports` into TypeScript
+module syntax, converts React propTypes to types, infers types from usage,
 annotates remaining implicit `any`s, and suppresses residual compiler errors
 with `@ts-expect-error` so the project compiles. Only TypeScript files are
 migration targets. `.js`, `.jsx`, `.mjs` and `.cjs` are never edited, even
 when a tsconfig with `allowJs` pulls them in; they stay in the program and
 still type the files that import them. Run `rename` on a file to make it
 migratable.
+
+The CommonJS step matters on vanilla Node projects: left alone, `require()`
+returns `any` and every import boundary in the project loses its types. It
+emits `import x = require('m')` and `export = x` by default, which compile to
+the same CommonJS and need no `esModuleInterop`, and named exports where a
+named import has to reach them (`const { a } = require('m')`,
+`module.exports = { a, b }`, `exports.a = ...`). Named exports add the
+non-enumerable `__esModule` marker to the emitted module, which only a consumer
+default-importing the whole module object through Babel-style interop can
+observe. A file that is already ESM gets `import x from 'm'` and
+`export default`. Dynamic, conditional and non top level forms are left for
+ts-ignore, and the run reports each file it left alone and why. Pass
+`--exclude-plugin convert-commonjs` to keep CommonJS syntax as it is.
 
 - `--sources <glob>` (`-s`, repeatable): migrate only a subset. Quote globs.
   Ambient `.d.ts` files matched by the tsconfig `include` (vite-env.d.ts,
