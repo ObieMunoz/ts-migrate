@@ -6,8 +6,7 @@
     "test": "tests"
   },
   "bin": {
-    "ts-migrate": "build/cli.js",
-    "ts-migrate-full": "bin/ts-migrate-full.sh"
+    "ts-migrate": "build/cli.js"
   },
   "keywords": [
     "ts-migrate",
@@ -17,7 +16,6 @@
   ],
   "files": [
     "build",
-    "bin",
     "package.json",
     "README.md",
     "AGENTS.md",

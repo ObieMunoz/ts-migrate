@@ -7,19 +7,19 @@ docs live in this package's README.md.
 
 ## Critical facts
 
-1. **The package is scoped.** A bare `npx ts-migrate ...` or
-   `npx ts-migrate-full ...` downloads the unmaintained upstream `ts-migrate`
-   package (TypeScript 4 era) instead of this fork. Either install
-   `@obiemunoz/ts-migrate` as a devDependency first, or pass `-p` on every npx
-   call: `npx -p @obiemunoz/ts-migrate ts-migrate full <folder>`.
+1. **The package is scoped.** A bare `npx ts-migrate ...` downloads the
+   unmaintained upstream `ts-migrate` package (TypeScript 4 era) instead of
+   this fork. Either install `@obiemunoz/ts-migrate` as a devDependency first,
+   or pass `-p` on every npx call:
+   `npx -p @obiemunoz/ts-migrate ts-migrate full <folder>`.
    `ts-migrate --version` (or `-v`) prints the installed version; the upstream
    CLI has no version flag and errors, so this is a quick check for which
    package npx fetched.
 2. **`ts-migrate full` prompts before starting.** Pass `--yes` to skip the
    prompts. Without `--yes` and without stdin, the run exits nonzero before
-   doing anything. `ts-migrate-full` is the same command under its original
-   name, kept so existing scripts and docs keep working; every flag below
-   applies to both spellings.
+   doing anything. There is no separate `ts-migrate-full` bin; it was removed
+   once the pipeline became a command, and `ts-migrate full <folder>` takes the
+   same arguments it did.
 3. **`ts-migrate full` creates git commits** after each step by default. Pass
    `--no-commit` to leave every change in the working tree instead — do this
    when you manage commits yourself or the target is not a git repository.
@@ -184,8 +184,7 @@ Afterwards, update the project plumbing the tool deliberately does not touch:
 Runs the whole pipeline: init tsconfig → rename JS/JSX to TS/TSX → migrate →
 verify with `tsc --noEmit`. Each step is the command of the same name, run in
 one process against one compiler, so the pipeline reports exactly what running
-the four commands by hand reports. `ts-migrate-full <folder>` is the same
-command under its original name.
+the four commands by hand reports.
 
 Before Step 1 it names a `<folder>` that is not in a git repository once and
 then runs without commits, and reports anything uncommitted in `<folder>`.

@@ -43,8 +43,8 @@ export interface FullParams {
   rootDir: string;
   /**
    * The folder as the user wrote it. Every message names this rather than the
-   * resolved path, and the script this replaces never normalized it either, so
-   * `./src`, `src` and `src/` each read back the way they were typed.
+   * resolved path, and the shell script this replaced never normalized it
+   * either, so `./src`, `src` and `src/` each read back the way they were typed.
    */
   folder: string;
   /** The compiler this process was redirected at. */
@@ -263,13 +263,13 @@ All done! Your project compiles with TypeScript now.`);
     const folderName = path.basename(folder);
     log.info(`Welcome to TS Migrate! :D
 
-This script will migrate a frontend folder to a compiling (or almost compiling) TS project.
+This command will migrate a frontend folder to a compiling (or almost compiling) TS project.
 
 It is recommended that you take the following steps before continuing...
 
 1. Make sure you have a clean git slate.
    Run \`git status\` to make sure you have no local changes that may get lost.
-   Check in or stash your changes, then re-run this script.
+   Check in or stash your changes, then re-run this command.
 
 2. Check out a new branch for the migration.
    For example, \`git checkout -b ${user}--ts-migrate\` if you're migrating several folders or

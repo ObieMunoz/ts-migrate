@@ -18,14 +18,13 @@ Or [pnpm](https://pnpm.io):
 
 `pnpm add -D @obiemunoz/ts-migrate`
 
-The CLI command is still named `ts-migrate`, and `ts-migrate-full` is still
-installed as an alias of `ts-migrate full`. Because the package is scoped,
+The CLI command is still named `ts-migrate`. Because the package is scoped,
 one-off `npx` runs need the `-p @obiemunoz/ts-migrate` flag to tell npx which
-package provides those commands: a bare `npx ts-migrate ...` would download the
+package provides it: a bare `npx ts-migrate ...` would download the
 unmaintained upstream `ts-migrate` package instead. The pnpm equivalent is
 `pnpm --package=@obiemunoz/ts-migrate dlx ts-migrate full ...`.
 If you've installed `@obiemunoz/ts-migrate` as a devDependency of your project,
-the commands are already in `node_modules/.bin`, so `npx ts-migrate full <folder>`,
+the command is already in `node_modules/.bin`, so `npx ts-migrate full <folder>`,
 `pnpm ts-migrate full <folder>`, or a package.json script all resolve to this fork.
 
 # Usage
@@ -35,7 +34,7 @@ Migrate an entire project like this:
 ```sh
 npx -p @obiemunoz/ts-migrate ts-migrate full <folder>
 ```
-The `full` command runs `init`, `rename`, `migrate` and a closing `tsc --noEmit` check in that order, in one process against one compiler, so it reports exactly what running those commands by hand reports. It asks for confirmation before it starts and will perform a `git add` and `git commit` after each major step. For unattended runs — scripts, CI, AI coding agents — pass `--yes` to skip the prompts and `--no-commit` to leave the changes uncommitted in the working tree. `ts-migrate-full <folder>` is the same command under its original name, so existing scripts keep working.
+The `full` command runs `init`, `rename`, `migrate` and a closing `tsc --noEmit` check in that order, in one process against one compiler, so it reports exactly what running those commands by hand reports. It asks for confirmation before it starts and will perform a `git add` and `git commit` after each major step. For unattended runs — scripts, CI, AI coding agents — pass `--yes` to skip the prompts and `--no-commit` to leave the changes uncommitted in the working tree.
 
 Commit or stash the folder you are migrating before you start. The run lists anything uncommitted there before Step 1, because the rename and migrate steps rewrite those files whether or not commits are enabled, and with commits enabled `git add .` puts them in the migration's commits too. Without `--yes` the list sits above the confirmation prompt; with `--yes` it is a warning and the run continues.
 
@@ -62,6 +61,8 @@ $ npx -p @obiemunoz/ts-migrate ts-migrate --help
 Usage: ts-migrate <command> [options]
 
 Commands:
+  ts-migrate full <folder>           Run the whole pipeline: init, rename, migrate, then verify with
+                                     tsc --noEmit
   ts-migrate init <folder>           Initialize tsconfig.json file in <folder>
   ts-migrate init:extended <folder>  Initialize tsconfig.json in <folder> extending a shared base
                                      config
@@ -80,6 +81,7 @@ Options:
 
 Examples:
   ts-migrate --help                             Show help
+  ts-migrate full frontend/foo                  Run the whole pipeline over frontend/foo
   ts-migrate migrate --help                     Show help for the migrate command
   ts-migrate init frontend/foo                  Create tsconfig.json file at
                                                 frontend/foo/tsconfig.json
