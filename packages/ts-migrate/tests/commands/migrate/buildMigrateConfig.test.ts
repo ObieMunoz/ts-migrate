@@ -128,6 +128,19 @@ describe('buildMigrateConfig', () => {
     }
   });
 
+  it('gives the jsdoc plugin its own flags', () => {
+    const { config } = buildMigrateConfig({
+      plugin: 'jsdoc',
+      typeMap: '{"Object":"any"}',
+      annotateReturns: true,
+    });
+    expect(config.plugins[0].options).toEqual({
+      anyAlias: undefined,
+      typeMap: { Object: 'any' },
+      annotateReturns: true,
+    });
+  });
+
   it('has options for every plugin --plugin accepts', () => {
     availablePlugins.forEach(({ name }) => {
       const { config } = buildMigrateConfig({ plugin: name });
