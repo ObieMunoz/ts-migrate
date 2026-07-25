@@ -1,4 +1,5 @@
 import { execFileSync } from 'child_process';
+import os from 'os';
 import path from 'path';
 import fs from 'fs';
 import {
@@ -13,6 +14,7 @@ import {
   TypesPackageDetector,
 } from '@obiemunoz/ts-migrate-plugins';
 import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
+import init from '../../../commands/init';
 import { createGitignoreMigrationFilter } from '../../../utils/gitignore';
 import { createDir, copyDir, deleteDir, getDirData } from '../../test-utils';
 
@@ -324,6 +326,40 @@ export const messagePropTypes = {
       expect(fs.readFileSync(path.resolve(rootDir, 'app.ts'), 'utf8')).toMatch(
         /@ts-expect-error TS\(7016\) FIXME/,
       );
+    }, 10000);
+  });
+
+  describe('under the tsconfig init generates', () => {
+    // An OS temp dir rather than one inside this repo: init scans the project
+    // directory and its ancestors for node_modules/@types, and the workspace's
+    // own @types packages would leak into the generated config.
+    let projectDir: string;
+
+    beforeEach(() => {
+      projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ts-migrate-generated-'));
+    });
+
+    afterEach(() => {
+      deleteDir(projectDir);
+    });
+
+    it('types a JSON import instead of suppressing it', async () => {
+      fs.writeFileSync(
+        path.resolve(projectDir, 'config.json'),
+        JSON.stringify({ retries: 3 }, null, 2),
+      );
+      const sourceText = `import config from './config.json';
+
+export const retries: number = config.retries;
+`;
+      fs.writeFileSync(path.resolve(projectDir, 'app.ts'), sourceText);
+      init({ rootDir: projectDir, isExtendedConfig: false });
+
+      const config = new MigrateConfig().addPlugin(tsIgnorePlugin, { messagePrefix: 'FIXME' });
+      const { exitCode } = await migrate({ rootDir: projectDir, config });
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(path.resolve(projectDir, 'app.ts'), 'utf8')).toBe(sourceText);
     }, 10000);
   });
 });

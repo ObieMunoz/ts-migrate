@@ -158,7 +158,9 @@ verify with `tsc --noEmit`.
 ### `ts-migrate init <folder>` / `ts-migrate init:extended <folder>`
 
 Writes a migration-friendly `tsconfig.json` in `<folder>` (no-op if one
-exists). Installed `@types` packages are pinned in a `types` array so that
+exists). `resolveJsonModule` is on, so JSON imports type as their contents
+instead of collecting a suppression each.
+Installed `@types` packages are pinned in a `types` array so that
 TypeScript 5 (which loads `node_modules/@types` automatically) and
 TypeScript 6 (which does not) check the project identically; add new
 `@types` packages to that array after installing them. Gitignored
