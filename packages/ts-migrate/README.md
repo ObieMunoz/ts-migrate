@@ -135,6 +135,19 @@ An unknown plugin name errors and lists the valid names. Excluding
 `infer-types` is equivalent to `--no-inferTypes`. `ts-migrate-full` forwards
 the flag to the migrate step, like any other migrate option.
 
+`--plugin <name>` runs one plugin on its own instead of the pipeline. It takes
+a single name; to run the pipeline without some of its plugins, use
+`--exclude-plugin`. The plugin receives the same options it would receive in
+the pipeline, so a plugin flag applies the same way in both:
+
+```sh
+npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> \
+  --plugin member-accessibility --defaultAccessibility private
+```
+
+A flag the named plugin has no option for is reported and ignored, rather than
+silently doing nothing.
+
 # Which TypeScript ts-migrate runs
 
 Every suppression a migration writes comes from what its compiler reports, so
