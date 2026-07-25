@@ -22,7 +22,9 @@ function chooseTypeScript(): TypeScriptDecision {
     });
   } catch (err) {
     // An explicit --typescript that names no compiler: falling back would
-    // reintroduce the version skew the flag was passed to avoid.
+    // reintroduce the version skew the flag was passed to avoid. Spelled out
+    // rather than sharing errorMessage, whose package loads a compiler at
+    // module scope and so cannot be imported before the redirect below.
     log.error(err instanceof Error ? err.message : err);
     return process.exit(1);
   }

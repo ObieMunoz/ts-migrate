@@ -4,7 +4,12 @@ import path from 'path';
 import { Worker } from 'worker_threads';
 import type { loadESLint } from 'eslint';
 import log from 'updatable-log';
-import { fileNoticeReporter, Plugin, PluginFileNotice } from '@obiemunoz/ts-migrate-server';
+import {
+  errorMessage,
+  fileNoticeReporter,
+  Plugin,
+  PluginFileNotice,
+} from '@obiemunoz/ts-migrate-server';
 
 // Either the flat-config or legacy engine; both expose the `lintText` API.
 type AnyESLint = InstanceType<Awaited<ReturnType<typeof loadESLint>>>;
@@ -179,7 +184,7 @@ function resolveESLintEngine(
   try {
     projectModule = require(project.packageDir);
   } catch (error) {
-    return refuse(`could not be loaded (${error instanceof Error ? error.message : error})`);
+    return refuse(`could not be loaded (${errorMessage(error)})`);
   }
 
   if (typeof projectModule.loadESLint !== 'function') {
@@ -368,8 +373,9 @@ function typeScriptPackageDir(): string | undefined {
 }
 
 // The worker body is inlined so it survives every way this plugin is loaded
-// (compiled dist, ts-jest, and the transpile-to-temp-dir test harness). Keep
-// its lint loop in sync with fixToStable above.
+// (compiled dist, ts-jest, and the transpile-to-temp-dir test harness). It is
+// evaluated on its own, so it can reach nothing from this module's scope: only
+// require and workerData. Keep its lint loop in sync with fixToStable above.
 const WORKER_SOURCE = `
 const { parentPort, workerData } = require('worker_threads');
 
@@ -620,7 +626,7 @@ async function tryPool(
   try {
     result = await runJobInPool(fileName, text);
   } catch (poolError) {
-    const message = poolError instanceof Error ? poolError.message : String(poolError);
+    const message = errorMessage(poolError);
     reportNotice({
       reason: `lint workers unavailable (${message}); linted in-process`,
       recovered: true,
@@ -724,8 +730,7 @@ function lintFailureNotice(error: unknown): PluginFileNotice {
   // ESLint appends "Occurred while linting <file>:<line>" and the rule id to
   // the message; the first line is the cause, and the rest is per-occurrence
   // detail the grouped report carries anyway.
-  const message = error instanceof Error ? error.message : String(error);
-  const reason = message.split('\n')[0].trim();
+  const reason = errorMessage(error).split('\n')[0].trim();
   return {
     reason,
     ruleId: ruleIdOf(error),

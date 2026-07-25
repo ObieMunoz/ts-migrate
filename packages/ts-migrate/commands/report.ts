@@ -1,4 +1,5 @@
 import log from 'updatable-log';
+import { errorMessage } from '@obiemunoz/ts-migrate-server';
 import { formatTypeDebtReport, scanTypeDebt } from '../utils/typeDebt';
 
 interface ReportParams {
@@ -14,7 +15,7 @@ export default function report({ rootDir, folder, json, gitignore }: ReportParam
   try {
     debt = scanTypeDebt(rootDir, gitignore);
   } catch (err) {
-    log.error(err instanceof Error ? err.message : err);
+    log.error(errorMessage(err));
     return -1;
   }
 
