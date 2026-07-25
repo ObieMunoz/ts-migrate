@@ -36,6 +36,15 @@ describe('buildMigrateConfig', () => {
     expect(names).toContain('detect-types-packages');
   });
 
+  it('runs react-hook-types after react-props and before the inference stage', () => {
+    const names = pluginNames(buildMigrateConfig({}).config);
+    expect(names.indexOf('react-hook-types')).toBeGreaterThan(names.indexOf('react-props'));
+    expect(names.indexOf('react-hook-types')).toBeLessThan(names.indexOf('infer-types'));
+    expect(names.indexOf('react-hook-types')).toBeLessThan(names.indexOf('ts-ignore'));
+    expect(pluginOptions(buildMigrateConfig({ aliases: 'tsfixme' }).config, 'react-hook-types'))
+      .toEqual({ anyAlias: '$TSFixMe' });
+  });
+
   it('runs the suppression explainer immediately before ts-ignore', () => {
     const { config, suppressionExplainer } = buildMigrateConfig({});
     const names = pluginNames(config);
