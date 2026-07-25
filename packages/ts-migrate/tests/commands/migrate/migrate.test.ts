@@ -15,6 +15,7 @@ import {
 } from '@obiemunoz/ts-migrate-plugins';
 import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
 import init from '../../../commands/init';
+import buildMigrateConfig from '../../../commands/migrate';
 import { createGitignoreMigrationFilter } from '../../../utils/gitignore';
 import { createDir, copyDir, deleteDir, getDirData } from '../../test-utils';
 
@@ -327,6 +328,52 @@ export const messagePropTypes = {
         /@ts-expect-error TS\(7016\) FIXME/,
       );
     }, 10000);
+  });
+
+  describe('a project whose tsconfig sets allowJs', () => {
+    const shapesText = `import PropTypes from 'prop-types';
+
+export const itemShape = PropTypes.shape({
+  id: PropTypes.number.isRequired,
+  label: PropTypes.string,
+});
+`;
+    const featureText = `import { itemShape } from '../legacy/shapes';
+
+export const shape = itemShape;
+`;
+
+    beforeEach(() => {
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            allowJs: true,
+            allowSyntheticDefaultImports: true,
+            module: 'commonjs',
+            target: 'es2019',
+            noEmit: true,
+            strict: true,
+            types: [],
+          },
+          include: ['.'],
+        }),
+      );
+      fs.mkdirSync(path.resolve(rootDir, 'legacy'));
+      fs.writeFileSync(path.resolve(rootDir, 'legacy/shapes.js'), shapesText);
+      fs.mkdirSync(path.resolve(rootDir, 'feature'));
+      fs.writeFileSync(path.resolve(rootDir, 'feature/index.ts'), featureText);
+    });
+
+    it('runs the default pipeline without writing TypeScript into the .js file', async () => {
+      const { config } = buildMigrateConfig({ inferTypes: false });
+
+      const { exitCode, updatedSourceFiles } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(path.resolve(rootDir, 'legacy/shapes.js'), 'utf8')).toBe(shapesText);
+      expect([...updatedSourceFiles]).not.toContain(path.resolve(rootDir, 'legacy/shapes.js'));
+    }, 30000);
   });
 
   describe('under the tsconfig init generates', () => {
