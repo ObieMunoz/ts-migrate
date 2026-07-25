@@ -106,6 +106,17 @@ describe('the ts-migrate-full compiler preflight', () => {
     expect(output).toContain('Step 1 of 4');
   });
 
+  it('does not guess when the custom tsc reports no version', () => {
+    const wrapper = path.join(installDir, 'tsc-wrapper');
+    fs.writeFileSync(wrapper, '#!/usr/bin/env bash\nexit 0\n');
+    fs.chmodSync(wrapper, 0o755);
+
+    const { output } = runFull(['y', wrapper]);
+
+    expect(output).not.toContain('Continue anyway?');
+    expect(output).toContain('Step 1 of 4');
+  });
+
   it('has nothing to compare when the check runs the migration compiler', () => {
     const { output } = runFull(['y', '']);
 

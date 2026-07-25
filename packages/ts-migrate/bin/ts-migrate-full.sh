@@ -111,8 +111,10 @@ function preflight_checker_skew() {
   if [ ! -x "$tsc_path" ]; then
     return
   fi
+  # `tsc -v` prints one line, "Version 5.7.3". A wrapper that prints something
+  # else leaves the versions unknown, and an unknown pair is not compared.
   local check_version
-  check_version=$("$tsc_path" -v 2>/dev/null | awk 'NF { print $NF }')
+  check_version=$("$tsc_path" -v 2>/dev/null | sed -n 's/^Version \([0-9][^ ]*\)$/\1/p' | head -1)
   if [ -z "$check_version" ]; then
     return
   fi
