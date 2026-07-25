@@ -335,8 +335,10 @@ Flat versus legacy config is detected separately, from the presence of an
 The search starts at the folder being migrated and walks up, and ESLint is
 rooted there too, so `ts-migrate migrate packages/app` run from a repository
 root uses `packages/app`'s config, and still finds one at the repository root
-when the package has none. The run prints the config file it settled on next
-to the engine line:
+when the package has none. The working directory is not searched: a config
+above it but not above the folder being migrated belongs to another project,
+and ESLint rooted at the folder would never load it. The run prints the config
+file it settled on next to the engine line:
 
 ```
 [eslint-fix] ESLint 9.39.4 (project: /repo/node_modules/eslint)
@@ -396,7 +398,11 @@ generated `"exclude"` so the project's own `tsc` and editors skip them too.
 Detection, in order of confidence:
 
 - Known config names next to a package.json: `*.config.js`, `*.conf.js`,
-  `gulpfile.js`, `Gruntfile.js`, and the `.*rc.js` family.
+  `gulpfile.js`, `Gruntfile.js`, and the `.*rc.js` family. The suffix is open,
+  so a config split per environment counts too:
+  `webpack.config.production.js` and `webpack.dev.config.js` are detected the
+  same way `webpack.config.js` is. A file named plainly `config.js` is not a
+  config name; it migrates.
 - Paths a package.json script runs with `node`, as in
   `"build": "node scripts/build.js"`. (`main` and `bin` are not evidence:
   after a migration those should point at build output.)

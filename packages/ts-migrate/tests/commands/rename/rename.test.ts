@@ -291,6 +291,30 @@ describe('rename command', () => {
       });
     });
 
+    it('keeps a config split per environment, and the script that names it', () => {
+      const writeFile = (relPath: string, text: string) => {
+        const filePath = path.resolve(rootDir, relPath);
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, text);
+      };
+      const build = 'rm -rf build && webpack --config webpack.config.production.js --progress';
+      writeFile('tsconfig.json', JSON.stringify({ include: ['./**/*'] }));
+      writeFile('package.json', JSON.stringify({ scripts: { build } }));
+      writeFile('webpack.config.js', 'module.exports = {};\n');
+      writeFile('webpack.config.production.js', 'module.exports = {};\n');
+      writeFile('src/app.js', 'const a = 1;\n');
+
+      const result = rename({ rootDir });
+
+      expect(sortedRelativeTo(rootDir, result?.renamedFiles ?? null)).toEqual([
+        { oldFile: `src${path.sep}app.js`, newFile: `src${path.sep}app.ts` },
+      ]);
+      expect(fs.existsSync(path.resolve(rootDir, 'webpack.config.production.js'))).toBe(true);
+      expect(
+        JSON.parse(fs.readFileSync(path.resolve(rootDir, 'package.json'), 'utf-8')).scripts.build,
+      ).toBe(build);
+    });
+
     it('repoints it once --no-bootstrap renames the target', () => {
       setUpBootstrapProject();
 

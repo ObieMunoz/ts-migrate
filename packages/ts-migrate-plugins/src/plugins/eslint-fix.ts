@@ -64,18 +64,21 @@ interface ESLintConfigChoice {
 
 /**
  * The migration root is the project, and `process.cwd()` need not be inside it
- * (`ts-migrate migrate packages/app` from a repository root). Discovery starts
- * at the root so a config under it is visible, and the engine is rooted there
- * too, since flat config lookup starts at the engine's `cwd`. The walk from
- * the working directory stays as a fallback for a root that sits outside it.
+ * (`ts-migrate migrate packages/app` from a repository root). Discovery walks
+ * up from the root, and so does the engine's own flat config lookup, since the
+ * engine is rooted there: one search, so the config the banner names is the
+ * config that lints. A config reachable only from the working directory is
+ * some other project's, and an engine rooted at the migration root would never
+ * load it.
  */
 function resolveESLintConfig(rootDir: string): ESLintConfigChoice {
-  const configFile = findFlatConfig(rootDir) ?? findFlatConfig(process.cwd());
+  const cwd = path.resolve(rootDir);
+  const configFile = findFlatConfig(cwd);
   const override = process.env.ESLINT_USE_FLAT_CONFIG;
   return {
     useFlatConfig: override != null ? override !== 'false' : configFile != null,
     configFile,
-    cwd: path.resolve(rootDir),
+    cwd,
     fromEnv: override != null,
   };
 }

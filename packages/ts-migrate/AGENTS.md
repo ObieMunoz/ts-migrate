@@ -42,7 +42,9 @@ docs live in this package's README.md.
    files they require) are kept out of rename so the build still boots;
    `init` writes them into the generated tsconfig's `exclude`. Detection
    covers every extension the compiler reads as JavaScript: `.js`, `.jsx`,
-   `.cjs`, `.mjs`. Runs log every kept file with its evidence. Pass
+   `.cjs`, `.mjs`, and a config split per environment
+   (`webpack.config.production.js`) counts as a config the same way
+   `webpack.config.js` does. Runs log every kept file with its evidence. Pass
    `--no-bootstrap` to rename them anyway, e.g. when the project loads
    TypeScript configs through ts-node or tsx. In `migrate` and `reignore`
    the flag only decides whether those files are loaded into the program;
@@ -77,8 +79,10 @@ docs live in this package's README.md.
    to `migrate` or `reignore` to use the bundled one regardless.
 10. **The ESLint config is resolved from `<folder>`, not the working
     directory**, so `ts-migrate migrate packages/app` from a repository root
-    picks up `packages/app`'s own config and falls back to one above it. The
-    config file is printed next to the engine line, for example
+    picks up `packages/app`'s own config and falls back to one above it. A
+    config that sits above the working directory but not above `<folder>` is
+    another project's and is not used; that run goes to the eslintrc engine.
+    The config file is printed next to the engine line, for example
     `[eslint-fix] flat config: /repo/packages/app/eslint.config.js`. If that
     line names no file, or names one you did not expect, the lint pass is
     running against the wrong rules.

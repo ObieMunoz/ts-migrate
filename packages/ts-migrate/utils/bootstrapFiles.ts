@@ -4,6 +4,7 @@ import log from 'updatable-log';
 import ts from 'typescript';
 import { collectModuleSpecifiers } from '@obiemunoz/ts-migrate-plugins';
 import { sampleIgnoredPaths } from './gitignore';
+import { isConfigName } from './configNames';
 import { JS_EXTENSION_REGEX } from './jsExtensions';
 
 export interface BootstrapFile {
@@ -43,13 +44,7 @@ export function isKnownConfigName(file: string): boolean {
   const base = path.basename(file).toLowerCase();
   if (!JS_EXTENSION_REGEX.test(base)) return false;
   const name = base.replace(JS_EXTENSION_REGEX, '');
-  return (
-    name.endsWith('.config') ||
-    name.endsWith('.conf') ||
-    name === 'gulpfile' ||
-    name === 'gruntfile' ||
-    /^\..*rc$/.test(name)
-  );
+  return isConfigName(name) || name === 'gulpfile' || name === 'gruntfile' || /^\..*rc$/.test(name);
 }
 
 const SCRIPT_SEPARATORS = new Set(['&&', '||', ';', '|', '&']);

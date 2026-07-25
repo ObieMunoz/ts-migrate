@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { isToolConfigFile } from './configNames';
 
 export type BundlerName = 'vite' | 'webpack';
 
@@ -25,8 +26,6 @@ const BUNDLER_DEPENDENCIES: Record<BundlerName, string[]> = {
   webpack: ['webpack', 'react-scripts'],
 };
 
-const CONFIG_EXTENSION_REGEX = /\.[cm]?[jt]sx?$/;
-
 const DEPENDENCY_FIELDS: Array<keyof BundlerPackageJson> = ['devDependencies', 'dependencies'];
 
 function dependencyEvidence(
@@ -41,17 +40,6 @@ function dependencyEvidence(
       .filter((dependency) => dependency in dependencies)
       .map((dependency) => `"${dependency}" in ${field}`);
   })[0];
-}
-
-/**
- * A config file the bundler loads by name, at the project root. The suffix is
- * open (`webpack.config.dev.js`, `vite.config.mts`) because both tools take
- * the config path as an argument and projects split theirs per environment.
- */
-function configFile(entries: string[], name: BundlerName): string | undefined {
-  return entries.find(
-    (entry) => entry.startsWith(`${name}.config.`) && CONFIG_EXTENSION_REGEX.test(entry),
-  );
 }
 
 /**
@@ -73,7 +61,7 @@ export function detectBundler(
   const detections = BUNDLERS.map((name): BundlerDetection | null => {
     const declared = dependencyEvidence(packageJson, name);
     if (declared !== undefined) return { name, evidence: declared };
-    const file = configFile(entries, name);
+    const file = entries.find((entry) => isToolConfigFile(entry, name));
     return file !== undefined ? { name, evidence: file } : null;
   }).filter((detection): detection is BundlerDetection => detection !== null);
   return detections[0] ?? null;
