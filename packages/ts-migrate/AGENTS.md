@@ -205,7 +205,10 @@ Entry points are reported, not rewritten. `main`, `module`, `browser`,
 the outside, and after a TypeScript conversion they need to name build
 output rather than the renamed source, which the rename cannot produce.
 Every one that still names a renamed file is logged, and listed in the
-JSON summary, for you to repoint once a build step exists.
+JSON summary, for you to repoint once a build step exists. An entry point
+that names a build system file is absent from both lists, because that file
+was never renamed: `"start": "node src/cli.js"` keeps `src/cli.js` as
+JavaScript, so a `bin` pointing at it stays valid and needs no notice.
 
 ### `ts-migrate migrate <folder> [flags]`
 
