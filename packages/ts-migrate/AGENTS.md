@@ -603,6 +603,11 @@ need both summaries.
 
 ## Exit codes and failure modes
 
+- A `<folder>` that does not exist, or that is a file rather than a directory,
+  exits `255` from every command that takes one and prints
+  `<abs path> does not exist` or `<abs path> is not a directory`. The path is
+  the one the argument resolved to, so a relative path that landed somewhere
+  unexpected shows where. Nothing is read or written first.
 - A name that is not a command exits `1` and prints `Unknown command: <name>`,
   or `Did you mean <command>?` when it is close to a real one. An argument past
   the ones a command declares is reported the same way, so
