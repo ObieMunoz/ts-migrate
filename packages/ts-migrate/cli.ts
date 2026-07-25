@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
 import log from 'updatable-log';
-import yargs, { Argv as YargsArgv } from 'yargs';
+import yargs from 'yargs';
 
 import {
   formatGlobalDeclarationsReport,
@@ -47,15 +47,6 @@ import {
   scanTypeDebt,
   scanTypeDebtForFiles,
 } from './utils/typeDebt';
-
-// The runtime has shipped strictCommands since yargs 15.4, but the
-// @types/yargs this workspace resolves predates it. Merges as an overload with
-// a newer @types/yargs that declares it.
-declare module 'yargs' {
-  interface Argv<T> {
-    strictCommands(enabled?: boolean): YargsArgv<T>;
-  }
-}
 
 const BUG_REPORT_URL = 'https://github.com/ObieMunoz/ts-migrate/issues';
 
@@ -284,7 +275,7 @@ yargs
     },
   )
   .command(
-    'rename [options] <folder>',
+    'rename <folder>',
     'Rename files in folder from JS/JSX to TS/TSX',
     (cmd) =>
       cmd
@@ -345,7 +336,7 @@ yargs
     },
   )
   .command(
-    'migrate [options] <folder>',
+    'migrate <folder>',
     'Fix TypeScript errors, using codemods',
     (cmd) =>
       cmd
@@ -642,7 +633,7 @@ yargs
     },
   )
   .command(
-    'reignore [options] <folder>',
+    'reignore <folder>',
     'Re-run ts-ignore on a project',
     (cmd) =>
       cmd
@@ -776,7 +767,7 @@ yargs
     },
   )
   .command(
-    'report [options] <folder>',
+    'report <folder>',
     'Print per-file counts of suppression comments and any-type annotations',
     (cmd) =>
       cmd
@@ -798,7 +789,7 @@ yargs
     },
   )
   .command(
-    'check [options] <folder>',
+    'check <folder>',
     'Compare suppression and any counts against a committed baseline',
     (cmd) =>
       cmd

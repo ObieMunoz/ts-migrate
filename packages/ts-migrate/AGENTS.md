@@ -544,7 +544,9 @@ need both summaries.
 ## Exit codes and failure modes
 
 - A name that is not a command exits `1` and prints `Unknown command: <name>`,
-  or `Did you mean <command>?` when it is close to a real one. Options are not
+  or `Did you mean <command>?` when it is close to a real one. An argument past
+  the ones a command declares is reported the same way, so
+  `ts-migrate report <folder> extra` exits `1` naming `extra`. Options are not
   checked the same way: one the command does not declare is accepted and
   ignored, because `ts-migrate-full` forwards a single argument list to both
   `rename` and `migrate` and the two accept different flags.

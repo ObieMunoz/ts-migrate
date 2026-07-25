@@ -62,10 +62,30 @@ describe('command names', () => {
     expect(status).toBe(0);
   }, 30000);
 
+  it('rejects an argument past the ones a command declares', () => {
+    const { status, output } = runCli(['report', projectDir, 'stray']);
+
+    expect(output).toContain('Unknown command');
+    expect(output).toContain('stray');
+    expect(status).toBe(1);
+  }, 30000);
+
   // ts-migrate-full forwards one argument list to both rename and migrate, and
   // the two accept different flags, so an unrecognized option is not an error.
   it('accepts an option the command does not declare', () => {
     const { status } = runCli(['report', projectDir, '--notAFlag']);
+
+    expect(status).toBe(0);
+  }, 30000);
+
+  // The value of such an option is the option's, not a second positional.
+  it('accepts an option the command does not declare with a value', () => {
+    const { status } = runCli([
+      'report',
+      projectDir,
+      '--typesReportFile',
+      path.join(projectDir, 'types-report.json'),
+    ]);
 
     expect(status).toBe(0);
   }, 30000);
@@ -88,6 +108,17 @@ describe('help output off a terminal', () => {
     expect(output).toContain('ts-migrate');
     expect(status).toBe(0);
   }, 30000);
+
+  it.each([['rename'], ['migrate'], ['reignore'], ['report'], ['check']])(
+    'prints only the positionals %s takes in its usage line',
+    (name) => {
+      const { output } = runCli([name, '--help']);
+
+      expect(output).toContain(`ts-migrate ${name} <folder>`);
+      expect(output).not.toContain('[options]');
+    },
+    30000,
+  );
 
   it('documents the member accessibility flags', () => {
     const { output } = runCli(['migrate', '--help']);
