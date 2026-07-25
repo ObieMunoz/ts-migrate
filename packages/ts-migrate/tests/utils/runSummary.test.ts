@@ -95,6 +95,55 @@ describe('run summary', () => {
     });
   });
 
+  it('records the files a plugin could not process, with the cause', () => {
+    fs.writeFileSync(path.join(rootDir, 'tsconfig.json'), '{ "compilerOptions": {} }');
+
+    const summary = buildMigrateRunSummary({
+      command: 'migrate',
+      rootDir,
+      exitCode: 0,
+      updatedSourceFiles: new Set(),
+      nonMigratedFilesWithSyntaxErrors: [],
+      pluginStats: [{ pluginName: 'eslint-fix', changedFileCount: 0 }],
+      pluginFailures: [
+        {
+          pluginName: 'eslint-fix',
+          reason: 'context.getScope is not a function',
+          ruleId: 'legacy/uses-old-api',
+          fileCount: 2,
+          files: ['src/b.ts', 'src/a.ts'],
+        },
+      ],
+    });
+
+    expect(summary.pluginFailures).toEqual([
+      {
+        plugin: 'eslint-fix',
+        reason: 'context.getScope is not a function',
+        ruleId: 'legacy/uses-old-api',
+        fileCount: 2,
+        files: ['src/a.ts', 'src/b.ts'],
+      },
+    ]);
+    // A lint failure has never failed the run, and recording it does not.
+    expect(summary.exitCode).toBe(0);
+  });
+
+  it('records no failures for a run where every plugin processed every file', () => {
+    fs.writeFileSync(path.join(rootDir, 'tsconfig.json'), '{ "compilerOptions": {} }');
+
+    const summary = buildMigrateRunSummary({
+      command: 'migrate',
+      rootDir,
+      exitCode: 0,
+      updatedSourceFiles: new Set(),
+      nonMigratedFilesWithSyntaxErrors: [],
+      pluginStats: [],
+    });
+
+    expect(summary.pluginFailures).toEqual([]);
+  });
+
   it('scans the provided contents instead of the disk for a dry run', () => {
     fs.writeFileSync(path.join(rootDir, 'tsconfig.json'), '{ "compilerOptions": {} }');
     // On disk the file is clean; the dry run would have written debt into it.

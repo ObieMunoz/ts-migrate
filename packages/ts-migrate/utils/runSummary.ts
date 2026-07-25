@@ -36,6 +36,18 @@ export interface MigrateRunSummary extends RunSummaryBase {
   generatedFiles: string[];
   nonMigratedFilesWithSyntaxErrors: string[];
   plugins: Array<{ name: string; changedFileCount: number }>;
+  /**
+   * Files a plugin could not process, grouped by cause. A lint config that
+   * throws leaves files unchanged without failing the run, so an unattended
+   * run needs this to know it happened.
+   */
+  pluginFailures: Array<{
+    plugin: string;
+    reason: string;
+    ruleId?: string;
+    fileCount: number;
+    files: string[];
+  }>;
   /** Debt now present in the changed files; null if the post-run scan failed. */
   changedFilesTypeDebt: { aliasNames: string[]; totals: FileDebt } | null;
   /** Files left untouched because git ignores them (0 with --no-gitignore). */
@@ -95,6 +107,7 @@ export function buildMigrateRunSummary(params: {
   fileContents?: ReadonlyMap<string, string>;
   nonMigratedFilesWithSyntaxErrors: string[];
   pluginStats: MigrateResult['pluginStats'];
+  pluginFailures?: MigrateResult['pluginFailures'];
   generatedFiles?: ReadonlyMap<string, string>;
   skippedGitignoredFiles?: number;
   skippedBootstrapFiles?: BootstrapFile[];
@@ -127,6 +140,15 @@ export function buildMigrateRunSummary(params: {
       name: pluginName,
       changedFileCount,
     })),
+    pluginFailures: (params.pluginFailures ?? []).map(
+      ({ pluginName, reason, ruleId, fileCount, files }) => ({
+        plugin: pluginName,
+        reason,
+        ruleId,
+        fileCount,
+        files: [...files].sort(),
+      }),
+    ),
     changedFilesTypeDebt,
     skippedGitignoredFiles: params.skippedGitignoredFiles ?? 0,
     skippedBootstrapFiles: summarizeBootstrapFiles(rootDir, params.skippedBootstrapFiles),
