@@ -76,11 +76,17 @@ any pnpm >= 9.7 will automatically fetch and run the pinned version.
 ## Test scratch projects
 
 The command tests copy a fixture project into
-`packages/<pkg>/tests/tmp/ts-migrate-XXXXXX`, and each suite deletes its own
-copy in `afterEach`. A run that dies first, on a timeout or a signal, leaves the
-copy on disk, so `scripts/jest-global-teardown.js` removes
+`packages/ts-migrate-test-utils/tests/tmp/ts-migrate-XXXXXX`, and each suite
+deletes its own copy in `afterEach`. A run that dies first, on a timeout or a
+signal, leaves the copy on disk, so `scripts/jest-global-teardown.js` removes
 `packages/*/tests/tmp` once the run has finished. It runs whether the run passed
 or failed.
+
+Every package's suites share that one root because `createDir` lives in
+`packages/ts-migrate-test-utils`, which all three test suites depend on. A suite
+whose subject walks up from the directory it is given wants the opposite, since
+that walk would reach this repository's own `node_modules` and `tsconfig`:
+`createTmpDir` in the same package roots those under `os.tmpdir()` instead.
 
 A leftover copy is also the only record of what a run had written when it died.
 To keep it while debugging one:
