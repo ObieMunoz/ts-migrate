@@ -623,4 +623,40 @@ class Foo extends React.Component<MyProps, MyState> {
 export default Foo;
 `);
   });
+
+  it('ignores a static property named state', async () => {
+    const text = `import React from 'react';
+
+class Foo extends React.Component {
+  static state = { loading: false, count: 0 };
+
+  render() {
+    return this.state.loading ? <div>Loading...</div> : <div />;
+  }
+}
+
+export default Foo;
+`;
+
+    const result = await reactClassStatePlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
+    );
+
+    expect(result).toBe(`import React from 'react';
+
+type State = {
+    loading: $TSFixMe;
+};
+
+class Foo extends React.Component<object, State> {
+  static state = { loading: false, count: 0 };
+
+  render() {
+    return this.state.loading ? <div>Loading...</div> : <div />;
+  }
+}
+
+export default Foo;
+`);
+  });
 });
