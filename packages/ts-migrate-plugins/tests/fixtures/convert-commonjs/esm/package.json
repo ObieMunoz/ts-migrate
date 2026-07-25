@@ -1,0 +1,5 @@
+{
+  "name": "convert-commonjs-fixture-esm",
+  "private": true,
+  "type": "module"
+}
