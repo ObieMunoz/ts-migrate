@@ -68,6 +68,7 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
     const updates: SourceTextUpdate[] = [];
     const printer = ts.createPrinter();
     const processedPropTypes = new Map<string, string>();
+    let takenNames: Set<string> | undefined;
 
     // Function components whose defaults moved into the parameter no longer
     // have an assignment to type, so they skip the intersection path below.
@@ -130,11 +131,12 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
       newTypeInsertPos: number,
       componentTypeReference: ts.TypeReferenceNode,
       componentName: string,
-    ) => {
+      precedingUpdates: SourceTextUpdate[] = [],
+    ): boolean => {
       // we don't want process props types more than once
-      if (processedPropTypes.get(propsTypeName) === defaultPropsTypeName) return;
+      if (processedPropTypes.get(propsTypeName) === defaultPropsTypeName) return false;
 
-      if (editedTypeDeclarations.has(propsTypeAliasDeclaration)) return;
+      if (editedTypeDeclarations.has(propsTypeAliasDeclaration)) return false;
 
       // prevent multiple usage of defalut props or WithDefaultProps
       const alreadyHaveDefalutProps = ts.isIntersectionTypeNode(propsTypeAliasDeclaration.type)
@@ -146,7 +148,7 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
         : ts.isTypeReferenceNode(propsTypeAliasDeclaration.type) &&
           propsTypeAliasDeclaration.type.typeName.getText() === WITH_DEFAULT_PROPS_HELPER;
 
-      if (alreadyHaveDefalutProps) return;
+      if (alreadyHaveDefalutProps) return false;
 
       if (options.useDefaultPropsHelper) insertWithDefaultPropsHelper();
 
@@ -232,6 +234,10 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
           : newPropsTypeValue,
       );
 
+      // updateSourceText keeps the order of updates that share an index, so
+      // anything the alias reads has to be pushed before the alias itself.
+      updates.push(...precedingUpdates);
+
       updates.push({
         kind: 'insert',
         index: newTypeInsertPos,
@@ -257,6 +263,7 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
       }
 
       processedPropTypes.set(propsTypeName, defaultPropsTypeName);
+      return true;
     };
 
     /* process all default props assignments:
@@ -277,9 +284,6 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
       const defaultPropsTypeName = isObjectIdentifier
         ? expression.right.getText()
         : `${componentName}.defaultProps`;
-      const defaultPropsType = isObjectIdentifier
-        ? createTypeQuery(defaultPropsTypeName)
-        : createDefaultPropsIndexedAccess(componentName);
 
       const variableDeclaration = variableStatements.find(
         (variableStatement) =>
@@ -315,12 +319,50 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
         );
 
         if (propsTypeAliasDeclarations) {
-          const newTypeInsertPos =
-            variableDeclaration && variableInitializer
-              ? variableDeclaration.pos
-              : componentDeclaration.pos;
+          const componentStatement =
+            variableDeclaration && variableInitializer ? variableDeclaration : undefined;
+          const newTypeInsertPos = componentStatement
+            ? componentStatement.pos
+            : componentDeclaration.pos;
 
-          modifyAndInsertPropsType(
+          let defaultPropsType: ts.TypeNode;
+          let hoistedName: string | undefined;
+          const precedingUpdates: SourceTextUpdate[] = [];
+
+          if (isObjectIdentifier) {
+            defaultPropsType = createTypeQuery(defaultPropsTypeName);
+          } else if (!componentStatement) {
+            defaultPropsType = createDefaultPropsIndexedAccess(componentName);
+          } else if (canHoistAbove(expression.right, sourceFile, componentStatement)) {
+            if (!takenNames) takenNames = collectIdentifiers(sourceFile);
+            hoistedName = uniqueName(`${componentName}DefaultProps`, takenNames);
+            const defaultsStart = expression.right.getStart(sourceFile);
+            precedingUpdates.push(
+              {
+                kind: 'insert',
+                index: newTypeInsertPos,
+                text: `\n\nconst ${hoistedName} = ${expression.right.getText(sourceFile)};`,
+              },
+              {
+                kind: 'replace',
+                index: defaultsStart,
+                length: expression.right.end - defaultsStart,
+                text: hoistedName,
+              },
+            );
+            defaultPropsType = createTypeQuery(hoistedName);
+          } else {
+            if (reportFileNotice) {
+              reportFileNotice({
+                reason: `Left ${componentName} without a defaults type: naming its defaults would move them above a binding they read.`,
+                hint: 'Declare the defaults in a const above the component to have them typed.',
+                recovered: true,
+              });
+            }
+            return;
+          }
+
+          const emitted = modifyAndInsertPropsType(
             propsTypeAliasDeclarations,
             defaultPropsTypeName,
             defaultPropsType,
@@ -328,7 +370,10 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
             newTypeInsertPos,
             componentDeclaration.parameters[0].type,
             componentName,
+            precedingUpdates,
           );
+
+          if (emitted && hoistedName && takenNames) takenNames.add(hoistedName);
         }
       }
     });
@@ -424,6 +469,96 @@ function createDefaultPropsIndexedAccess(componentName: string): ts.IndexedAcces
     createTypeQuery(componentName),
     ts.factory.createLiteralTypeNode(ts.factory.createStringLiteral('defaultProps')),
   );
+}
+
+/**
+ * A component declared as `const Comp = (props: Props) => ...` takes its type
+ * from that initializer, so a defaults type that queries `Comp` and a props type
+ * that reads the defaults type close a loop: TS2456 on the alias and TS7022 on
+ * the component, on every compiler and at every strictness. Naming the defaults
+ * in a `const` of their own puts them outside the loop, which is the shape the
+ * identifier form already produces. The hoist runs where the alias goes, so it
+ * only holds when the defaults read nothing declared below that point.
+ */
+function canHoistAbove(
+  defaults: ts.Expression,
+  sourceFile: ts.SourceFile,
+  component: ts.Statement,
+): boolean {
+  const boundary = sourceFile.statements.indexOf(component);
+  const notYetInitialized = new Set<string>();
+  sourceFile.statements.forEach((statement, index) => {
+    if (index >= boundary) collectDeferredBindings(statement, notYetInitialized);
+  });
+
+  let safe = true;
+  const visit = (node: ts.Node) => {
+    if (!safe) return;
+    if (ts.isIdentifier(node)) {
+      if (isValueReference(node) && notYetInitialized.has(node.text)) safe = false;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(defaults);
+
+  return safe;
+}
+
+/**
+ * Names a statement binds that hold no value until it runs. A function
+ * declaration and an import are live from the start of the module, so they are
+ * not collected; a `var` is, since it reads as undefined until its assignment.
+ */
+function collectDeferredBindings(statement: ts.Statement, names: Set<string>) {
+  if (ts.isVariableStatement(statement)) {
+    statement.declarationList.declarations.forEach((declaration) =>
+      collectBindingNames(declaration.name, names),
+    );
+    return;
+  }
+
+  if (
+    (ts.isClassDeclaration(statement) ||
+      ts.isEnumDeclaration(statement) ||
+      ts.isModuleDeclaration(statement) ||
+      ts.isImportEqualsDeclaration(statement)) &&
+    statement.name &&
+    ts.isIdentifier(statement.name)
+  ) {
+    names.add(statement.name.text);
+  }
+}
+
+function collectBindingNames(name: ts.BindingName, names: Set<string>) {
+  if (ts.isIdentifier(name)) {
+    names.add(name.text);
+    return;
+  }
+
+  name.elements.forEach((element) => {
+    if (ts.isBindingElement(element)) collectBindingNames(element.name, names);
+  });
+}
+
+function collectIdentifiers(sourceFile: ts.SourceFile): Set<string> {
+  const names = new Set<string>();
+  const visit = (node: ts.Node) => {
+    if (ts.isIdentifier(node)) names.add(node.text);
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sourceFile, visit);
+  return names;
+}
+
+function uniqueName(base: string, taken: Set<string>): string {
+  let name = base;
+  let counter = 2;
+  while (taken.has(name)) {
+    name = `${base}${counter}`;
+    counter += 1;
+  }
+  return name;
 }
 
 /** Both spellings of the defaults type, so an already migrated file is left alone. */
