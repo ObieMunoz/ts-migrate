@@ -108,6 +108,12 @@ An option a command does not declare is still accepted and ignored, because
 `ts-migrate-full` forwards one argument list to both `rename` and `migrate` and
 the two accept different flags.
 
+Every command above takes a `<folder>`, and every one of them exits 255 before
+reading or writing anything when that folder does not exist or is a file rather
+than a directory. The message names the absolute path the argument resolved to,
+so a relative path that landed somewhere unexpected shows where it went. An
+empty directory is a directory: `init` writes a tsconfig into it and exits 0.
+
 The `rename`, `migrate`, and `reignore` commands accept a `--sources` (or `-s`) flag. This flag
 accepts a relative path to a subset of your project as a string (glob patterns are
 allowed). When this flag is used, ts-migrate ignores your project's default source
