@@ -63,7 +63,8 @@
     "@obiemunoz/ts-migrate-server": "workspace:^",
     "eslint": "^9.18.0",
     "jiti": "^2.4.2",
-    "json-schema": "^0.4.0"
+    "json-schema": "^0.4.0",
+    "updatable-log": "^0.2.0"
   },
   "gitHead": "7acf6067f15c9bb367cda9c47fcfb4203dcc54f3",
   "devDependencies": {

@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import { Worker } from 'worker_threads';
 import type { loadESLint } from 'eslint';
+import log from 'updatable-log';
 import { fileNoticeReporter, Plugin, PluginFileNotice } from '@obiemunoz/ts-migrate-server';
 
 // Either the flat-config or legacy engine; both expose the `lintText` API.
@@ -247,10 +248,13 @@ async function createESLint(rootDir: string, useProjectESLint: boolean): Promise
   const engine = resolveESLintEngine(rootDir, useProjectESLint, config);
   resolvedEngine = engine;
 
-  console.log(describeESLintEngine(engine));
-  console.log(describeESLintConfig(config));
+  // Through updatable-log, not console: it clears the pass's in-place counter
+  // before it writes, and the counter erases whatever sits in its region on the
+  // next render.
+  log.info(describeESLintEngine(engine));
+  log.info(describeESLintConfig(config));
   if (engine.refused) {
-    console.warn(
+    log.warn(
       `[eslint-fix] This project's eslint ${engine.refused.version} ${engine.refused.reason}; ` +
         `linting with the ESLint ${engine.version} bundled with ts-migrate instead. Rules and ` +
         'plugins pinned to the project ESLint can fail under it, and files whose rules throw ' +
