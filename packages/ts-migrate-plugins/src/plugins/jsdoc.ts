@@ -129,6 +129,8 @@ const jsDocTransformerFactory =
         visitTypeTag(origNode);
       } else if (ts.isClassLike(origNode)) {
         visitClassLike(origNode);
+      } else if (ts.isParenthesizedExpression(origNode)) {
+        visitTypeCast(origNode);
       }
     }
 
@@ -191,6 +193,52 @@ const jsDocTransformerFactory =
       const questionToken = ts.isPropertyDeclaration(node) ? node.questionToken : undefined;
       const pos = (node.exclamationToken ?? questionToken ?? node.name).end;
       updates.replaceText(pos, pos, `: ${type}`);
+    }
+
+    /**
+     * Writes a `@type` tag on a parenthesized expression, which is a cast the
+     * checker reads only in a JavaScript file, as `(expr as T)`. The
+     * parentheses the cast is written with stay, so precedence around it does
+     * not change, and the operand takes parentheses of its own when it is
+     * written below the precedence `as` binds at.
+     */
+    function visitTypeCast(node: ts.ParenthesizedExpression): void {
+      const tag = ts.getJSDocTypeTag(node);
+      // getJSDocTypeTag also reads the comment on the statement an expression
+      // is the whole of, which annotates that statement and not this one.
+      if (!tag || !ts.isJSDoc(tag.parent) || tag.parent.parent !== node) {
+        return;
+      }
+      const { expression } = node;
+      if (
+        ts.isAsExpression(expression) ||
+        ts.isSatisfiesExpression(expression) ||
+        ts.isTypeAssertionExpression(expression)
+      ) {
+        return;
+      }
+      const refusal = castRefusal(node);
+      if (refusal) {
+        report({
+          reason: `@type ${tag.typeExpression.getText(sourceFile)} stays a comment because ${refusal}`,
+          hint: 'The expression keeps the type it has without the comment.',
+          recovered: true,
+        });
+        return;
+      }
+      const type = printer.printNode(
+        ts.EmitHint.Unspecified,
+        visitJSDocType(tag.typeExpression.type),
+        sourceFile,
+      );
+      updates.replaceText(tag.parent.getStart(sourceFile), node.getStart(sourceFile), '');
+      if (needsParentheses(expression)) {
+        const start = expression.getStart(sourceFile);
+        updates.replaceText(start, start, '(');
+        updates.replaceText(expression.end, expression.end, `) as ${type}`);
+      } else {
+        updates.replaceText(expression.end, expression.end, ` as ${type}`);
+      }
     }
 
     /**
@@ -703,6 +751,107 @@ function accessibilityFromJSDoc(methodDeclaration: ts.MethodDeclaration): string
     return 'public';
   }
   return undefined;
+}
+
+/** Why a `@type` cast cannot become an `as` expression, when it cannot. */
+function castRefusal(node: ts.ParenthesizedExpression): string | undefined {
+  if (ts.isDeleteExpression(node.parent)) {
+    return 'delete takes a property reference and not an assertion';
+  }
+  if (isWriteTarget(node)) {
+    return 'the cast is an assignment target';
+  }
+  if (inRewrittenParameters(node)) {
+    return 'the parameter list it sits in is written out again from its own tags';
+  }
+  return undefined;
+}
+
+/**
+ * Whether an annotated parameter list is written out again over this node.
+ * visitParameters reprints the whole list, from the nodes the file was parsed
+ * with, so an edit inside one of the defaults is lost either way and the two
+ * ranges overlap.
+ */
+function inRewrittenParameters(node: ts.Node): boolean {
+  for (let current = node.parent; current && !ts.isSourceFile(current); current = current.parent) {
+    if (ts.isParameter(current) && rewritesParameters(current.parent)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function rewritesParameters(node: ts.SignatureDeclaration): boolean {
+  return (
+    ts.hasJSDocParameterTags(node) &&
+    node.parameters.some(
+      (parameter) =>
+        !parameter.type && ts.getJSDocParameterTags(parameter).some((tag) => tag.typeExpression),
+    )
+  );
+}
+
+/** Whether an expression is assigned to rather than read. */
+function isWriteTarget(node: ts.Expression): boolean {
+  let current: ts.Node = node;
+  let { parent } = current;
+  while (
+    ts.isParenthesizedExpression(parent) ||
+    ts.isArrayLiteralExpression(parent) ||
+    ts.isObjectLiteralExpression(parent) ||
+    ts.isPropertyAssignment(parent) ||
+    ts.isSpreadElement(parent) ||
+    ts.isSpreadAssignment(parent)
+  ) {
+    current = parent;
+    parent = current.parent;
+  }
+  if (ts.isBinaryExpression(parent)) {
+    return parent.left === current && isAssignmentOperator(parent.operatorToken.kind);
+  }
+  if (ts.isForInStatement(parent) || ts.isForOfStatement(parent)) {
+    return parent.initializer === current;
+  }
+  if (ts.isPrefixUnaryExpression(parent) || ts.isPostfixUnaryExpression(parent)) {
+    return (
+      parent.operator === ts.SyntaxKind.PlusPlusToken ||
+      parent.operator === ts.SyntaxKind.MinusMinusToken
+    );
+  }
+  return false;
+}
+
+function isAssignmentOperator(kind: ts.SyntaxKind): boolean {
+  return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment;
+}
+
+/** The binary operators that bind less tightly than `as`. */
+const looseOperators = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.CommaToken,
+  ts.SyntaxKind.QuestionQuestionToken,
+  ts.SyntaxKind.BarBarToken,
+  ts.SyntaxKind.AmpersandAmpersandToken,
+  ts.SyntaxKind.BarToken,
+  ts.SyntaxKind.CaretToken,
+  ts.SyntaxKind.AmpersandToken,
+  ts.SyntaxKind.EqualsEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsToken,
+  ts.SyntaxKind.EqualsEqualsEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsEqualsToken,
+]);
+
+/**
+ * Whether `expr as T` would take less than the whole expression. `as` binds
+ * like a relational operator and to its left, so only an operand written
+ * below that precedence has to keep parentheses of its own.
+ */
+function needsParentheses(node: ts.Expression): boolean {
+  if (ts.isBinaryExpression(node)) {
+    const { kind } = node.operatorToken;
+    return looseOperators.has(kind) || isAssignmentOperator(kind);
+  }
+  return ts.isConditionalExpression(node) || ts.isArrowFunction(node) || ts.isYieldExpression(node);
 }
 
 /** Constructors and accessors take none, whatever their comment says. */

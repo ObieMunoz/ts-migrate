@@ -383,7 +383,10 @@ run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
   types the comments document, so a `@param {number}` becomes `: number`
   instead of falling back to `any`, `@type` annotates variables and class
   properties, `@typedef` and `@callback` become type aliases, and `@template`
-  becomes type parameters. It is a no-op on files with no JSDoc tags.
+  becomes type parameters. A `@type` written on a parenthesized expression,
+  `/** @type {T} */ (expr)`, is a cast the checker reads only while the file
+  is JavaScript, so it becomes `(expr as T)` rather than going silent on
+  rename. It is a no-op on files with no JSDoc tags.
 - `--annotateReturns`: also take return types from `@returns`. Off by
   default, and not implied by the JSDoc conversion above: a return type is
   inferred from the body and recomputed on every build, so a stale `@returns`
