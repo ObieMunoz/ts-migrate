@@ -516,6 +516,78 @@ getItem('abc');
 `);
   });
 
+  it('asks one position at a time when the combined fix throws', async () => {
+    const text = `function add(a, b) {
+  return a + b;
+}
+add(1, 2);
+`;
+    const params = await realPluginParams({ text });
+    const failing: ts.LanguageService = {
+      ...params.getLanguageService(),
+      getCombinedCodeFix: () => {
+        throw new Error('Debug Failure. False expression.\nOccurred while inferring /file.ts');
+      },
+    };
+    const notices: PluginFileNotice[] = [];
+
+    const result = await inferTypesPlugin.run({
+      ...params,
+      getLanguageService: () => failing,
+      reportFileNotice: (notice) => notices.push(notice),
+    });
+
+    expect(result).toBe(`function add(a: number, b: number) {
+  return a + b;
+}
+add(1, 2);
+`);
+    expect(notices).toEqual([
+      {
+        reason: 'Could not write every type it inferred: Debug Failure. False expression.',
+        hint: 'The rest were written; explicit-any fills in what is left.',
+        recovered: true,
+      },
+    ]);
+  });
+
+  it('keeps the functions the compiler can print, and skips the one it cannot', async () => {
+    const text = `function add(a, b) {
+  return a + b;
+}
+add(1, 2);
+function greet(name) {
+  return 'hello ' + name.toUpperCase();
+}
+`;
+    const params = await realPluginParams({ text });
+    const service = params.getLanguageService();
+    // The parameter the compiler cannot print a type for, whichever diagnostic
+    // sends it there.
+    const unprintable = text.indexOf('(name)') + 1;
+    const failing: ts.LanguageService = {
+      ...service,
+      getCombinedCodeFix: () => {
+        throw new Error('Debug Failure. False expression.');
+      },
+      getCodeFixesAtPosition: (...args) => {
+        if (args[1] === unprintable) throw new Error('Debug Failure. False expression.');
+        return service.getCodeFixesAtPosition(...args);
+      },
+    };
+
+    const result = await inferTypesPlugin.run({ ...params, getLanguageService: () => failing });
+
+    expect(result).toBe(`function add(a: number, b: number) {
+  return a + b;
+}
+add(1, 2);
+function greet(name) {
+  return 'hello ' + name.toUpperCase();
+}
+`);
+  });
+
   it('reports a language service failure rather than reading as nothing to infer', async () => {
     const text = `function add(a, b) {
   return a + b;
@@ -527,6 +599,9 @@ add(1, 2);
       ...params.getLanguageService(),
       getCombinedCodeFix: () => {
         throw new Error('Debug Failure. False expression.\nOccurred while inferring /file.ts');
+      },
+      getCodeFixesAtPosition: () => {
+        throw new Error('Debug Failure. False expression.');
       },
     };
     const notices: PluginFileNotice[] = [];

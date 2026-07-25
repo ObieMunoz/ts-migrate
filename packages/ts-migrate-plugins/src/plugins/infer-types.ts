@@ -77,7 +77,13 @@ const inferTypesPlugin: Plugin = {
     };
 
     try {
-      const changes = getInferenceChanges(languageService, fileName, formatSettings);
+      const changes = getInferenceChanges(languageService, fileName, formatSettings, (error) =>
+        fileNoticeReporter(params, '[infer-types]')({
+          reason: `Could not write every type it inferred: ${firstLine(error)}`,
+          hint: 'The rest were written; explicit-any fills in what is left.',
+          recovered: true,
+        }),
+      );
       if (changes.length === 0) {
         return undefined;
       }
@@ -88,7 +94,7 @@ const inferTypesPlugin: Plugin = {
       return withBodyWins(fileName, text, changes, compilerOptions, formatSettings, program);
     } catch (e) {
       fileNoticeReporter(params, '[infer-types]')({
-        reason: errorMessage(e).split('\n')[0].trim(),
+        reason: firstLine(e),
         hint: 'The file keeps the annotations it had; explicit-any fills the rest in with any.',
       });
       return undefined;
@@ -97,6 +103,10 @@ const inferTypesPlugin: Plugin = {
 };
 
 export default inferTypesPlugin;
+
+function firstLine(error: unknown): string {
+  return errorMessage(error).split('\n')[0].trim();
+}
 
 function withBodyWins(
   fileName: string,
@@ -291,16 +301,28 @@ function getInferenceChanges(
   languageService: ts.LanguageService,
   fileName: string,
   formatSettings: ts.FormatCodeSettings,
+  onPartial: (error: unknown) => void,
 ): TextChange[] {
-  // A throw here reaches the plugin's own handler, which reports it and keeps
-  // the file's existing annotations. Swallowing it would instead read as "this
-  // file had nothing to infer" and say nothing.
-  const actions = languageService.getCombinedCodeFix(
-    { type: 'file', fileName },
-    'inferFromUsage',
-    formatSettings,
-    {},
-  );
+  let fileTextChanges: readonly ts.FileTextChanges[];
+  try {
+    fileTextChanges = languageService.getCombinedCodeFix(
+      { type: 'file', fileName },
+      'inferFromUsage',
+      formatSettings,
+      {},
+    ).changes;
+  } catch (e) {
+    // One type the compiler cannot print takes every other type in the file
+    // down with it, since the combined fix prints them as one edit. Asking for
+    // them one position at a time keeps the ones it can print.
+    fileTextChanges = inferenceChangesPerPosition(languageService, fileName, formatSettings);
+    // Nothing came back either way: the file is no better off for the retry,
+    // so this reaches the plugin's own handler, which reports it and keeps the
+    // annotations the file had. Swallowing it would instead read as "this file
+    // had nothing to infer" and say nothing.
+    if (fileTextChanges.length === 0) throw e;
+    onPartial(e);
+  }
 
   // Without strictNullChecks an empty array literal prints as `undefined[]`
   // (with it, `never[]`), so only there does that spelling mean "no element
@@ -310,7 +332,7 @@ function getInferenceChanges(
 
   const changes: TextChange[] = [];
   const seen = new Set<string>();
-  actions.changes
+  fileTextChanges
     .filter((fileChanges) => fileChanges.fileName === fileName)
     .forEach((fileChanges) => {
       fileChanges.textChanges.forEach(({ span, newText }) => {
@@ -325,6 +347,49 @@ function getInferenceChanges(
         changes.push({ start: span.start, length: span.length, text: annotation });
       });
     });
+  return changes;
+}
+
+/**
+ * The same fix, asked for one diagnostic at a time. Slower than the combined
+ * pass and only worth it once that has failed: a position the compiler cannot
+ * print a type for is skipped here rather than taking the file with it.
+ *
+ * Without noImplicitAny the fix is offered on suggestions rather than errors,
+ * which is the scan the combined pass does internally.
+ */
+function inferenceChangesPerPosition(
+  languageService: ts.LanguageService,
+  fileName: string,
+  formatSettings: ts.FormatCodeSettings,
+): ts.FileTextChanges[] {
+  const diagnostics = [
+    ...languageService.getSuggestionDiagnostics(fileName),
+    ...languageService.getSemanticDiagnostics(fileName),
+  ].filter(
+    (diagnostic) => diagnostic.start !== undefined && inferableDiagnosticCodes.has(diagnostic.code),
+  );
+
+  const changes: ts.FileTextChanges[] = [];
+  diagnostics.forEach((diagnostic) => {
+    const start = diagnostic.start as number;
+    try {
+      languageService
+        .getCodeFixesAtPosition(
+          fileName,
+          start,
+          start + (diagnostic.length ?? 0),
+          [diagnostic.code],
+          formatSettings,
+          {},
+        )
+        .filter((action) => action.fixName === 'inferFromUsage')
+        .forEach((action) => changes.push(...action.changes));
+    } catch {
+      // The position the combined pass choked on. The rest still stand, and
+      // the caller reports that the file got fewer types than it asked for.
+    }
+  });
   return changes;
 }
 
@@ -413,7 +478,10 @@ function inferBodyOnly(
   const decoy = createFileLanguageService(fileName, decoyText, compilerOptions, projectProgram);
   let decoyChanges: TextChange[] = [];
   try {
-    decoyChanges = getInferenceChanges(decoy, fileName, formatSettings);
+    // Nothing to report from here: the decoy is an implementation detail of
+    // the attribution below, and the pass over the real service has already
+    // said whatever there was to say about this file.
+    decoyChanges = getInferenceChanges(decoy, fileName, formatSettings, () => {});
   } catch {
     // The decoy only refines which changes count as body evidence. Letting it
     // throw would discard the inferences the real service already produced,
