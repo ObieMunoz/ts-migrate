@@ -300,9 +300,12 @@ machine-readable preview. Per command:
   `types/ts-migrate-modules.d.ts`, which are new files rather than edits),
   `nonMigratedFilesWithSyntaxErrors` (files that will keep failing `tsc` and
   that re-running cannot fix), `plugins` (`{"name", "changedFileCount"}` per
-  pipeline step, in order), and `changedFilesTypeDebt` (the suppression,
-  any-alias, and `any` totals now present in the changed files, with the
-  suppressed error codes; `null` if that scan failed).
+  pipeline step, in order), `pluginFailures` (files a plugin could not
+  process, grouped by cause, as `{"plugin", "reason", "ruleId", "fileCount",
+  "files"}`; empty when every plugin processed every file), and
+  `changedFilesTypeDebt` (the suppression, any-alias, and `any` totals now
+  present in the changed files, with the suppressed error codes; `null` if
+  that scan failed).
 - All three also report `skippedGitignoredFiles`, the number of files the
   run left untouched because git ignores them (0 with `--no-gitignore`),
   and `skippedBootstrapFiles`, the build system files kept as JavaScript
@@ -311,7 +314,9 @@ machine-readable preview. Per command:
 How to read a run from the outside:
 
 - Exit `0` and the file exists: success; the summary is the source of truth
-  for what changed.
+  for what changed. Check `pluginFailures`: a lint config that throws leaves
+  files unchanged without failing the run, so a successful exit can still hide
+  files no plugin could touch.
 - Nonzero exit and the file exists: the run completed with errors; the file's
   `exitCode` field matches the process exit code.
 - Nonzero exit and no file: the command failed before running (bad flags,

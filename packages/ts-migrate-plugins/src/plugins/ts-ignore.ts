@@ -1,5 +1,5 @@
 import ts, { isJsxFragment } from 'typescript';
-import { Plugin } from '@obiemunoz/ts-migrate-server';
+import { fileNoticeReporter, Plugin, PluginFileNotice } from '@obiemunoz/ts-migrate-server';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { createValidate, Properties } from '../utils/validateOptions';
@@ -23,11 +23,17 @@ const tsIgnorePlugin: Plugin<Options> = {
   // check every file against one warm program.
   mutationsPreserveTypes: true,
 
-  run({ getLanguageService, fileName, sourceFile, options }) {
+  run(params) {
+    const { getLanguageService, fileName, sourceFile, options } = params;
     const diagnostics = getLanguageService()
       .getSemanticDiagnostics(fileName)
       .filter(isDiagnosticWithLinePosition);
-    return getTextWithIgnores(sourceFile, diagnostics, options);
+    return getTextWithIgnores(
+      sourceFile,
+      diagnostics,
+      options,
+      fileNoticeReporter(params, '[ts-ignore]'),
+    );
   },
 
   validate: createValidate(optionProperties),
@@ -41,6 +47,7 @@ function getTextWithIgnores(
   sourceFile: ts.SourceFile,
   diagnostics: ts.DiagnosticWithLocation[],
   options: Options,
+  reportNotice: (notice: PluginFileNotice) => void,
 ): string {
   const { text } = sourceFile;
   const updates: SourceTextUpdate[] = [];
@@ -107,11 +114,13 @@ function getTextWithIgnores(
           // The directive only reaches the line directly below it, so hoisting
           // the comment elsewhere cannot suppress this diagnostic; skip it and
           // leave it for the post-migration compile check.
-          console.warn(
-            `[ts-ignore] ${sourceFile.fileName}:${diagnosticLine + 1}: failed to add ` +
-              `@${errorExpression} for TS(${code}) within multiline string, template, ` +
-              `or comment; skipping this diagnostic.`,
-          );
+          reportNotice({
+            reason:
+              `could not add @${errorExpression} inside a multiline string, template, or ` +
+              'comment, so those diagnostics are left unsuppressed',
+            hint: 'The TypeScript compile check will report them; they need a source change.',
+            recovered: true,
+          });
           return;
         }
       } else if (inJsxText(sourceFile, pos)) {
