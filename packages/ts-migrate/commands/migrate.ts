@@ -61,6 +61,7 @@ interface BuildMigrateConfigParams {
   typeMap?: string;
   annotateReturns?: boolean;
   useDefaultPropsHelper?: boolean;
+  modernizeDefaultProps?: boolean;
   defaultAccessibility?: 'private' | 'protected' | 'public';
   privateRegex?: string;
   protectedRegex?: string;
@@ -125,6 +126,7 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
     entry(reactClassStatePlugin, { anyAlias }),
     entry(reactDefaultPropsPlugin, {
       useDefaultPropsHelper: params.useDefaultPropsHelper ?? false,
+      modernizeDefaultProps: params.modernizeDefaultProps ?? true,
     }),
     entry(reactHookTypesPlugin, { anyAlias }),
     entry(reactInlineImportedPropTypesPlugin, {}),
@@ -157,6 +159,8 @@ function inapplicableFlags(params: BuildMigrateConfigParams, options: unknown): 
   if (params.annotateReturns) setFlags.push(['--annotateReturns', ['annotateReturns']]);
   if (params.useDefaultPropsHelper)
     setFlags.push(['--useDefaultPropsHelper', ['useDefaultPropsHelper']]);
+  if (params.modernizeDefaultProps === false)
+    setFlags.push(['--no-modernizeDefaultProps', ['modernizeDefaultProps']]);
   if (params.defaultAccessibility !== undefined)
     setFlags.push(['--defaultAccessibility', ['defaultAccessibility']]);
   if (params.privateRegex !== undefined) setFlags.push(['--privateRegex', ['privateRegex']]);

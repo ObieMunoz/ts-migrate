@@ -121,7 +121,10 @@ describe('buildMigrateConfig', () => {
       plugin: 'react-default-props',
       useDefaultPropsHelper: true,
     }).config;
-    expect(single.plugins[0].options).toEqual({ useDefaultPropsHelper: true });
+    expect(single.plugins[0].options).toEqual({
+      useDefaultPropsHelper: true,
+      modernizeDefaultProps: true,
+    });
     expect(single.plugins[0].options).toEqual(
       pluginOptions(
         buildMigrateConfig({ useDefaultPropsHelper: true }).config,
@@ -212,6 +215,15 @@ describe('buildMigrateConfig', () => {
       )?.options as { useDefaultPropsHelper?: boolean };
     expect(defaultPropsOptions({ useDefaultPropsHelper: true }).useDefaultPropsHelper).toBe(true);
     expect(defaultPropsOptions({}).useDefaultPropsHelper).toBe(false);
+  });
+
+  it('converts function component defaultProps unless --no-modernizeDefaultProps', () => {
+    const defaultPropsOptions = (params: Parameters<typeof buildMigrateConfig>[0]) =>
+      buildMigrateConfig(params).config.plugins.find(
+        ({ plugin }) => plugin.name === 'react-default-props',
+      )?.options as { modernizeDefaultProps?: boolean };
+    expect(defaultPropsOptions({}).modernizeDefaultProps).toBe(true);
+    expect(defaultPropsOptions({ modernizeDefaultProps: false }).modernizeDefaultProps).toBe(false);
   });
 
   it('gives both eslint-fix passes the projectEslint choice', () => {

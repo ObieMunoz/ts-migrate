@@ -377,6 +377,12 @@ yargs
           'useDefaultPropsHelper',
           'Type React defaultProps with a WithDefaultProps helper type. The helper is generated into each migrated file, so no extra module is required.',
         )
+        .boolean('modernizeDefaultProps')
+        .default('modernizeDefaultProps', true)
+        .describe(
+          'modernizeDefaultProps',
+          'Move the defaultProps of a function component into its props destructuring, which React 19 requires. Only conversions that keep the same behavior are made; the rest keep the assignment and are typed instead. Disable with --no-modernizeDefaultProps.',
+        )
         .string('privateRegex')
         .describe(
           'privateRegex',
@@ -492,6 +498,7 @@ yargs
           typeMap: args.typeMap,
           annotateReturns: args.annotateReturns,
           useDefaultPropsHelper: args.useDefaultPropsHelper,
+          modernizeDefaultProps: args.modernizeDefaultProps,
           defaultAccessibility: args.defaultAccessibility,
           privateRegex: args.privateRegex,
           protectedRegex: args.protectedRegex,
