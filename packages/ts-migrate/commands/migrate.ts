@@ -1,5 +1,6 @@
 import {
   addConversionsPlugin,
+  convertCommonjsPlugin,
   declareMissingClassPropertiesPlugin,
   eslintFixPlugin,
   explicitAnyPlugin,
@@ -26,6 +27,7 @@ import log from 'updatable-log';
 
 export const availablePlugins = [
   addConversionsPlugin,
+  convertCommonjsPlugin,
   declareMissingClassPropertiesPlugin,
   eslintFixPlugin,
   explicitAnyPlugin,
@@ -99,6 +101,7 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
 
   const options = new Map<Plugin<any>, unknown>([
     entry(addConversionsPlugin, { anyAlias }),
+    entry(convertCommonjsPlugin, {}),
     entry(declareMissingClassPropertiesPlugin, { anyAlias }),
     entry(eslintFixPlugin, { projectEslint: params.projectEslint }),
     entry(explicitAnyPlugin, { anyAlias }),
@@ -210,6 +213,10 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
 
   const config = new MigrateConfig()
     .addPlugin(updateImportPathsPlugin, optionsFor(updateImportPathsPlugin))
+    // Runs on the specifiers update-import-paths has already re-pointed, and
+    // before the passes that read types across files, which need the imports
+    // this restores.
+    .addPlugin(convertCommonjsPlugin, optionsFor(convertCommonjsPlugin))
     .addPlugin(stripTSIgnorePlugin, optionsFor(stripTSIgnorePlugin))
     .addPlugin(reactInlineImportedPropTypesPlugin, optionsFor(reactInlineImportedPropTypesPlugin))
     .addPlugin(hoistClassStaticsPlugin, optionsFor(hoistClassStaticsPlugin))

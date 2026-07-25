@@ -1,5 +1,6 @@
 import { Plugin as PluginType } from '@obiemunoz/ts-migrate-server';
 import addConversionsPlugin from './plugins/add-conversions';
+import convertCommonjsPlugin from './plugins/convert-commonjs';
 import declareMissingClassPropertiesPlugin from './plugins/declare-missing-class-properties';
 import eslintFixPlugin, { Options as EslintFixOptionsType } from './plugins/eslint-fix';
 import explicitAnyPlugin from './plugins/explicit-any';
@@ -39,6 +40,7 @@ export type TypesPackageReport = TypesPackageReportType;
 
 export {
   addConversionsPlugin,
+  convertCommonjsPlugin,
   declareMissingClassPropertiesPlugin,
   eslintFixPlugin,
   explicitAnyPlugin,
