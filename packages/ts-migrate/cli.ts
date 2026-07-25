@@ -679,7 +679,7 @@ yargs
         .default('casts', false)
         .describe(
           'casts',
-          'Retry the `as any` assertions ts-migrate inserted: drop each one, re-check the file, and keep the removal only where no new error appears. Off by default, since it costs a validation pass per file holding one.',
+          'Retry the `as any` assertions ts-migrate inserted: drop each one, re-check the file, and keep the removal only where no new error appears. An assertion the file still needs is narrowed to the tightest type the checker can name for it, on the same evidence. Off by default, since it costs up to two validation passes per file holding one.',
         )
         .string('typescript')
         .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)

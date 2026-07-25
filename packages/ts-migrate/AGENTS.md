@@ -110,7 +110,8 @@ npm i -D @types/jest
 # 3. Re-run reignore: it strips every suppression the new types resolve and
 #    prints an updated recommendations report. If step 1 was scoped with
 #    --sources, repeat the same flags here. Add --casts to also retry the
-#    `as any` assertions the migration inserted; it is slower.
+#    `as any` assertions the migration inserted, dropping the ones that have
+#    gone stale and narrowing the rest; it is slower.
 npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>
 
 # 4. Verify:
@@ -430,11 +431,17 @@ existing suppression comments, then re-adds only the ones still needed.
 - `-p`/`--messagePrefix`: customizes the comment text.
 - `--casts`: also retry the `as any` assertions ts-migrate inserted. Each one
   is dropped, the file is re-checked, and the removal is kept only where no
-  error appears that the file did not already have. Assertions to any other
-  type are left alone. Off by default: it costs a validation pass per file
-  holding one. Run it the way you run `reignore` itself, after installing
-  `@types` packages or after a neighboring directory has been migrated, and
-  read the reduction off `ts-migrate report`/`check`.
+  error appears that the file did not already have. An assertion the file
+  still needs is then retyped to the tightest type the checker can name for
+  it, either the operand's own type without its null or the type the position
+  expects, and that is kept only where the re-checked file gains no error and
+  the expression is no longer `any`. A type that would need a new import, an
+  anonymous shape, a generic needing type arguments and a union past four
+  members are all refused, and those sites keep their `any`. Assertions to any
+  other type are left alone. Off by default: it costs up to two validation
+  passes per file holding one. Run it the way you run `reignore` itself, after
+  installing `@types` packages or after a neighboring directory has been
+  migrated, and read the reduction off `ts-migrate report`/`check`.
 - `--no-gitignore`: same behavior as in `migrate`.
 - `--no-bootstrap`: same behavior as in `migrate`.
 - `--no-declareUntypedModules`: same behavior as in `migrate`.
