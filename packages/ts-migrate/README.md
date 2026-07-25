@@ -542,6 +542,52 @@ does; if yours restricts `include` to a source directory, add
 `types/ts-migrate-modules.d.ts` to `include` or `files` — ts-migrate warns when
 the file it generated is not matched.
 
+## Asset imports on a webpack project
+
+A bundled app imports assets through its loaders: `import logo from './logo.png'`,
+`import './App.css'`. TypeScript has no loaders, so a bound import is a TS2307 at
+every site and a side-effect import is a TS2882 on TypeScript 6 (TypeScript 5
+lets that one through silently, which is its own surprise on upgrade). Vite
+projects are covered by `vite/client`, which `init` pins. webpack has no
+equivalent: `@types/webpack-env` declares the webpack globals and contains no
+`declare module` statements at all.
+
+So on a webpack project (including Create React App, detected through
+`react-scripts`) `init` writes a second file:
+
+```ts
+// types/ts-migrate-assets.d.ts
+declare module '*.css' {}
+
+declare module '*.png' {
+  const src: string;
+  export default src;
+}
+```
+
+A wrong declaration is worse than a suppression, because the suppression is
+visibly unfinished while a wrong shape type-checks and misleads. So the file is
+deliberately narrow:
+
+- Only extensions the project actually imports are declared. An extension nothing
+  imports would be noise to read past.
+- Images, fonts and media (`*.png`, `*.woff2`, `*.mp4`, and the rest) get a
+  `string` default export. Every rule that handles them, file-loader through
+  webpack 5 asset modules, produces a URL or a data URL.
+- An extension imported only for its side effects gets a module with no exports.
+  Nothing observes what the loader exported, so nothing can be wrong.
+- `*.svg` gets the `string` default export only when no svgr package is installed.
+  With `@svgr/webpack` (or a sibling) the default may be a React component
+  instead, and only the webpack config settles which.
+- An extension imported by name (`import { ReactComponent } from './logo.svg'`)
+  and a style sheet bound to a name (CSS modules) are left undeclared. Only the
+  loader, and often only its version, knows what those export.
+
+`init` names every extension it skipped and why. Declare those yourself, in a
+file of your own. A file already at `types/ts-migrate-assets.d.ts` that
+ts-migrate did not write is left alone, and so is the whole step on a project
+whose tsconfig already exists — `init` never touches one.
+
 # Measuring type debt
 
 A migration that ends with `tsc` exiting 0 says nothing about how much of the
@@ -753,7 +799,7 @@ TypeScript 6 stopped loading `node_modules/@types` automatically (bulk inclusion
 
 > Why does the generated tsconfig say `"moduleResolution": "bundler"`?
 
-Because on that project the bundler resolves the imports, not Node. `init` writes `"module": "esnext"` with `"moduleResolution": "bundler"` when it finds Vite or webpack in `dependencies`/`devDependencies`, or a `vite.config.*`/`webpack.config.*` file in the folder. Both of the settings it would otherwise pick break a bundled app, in different ways: under `commonjs`, every `import.meta.env` is a TS1343, and under the `nodenext` that a `"type": "module"` package gets, extensionless relative imports stop resolving (TS2835 on `import './util'`). A Vite project also gets `vite/client` in its `types` array, which is what declares `import.meta.env` and asset imports like `*.svg` and `*.css`; on webpack, install `@types/webpack-env` so `require.context` and `module.hot` type, which `init` tells you when it is missing.
+Because on that project the bundler resolves the imports, not Node. `init` writes `"module": "esnext"` with `"moduleResolution": "bundler"` when it finds Vite or webpack in `dependencies`/`devDependencies`, `react-scripts` for a Create React App project, or a `vite.config.*`/`webpack.config.*` file in the folder. Both of the settings it would otherwise pick break a bundled app, in different ways: under `commonjs`, every `import.meta.env` is a TS1343, and under the `nodenext` that a `"type": "module"` package gets, extensionless relative imports stop resolving (TS2835 on `import './util'`). A Vite project also gets `vite/client` in its `types` array, which is what declares `import.meta.env` and asset imports like `*.svg` and `*.css`; on webpack, install `@types/webpack-env` so `require.context` and `module.hot` type, which `init` tells you when it is missing, and `init` writes the asset declarations itself ([above](#asset-imports-on-a-webpack-project)).
 
 Detection is deliberately blunt, so a Node library that keeps webpack in devDependencies only to build a UMD bundle gets the bundler settings too. Setting those two fields back by hand is a one-time fix — `init` never touches a tsconfig that already exists.
 

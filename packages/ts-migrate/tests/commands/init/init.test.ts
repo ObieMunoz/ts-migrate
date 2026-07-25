@@ -294,6 +294,147 @@ describe('init command', () => {
     warn.mockRestore();
   });
 
+  describe('asset module declarations', () => {
+    const assetsFile = () => path.join(rootDir, 'types', 'ts-migrate-assets.d.ts');
+
+    const writeWebpackProject = (source: string, packageJson: Record<string, unknown> = {}) => {
+      fs.writeFileSync(
+        path.join(rootDir, 'package.json'),
+        JSON.stringify({ devDependencies: { webpack: '^5.90.0' }, ...packageJson }),
+      );
+      fs.mkdirSync(path.join(rootDir, 'src'), { recursive: true });
+      fs.writeFileSync(path.join(rootDir, 'src/app.jsx'), source);
+    };
+
+    it('type-checks the asset imports a webpack project makes', () => {
+      writeWebpackProject(
+        "import logo from './logo.svg';\nimport './App.css';\n\nexport const src: string = logo;\n",
+      );
+      fs.writeFileSync(path.join(rootDir, 'src/logo.svg'), '<svg />\n');
+      fs.writeFileSync(path.join(rootDir, 'src/App.css'), '.app {}\n');
+
+      init({ rootDir, isExtendedConfig: false });
+
+      expect(fs.readFileSync(assetsFile(), 'utf-8')).toContain("declare module '*.svg' {");
+      // The declarations have to hold after the rename, which is where the
+      // asset imports would otherwise collect their suppressions.
+      fs.renameSync(path.join(rootDir, 'src/app.jsx'), path.join(rootDir, 'src/app.ts'));
+      expect(typeCheck(rootDir)).toEqual([]);
+    }, 60000);
+
+    it('declares only the extensions the project imports', () => {
+      writeWebpackProject("import logo from './logo.png';\n");
+
+      init({ rootDir, isExtendedConfig: false });
+
+      const text = fs.readFileSync(assetsFile(), 'utf-8');
+      expect(text).toContain("declare module '*.png' {");
+      expect(text).not.toContain('*.svg');
+      expect(text).not.toContain('*.css');
+    });
+
+    it('writes nothing for a project with no asset imports', () => {
+      writeWebpackProject("import { render } from 'react-dom';\n\nexport default render;\n");
+
+      init({ rootDir, isExtendedConfig: false });
+
+      expect(fs.existsSync(assetsFile())).toBe(false);
+    });
+
+    it('writes nothing for a Vite project, which vite/client already covers', () => {
+      fs.writeFileSync(
+        path.join(rootDir, 'package.json'),
+        JSON.stringify({ devDependencies: { vite: '^5.4.0' } }),
+      );
+      installVite(rootDir);
+      fs.mkdirSync(path.join(rootDir, 'src'), { recursive: true });
+      fs.writeFileSync(path.join(rootDir, 'src/app.jsx'), "import logo from './logo.svg';\n");
+
+      init({ rootDir, isExtendedConfig: false });
+
+      expect(fs.existsSync(assetsFile())).toBe(false);
+    });
+
+    it('writes nothing when no bundler resolves the imports', () => {
+      fs.mkdirSync(path.join(rootDir, 'src'), { recursive: true });
+      fs.writeFileSync(path.join(rootDir, 'src/app.jsx'), "import logo from './logo.png';\n");
+
+      init({ rootDir, isExtendedConfig: false });
+
+      expect(fs.existsSync(assetsFile())).toBe(false);
+    });
+
+    it('covers a Create React App project', () => {
+      writeWebpackProject("import logo from './logo.png';\n", {
+        devDependencies: {},
+        dependencies: { 'react-scripts': '5.0.1' },
+      });
+
+      init({ rootDir, isExtendedConfig: false });
+
+      expect(readConfig(rootDir).compilerOptions.moduleResolution).toBe('bundler');
+      expect(fs.readFileSync(assetsFile(), 'utf-8')).toContain("declare module '*.png' {");
+    });
+
+    it('leaves a hand-written file at that path alone', () => {
+      writeWebpackProject("import logo from './logo.png';\n");
+      const handWritten = "declare module '*.png' { const x: number; export default x; }\n";
+      fs.mkdirSync(path.dirname(assetsFile()), { recursive: true });
+      fs.writeFileSync(assetsFile(), handWritten);
+      const warn = jest.spyOn(log, 'warn');
+
+      init({ rootDir, isExtendedConfig: false });
+
+      expect(fs.readFileSync(assetsFile(), 'utf-8')).toBe(handWritten);
+      expect(warn.mock.calls.map((call) => call.join(' ')).join('\n')).toContain(
+        'ts-migrate did not write it',
+      );
+      warn.mockRestore();
+    });
+
+    it('reports the extensions it leaves undeclared', () => {
+      const info = jest.spyOn(log, 'info');
+      writeWebpackProject(
+        "import { ReactComponent } from './logo.svg';\nimport styles from './App.css';\n",
+      );
+
+      init({ rootDir, isExtendedConfig: false });
+
+      const logged = info.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(logged).toContain('Leaving *.svg imports undeclared');
+      expect(logged).toContain('Leaving *.css imports undeclared');
+      expect(fs.existsSync(assetsFile())).toBe(false);
+      info.mockRestore();
+    });
+
+    it('warns when the generated tsconfig does not match the file it wrote', () => {
+      // A project that already generates declarations into a gitignored
+      // types/ directory: the exclude init writes covers it, so the
+      // declarations would be in effect for the migration and nothing after.
+      execFileSync('git', ['init'], { cwd: rootDir, stdio: 'ignore' });
+      fs.writeFileSync(path.join(rootDir, '.gitignore'), 'types/\n');
+      fs.mkdirSync(path.join(rootDir, 'types'), { recursive: true });
+      fs.writeFileSync(path.join(rootDir, 'types/generated.d.ts'), 'export {};\n');
+      writeWebpackProject("import logo from './logo.png';\n");
+      const warn = jest.spyOn(log, 'warn');
+
+      init({ rootDir, isExtendedConfig: false });
+
+      expect(warn.mock.calls.map((call) => call.join(' ')).join('\n')).toContain(
+        'is not matched by the generated tsconfig',
+      );
+      warn.mockRestore();
+    });
+
+    it('writes nothing for the extended config', () => {
+      writeWebpackProject("import logo from './logo.png';\n");
+
+      init({ rootDir, isExtendedConfig: true });
+
+      expect(fs.existsSync(assetsFile())).toBe(false);
+    });
+  });
+
   it('uses the automatic JSX runtime for React 17+ projects', () => {
     fs.writeFileSync(
       path.join(rootDir, 'package.json'),
