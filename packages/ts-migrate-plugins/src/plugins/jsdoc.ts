@@ -174,7 +174,7 @@ const jsDocTransformerFactory =
 
       const newType = returnType;
       if (newType) {
-        updates.addReturnAnnotation(node, newType);
+        updates.addReturnAnnotation(node, newType, addParens && parameters !== node.parameters);
       }
     }
 

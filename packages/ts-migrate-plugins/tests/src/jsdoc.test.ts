@@ -557,6 +557,26 @@ window.e = (e: number) => null;
 `);
   });
 
+  it('parenthesizes an arrow function once when it annotates both ends', () => {
+    const text = `\
+/**
+ * @param a {number}
+ * @return {string}
+ */
+const A = a => String(a);
+`;
+
+    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
+
+    expect(result).toBe(`\
+/**
+ * @param a {number}
+ * @return {string}
+ */
+const A = (a: number): string => String(a);
+`);
+  });
+
   it('annotates functions that are not at the top level', () => {
     const text = `\
 function() {

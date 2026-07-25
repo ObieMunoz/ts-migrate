@@ -26,14 +26,23 @@ class UpdateTracker {
   /**
    * Adds a return type annotation to a function.
    * replaceNode would require reprinting the entire function body, losing all whitespace details.
+   *
+   * Set parenthesizedParameters when the parameter list is being replaced with
+   * a parenthesized one, so the parentheses are not written twice.
    */
-  public addReturnAnnotation(node: ts.SignatureDeclaration, type: ts.TypeNode): void {
+  public addReturnAnnotation(
+    node: ts.SignatureDeclaration,
+    type: ts.TypeNode,
+    parenthesizedParameters = false,
+  ): void {
     const paren = node
       .getChildren(this.sourceFile)
       .find((node) => node.kind === ts.SyntaxKind.CloseParenToken);
     let pos;
     if (paren) {
       pos = paren.pos + 1;
+    } else if (parenthesizedParameters) {
+      pos = node.parameters.end;
     } else {
       // Must be an arrow function with single parameter and no parentheses.
       // Add parentheses.
