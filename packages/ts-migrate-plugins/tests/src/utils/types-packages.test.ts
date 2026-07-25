@@ -11,6 +11,7 @@ import {
   renderModuleDeclarations,
   summarizeTypesEvidence,
   TypesEvidence,
+  TypesPackageReport,
 } from '../../../src/utils/typesPackages';
 import { realPluginParams } from '../../test-utils';
 
@@ -246,6 +247,57 @@ describe('summarizeTypesEvidence', () => {
     const report = summarizeTypesEvidence(nodeAndTestRunnerEvidence(), rootDir);
     expect(report.missing.map((rec) => rec.packageName)).toEqual(['@types/node']);
     expect(report.notes[0]).toContain('no test runner was found');
+  });
+});
+
+describe('package manager detection', () => {
+  const lockfiles: [string, TypesPackageReport['packageManager'], string][] = [
+    ['package-lock.json', 'npm', 'npm install -D'],
+    ['yarn.lock', 'yarn', 'yarn add -D'],
+    ['pnpm-lock.yaml', 'pnpm', 'pnpm add -D'],
+    ['bun.lock', 'bun', 'bun add -d'],
+    ['bun.lockb', 'bun', 'bun add -d'],
+  ];
+
+  it.each(lockfiles)('detects %s and prints its install command', (lockfile, manager, command) => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({ devDependencies: { jest: '^29.0.0' } }),
+      [lockfile]: '',
+    });
+
+    const report = summarizeTypesEvidence(nodeAndTestRunnerEvidence(), rootDir);
+
+    expect(report.packageManager).toBe(manager);
+    expect(formatTypesPackageReport(report, 'src')).toContain(
+      `Install: ${command} @types/jest @types/node`,
+    );
+  });
+
+  it('walks up to a lockfile above the migration root', () => {
+    // The monorepo case: a workspace package holds no lockfile of its own, so
+    // detection has to climb to the workspace root to find one.
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({}),
+      'pnpm-lock.yaml': '',
+      'packages/app/package.json': JSON.stringify({}),
+    });
+
+    const report = summarizeTypesEvidence(
+      nodeAndTestRunnerEvidence(),
+      path.join(rootDir, 'packages', 'app'),
+    );
+
+    expect(report.packageManager).toBe('pnpm');
+    expect(formatTypesPackageReport(report, 'src')).toContain('Install: pnpm add -D @types/node');
+  });
+
+  it('falls back to npm when there is no lockfile', () => {
+    const rootDir = makeFixture({ 'package.json': JSON.stringify({}) });
+
+    const report = summarizeTypesEvidence(nodeAndTestRunnerEvidence(), rootDir);
+
+    expect(report.packageManager).toBe('npm');
+    expect(formatTypesPackageReport(report, 'src')).toContain('Install: npm install -D @types/node');
   });
 });
 
