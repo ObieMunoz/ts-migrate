@@ -76,6 +76,78 @@ describe('PassProgress', () => {
       expect(mockedLog.update).toHaveBeenLastCalledWith('[p] 2/2 files processed');
     });
 
+    it('truncates a long path so the counter stays on one row', () => {
+      const relFile = `src/${'deeply/nested/'.repeat(6)}Component.tsx`;
+      const progress = new PassProgress({
+        prefix: '[infer-types]',
+        total: 340,
+        showCurrentFile: true,
+        isTTY: true,
+        now: () => 0,
+        columns: () => 80,
+      });
+
+      progress.fileStarted(relFile);
+
+      const line = mockedLog.update.mock.calls[0][0] as string;
+      expect(line).toBe(`[infer-types] 1/340 ...${relFile.slice(-53)}`);
+      expect(line).toHaveLength(76);
+    });
+
+    it('leaves a path that already fits alone', () => {
+      const progress = new PassProgress({
+        prefix: '[p]',
+        total: 3,
+        showCurrentFile: true,
+        isTTY: true,
+        now: () => 0,
+        columns: () => 80,
+      });
+
+      progress.fileStarted('src/a.ts');
+      expect(mockedLog.update).toHaveBeenCalledWith('[p] 1/3 src/a.ts');
+    });
+
+    it('names a file that took longer than the slow-file threshold', () => {
+      const clock = makeClock();
+      const progress = new PassProgress({
+        prefix: '[infer-types]',
+        total: 2,
+        showCurrentFile: true,
+        isTTY: true,
+        now: clock.now,
+      });
+
+      progress.fileStarted('src/fast.ts');
+      clock.advance(1_000);
+      progress.fileFinished();
+      expect(mockedLog.info).not.toHaveBeenCalled();
+
+      progress.fileStarted('src/slow.ts');
+      clock.advance(252_000);
+      progress.fileFinished();
+      expect(mockedLog.info).toHaveBeenCalledTimes(1);
+      expect(mockedLog.info).toHaveBeenCalledWith('[infer-types] src/slow.ts took 4m 12s.');
+    });
+
+    it('reports no slow file for a concurrent pass', () => {
+      const clock = makeClock();
+      const progress = new PassProgress({
+        prefix: '[eslint-fix]',
+        total: 2,
+        showCurrentFile: false,
+        isTTY: true,
+        now: clock.now,
+      });
+
+      progress.fileStarted('a.ts');
+      progress.fileStarted('b.ts');
+      clock.advance(252_000);
+      progress.fileFinished();
+      progress.fileFinished();
+      expect(mockedLog.info).not.toHaveBeenCalled();
+    });
+
     it('clears the counter line when the pass finishes', () => {
       const progress = new PassProgress({
         prefix: '[p]',
@@ -114,6 +186,23 @@ describe('PassProgress', () => {
       progress.fileStarted('c.ts');
       expect(mockedLog.info).toHaveBeenCalledTimes(1);
       expect(mockedLog.update).not.toHaveBeenCalled();
+    });
+
+    it('keeps the whole path in a plain line', () => {
+      const clock = makeClock(1_000);
+      const relFile = `src/${'deeply/nested/'.repeat(6)}Component.tsx`;
+      const progress = new PassProgress({
+        prefix: '[infer-types]',
+        total: 100,
+        showCurrentFile: true,
+        isTTY: false,
+        now: clock.now,
+        columns: () => 80,
+      });
+
+      clock.advance(10_000);
+      progress.fileStarted(relFile);
+      expect(mockedLog.info).toHaveBeenCalledWith(`[infer-types] 1/100 ${relFile}`);
     });
   });
 });
