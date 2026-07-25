@@ -3,6 +3,65 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.14.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.13.0...v0.14.0) (2026-07-25)
+
+
+### Bug Fixes
+
+* **cli:** agree on which config files the tool recognizes ([#277](https://github.com/ObieMunoz/ts-migrate/issues/277)) ([bab2760](https://github.com/ObieMunoz/ts-migrate/commit/bab27609c07336e2c26be79f76735dc16bc9af69))
+* **cli:** agree on which extensions are build system files ([#244](https://github.com/ObieMunoz/ts-migrate/issues/244)) ([20496f0](https://github.com/ObieMunoz/ts-migrate/commit/20496f05a4ee6ebf50a0b5488ea5c23129ae5a6f))
+* **cli:** fail when the target folder does not exist ([#271](https://github.com/ObieMunoz/ts-migrate/issues/271)) ([dac2bfe](https://github.com/ObieMunoz/ts-migrate/commit/dac2bfe7410de80689e9fc5ccb6b1b0edddf4453))
+* **cli:** find alias declarations in .d.mts and .d.cts files ([#216](https://github.com/ObieMunoz/ts-migrate/issues/216)) ([5ef7c8f](https://github.com/ObieMunoz/ts-migrate/commit/5ef7c8f1cb7e85aa8087614039806c6fcec24f91))
+* **cli:** guard the ts-migrate-full steps and keep the types report on failure ([#269](https://github.com/ObieMunoz/ts-migrate/issues/269)) ([6ba99c0](https://github.com/ObieMunoz/ts-migrate/commit/6ba99c0ea1f2fea669274da44aaecfbf99266591))
+* **cli:** pass plugin options through the --plugin path ([#199](https://github.com/ObieMunoz/ts-migrate/issues/199)) ([272c960](https://github.com/ObieMunoz/ts-migrate/commit/272c9606aaf78bf2b75e679250274e3eb3d831a5))
+* **cli:** reject unknown commands and wrap help output when piped ([#231](https://github.com/ObieMunoz/ts-migrate/issues/231)) ([41f26cb](https://github.com/ObieMunoz/ts-migrate/commit/41f26cb30dc908eb2c1349668f3fe570ae561083))
+* **cli:** remove stray backslash from ts-migrate-full rename banner ([#151](https://github.com/ObieMunoz/ts-migrate/issues/151)) ([fe5f1d0](https://github.com/ObieMunoz/ts-migrate/commit/fe5f1d054633698c350fd91a2ca7d58b692ee91b)), closes [#127](https://github.com/ObieMunoz/ts-migrate/issues/127)
+* **cli:** report the failures that reached no summary ([#261](https://github.com/ObieMunoz/ts-migrate/issues/261)) ([3176b05](https://github.com/ObieMunoz/ts-migrate/commit/3176b05b1a797d74b4d578d2e0b5cb5917ad4918))
+* **cli:** resolve alias declarations by scope rather than by text ([#254](https://github.com/ObieMunoz/ts-migrate/issues/254)) ([7280fd4](https://github.com/ObieMunoz/ts-migrate/commit/7280fd4ba6529559f28fa10a41fe46d0e838c191))
+* **cli:** stop the options placeholder from swallowing a stray argument ([#248](https://github.com/ObieMunoz/ts-migrate/issues/248)) ([0395146](https://github.com/ObieMunoz/ts-migrate/commit/039514676ef03f73345b4f268bb7884c746a20f5))
+* **errors:** report failures that were reaching users as silence or a bare stack ([#183](https://github.com/ObieMunoz/ts-migrate/issues/183)) ([6964de4](https://github.com/ObieMunoz/ts-migrate/commit/6964de4be2a1109bf2919601633c37d7b7d6bdcd))
+* **eslint-fix:** report lint failures once per cause instead of once per file ([#155](https://github.com/ObieMunoz/ts-migrate/issues/155)) ([ddf5f18](https://github.com/ObieMunoz/ts-migrate/commit/ddf5f188b3ab69c4cbc49d57be2cdd1e22827e0e))
+* **eslint-fix:** resolve the ESLint config from the migration root, not the working directory ([#153](https://github.com/ObieMunoz/ts-migrate/issues/153)) ([d76aefe](https://github.com/ObieMunoz/ts-migrate/commit/d76aefe592899ebc1af65f33b24382346976714f))
+* **plugins:** break lockfile ties by pin, workspace file, then mtime ([#161](https://github.com/ObieMunoz/ts-migrate/issues/161)) ([3c24b76](https://github.com/ObieMunoz/ts-migrate/commit/3c24b76eebe6284ac2266d36771f9cef63d30bb3))
+* **plugins:** keep extensionless specifiers in .cts files ([#243](https://github.com/ObieMunoz/ts-migrate/issues/243)) ([ec66001](https://github.com/ObieMunoz/ts-migrate/commit/ec66001f9e775d2a7faf124dc66ce8676025437e))
+* **plugins:** say project tsconfig rather than generated in the types report ([#266](https://github.com/ObieMunoz/ts-migrate/issues/266)) ([41f5ae9](https://github.com/ObieMunoz/ts-migrate/commit/41f5ae9e61c3689ac6236940ad6989dd677b4a02))
+* **server:** keep .d.mts and .d.cts out of the migration set ([#209](https://github.com/ObieMunoz/ts-migrate/issues/209)) ([a719b1a](https://github.com/ObieMunoz/ts-migrate/commit/a719b1a75016aa3ee665197ae8c6bdbe49d3dd79))
+* **server:** keep javascript files out of the migration set ([#182](https://github.com/ObieMunoz/ts-migrate/issues/182)) ([608a18c](https://github.com/ObieMunoz/ts-migrate/commit/608a18cbdf9fd839121eee3c2c69c4924d2ec8d1))
+* **server:** report passes and convergence truthfully during a migration ([#222](https://github.com/ObieMunoz/ts-migrate/issues/222)) ([d842dd2](https://github.com/ObieMunoz/ts-migrate/commit/d842dd26a403b1dab26d154feabdec5b4d5b2971))
+* **ts-migrate:** commit each step through git -C instead of a cd pair ([#165](https://github.com/ObieMunoz/ts-migrate/issues/165)) ([5cbea43](https://github.com/ObieMunoz/ts-migrate/commit/5cbea430e9ef11163a67c24b7429bebde0f7905a))
+* **ts-migrate:** compare compilers below the major and check the pair before Step 1 ([#163](https://github.com/ObieMunoz/ts-migrate/issues/163)) ([347e974](https://github.com/ObieMunoz/ts-migrate/commit/347e974a3dfdfa37f273778555ee606dd9c23470))
+
+
+### Features
+
+* **cli:** add the annotateReturns flag for the jsdoc plugin ([#195](https://github.com/ObieMunoz/ts-migrate/issues/195)) ([ed58f63](https://github.com/ObieMunoz/ts-migrate/commit/ed58f6376d6e387a545310bf604bce2a918427a3))
+* **cli:** declare wildcard asset modules for bundler projects ([#224](https://github.com/ObieMunoz/ts-migrate/issues/224)) ([9485af9](https://github.com/ObieMunoz/ts-migrate/commit/9485af9cac0458c27d79c22a53885a1d6f70d887))
+* **cli:** detect vite and webpack when generating the tsconfig ([#194](https://github.com/ObieMunoz/ts-migrate/issues/194)) ([828e95c](https://github.com/ObieMunoz/ts-migrate/commit/828e95c37b6845427f27d487351ff1475b8d5c6e))
+* **cli:** enable allowJs in the generated tsconfig ([#196](https://github.com/ObieMunoz/ts-migrate/issues/196)) ([0c5c0e0](https://github.com/ObieMunoz/ts-migrate/commit/0c5c0e00c07fb3edb14f2e4be332c0bad60a8a55))
+* **cli:** enable resolveJsonModule in the generated tsconfig ([#174](https://github.com/ObieMunoz/ts-migrate/issues/174)) ([72719a3](https://github.com/ObieMunoz/ts-migrate/commit/72719a3dff2cfc14e130e81c1cb31b1013ca6d3e)), closes [#82](https://github.com/ObieMunoz/ts-migrate/issues/82)
+* **cli:** retry the any assertions add-conversions inserted ([#214](https://github.com/ObieMunoz/ts-migrate/issues/214)) ([bc356bf](https://github.com/ObieMunoz/ts-migrate/commit/bc356bfb7fa07c47572c15dc55703cce5d5a701c))
+* **cli:** run the jsdoc plugin in the default pipeline ([#247](https://github.com/ObieMunoz/ts-migrate/issues/247)) ([37c0e67](https://github.com/ObieMunoz/ts-migrate/commit/37c0e6736d1753abf6f13d90ddbb144c8ba42c5d))
+* **cli:** run the type package preflight before migrate and reignore ([#259](https://github.com/ObieMunoz/ts-migrate/issues/259)) ([f2c5fa6](https://github.com/ObieMunoz/ts-migrate/commit/f2c5fa648abd7908395db99f700bfa7c30177806))
+* **cli:** translate webpack module resolution into tsconfig paths ([#267](https://github.com/ObieMunoz/ts-migrate/issues/267)) ([b4e2db4](https://github.com/ObieMunoz/ts-migrate/commit/b4e2db4d2c6ad7afaa6bdf49d3e3e312066be8be))
+* **cli:** update package.json scripts and test globs after rename ([#176](https://github.com/ObieMunoz/ts-migrate/issues/176)) ([7b6498e](https://github.com/ObieMunoz/ts-migrate/commit/7b6498e290dab5acb42a02c787ef2fcf0b61893e))
+* **cli:** warn about missing type packages before the migration runs ([#251](https://github.com/ObieMunoz/ts-migrate/issues/251)) ([a950c85](https://github.com/ObieMunoz/ts-migrate/commit/a950c851cd51476ede11f32716c7251ab285e976))
+* **plugins:** add type arguments to react hook calls ([#227](https://github.com/ObieMunoz/ts-migrate/issues/227)) ([367fa79](https://github.com/ObieMunoz/ts-migrate/commit/367fa7934c7e0f472d61dff60d6b5f6cf3111caa))
+* **plugins:** collect global assignments into a generated declare global ([#230](https://github.com/ObieMunoz/ts-migrate/issues/230)) ([200f16b](https://github.com/ObieMunoz/ts-migrate/commit/200f16bc888843855ce5d2c5f97056b5486f7242))
+* **plugins:** convert commonjs exports and requires to typescript module syntax ([#201](https://github.com/ObieMunoz/ts-migrate/issues/201)) ([9cd9fa8](https://github.com/ObieMunoz/ts-migrate/commit/9cd9fa882ad330f5c880458d62a2e8de3231e244))
+* **plugins:** convert function component defaultProps to default parameters ([#233](https://github.com/ObieMunoz/ts-migrate/issues/233)) ([a1c7fb5](https://github.com/ObieMunoz/ts-migrate/commit/a1c7fb5acb24320d0949ea9c813c0898958dfbf2))
+* **plugins:** convert inline jsdoc type casts to as expressions ([#280](https://github.com/ObieMunoz/ts-migrate/issues/280)) ([8edc502](https://github.com/ObieMunoz/ts-migrate/commit/8edc50277cdf2c61ae3be474224822b08977b070))
+* **plugins:** generate props types for components without propTypes ([#240](https://github.com/ObieMunoz/ts-migrate/issues/240)) ([82a7c33](https://github.com/ObieMunoz/ts-migrate/commit/82a7c3345fb6de4d92d20483eb15f6b2833df875))
+* **plugins:** narrow the any assertions that survive the retry ([#262](https://github.com/ObieMunoz/ts-migrate/issues/262)) ([3b62949](https://github.com/ObieMunoz/ts-migrate/commit/3b629497e9b3430a053581c15e5ff9ca5c32a716))
+* **plugins:** read the packageManager pin before searching for a lockfile ([#160](https://github.com/ObieMunoz/ts-migrate/issues/160)) ([230fd8e](https://github.com/ObieMunoz/ts-migrate/commit/230fd8e07c4da9bcfd014b6ff95d1616ed3ec3af))
+* **plugins:** record the diagnostic evidence suppressions discard ([#203](https://github.com/ObieMunoz/ts-migrate/issues/203)) ([9372aa2](https://github.com/ObieMunoz/ts-migrate/commit/9372aa286bec9f77a1dfe5f4b6d176150c5c850a))
+* **plugins:** report the documented type names that resolve to nothing ([#263](https://github.com/ObieMunoz/ts-migrate/issues/263)) ([ff9a25c](https://github.com/ObieMunoz/ts-migrate/commit/ff9a25c6a35065d347b791eaf99e588ab6d01c18))
+* **plugins:** type empty object literals from their property assignments ([#239](https://github.com/ObieMunoz/ts-migrate/issues/239)) ([3f1f81f](https://github.com/ObieMunoz/ts-migrate/commit/3f1f81fd4df13042beded744c08e2b025d4523a7))
+* **plugins:** widen annotations that assignments contradict ([#237](https://github.com/ObieMunoz/ts-migrate/issues/237)) ([1177254](https://github.com/ObieMunoz/ts-migrate/commit/117725442c5c70663934fd44e86f0403615de3c8))
+
+
+
+
+
 # [0.13.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.12.1...v0.13.0) (2026-07-24)
 
 

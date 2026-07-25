@@ -3,6 +3,22 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.14.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.13.0...v0.14.0) (2026-07-25)
+
+
+### Bug Fixes
+
+* **cli:** report the failures that reached no summary ([#261](https://github.com/ObieMunoz/ts-migrate/issues/261)) ([3176b05](https://github.com/ObieMunoz/ts-migrate/commit/3176b05b1a797d74b4d578d2e0b5cb5917ad4918))
+* **errors:** report failures that were reaching users as silence or a bare stack ([#183](https://github.com/ObieMunoz/ts-migrate/issues/183)) ([6964de4](https://github.com/ObieMunoz/ts-migrate/commit/6964de4be2a1109bf2919601633c37d7b7d6bdcd))
+* **eslint-fix:** report lint failures once per cause instead of once per file ([#155](https://github.com/ObieMunoz/ts-migrate/issues/155)) ([ddf5f18](https://github.com/ObieMunoz/ts-migrate/commit/ddf5f188b3ab69c4cbc49d57be2cdd1e22827e0e))
+* **server:** keep .d.mts and .d.cts out of the migration set ([#209](https://github.com/ObieMunoz/ts-migrate/issues/209)) ([a719b1a](https://github.com/ObieMunoz/ts-migrate/commit/a719b1a75016aa3ee665197ae8c6bdbe49d3dd79))
+* **server:** keep javascript files out of the migration set ([#182](https://github.com/ObieMunoz/ts-migrate/issues/182)) ([608a18c](https://github.com/ObieMunoz/ts-migrate/commit/608a18cbdf9fd839121eee3c2c69c4924d2ec8d1))
+* **server:** report passes and convergence truthfully during a migration ([#222](https://github.com/ObieMunoz/ts-migrate/issues/222)) ([d842dd2](https://github.com/ObieMunoz/ts-migrate/commit/d842dd26a403b1dab26d154feabdec5b4d5b2971))
+
+
+
+
+
 # [0.13.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.12.1...v0.13.0) (2026-07-24)
 
 
