@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
 import log from 'updatable-log';
-import yargs from 'yargs';
+import yargs, { Argv as YargsArgv } from 'yargs';
 
 import {
   formatSuppressionReport,
@@ -45,6 +45,15 @@ import {
   scanTypeDebt,
   scanTypeDebtForFiles,
 } from './utils/typeDebt';
+
+// The runtime has shipped strictCommands since yargs 15.4, but the
+// @types/yargs this workspace resolves predates it. Merges as an overload with
+// a newer @types/yargs that declares it.
+declare module 'yargs' {
+  interface Argv<T> {
+    strictCommands(enabled?: boolean): YargsArgv<T>;
+  }
+}
 
 const BUG_REPORT_URL = 'https://github.com/ObieMunoz/ts-migrate/issues';
 
@@ -250,7 +259,7 @@ yargs
   )
   .command(
     'init:extended <folder>',
-    'Initialize tsconfig.json file in <folder>',
+    'Initialize tsconfig.json in <folder> extending a shared base config',
     (cmd) => cmd.positional('folder', { type: 'string' }).require(['folder']),
     (args) => {
       const rootDir = path.resolve(process.cwd(), args.folder);
@@ -325,6 +334,10 @@ yargs
       cmd
         .positional('folder', { type: 'string' })
         .choices('defaultAccessibility', ['private', 'protected', 'public'] as const)
+        .describe(
+          'defaultAccessibility',
+          'Give every class member that declares no accessibility modifier this one. Members matched by one of the regex flags below take that modifier instead.',
+        )
         .string('plugin')
         .choices(
           'plugin',
@@ -365,8 +378,20 @@ yargs
           'Type React defaultProps with a WithDefaultProps helper type. The helper is generated into each migrated file, so no extra module is required.',
         )
         .string('privateRegex')
+        .describe(
+          'privateRegex',
+          'Mark class members whose name matches this regular expression private.',
+        )
         .string('protectedRegex')
+        .describe(
+          'protectedRegex',
+          'Mark class members whose name matches this regular expression protected, unless --privateRegex already matched.',
+        )
         .string('publicRegex')
+        .describe(
+          'publicRegex',
+          'Mark class members whose name matches this regular expression public, unless one of the two flags above already matched.',
+        )
         .string('sources')
         .alias('sources', 's')
         .describe('sources', 'Path to a subset of your project to migrate (globs are ok).')
@@ -435,7 +460,7 @@ yargs
         )
         .string('jsonSummary')
         .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
-        .example('migrate /frontend/foo', 'Migrate all the files in /frontend/foo')
+        .example('$0 migrate /frontend/foo', 'Migrate all the files in /frontend/foo')
         .example(
           '$0 migrate /frontend/foo -s "bar/**/*"',
           'Migrate all the files in /frontend/foo/bar. Ambient .d.ts files from the tsconfig stay in the program.',
@@ -795,11 +820,16 @@ yargs
       'non-interactive usage playbook.',
   )
   .demandCommand(1, 'Must provide a command.')
+  // demandCommand only counts positionals, so a name that matches no command
+  // reaches here. Options stay unchecked: ts-migrate-full forwards one argument
+  // list to both rename and migrate, which accept different flags.
+  .strictCommands()
+  // Near misses fail with the command they were probably meant to be, before
+  // strictCommands reports them as unknown.
+  .recommendCommands()
   .help('h')
   .alias('h', 'help')
   .alias('v', 'version')
-  .alias('i', 'init')
-  .alias('m', 'migrate')
-  .alias('rn', 'rename')
-  .alias('ri', 'reignore')
-  .wrap(Math.min(yargs.terminalWidth(), 100)).argv;
+  // terminalWidth() is null when stdout is not a TTY, and yargs does not wrap
+  // at all on a falsy width, so piped and redirected help falls back to 100.
+  .wrap(Math.min(yargs.terminalWidth() || 100, 100)).argv;
