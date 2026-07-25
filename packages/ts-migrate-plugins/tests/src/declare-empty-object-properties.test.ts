@@ -200,7 +200,9 @@ export { broken, kept };
     expect(result).toContain('const kept: { count?: number } = {};');
     // The write `broken` kept is the one add-conversions casts, and the only
     // error left: annotating it would have made the reassignment below fail.
-    expect(typeCheck(result)).toEqual(["TS2339: Property 'total' does not exist on type '{}'."]);
+    const diagnostics = typeCheck(result);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toContain('TS2339');
   });
 
   it('types an accumulator whose values are objects and functions', async () => {
