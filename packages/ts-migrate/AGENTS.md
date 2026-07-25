@@ -87,6 +87,9 @@ docs live in this package's README.md.
 npm i -D @types/node          # plus your test runner's types:
                               # jest -> @types/jest, mocha -> @types/mocha,
                               # vitest -> add "vitest/globals" to tsconfig "types"
+                              # and your bundler's, on a browser app:
+                              # webpack -> @types/webpack-env
+                              # vite -> nothing, init pins "vite/client"
 
 # 1. Migrate. <folder> is the project (or sub-project) root, the directory
 #    where tsconfig.json belongs.
@@ -161,6 +164,18 @@ verify with `tsc --noEmit`.
 Writes a migration-friendly `tsconfig.json` in `<folder>` (no-op if one
 exists). `resolveJsonModule` is on, so JSON imports type as their contents
 instead of collecting a suppression each.
+The module settings follow the project: `commonjs`, or `nodenext` when
+package.json declares `"type": "module"`, or `esnext` with
+`"moduleResolution": "bundler"` when the project builds with Vite or webpack
+(either one in `dependencies`/`devDependencies`, or a
+`vite.config.*`/`webpack.config.*` file in `<folder>`). Bundler projects need
+that third setting because their imports are resolved by the bundler, not by
+node: `import.meta.env` is a hard error under the other two, and
+extensionless relative imports are a hard error under `nodenext`. A Vite
+project also gets `"vite/client"` in the `types` array when vite is
+installed, which is what declares `import.meta.env` and the asset imports
+(`*.svg`, `*.css`). For a webpack project, install `@types/webpack-env` so
+`require.context` and `module.hot` type; init says so when it is missing.
 Installed `@types` packages are pinned in a `types` array so that
 TypeScript 5 (which loads `node_modules/@types` automatically) and
 TypeScript 6 (which does not) check the project identically; add new

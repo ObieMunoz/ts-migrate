@@ -54,9 +54,10 @@ function typeCheck(rootDir: string): string[] {
   const { config } = ts.readConfigFile(configFile, ts.sys.readFile);
   const parsed = ts.parseJsonConfigFileContent(config, ts.sys, rootDir, undefined, configFile);
   const program = ts.createProgram(parsed.fileNames, parsed.options);
-  return ts
-    .getPreEmitDiagnostics(program)
-    .map((diagnostic) => `TS${diagnostic.code}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`);
+  return ts.getPreEmitDiagnostics(program).map((diagnostic) => {
+    const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ');
+    return `TS${diagnostic.code}: ${message}`;
+  });
 }
 
 describe('init command', () => {
