@@ -14,6 +14,7 @@ import {
   reactClassLifecycleMethodsPlugin,
   reactClassStatePlugin,
   reactDefaultPropsPlugin,
+  reactDestructuredPropsPlugin,
   reactHookTypesPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
@@ -48,6 +49,7 @@ export const availablePlugins = [
   reactClassLifecycleMethodsPlugin,
   reactClassStatePlugin,
   reactDefaultPropsPlugin,
+  reactDestructuredPropsPlugin,
   reactHookTypesPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
@@ -137,6 +139,7 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
       useDefaultPropsHelper: params.useDefaultPropsHelper ?? false,
       modernizeDefaultProps: params.modernizeDefaultProps ?? true,
     }),
+    entry(reactDestructuredPropsPlugin, { anyAlias }),
     entry(reactHookTypesPlugin, { anyAlias }),
     entry(reactInlineImportedPropTypesPlugin, {}),
     entry(reactPropsPlugin, { anyAlias, anyFunctionAlias, shouldUpdateAirbnbImports: true }),
@@ -257,6 +260,9 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     .addPlugin(hoistArrowFunctionsPlugin, optionsFor(hoistArrowFunctionsPlugin))
     .addPlugin(hoistDeclarationsPlugin, optionsFor(hoistDeclarationsPlugin))
     .addPlugin(reactPropsPlugin, optionsFor(reactPropsPlugin))
+    // Runs after react-props so the propTypes path wins wherever there are
+    // propTypes, and picks up only the components it left untyped.
+    .addPlugin(reactDestructuredPropsPlugin, optionsFor(reactDestructuredPropsPlugin))
     .addPlugin(reactClassStatePlugin, optionsFor(reactClassStatePlugin))
     .addPlugin(reactClassLifecycleMethodsPlugin, optionsFor(reactClassLifecycleMethodsPlugin))
     .addPlugin(reactDefaultPropsPlugin, optionsFor(reactDefaultPropsPlugin))

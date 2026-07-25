@@ -14,6 +14,7 @@ import memberAccessibilityPlugin from './plugins/member-accessibility';
 import reactClassLifecycleMethodsPlugin from './plugins/react-class-lifecycle-methods';
 import reactClassStatePlugin from './plugins/react-class-state';
 import reactDefaultPropsPlugin from './plugins/react-default-props';
+import reactDestructuredPropsPlugin from './plugins/react-destructured-props';
 import reactHookTypesPlugin from './plugins/react-hook-types';
 import reactInlineImportedPropTypesPlugin from './plugins/react-inline-imported-prop-types';
 import reactPropsPlugin from './plugins/react-props';
@@ -88,6 +89,7 @@ export {
   reactClassLifecycleMethodsPlugin,
   reactClassStatePlugin,
   reactDefaultPropsPlugin,
+  reactDestructuredPropsPlugin,
   reactHookTypesPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
