@@ -33,8 +33,11 @@ interface Candidate {
  * A declaration with no type annotation takes the type the checker infers
  * from the constructor assignments, so that is what is proposed first: the
  * file is re-checked with the bare declarations in place, and each one is
- * kept only where it produces no error the file did not already have.
- * Whatever fails takes the any alias, and so does everything when
+ * kept only where the checker gives it a type of its own. Producing no new
+ * error is not enough on its own, since a property assigned from an `any`
+ * infers `any` and reports nothing.
+ *
+ * Whatever is not kept takes the any alias, and so does everything when
  * `noImplicitAny` is off, where a bare declaration would be an implicit any
  * nothing reports and nothing later annotates.
  */
@@ -184,12 +187,23 @@ function inferrableCandidates(
   return validateCandidates(fileName, sourceFile, getValidationOptions(programOptions), candidates);
 }
 
+/** What one program says about the group it was built for. */
+interface CheckResult {
+  newErrors: ts.Diagnostic[];
+  /** Declarations the checker resolved to `any`. */
+  inferredAny: Set<Candidate>;
+}
+
+function isProven(result: CheckResult): boolean {
+  return result.newErrors.length === 0 && result.inferredAny.size === 0;
+}
+
 /**
- * Keeps the bare declarations that produce no error the file did not already
- * have. The full set is checked first, which is one program for the common
- * file; on errors the blamed declarations are dropped and the remainder
- * proven in one more, and only an unattributable failure falls back to
- * bisection.
+ * Keeps the bare declarations the checker gives a type of its own: no error
+ * the file did not already have, and nothing that resolved to `any`. The full
+ * set is checked first, which is one program for the common file; the blamed
+ * declarations are then dropped and the remainder proven in one more, and
+ * only an unattributable failure falls back to bisection.
  */
 function validateCandidates(
   fileName: string,
@@ -204,8 +218,8 @@ function validateCandidates(
   // A candidate left out of a group stays undeclared, so the accesses that
   // named it keep reporting the error the baseline already has and read as
   // the same any the alias would give them.
-  const check = (group: Candidate[]): ts.Diagnostic[] | undefined => {
-    if (group.length === 0) return [];
+  const check = (group: Candidate[]): CheckResult | undefined => {
+    if (group.length === 0) return { newErrors: [], inferredAny: new Set() };
     if (programsLeft <= 0) return undefined;
     programsLeft -= 1;
     const changes = changesOf(group);
@@ -214,34 +228,38 @@ function validateCandidates(
       applyTextChanges(text, changes),
       compilerOptions,
     );
-    return findNewErrors(baseline, candidate, changes, fileName);
+    return {
+      newErrors: findNewErrors(baseline, candidate, changes, fileName),
+      inferredAny: inferredAnyCandidates(candidate, fileName, group, changes),
+    };
   };
 
-  const errors = check(candidates);
-  if (errors && errors.length === 0) {
+  const result = check(candidates);
+  if (result && isProven(result)) {
     return candidates;
   }
 
-  if (errors && errors.length > 0) {
-    const blamed = attributeErrors(errors, candidates, sourceFile);
+  if (result) {
+    const blamed = attributeErrors(result.newErrors, candidates, sourceFile);
+    result.inferredAny.forEach((candidate) => blamed.add(candidate));
     if (blamed.size >= candidates.length) {
       return [];
     }
     if (blamed.size > 0) {
       const remainder = candidates.filter((candidate) => !blamed.has(candidate));
-      const remainderErrors = check(remainder);
-      if (remainderErrors && remainderErrors.length === 0) {
+      const remainderResult = check(remainder);
+      if (remainderResult && isProven(remainderResult)) {
         return remainder;
       }
     }
   }
 
   // Every branch below keeps the invariant that `fixed` has already been
-  // proven clean, so whatever it returns has been checked as a whole.
+  // proven, so whatever it returns has been checked as a whole.
   const bisect = (fixed: Candidate[], group: Candidate[]): Candidate[] => {
     if (group.length === 0) return [];
-    const groupErrors = check(sortByIndex([...fixed, ...group]));
-    if (groupErrors && groupErrors.length === 0) return group;
+    const groupResult = check(sortByIndex([...fixed, ...group]));
+    if (groupResult && isProven(groupResult)) return group;
     if (group.length === 1) return [];
     const mid = Math.floor(group.length / 2);
     const first = bisect(fixed, group.slice(0, mid));
@@ -255,6 +273,59 @@ function validateCandidates(
   const mid = Math.floor(candidates.length / 2);
   const first = bisect([], candidates.slice(0, mid));
   return [...first, ...bisect(first, candidates.slice(mid))];
+}
+
+/**
+ * The declarations that came out `any`. A property assigned only from an
+ * expression the checker already types `any` infers `any` and reports
+ * nothing, so no error proves it wrong; leaving it bare would hide the same
+ * any the alias makes visible, and nothing later annotates it.
+ */
+function inferredAnyCandidates(
+  service: ts.LanguageService,
+  fileName: string,
+  candidates: Candidate[],
+  changes: TextChange[],
+): Set<Candidate> {
+  const inferredAny = new Set<Candidate>();
+  const program = service.getProgram();
+  const source = program && program.getSourceFile(fileName);
+  if (!program || !source) return inferredAny;
+
+  const checker = program.getTypeChecker();
+  const spans = insertedSpans(changes);
+  candidates.forEach((candidate, i) => {
+    const declaration = propertyDeclarationIn(source, spans[i]);
+    if (!declaration) return;
+    const symbol = checker.getSymbolAtLocation(declaration.name);
+    if (!symbol) return;
+    const type = checker.getTypeOfSymbolAtLocation(symbol, declaration);
+    if ((type.flags & ts.TypeFlags.Any) !== 0) {
+      inferredAny.add(candidate);
+    }
+  });
+  return inferredAny;
+}
+
+function propertyDeclarationIn(
+  source: ts.SourceFile,
+  span: { start: number; end: number },
+): ts.PropertyDeclaration | undefined {
+  let result: ts.PropertyDeclaration | undefined;
+  const visit = (node: ts.Node): void => {
+    if (node.end <= span.start || node.getStart(source) >= span.end) return;
+    if (
+      ts.isPropertyDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.getStart(source) >= span.start &&
+      node.end <= span.end
+    ) {
+      result = node;
+    }
+    node.forEachChild(visit);
+  };
+  source.forEachChild(visit);
+  return result;
 }
 
 function sortByIndex(candidates: Candidate[]): Candidate[] {
