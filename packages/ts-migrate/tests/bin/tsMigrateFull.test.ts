@@ -65,18 +65,31 @@ function writeTsc(version: string): string {
   return tscPath;
 }
 
-/** Answers the prompts in order. --no-commit so a run cannot reach `git commit`. */
-function runFull(answers: string[]): { status: number; output: string } {
+/** Answers the prompts in order. --no-commit by default, so a run cannot reach `git commit`. */
+function runFull(answers: string[], args: string[] = ['--no-commit']): {
+  status: number;
+  output: string;
+} {
   try {
     const output = execFileSync(
       'bash',
-      [path.join(installDir, 'bin', 'ts-migrate-full.sh'), projectDir, '--no-commit'],
+      [path.join(installDir, 'bin', 'ts-migrate-full.sh'), projectDir, ...args],
       { input: `${answers.join('\n')}\n`, encoding: 'utf-8', stdio: 'pipe' },
     );
     return { status: 0, output };
   } catch (err: any) {
     return { status: err.status, output: `${err.stdout ?? ''}${err.stderr ?? ''}` };
   }
+}
+
+/** A git repository at the project, so a run without --no-commit can commit. */
+function initGitRepo(): void {
+  const git = (...args: string[]) =>
+    execFileSync('git', ['-C', projectDir, ...args], { stdio: 'ignore' });
+  git('init', '-q');
+  git('config', 'user.email', 'ts-migrate@example.com');
+  git('config', 'user.name', 'ts-migrate');
+  git('config', 'commit.gpgsign', 'false');
 }
 
 describe('the ts-migrate-full compiler preflight', () => {
@@ -123,5 +136,19 @@ describe('the ts-migrate-full compiler preflight', () => {
     expect(output).toContain('The check will run the same compiler the migration used.');
     expect(output).not.toContain('Continue anyway?');
     expect(output).toContain('Step 1 of 4');
+  });
+});
+
+describe('the ts-migrate-full commit step', () => {
+  it('commits without printing a directory of its own between the steps', () => {
+    initGitRepo();
+
+    const { status, output } = runFull(['y', writeTsc('5.7.2')], []);
+
+    expect(status).toBe(0);
+    expect(output).toContain('[ts-migrate][project] Init tsconfig.json file');
+    expect(output).toContain('This run created mechanical rewrite commits');
+    const bareDirectories = output.split('\n').filter((line) => /^\/\S*$/.test(line.trim()));
+    expect(bareDirectories).toEqual([]);
   });
 });
