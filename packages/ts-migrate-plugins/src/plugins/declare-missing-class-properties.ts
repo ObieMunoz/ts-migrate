@@ -245,11 +245,11 @@ function isProven(result: CheckResult): boolean {
 }
 
 /**
- * Keeps the bare declarations the checker gives a type of its own: no error
- * the file did not already have, and nothing that resolved to `any`. The full
- * set is checked first, which is one program for the common file; the blamed
- * declarations are then dropped and the remainder proven in one more, and
- * only an unattributable failure falls back to bisection.
+ * Keeps the declarations that check out as proposed: no error the file did not
+ * already have, and, for the bare ones, nothing that resolved to `any`. The
+ * full set is checked first, which is one program for the common file; the
+ * blamed declarations are then dropped and the remainder proven in one more,
+ * and only an unattributable failure falls back to bisection.
  */
 function validateCandidates(
   fileName: string,

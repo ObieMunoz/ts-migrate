@@ -479,6 +479,25 @@ class C {
       expect(await runReal(text)).toContain('cache: { total?: $TSFixMe };');
     });
 
+    it.each([
+      ['an empty array', 'this.cache.items = [];\n    this.cache.items.push(1);'],
+      ['an empty object', 'this.cache.items = {};\n    this.cache.items.nested = 1;'],
+      ['null', 'this.cache.items = null;'],
+    ])('takes the alias for a key assigned %s', async (_name, body) => {
+      const text = `class C {
+  constructor() {
+    this.cache = {};
+  }
+
+  load() {
+    ${body}
+  }
+}
+`;
+
+      expect(await runReal(text)).toContain('cache: { items?: $TSFixMe };');
+    });
+
     it('types the property without noImplicitAny', async () => {
       const text = `class C {
   constructor() {
