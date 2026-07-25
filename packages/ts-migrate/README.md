@@ -1,7 +1,7 @@
 # @obiemunoz/ts-migrate
 
 *ts-migrate is a tool for migrating frontend application to TypeScript.*
-Run `npx -p @obiemunoz/ts-migrate ts-migrate-full <folder>` to convert your frontend application to TypeScript.
+Run `npx -p @obiemunoz/ts-migrate ts-migrate full <folder>` to convert your frontend application to TypeScript.
 
 > **This is a maintained fork of [airbnb/ts-migrate](https://github.com/airbnb/ts-migrate), updated for TypeScript 5 and 6.** Original work © 2020 Airbnb (MIT).
 
@@ -18,23 +18,24 @@ Or [pnpm](https://pnpm.io):
 
 `pnpm add -D @obiemunoz/ts-migrate`
 
-The CLI commands are still named `ts-migrate` and `ts-migrate-full`. Because the
-package is scoped, one-off `npx` runs need the `-p @obiemunoz/ts-migrate` flag to
-tell npx which package provides those commands: a bare `npx ts-migrate-full ...`
-would download the unmaintained upstream `ts-migrate` package instead. The pnpm
-equivalent is `pnpm --package=@obiemunoz/ts-migrate dlx ts-migrate-full ...`.
+The CLI command is still named `ts-migrate`, and `ts-migrate-full` is still
+installed as an alias of `ts-migrate full`. Because the package is scoped,
+one-off `npx` runs need the `-p @obiemunoz/ts-migrate` flag to tell npx which
+package provides those commands: a bare `npx ts-migrate ...` would download the
+unmaintained upstream `ts-migrate` package instead. The pnpm equivalent is
+`pnpm --package=@obiemunoz/ts-migrate dlx ts-migrate full ...`.
 If you've installed `@obiemunoz/ts-migrate` as a devDependency of your project,
-the commands are already in `node_modules/.bin`, so `npx ts-migrate-full <folder>`,
-`pnpm ts-migrate-full <folder>`, or a package.json script all resolve to this fork.
+the commands are already in `node_modules/.bin`, so `npx ts-migrate full <folder>`,
+`pnpm ts-migrate full <folder>`, or a package.json script all resolve to this fork.
 
 # Usage
 
 Migrate an entire project like this:
 
 ```sh
-npx -p @obiemunoz/ts-migrate ts-migrate-full <folder>
+npx -p @obiemunoz/ts-migrate ts-migrate full <folder>
 ```
-The `ts-migrate-full` command asks for confirmation before it starts and will perform a `git add` and `git commit` after each major step (_[details here]( https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate/bin/ts-migrate-full.sh )_). For unattended runs — scripts, CI, AI coding agents — pass `--yes` to skip the prompts and `--no-commit` to leave the changes uncommitted in the working tree.
+The `full` command runs `init`, `rename`, `migrate` and a closing `tsc --noEmit` check in that order, in one process against one compiler, so it reports exactly what running those commands by hand reports. It asks for confirmation before it starts and will perform a `git add` and `git commit` after each major step. For unattended runs — scripts, CI, AI coding agents — pass `--yes` to skip the prompts and `--no-commit` to leave the changes uncommitted in the working tree. `ts-migrate-full <folder>` is the same command under its original name, so existing scripts keep working.
 
 Commit or stash the folder you are migrating before you start. The run lists anything uncommitted there before Step 1, because the rename and migrate steps rewrite those files whether or not commits are enabled, and with commits enabled `git add .` puts them in the migration's commits too. Without `--yes` the list sits above the confirmation prompt; with `--yes` it is a warning and the run continues.
 
@@ -48,7 +49,7 @@ You can also migrate individual parts of a project by specifying a subset of sou
 ```sh
 # Specify the project root and list the subset to migrate. Ambient declaration
 # files from your tsconfig stay in the program automatically.
-npx -p @obiemunoz/ts-migrate ts-migrate-full <folder> \
+npx -p @obiemunoz/ts-migrate ts-migrate full <folder> \
   --sources="relative/path/to/subset/**/*"
 ```
 
@@ -109,7 +110,7 @@ An argument past the ones a command declares is reported the same way, so
 ignoring it.
 
 An option a command does not declare is still accepted and ignored, because
-`ts-migrate-full` forwards one argument list to both `rename` and `migrate` and
+`ts-migrate full` forwards one argument list to both `rename` and `migrate` and
 the two accept different flags.
 
 Every command above takes a `<folder>`, and every one of them exits 255 before
@@ -197,7 +198,7 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --exclude-plugin eslint
 ```
 
 An unknown plugin name errors and lists the valid names. Excluding
-`infer-types` is equivalent to `--no-inferTypes`. `ts-migrate-full` forwards
+`infer-types` is equivalent to `--no-inferTypes`. `ts-migrate full` forwards
 the flag to the migrate step, like any other migrate option.
 
 `--plugin <name>` runs one plugin on its own instead of the pipeline. It takes
@@ -243,7 +244,7 @@ This matters most under `npx`, which installs the package in a temporary
 directory and resolves the `typescript` peer dependency there, picking the
 highest version the range allows. A project on TypeScript 5.7 migrated by
 TypeScript 6 gets suppressions for errors its own `tsc` never reports, and the
-compile check at the end of `ts-migrate-full` fails with TS2578 (unused
+compile check at the end of `ts-migrate full` fails with TS2578 (unused
 `@ts-expect-error`).
 
 Two cases fall back to the compiler installed with ts-migrate. Both are named
@@ -262,7 +263,7 @@ the package directory or any file inside it:
 npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --typescript ./vendor/typescript
 ```
 
-`ts-migrate-full` takes the same flag and applies it to both the migrate step
+`ts-migrate full` takes the same flag and applies it to both the migrate step
 and the compile check, so the two steps cannot disagree about which errors
 exist. Without the flag, the check runs whatever compiler the migrate step
 resolved.
@@ -283,7 +284,7 @@ the run and again on the last screen:
 has typescript 5.7.3 installed (/repo/node_modules/typescript). ...
 ```
 
-The interactive `ts-migrate-full` prompt for a custom tsc path is the other way
+The interactive `ts-migrate full` prompt for a custom tsc path is the other way
 to end up with two compilers. It is checked before Step 1: if that tsc cannot
 report what the migration is about to write, the run says so and stops rather
 than spending the whole pipeline on a check it already knows will fail. This
@@ -381,7 +382,7 @@ Pass `--no-gitignore` to `rename`, `migrate`, `reignore`, `report`, or
 `check` to include ignored files anyway. If your existing tsconfig `include`
 matches gitignored build output, add it to `exclude` as well: ts-migrate
 skips it either way, but your own `tsc` (including the compile check at the
-end of `ts-migrate-full`) still type-checks it otherwise.
+end of `ts-migrate full`) still type-checks it otherwise.
 
 # Build system files
 
@@ -480,7 +481,7 @@ The same document is published as [AGENTS.md](./AGENTS.md) in this package. The
 essentials: run the full pipeline non-interactively with
 
 ```sh
-npx -p @obiemunoz/ts-migrate ts-migrate-full <folder> --yes --no-commit
+npx -p @obiemunoz/ts-migrate ts-migrate full <folder> --yes --no-commit
 ```
 
 where `--yes` skips the confirmation prompts and `--no-commit` leaves the
@@ -499,7 +500,7 @@ unmaintained upstream package. First print and follow the tool's playbook:
 
 Then run the migration non-interactively:
 
-    npx -p @obiemunoz/ts-migrate ts-migrate-full <folder> --yes --no-commit
+    npx -p @obiemunoz/ts-migrate ts-migrate full <folder> --yes --no-commit
 ```
 
 # Reignore
@@ -549,12 +550,12 @@ the pipeline they can spend hours in. `init` only writes a config when the
 folder has none, so a project that is already part TypeScript, or any re-run,
 would otherwise hear this for the first time at the end of the run that
 suppressed those errors. Pass `--no-typesPreflight` to skip it;
-`ts-migrate-full` passes that flag to its migrate step whenever Step 1 wrote the
+`ts-migrate full` passes that flag to its migrate step whenever Step 1 wrote the
 tsconfig and already said it. The `"types"` array reminder follows the tsconfig
 the run reads, not the one `init` would have written.
 
 They also detect this from the compiler diagnostics themselves and end the run
-with a report (`ts-migrate-full` holds it back until the very end, after the
+with a report (`ts-migrate full` holds it back until the very end, after the
 compile check):
 
 ```
@@ -820,15 +821,17 @@ enormous, and git shows them better after a real run.
 
 `--dry-run` combines with `--jsonSummary` (below) for a machine-readable
 preview; the summary file is still written, with `"dryRun": true`.
-`ts-migrate-full` rejects the flag, since each of its steps builds on the
-previous step's writes; preview with the individual commands instead.
+`ts-migrate full --dry-run` previews the tsconfig it would create and the full
+rename mapping, then stops: its remaining two steps read the files the rename
+would have written, and a dry run wrote none of them. Preview those with
+`ts-migrate migrate <folder> --dry-run` once the rename has really happened.
 
 # Machine-readable run summaries
 
 A script or agent driving the CLI otherwise has to scrape the progress log to
-learn what a run did. The `rename`, `migrate`, and `reignore` commands accept
-a `--jsonSummary <file>` flag that writes a JSON summary of the run to a file
-(a file rather than stdout, which stays reserved for the progress log):
+learn what a run did. The `full`, `rename`, `migrate`, and `reignore` commands
+accept a `--jsonSummary <file>` flag that writes a JSON summary of the run to a
+file (a file rather than stdout, which stays reserved for the progress log):
 
 ```sh
 npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --jsonSummary migrate-summary.json
@@ -911,9 +914,11 @@ The file is written whenever the command runs to completion, so its
 `exitCode` field matches the process exit code. No file plus a nonzero exit
 means the command failed before running (bad flags, missing tsconfig.json).
 If the summary file itself cannot be written, the command exits nonzero.
-`ts-migrate-full` forwards extra flags to both its rename and migrate steps,
-so a `--jsonSummary` passed there ends up holding the migrate summary; run
-the commands individually when you need both.
+`ts-migrate full --jsonSummary <file>` writes one summary for the whole
+pipeline instead: a `steps` array naming each of the four with its status, its
+exit code and the commit its writes went into, a `commits` array of the
+mechanical rewrite commits the run created, and the `rename` and `migrate`
+step summaries nested whole under keys of those names.
 
 # Using `--sources` for partial migrations
 
@@ -921,7 +926,7 @@ There are times in which migrating an entire project is too large a change. The 
 
 ```sh
 # Run everything on a sub-directory
-npx -p @obiemunoz/ts-migrate ts-migrate-full /path/to/your/project --sources "some/components/**/*"
+npx -p @obiemunoz/ts-migrate ts-migrate full /path/to/your/project --sources "some/components/**/*"
 
 # Or run just one sub-command
 npx -p @obiemunoz/ts-migrate ts-migrate rename /path/to/your/project -s "some/components/**/*"
@@ -934,7 +939,7 @@ The directories you have not converted yet are still plain JavaScript, and the g
 `@types` packages are loaded through the tsconfig `types` array regardless of sources. The one case that still needs a manual re-include is a package that ships unimported global declarations outside `@types`:
 
 ```sh
-npx -p @obiemunoz/ts-migrate ts-migrate-full /path/to/your/project \
+npx -p @obiemunoz/ts-migrate ts-migrate full /path/to/your/project \
   --sources "some/components/**/*" \
   --sources "node_modules/some-package/globals.d.ts"
 ```

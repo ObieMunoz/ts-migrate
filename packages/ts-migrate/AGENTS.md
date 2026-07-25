@@ -11,14 +11,16 @@ docs live in this package's README.md.
    `npx ts-migrate-full ...` downloads the unmaintained upstream `ts-migrate`
    package (TypeScript 4 era) instead of this fork. Either install
    `@obiemunoz/ts-migrate` as a devDependency first, or pass `-p` on every npx
-   call: `npx -p @obiemunoz/ts-migrate ts-migrate-full <folder>`.
+   call: `npx -p @obiemunoz/ts-migrate ts-migrate full <folder>`.
    `ts-migrate --version` (or `-v`) prints the installed version; the upstream
    CLI has no version flag and errors, so this is a quick check for which
    package npx fetched.
-2. **`ts-migrate-full` prompts before starting.** Pass `--yes` to skip the
+2. **`ts-migrate full` prompts before starting.** Pass `--yes` to skip the
    prompts. Without `--yes` and without stdin, the run exits nonzero before
-   doing anything.
-3. **`ts-migrate-full` creates git commits** after each step by default. Pass
+   doing anything. `ts-migrate-full` is the same command under its original
+   name, kept so existing scripts and docs keep working; every flag below
+   applies to both spellings.
+3. **`ts-migrate full` creates git commits** after each step by default. Pass
    `--no-commit` to leave every change in the working tree instead — do this
    when you manage commits yourself or the target is not a git repository.
    Commit or stash the target folder first either way. The run reports what is
@@ -61,7 +63,7 @@ docs live in this package's README.md.
    no typescript, or one outside `>=5.0 <7`, falls back to the bundled
    compiler with a warning. Pass `--typescript <path>` (the package directory
    or any file inside it) to name a compiler that is not under
-   `node_modules`, or to force a specific one; `ts-migrate-full` applies it to
+   `node_modules`, or to force a specific one; `ts-migrate full` applies it to
    the migrate step and the final compile check alike. Any compiler a minor or
    more away from the project's own install is warned about, at the start of
    the run and again at the end: the checker changes in every minor release,
@@ -107,7 +109,7 @@ npm i -D @types/node          # plus your test runner's types:
 
 # 1. Migrate. <folder> is the project (or sub-project) root, the directory
 #    where tsconfig.json belongs.
-npx -p @obiemunoz/ts-migrate ts-migrate-full <folder> --yes --no-commit
+npx -p @obiemunoz/ts-migrate ts-migrate full <folder> --yes --no-commit
 
 # 2. Read the "Type definition recommendations" report printed at the end of
 #    the run. Install what it recommends, e.g.:
@@ -177,21 +179,25 @@ Afterwards, update the project plumbing the tool deliberately does not touch:
 
 ## Commands
 
-### `ts-migrate-full <folder> [flags]`
+### `ts-migrate full <folder> [flags]`
 
 Runs the whole pipeline: init tsconfig → rename JS/JSX to TS/TSX → migrate →
-verify with `tsc --noEmit`.
+verify with `tsc --noEmit`. Each step is the command of the same name, run in
+one process against one compiler, so the pipeline reports exactly what running
+the four commands by hand reports. `ts-migrate-full <folder>` is the same
+command under its original name.
 
 Before Step 1 it names a `<folder>` that is not in a git repository once and
 then runs without commits, and reports anything uncommitted in `<folder>`.
 
-It stops on a `<folder>` that does not exist. A failing step names itself,
-prints the type definition recommendations gathered so far along with the file
-holding them, and exits with that step's exit code; the partial result stays in
-the working tree.
+A `<folder>` that does not exist exits `255`, as it does from every other
+command. A failing step names itself, prints the type definition
+recommendations gathered so far along with the file holding them, and exits
+with that step's exit code; the partial result stays in the working tree.
 
 - `--yes` (`-y`): skip the interactive prompts (accept defaults).
-- `--no-commit`: do not create git commits after each step.
+- `--no-commit`: do not create git commits after each step. Commits are on by
+  default (`--commit` is the explicit form).
 - `--blame-ignore-revs`: append the SHAs of the commits this run creates to a
   `.git-blame-ignore-revs` file at the repository root so `git blame` can
   skip the mechanical rewrites. Only useful on merge-commit workflows; with
@@ -206,13 +212,20 @@ the working tree.
   interactive prompt for a custom tsc path is the only way the two steps end up
   on different compilers; a mismatch there stops the run before Step 1 rather
   than at the check. `--yes` sets no custom path, so it never applies.
+- `--dry-run`: preview without writing anything. Steps 1 and 2 report the
+  tsconfig they would create and the full old-to-new rename mapping; the run
+  then stops, because Steps 3 and 4 read the files the rename would have
+  written and a dry run wrote none of them. Preview the migration itself with
+  `ts-migrate migrate <folder> --dry-run` once the rename has really happened.
+  Nothing is committed under `--dry-run`, whatever `--commit` says.
+- `--jsonSummary <file>`: write a JSON summary of the whole run (see
+  "Machine-readable summaries" below). This is the summary to read from a
+  script: it carries each step's status and commit SHA plus the rename and
+  migrate summaries, rather than one step's summary overwriting another's.
 - All other flags are forwarded to the underlying `rename` and `migrate`
   commands (e.g. `--sources`, `--no-inferTypes`, `--exclude-plugin`,
   `--no-projectEslint`, which is also repeated in the reignore hint printed
-  on failure).
-  Exception: `--dry-run` is rejected here, because each pipeline step builds
-  on the previous step's writes; preview with the individual commands
-  instead.
+  on failure). `ts-migrate full --help` lists every one of them.
 
 ### `ts-migrate init <folder>` / `ts-migrate init:extended <folder>`
 
@@ -259,7 +272,7 @@ not installed, where every package would look missing, and about a package
 package.json already declares. `migrate` and `reignore` print the same
 thing with their opening banner, so a folder that already has a tsconfig
 and never reaches `init` still gets it before the pipeline rather than
-hours later (`--no-typesPreflight` turns it off; `ts-migrate-full` passes
+hours later (`--no-typesPreflight` turns it off; `ts-migrate full` passes
 that flag to the migrate step whenever Step 1 already said it). Everything
 else waits for the end of run report, which needs the compiler.
 Installed `@types` packages are pinned in a `types` array so that
@@ -623,8 +636,9 @@ Prints this document.
 
 ## Machine-readable summaries (`--jsonSummary`)
 
-`rename`, `migrate`, and `reignore` accept `--jsonSummary <file>` and write a
-JSON summary of the run there; stdout stays human-oriented. Common fields:
+`full`, `rename`, `migrate`, and `reignore` accept `--jsonSummary <file>` and
+write a JSON summary of the run there; stdout stays human-oriented. Common
+fields:
 `command`, `tsMigrateVersion`, `rootDir`, `exitCode`, `dryRun`. Paths in the
 summary are relative to `<folder>`. When `dryRun` is true the summary
 describes what a real run would have changed (nothing was written except the
@@ -683,10 +697,18 @@ How to read a run from the outside:
   missing tsconfig.json), or the summary file itself could not be written.
 
 The debt counts are scoped to this run's changed files; project-wide counts
-come from `report --json`. `ts-migrate-full` forwards extra flags to both its
-rename and migrate steps, so a `--jsonSummary` passed there is written by
-rename and then overwritten by migrate; run the commands individually when you
-need both summaries.
+come from `report --json`.
+
+- `full`: one summary for the whole pipeline rather than one step's overwriting
+  another's. `steps` lists all four in order as
+  `{"name", "status", "exitCode", "commit"}`, where `status` is `ok`, `failed`,
+  `skipped` (a step the run did not need, such as `init` on a folder that
+  already has a tsconfig) or `not-reached` (a step an earlier failure stopped),
+  and `commit` is the SHA that step's writes went into or `null` under
+  `--no-commit`. `commits` lists the mechanical rewrite commits the run created
+  as `{"sha", "subject"}`, in the order it made them. `rename` and `migrate`
+  hold those steps' own summaries, in the exact shape documented above, or
+  `null` where the step did not run.
 
 ## Exit codes and failure modes
 
@@ -700,7 +722,7 @@ need both summaries.
   the ones a command declares is reported the same way, so
   `ts-migrate report <folder> extra` exits `1` naming `extra`. Options are not
   checked the same way: one the command does not declare is accepted and
-  ignored, because `ts-migrate-full` forwards a single argument list to both
+  ignored, because `ts-migrate full` forwards a single argument list to both
   `rename` and `migrate` and the two accept different flags.
 - `migrate`/`reignore` exit `0` on success and nonzero (255) if a plugin
   errored or a file still has syntax errors after migration.
@@ -714,7 +736,7 @@ need both summaries.
   visible from the first screen rather than from a diff that never appeared.
 - `check` exits `1` when a per-file count exceeds the baseline; `report` and
   `check` exit nonzero (255) if the tsconfig cannot be read.
-- `ts-migrate-full` stops at the first failing step, naming it and exiting with
+- `ts-migrate full` stops at the first failing step, naming it and exiting with
   that step's code, and prints the type definition recommendations it had
   gathered along with the file they stay in; the final `tsc` check
   failing means the migration did not reach a compiling state. Its failure
@@ -733,7 +755,7 @@ need both summaries.
   than the project's, the config is likely being run by an engine it was not
   written for; installing eslint in the project fixes the mismatch.
 - `rename` exits nonzero if `<folder>` has no `tsconfig.json` — run `init`
-  first (`ts-migrate-full` does). A run that reports "No JS/JSX files to
+  first (`ts-migrate full` does). A run that reports "No JS/JSX files to
   rename." succeeded but matched nothing: `<folder>` probably points at the
   wrong directory (e.g. a monorepo root instead of the package).
 
