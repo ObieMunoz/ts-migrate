@@ -34,13 +34,15 @@ docs live in this package's README.md.
    `--no-gitignore` to include them deliberately.
 6. **Build system files stay JavaScript by default.** Configs and scripts
    that must keep running under plain Node (`webpack.config.js`,
-   `jest.config.js`, paths run via `node scripts/build.js`, and the files
-   they require) are kept out of rename so the build still boots; `init`
-   writes them into the generated tsconfig's `exclude`. Runs log every kept
-   file with its evidence. Pass `--no-bootstrap` to rename them anyway, e.g.
-   when the project loads TypeScript configs through ts-node or tsx. In
-   `migrate` and `reignore` the flag only decides whether those files are
-   loaded into the program; nothing there edits JavaScript.
+   `eslint.config.mjs`, paths run via `node scripts/build.js`, and the
+   files they require) are kept out of rename so the build still boots;
+   `init` writes them into the generated tsconfig's `exclude`. Detection
+   covers every extension the compiler reads as JavaScript: `.js`, `.jsx`,
+   `.cjs`, `.mjs`. Runs log every kept file with its evidence. Pass
+   `--no-bootstrap` to rename them anyway, e.g. when the project loads
+   TypeScript configs through ts-node or tsx. In `migrate` and `reignore`
+   the flag only decides whether those files are loaded into the program;
+   nothing there edits JavaScript.
 7. **Requirements:** Node >= 18.18. TypeScript 5.x or 6.x if the target
    project has TypeScript installed; if it has none, ts-migrate falls back to
    its own bundled compiler and plain JS projects work out of the box.

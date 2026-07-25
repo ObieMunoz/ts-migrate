@@ -4,6 +4,7 @@ import log from 'updatable-log';
 import ts from 'typescript';
 import { collectModuleSpecifiers } from '@obiemunoz/ts-migrate-plugins';
 import { sampleIgnoredPaths } from './gitignore';
+import { JS_EXTENSION_REGEX } from './jsExtensions';
 
 export interface BootstrapFile {
   file: string;
@@ -36,8 +37,6 @@ export interface BootstrapPartition {
   /** Only filled with detectSharedImporters: bootstrap files the kept side imports. */
   shared: SharedBootstrapImport[];
 }
-
-const JS_EXTENSION_REGEX = /\.[cm]?jsx?$/;
 
 /** Names a build tool loads by convention, whatever the JS extension. */
 export function isKnownConfigName(file: string): boolean {

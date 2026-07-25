@@ -9,6 +9,7 @@ import {
 import { logApplicationEntries, partitionBootstrapFiles } from '../utils/bootstrapFiles';
 import { detectBundler, hasViteClientTypes } from '../utils/bundler';
 import { listGitignoredDirectories, partitionGitignored } from '../utils/gitignore';
+import { JS_EXTENSION_REGEX } from '../utils/jsExtensions';
 import isIncludedByTsConfig from '../utils/tsConfigIncludes';
 
 interface InitParams {
@@ -91,7 +92,7 @@ function findJsFiles(rootDir: string, skippedDirectories: string[]): string[] {
       const entryPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         if (!skippedNames.has(entry.name) && !skippedPaths.has(entryPath)) walk(entryPath);
-      } else if (entry.isFile() && /\.jsx?$/.test(entry.name)) {
+      } else if (entry.isFile() && JS_EXTENSION_REGEX.test(entry.name)) {
         files.push(entryPath);
       }
     });

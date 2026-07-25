@@ -5,6 +5,7 @@ import path from 'path';
 import ts from 'typescript';
 import log from 'updatable-log';
 import init from '../../../commands/init';
+import rename from '../../../commands/rename';
 import { deleteDir } from '../../test-utils';
 
 jest.mock('updatable-log', () => {
@@ -167,6 +168,63 @@ describe('init command', () => {
       'scripts/build.js',
       'webpack.config.js',
     ]);
+  });
+
+  describe('.mjs and .cjs build system files', () => {
+    const writeModuleBootstrapProject = () => {
+      const writeFile = (relPath: string, text: string) => {
+        const filePath = path.join(rootDir, relPath);
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, text);
+      };
+      writeFile(
+        'package.json',
+        JSON.stringify({ type: 'module', scripts: { build: 'node scripts/build.mjs' } }),
+      );
+      writeFile('postcss.config.cjs', 'module.exports = {};\n');
+      writeFile('scripts/build.mjs', "import './paths.mjs';\nimport './env.js';\n");
+      writeFile('scripts/paths.mjs', 'export const paths = {};\n');
+      writeFile('scripts/env.js', 'export const env = {};\n');
+      writeFile('src/app.js', 'const a = 1;\n');
+    };
+
+    it('excludes them so they stay JavaScript', () => {
+      writeModuleBootstrapProject();
+
+      init({ rootDir, isExtendedConfig: false });
+
+      expect(readConfig(rootDir).exclude).toEqual([
+        'node_modules',
+        'bower_components',
+        'jspm_packages',
+        'postcss.config.cjs',
+        'scripts/build.mjs',
+        'scripts/env.js',
+        'scripts/paths.mjs',
+      ]);
+    });
+
+    it('excludes the same files rename keeps as JavaScript', () => {
+      writeModuleBootstrapProject();
+
+      init({ rootDir, isExtendedConfig: false });
+      const excluded = readConfig(rootDir).exclude.filter(
+        (entry: string) => !['node_modules', 'bower_components', 'jspm_packages'].includes(entry),
+      );
+
+      // rename answers the same question from a tsconfig that excludes nothing.
+      fs.writeFileSync(
+        path.join(rootDir, 'tsconfig.json'),
+        JSON.stringify({ include: ['./**/*'] }),
+      );
+      const result = rename({ rootDir });
+
+      expect(
+        result?.skippedBootstrapFiles
+          .map(({ file }) => path.relative(rootDir, file).split(path.sep).join('/'))
+          .sort(),
+      ).toEqual(excluded);
+    });
   });
 
   it('lists gitignored directories and build system files in one exclude', () => {
