@@ -36,7 +36,10 @@ import { combineFileFilters, createBootstrapMigrationFilter } from './utils/boot
 import { createGitignoreMigrationFilter } from './utils/gitignore';
 import packageVersion from './utils/packageVersion';
 import { describeTypeScript, typeScriptWarning } from './utils/resolveTypeScript';
-import isIncludedByTsConfig from './utils/tsConfigIncludes';
+import {
+  canKeepGeneratedDeclarations,
+  ensureIncludedByTsConfig,
+} from './utils/tsConfigIncludes';
 import {
   buildMigrateRunSummary,
   buildRenameRunSummary,
@@ -236,9 +239,10 @@ function printGlobalDeclarationsReport(globalDeclarations: GlobalDeclarationsCol
 }
 
 /**
- * Names the declaration files the run generated. A generated file the tsconfig
- * does not match is in effect for the migration and nothing after it, so the
- * errors it resolved come back on the next `tsc` run.
+ * Names the declaration files the run generated and keeps them in the project's
+ * file set. A generated file the tsconfig does not match is in effect for the
+ * migration and nothing after it, so the errors it resolved come back on the
+ * next `tsc` run — starting with the one ts-migrate-full runs to close out.
  */
 function printGeneratedFiles(
   rootDir: string,
@@ -246,26 +250,58 @@ function printGeneratedFiles(
   dryRun: boolean,
 ): void {
   generatedFiles.forEach((_text, filePath) => {
+    const displayPath = path.relative(rootDir, filePath) || filePath;
     log.info(
       dryRun
-        ? `Dry run: would write the generated declarations to ${filePath}.`
-        : `Wrote the generated declarations to ${filePath}.`,
+        ? `Dry run: would write the generated declarations to ${displayPath}.`
+        : `Wrote the generated declarations to ${displayPath}.`,
     );
-    if (dryRun) return;
-    try {
-      if (!isIncludedByTsConfig(rootDir, filePath)) {
-        log.warn(
-          `${filePath} is not matched by tsconfig.json, so its declarations only applied to ` +
-            'this run. Add it to "include" or "files" to keep them.',
-        );
-      }
-    } catch (err) {
-      log.warn(
-        'Skipped checking whether tsconfig.json includes the generated declarations: ' +
-          errorMessage(err),
-      );
-    }
+    reportGeneratedFileInclusion(rootDir, filePath, displayPath, dryRun);
   });
+}
+
+function reportGeneratedFileInclusion(
+  rootDir: string,
+  filePath: string,
+  displayPath: string,
+  dryRun: boolean,
+): void {
+  let repair;
+  try {
+    repair = ensureIncludedByTsConfig(rootDir, filePath, { dryRun });
+  } catch (err) {
+    log.warn(
+      'Skipped checking whether tsconfig.json includes the generated declarations: ' +
+        errorMessage(err),
+    );
+    return;
+  }
+
+  switch (repair.kind) {
+    case 'included':
+      break;
+    case 'added':
+      log.info(
+        `tsconfig.json did not match ${displayPath}, so "${repair.entry}" was added to its ` +
+          `"${repair.key}". Without it the declarations would have applied to this run only.`,
+      );
+      break;
+    case 'would-add':
+      log.info(
+        `Dry run: tsconfig.json does not match ${displayPath}; a real run would add ` +
+          `"${repair.entry}" to its "${repair.key}".`,
+      );
+      break;
+    case 'failed':
+      log.error(
+        `tsconfig.json does not match ${displayPath} and ${repair.reason}, so the declarations ` +
+          `applied to this run only: every error they resolved comes back on the next \`tsc\` ` +
+          `run. Add "${repair.entry}" to "files" in ${repair.configFile} by hand.`,
+      );
+      break;
+    default:
+      break;
+  }
 }
 
 /**
@@ -586,13 +622,13 @@ yargs
         .default('declareUntypedModules', true)
         .describe(
           'declareUntypedModules',
-          'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. Disable with --no-declareUntypedModules.',
+          'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --no-declareUntypedModules.',
         )
         .boolean('declareGlobals')
         .default('declareGlobals', true)
         .describe(
           'declareGlobals',
-          'Declare the properties the code assigns to window, global and globalThis in types/ts-migrate-globals.d.ts, instead of casting every read and write of them. Disable with --no-declareGlobals.',
+          'Declare the properties the code assigns to window, global and globalThis in types/ts-migrate-globals.d.ts, instead of casting every read and write of them. The file is added to the tsconfig if it does not already match it. Disable with --no-declareGlobals.',
         )
         .string('typescript')
         .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
@@ -638,6 +674,17 @@ yargs
       logTypeScriptDecision();
       if (args.typesPreflight) printTypesPackagePreflight(rootDir);
 
+      // Declaring a global or an untyped module beats casting at every site
+      // only if the generated file survives the run, which takes a tsconfig
+      // this can read and edit. Without one, casting is what still compiles.
+      const keepsDeclarations = canKeepGeneratedDeclarations(rootDir);
+      if (!keepsDeclarations && (args.declareGlobals || args.declareUntypedModules)) {
+        log.warn(
+          `No readable tsconfig.json in ${rootDir}, so a generated declaration file could not ` +
+            'be kept in the project. Casting at each site instead.',
+        );
+      }
+
       let config: MigrateConfig;
       let typesPackageDetector: TypesPackageDetector | undefined;
       let suppressionExplainer: SuppressionExplainer | undefined;
@@ -659,8 +706,8 @@ yargs
           inferTypes: args.inferTypes,
           jsdoc: args.jsdoc,
           projectEslint: args.projectEslint,
-          declareUntypedModules: args.declareUntypedModules,
-          declareGlobals: args.declareGlobals,
+          declareUntypedModules: args.declareUntypedModules && keepsDeclarations,
+          declareGlobals: args.declareGlobals && keepsDeclarations,
         });
         config = built.config;
         typesPackageDetector = built.typesPackageDetector;
@@ -677,11 +724,17 @@ yargs
           dryRun,
         });
         if (aliasDeclarations) {
+          const aliasPath =
+            path.relative(rootDir, aliasDeclarations.filePath) || aliasDeclarations.filePath;
           log.info(
             dryRun
-              ? `Dry run: would create ${aliasDeclarations.filePath} declaring the global aliases.`
-              : `Created ${aliasDeclarations.filePath} declaring the global aliases.`,
+              ? `Dry run: would create ${aliasPath} declaring the global aliases.`
+              : `Created ${aliasPath} declaring the global aliases.`,
           );
+          // Same requirement as the generated declarations below: a tsconfig
+          // that does not match the file leaves every annotation naming an
+          // alias unresolved on the next `tsc` run.
+          reportGeneratedFileInclusion(rootDir, aliasDeclarations.filePath, aliasPath, dryRun);
         }
       } catch (err) {
         log.error(errorMessage(err));
@@ -826,7 +879,7 @@ yargs
         .default('declareUntypedModules', true)
         .describe(
           'declareUntypedModules',
-          'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. Disable with --no-declareUntypedModules.',
+          'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --no-declareUntypedModules.',
         )
         .boolean('casts')
         .default('casts', false)
@@ -887,7 +940,9 @@ yargs
         gitignore: args.gitignore,
         bootstrap: args.bootstrap,
         projectEslint: args.projectEslint,
-        declareUntypedModules: args.declareUntypedModules,
+        // See the migrate command: without a tsconfig to keep it in, a
+        // generated declaration file is undone by the next `tsc` run.
+        declareUntypedModules: args.declareUntypedModules && canKeepGeneratedDeclarations(rootDir),
         casts: args.casts,
         dryRun,
       });

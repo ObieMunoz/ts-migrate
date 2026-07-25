@@ -67,6 +67,16 @@ afterEach(() => {
   fs.rmSync(installDir, { recursive: true, force: true });
 });
 
+/** The fallback compiler, failing the check with the diagnostics it is given. */
+function writeFailingMigrationTsc(diagnostics: string): void {
+  const binDir = path.join(projectDir, 'node_modules', 'typescript', 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(binDir, 'tsc'),
+    `console.log(${JSON.stringify(diagnostics)});\nprocess.exit(2);\n`,
+  );
+}
+
 /** An executable tsc that reports the given version and compiles nothing. */
 function writeTsc(version: string): string {
   const tscPath = path.join(installDir, `tsc-${version}`);
@@ -388,5 +398,51 @@ describe('a ts-migrate-full folder whose path has a space', () => {
     // again once the migrate step is done with it.
     expect(fs.existsSync(path.join(spacedDir, '.eslintrc'))).toBe(false);
     expect(output).toContain('All done!');
+  });
+});
+
+describe('a ts-migrate-full check that fails', () => {
+  const tsError = (code: string, file = 'app/foo.ts') =>
+    `${file}(3,10): error ${code}: something is wrong.`;
+
+  it('explains only the causes the output shows', () => {
+    writeFailingMigrationTsc(tsError('TS2339'));
+
+    const { status, output } = runFull([], ['--yes', '--no-commit']);
+
+    expect(status).toBe(1);
+    expect(output).toContain('The TypeScript check failed');
+    expect(output).toContain('ts-migrate reignore');
+    // Neither cause is in this output, so neither is described.
+    expect(output).not.toContain("TS2578 (unused '@ts-expect-error')");
+    expect(output).not.toContain('Syntax errors (TS1xxx)');
+  });
+
+  it('explains a compiler skew when the output reports TS2578', () => {
+    writeFailingMigrationTsc(tsError('TS2578'));
+
+    const { status, output } = runFull([], ['--yes', '--no-commit']);
+
+    expect(status).toBe(1);
+    expect(output).toContain("TS2578 (unused '@ts-expect-error')");
+    expect(output).not.toContain('Syntax errors (TS1xxx)');
+  });
+
+  it('explains a broken declaration file when one is in the output', () => {
+    writeFailingMigrationTsc(tsError('TS1005', 'node_modules/x/index.d.ts'));
+
+    const { status, output } = runFull([], ['--yes', '--no-commit']);
+
+    expect(status).toBe(1);
+    expect(output).toContain('Syntax errors (TS1xxx)');
+    expect(output).not.toContain("TS2578 (unused '@ts-expect-error')");
+  });
+
+  it('shows the compiler output as well as the explanation', () => {
+    writeFailingMigrationTsc(tsError('TS2339'));
+
+    const { output } = runFull([], ['--yes', '--no-commit']);
+
+    expect(output).toContain('app/foo.ts(3,10): error TS2339');
   });
 });

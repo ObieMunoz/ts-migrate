@@ -1,4 +1,8 @@
-import { replaceJSON5Strings, setJSON5Key } from '../../utils/updateJSON5';
+import {
+  appendJSON5ArrayItem,
+  replaceJSON5Strings,
+  setJSON5Key,
+} from '../../utils/updateJSON5';
 
 describe('replaceJSON5Strings', () => {
   it('preserves comments, quoting, and formatting around replacements', () => {
@@ -135,5 +139,86 @@ describe('setJSON5Key', () => {
 
   it('throws when the root is not an object', () => {
     expect(() => setJSON5Key('[1]', ['a'], true)).toThrow('root value must be an object');
+  });
+});
+
+describe('appendJSON5ArrayItem', () => {
+  it('appends to a multiline array, keeping indentation and the trailing comma', () => {
+    const source = `{
+  // sources
+  "include": [
+    "./app/**/*",
+  ],
+}`;
+    expect(appendJSON5ArrayItem(source, ['include'], './types/ts-migrate-globals.d.ts')).toBe(`{
+  // sources
+  "include": [
+    "./app/**/*",
+    "./types/ts-migrate-globals.d.ts",
+  ],
+}`);
+  });
+
+  it('appends to a multiline array without a trailing comma', () => {
+    const source = `{
+  "include": [
+    "./app/**/*"
+  ]
+}`;
+    expect(appendJSON5ArrayItem(source, ['include'], './types/x.d.ts')).toBe(`{
+  "include": [
+    "./app/**/*",
+    "./types/x.d.ts"
+  ]
+}`);
+  });
+
+  it('appends to a single-line array', () => {
+    expect(appendJSON5ArrayItem('{ "include": ["a"] }', ['include'], 'b')).toBe(
+      '{ "include": ["a", "b"] }',
+    );
+  });
+
+  it('matches the quoting the array already uses', () => {
+    expect(appendJSON5ArrayItem("{ include: ['a'] }", ['include'], 'b')).toBe(
+      "{ include: ['a', 'b'] }",
+    );
+  });
+
+  it('fills an empty array', () => {
+    expect(appendJSON5ArrayItem('{ "files": [] }', ['files'], 'a')).toBe('{ "files": ["a"] }');
+  });
+
+  it('creates the key when it is absent', () => {
+    expect(appendJSON5ArrayItem('{ "include": ["a"] }', ['files'], 'b')).toBe(
+      '{ "include": ["a"], "files": ["b"] }',
+    );
+  });
+
+  it('leaves the text alone when the value is already there', () => {
+    const source = '{ "include": ["a", "b"] }';
+    expect(appendJSON5ArrayItem(source, ['include'], 'b')).toBe(source);
+  });
+
+  it('throws when the key holds something other than an array', () => {
+    expect(() => appendJSON5ArrayItem('{ "include": "a" }', ['include'], 'b')).toThrow(
+      'include is not an array',
+    );
+  });
+});
+
+describe('appendJSON5ArrayItem comment placement', () => {
+  it('keeps a comment on the line of the element it follows', () => {
+    const source = `{
+  "include": [
+    "./app/**/*" // everything under app
+  ]
+}`;
+    expect(appendJSON5ArrayItem(source, ['include'], './types/x.d.ts')).toBe(`{
+  "include": [
+    "./app/**/*", // everything under app
+    "./types/x.d.ts"
+  ]
+}`);
   });
 });

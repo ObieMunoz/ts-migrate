@@ -431,14 +431,58 @@ fi
 
 echo "${tsc_cmd[*]} -p $frontend_folder/tsconfig.json --noEmit"
 check_failed=false
-"${tsc_cmd[@]}" -p "$frontend_folder/tsconfig.json" --noEmit || check_failed=true
+# The output is both shown and kept, so the explanation below names the causes
+# this run actually hit instead of every cause a run can hit. --pretty is
+# explicit because the pipe would otherwise switch tsc to its terse format.
+check_log=$(mktemp)
+set +e
+"${tsc_cmd[@]}" -p "$frontend_folder/tsconfig.json" --noEmit --pretty 2>&1 | tee "$check_log"
+check_status=${PIPESTATUS[0]}
+set -e
+if [ "$check_status" -ne 0 ]; then
+  check_failed=true
+fi
 
+# Every grep below matches an error code on its own rather than as part of
+# "error TS…": pretty output puts colour codes between the two words.
 if [ "$check_failed" = true ]; then
   echo "
 ---
-The TypeScript check failed. What the errors above usually mean:
+The TypeScript check failed. What these errors mean:
+"
 
-- TS2578 (unused '@ts-expect-error'): the compiler running this check disagrees
+  # A generated declaration file the tsconfig does not match is in the
+  # migration's program and no later one, so everything it declared is missing
+  # here. migrate repairs the tsconfig itself; reaching this means the repair
+  # was refused or the entry has since been removed.
+  for generated in types/ts-migrate-globals.d.ts types/ts-migrate-modules.d.ts ts-migrate-aliases.d.ts; do
+    if [ ! -f "$frontend_folder/$generated" ]; then
+      continue
+    fi
+    # Anything but a confident "missing" is left alone: a probe that cannot run
+    # says nothing about the tsconfig, and a wrong instruction here costs more
+    # than a missing one.
+    probe=$(node -e '
+      const path = require("path");
+      const [cliJs, folder, generated] = process.argv.slice(1);
+      const included = require(path.join(path.dirname(cliJs), "utils", "tsConfigIncludes.js")).default;
+      const root = path.resolve(folder);
+      process.stdout.write(included(root, path.join(root, generated)) ? "ok" : "missing");
+    ' "$cli_js" "$frontend_folder" "$generated" 2>/dev/null)
+    if [ "$probe" != "missing" ]; then
+      continue
+    fi
+    echo "- $frontend_folder/tsconfig.json does not match $generated, so this check ran
+  without it and every name it declares is reported undefined. Add
+  \"./$generated\" to \"include\" (or to \"files\") in that tsconfig and run the
+  check again. Suppressing these instead would bury the declarations under a
+  comment per use site:
+    ${tsc_cmd[*]} -p $frontend_folder/tsconfig.json --noEmit
+"
+  done
+
+  if grep -q "TS2578" "$check_log"; then
+    echo "- TS2578 (unused '@ts-expect-error'): the compiler running this check disagrees
   with the one the migration used. Both default to the project's own typescript
   (the migration log names the copy it ran), so a skew is left only when a
   custom tsc path was set above, or when the project's compiler is outside the
@@ -449,16 +493,26 @@ The TypeScript check failed. What the errors above usually mean:
   same suppressions from the migration's compiler. Once they agree, and once
   tsconfig.json pins a \"types\" array, strip and re-add the suppressions with:
     $reignore_cmd
-- Syntax errors (TS1xxx) in generated or third-party .d.ts files: those files
+"
+  fi
+
+  if grep -qE "\.d\.ts.{0,40}TS1[0-9][0-9][0-9]" "$check_log"; then
+    echo "- Syntax errors (TS1xxx) in generated or third-party .d.ts files: those files
   are outside the migration's control (the migration log lists them). Fix or
   regenerate them, or exclude them in tsconfig.json — re-running the migration
   will not change them.
-- Other type errors in migrated files: run the reignore command above to
-  re-suppress them."
+"
+  fi
 
+  echo "- Type errors in migrated files: re-suppress them with
+    $reignore_cmd
+"
+
+  rm -f "$check_log"
   preserve_types_report
   exit 1
 fi
+rm -f "$check_log"
 
 echo "
 ---
