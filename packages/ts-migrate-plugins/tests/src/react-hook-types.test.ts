@@ -492,6 +492,212 @@ export default function Profile({ user }: { user: User }) {
     expect(errorsIn(result)).toEqual([]);
   });
 
+  it('types createContext() from a same-file Provider value', () => {
+    const text = `\
+import React, { createContext, useContext } from 'react';
+
+interface Theme {
+  color: string;
+}
+
+const ThemeContext = createContext();
+
+export function ThemeProvider({ theme, children }: { theme: Theme; children: React.ReactNode }) {
+  return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;
+}
+
+export function useTheme() {
+  return useContext(ThemeContext);
+}
+`;
+
+    expect(errorsIn(text)).not.toEqual([]);
+    const result = run(text);
+
+    expect(result).toContain('createContext<Theme | undefined>(undefined)');
+    expect(errorsIn(result)).toEqual([]);
+  });
+
+  it('reads a Provider value written as an object literal', () => {
+    const text = `\
+import React, { createContext } from 'react';
+
+const StatusContext = React.createContext();
+
+export function StatusProvider({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <StatusContext.Provider value={{ label, open: false }}>{children}</StatusContext.Provider>
+  );
+}
+`;
+
+    expect(errorsIn(text)).not.toEqual([]);
+    const result = run(text);
+
+    expect(result).toContain(
+      'React.createContext<{ label: string; open: boolean; } | undefined>(undefined)',
+    );
+    expect(errorsIn(result)).toEqual([]);
+  });
+
+  it('keeps null in the union for createContext(null)', () => {
+    const text = `\
+import React, { createContext } from 'react';
+
+interface Theme {
+  color: string;
+}
+
+const ThemeContext = createContext(null);
+
+export function ThemeProvider({ theme, children }: { theme: Theme; children: React.ReactNode }) {
+  return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;
+}
+`;
+
+    expect(errorsIn(text)).not.toEqual([]);
+    const result = run(text);
+
+    expect(result).toContain('createContext<Theme | null>(null)');
+    expect(errorsIn(result)).toEqual([]);
+  });
+
+  it('gives a context defaulted to an empty object the any argument', () => {
+    const text = `\
+import React, { createContext, useContext } from 'react';
+
+interface Theme {
+  color?: string;
+}
+
+const ThemeContext = createContext({});
+
+export function ThemeProvider({ theme, children }: { theme: Theme; children: React.ReactNode }) {
+  return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;
+}
+
+export function Label() {
+  return <span>{useContext(ThemeContext).color}</span>;
+}
+`;
+
+    expect(errorsIn(text)).not.toEqual([]);
+    const result = run(text);
+
+    expect(result).toContain('createContext<any>({})');
+    expect(errorsIn(result)).toEqual([]);
+  });
+
+  it('gives a context with no same-file Provider the any argument', () => {
+    const text = `\
+import { createContext } from 'react';
+
+export const ThemeContext = createContext();
+`;
+
+    expect(errorsIn(text)).not.toEqual([]);
+    const result = run(text);
+
+    expect(result).toContain('createContext<any>(undefined)');
+    expect(errorsIn(result)).toEqual([]);
+  });
+
+  it('leaves a context nothing in its file blames alone', () => {
+    const text = `\
+import { createContext } from 'react';
+
+export const ThemeContext = createContext(null);
+`;
+
+    expect(errorsIn(text)).toEqual([]);
+    expect(run(text)).toBe(text);
+  });
+
+  it('does not take an any-typed Provider value as evidence', () => {
+    const text = `\
+import React, { createContext } from 'react';
+
+declare function load(): any;
+
+const DataContext = createContext();
+
+export function DataProvider({ children }: { children: React.ReactNode }) {
+  return <DataContext.Provider value={load()}>{children}</DataContext.Provider>;
+}
+`;
+
+    const result = run(text, { anyAlias: '$TSFixMe' });
+
+    expect(result).toContain('createContext<$TSFixMe>(undefined)');
+  });
+
+  it('gives a Provider whose value is spread the any argument', () => {
+    const text = `\
+import React, { createContext } from 'react';
+
+interface Theme {
+  color: string;
+}
+
+const ThemeContext = createContext();
+
+export function ThemeProvider(props: { value: Theme; children: React.ReactNode }) {
+  return <ThemeContext.Provider {...props} />;
+}
+`;
+
+    const result = run(text, { anyAlias: '$TSFixMe' });
+
+    expect(result).toContain('createContext<$TSFixMe>(undefined)');
+  });
+
+  it('falls back to the alias when the file reads the context without a check', () => {
+    const text = `\
+import React, { createContext, useContext } from 'react';
+
+interface Theme {
+  color: string;
+}
+
+const ThemeContext = createContext();
+
+export function ThemeProvider({ theme, children }: { theme: Theme; children: React.ReactNode }) {
+  return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;
+}
+
+export function Label() {
+  return <span>{useContext(ThemeContext).color}</span>;
+}
+`;
+
+    expect(errorsIn(text)).not.toEqual([]);
+    const result = run(text);
+
+    expect(result).toContain('createContext<any>(undefined)');
+    expect(errorsIn(result)).toEqual([]);
+  });
+
+  it('leaves a createContext call it has already typed alone', () => {
+    const text = `\
+import React, { createContext } from 'react';
+
+interface Theme {
+  color: string;
+}
+
+const ThemeContext = createContext();
+
+export function ThemeProvider({ theme, children }: { theme: Theme; children: React.ReactNode }) {
+  return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;
+}
+`;
+
+    const once = run(text);
+
+    expect(once).not.toBe(text);
+    expect(run(once)).toBe(once);
+  });
+
   it('clears every hook error in a file with several components', () => {
     const text = `\
 import React, { useState, useRef, useEffect } from 'react';

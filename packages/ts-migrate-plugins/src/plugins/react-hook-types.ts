@@ -1,6 +1,5 @@
 import ts from 'typescript';
 import { fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
-import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 import {
   applyTextChanges,
@@ -23,13 +22,15 @@ const maxTypeTextLength = 200;
 
 /**
  * The initializers whose inferred type carries no information: `null` and
- * `undefined` type as themselves, `[]` as `never[]`, `{}` as `{}`. Every other
- * initializer, including `0` and `''`, infers the type the call should have.
+ * `undefined` type as themselves, `[]` as `never[]`, `{}` as `{}`, and a
+ * `createContext` call with no argument at all, which is an arity error. Every
+ * other initializer, including `0` and `''`, infers the type the call should
+ * have.
  */
-type EmptyInitializer = 'null' | 'undefined' | 'array' | 'object';
+type EmptyInitializer = 'null' | 'undefined' | 'array' | 'object' | 'absent';
 
 interface HookCall {
-  hook: 'useState' | 'useRef';
+  hook: 'useState' | 'useRef' | 'createContext';
   call: ts.CallExpression;
   declaration: ts.VariableDeclaration;
   initializer: EmptyInitializer;
@@ -42,6 +43,8 @@ interface HookCall {
 interface Candidate {
   /** Where the type argument list goes: between the callee and its arguments. */
   index: number;
+  /** Where the default value goes, for a `createContext` call missing one. */
+  defaultValueIndex?: number;
   /** The type text same-file evidence supports, when there is any. */
   evidence?: string;
 }
@@ -49,7 +52,8 @@ interface Candidate {
 /**
  * Writes the type argument a React hook call needs when its initializer gives
  * the checker nothing to infer from: `useState(null)`, `useState(undefined)`,
- * `useState([])`, `useState({})` and `useRef(null)`.
+ * `useState([])`, `useState({})`, `useRef(null)`, and `createContext` called
+ * with `null`, with `undefined`, or with no argument at all.
  *
  * Only calls an error already blames are touched, so a hook whose inferred
  * type is doing no harm is left as it is.
@@ -59,7 +63,15 @@ interface Candidate {
  * argument the checker types `any`, is no evidence, because `any` is
  * assignable in both directions and would make the check below pass on a type
  * the compiler knows nothing about. `useRef` reads the intrinsic tag its ref
- * is attached to, which names the element interface outright.
+ * is attached to, which names the element interface outright. `createContext`
+ * reads the `value` prop of the Providers in the same file, which is the only
+ * place the context is given a value this file can see; a context whose
+ * Providers are all elsewhere has no evidence here.
+ *
+ * The type a `createContext` call takes has to admit the default value the
+ * call keeps, so it is always a union with `null` or `undefined`, and a call
+ * written with no argument has `undefined` written in, which is the value it
+ * already has at runtime and what the required parameter is missing.
  *
  * A proposed type argument is written only when re-checking the file with it
  * in place reports no error the file did not already have, which is what
@@ -103,13 +115,11 @@ const reactHookTypesPlugin: Plugin<Options> = {
       });
     }
 
-    const updates: SourceTextUpdate[] = candidates.map((candidate) => ({
-      kind: 'insert',
-      index: candidate.index,
-      text: `<${proven.has(candidate) ? candidate.evidence : anyType}>`,
-    }));
+    const changes = candidates.flatMap((candidate) =>
+      changesFor(candidate, proven.has(candidate) ? candidate.evidence : anyType),
+    );
 
-    return updateSourceText(sourceFile.text, updates);
+    return applyTextChanges(sourceFile.text, changes);
   },
 
   validate: validateAnyAliasOptions,
@@ -126,8 +136,19 @@ function collectCandidates(
     .filter((hookCall) => isBlamedByAnError(hookCall, errors, source))
     .map((hookCall) => ({
       index: hookCall.call.expression.end,
+      defaultValueIndex:
+        hookCall.initializer === 'absent' ? hookCall.call.arguments.end : undefined,
       evidence: evidenceFor(hookCall, checker, source),
     }));
+}
+
+/** The type argument a candidate takes, plus the default value it may need. */
+function changesFor(candidate: Candidate, typeText: string | undefined): TextChange[] {
+  const changes: TextChange[] = [{ start: candidate.index, length: 0, text: `<${typeText}>` }];
+  if (candidate.defaultValueIndex !== undefined) {
+    changes.push({ start: candidate.defaultValueIndex, length: 0, text: 'undefined' });
+  }
+  return changes;
 }
 
 /** The hook calls in scope, with every reference to what they are bound to. */
@@ -183,17 +204,14 @@ function collectHookCalls(source: ts.SourceFile, checker: ts.TypeChecker): HookC
 
 /** A hook call with no type argument whose initializer infers nothing useful. */
 function toHookCall(node: ts.Node): HookCall | undefined {
-  if (!ts.isCallExpression(node) || node.typeArguments != null || node.arguments.length !== 1) {
+  if (!ts.isCallExpression(node) || node.typeArguments != null) {
     return undefined;
   }
   const hook = hookNameOf(node);
   if (hook === undefined) return undefined;
 
-  const initializer = emptyInitializerOf(node.arguments[0]);
+  const initializer = emptyArgumentOf(hook, node.arguments);
   if (initializer === undefined) return undefined;
-  // useRef holds an element, which only `null` stands in for. `useRef([])`
-  // holds a real array and infers it.
-  if (hook === 'useRef' && initializer !== 'null') return undefined;
 
   const declaration = node.parent;
   if (!ts.isVariableDeclaration(declaration) || declaration.initializer !== node) {
@@ -215,7 +233,26 @@ function hookNameOf(call: ts.CallExpression): HookCall['hook'] | undefined {
   } else if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.name)) {
     name = expression.name.text;
   }
-  return name === 'useState' || name === 'useRef' ? name : undefined;
+  return name === 'useState' || name === 'useRef' || name === 'createContext' ? name : undefined;
+}
+
+/** The argument the call was written with, when it infers nothing useful. */
+function emptyArgumentOf(
+  hook: HookCall['hook'],
+  args: ts.NodeArray<ts.Expression>,
+): EmptyInitializer | undefined {
+  if (hook === 'createContext' && args.length === 0) {
+    return 'absent';
+  }
+  if (args.length !== 1) return undefined;
+
+  const initializer = emptyInitializerOf(args[0]);
+  if (initializer === undefined) return undefined;
+  // useRef holds an element, which only `null` stands in for. `useRef([])`
+  // holds a real array and infers it.
+  if (hook === 'useRef' && initializer !== 'null') return undefined;
+
+  return initializer;
 }
 
 function emptyInitializerOf(argument: ts.Expression): EmptyInitializer | undefined {
@@ -230,7 +267,8 @@ function emptyInitializerOf(argument: ts.Expression): EmptyInitializer | undefin
  * Whether an error the file already has is reported on what the hook is bound
  * to. Each reference's span is grown through the accesses, calls and JSX
  * attributes that read it, since the error lands on the argument or the
- * property rather than on the reference itself.
+ * property rather than on the reference itself. A `createContext` call with no
+ * argument is blamed by the arity error on the call itself.
  */
 function isBlamedByAnError(
   hookCall: HookCall,
@@ -243,6 +281,9 @@ function isBlamedByAnError(
     const start = node.getStart(source);
     return { start, end: node.end };
   });
+  if (hookCall.initializer === 'absent') {
+    spans.push({ start: hookCall.call.getStart(source), end: hookCall.call.end });
+  }
 
   return errors.some((error) => {
     const { start } = error;
@@ -259,6 +300,10 @@ function readsThrough(node: ts.Node): boolean {
   if (ts.isBinaryExpression(parent)) {
     return parent.operatorToken.kind === ts.SyntaxKind.EqualsToken && parent.left === node;
   }
+  // The whole opening element, so the errors its props report count.
+  if (ts.isJsxOpeningElement(parent) || ts.isJsxSelfClosingElement(parent)) {
+    return parent.tagName === node;
+  }
   return (
     ts.isCallExpression(parent) ||
     ts.isNonNullExpression(parent) ||
@@ -273,9 +318,14 @@ function evidenceFor(
   checker: ts.TypeChecker,
   source: ts.SourceFile,
 ): string | undefined {
-  return hookCall.hook === 'useRef'
-    ? refEvidence(hookCall)
-    : stateEvidence(hookCall, checker, source);
+  switch (hookCall.hook) {
+    case 'useRef':
+      return refEvidence(hookCall);
+    case 'createContext':
+      return contextEvidence(hookCall, checker, source);
+    default:
+      return stateEvidence(hookCall, checker, source);
+  }
 }
 
 /**
@@ -308,17 +358,90 @@ function stateEvidence(
     parts.push(text);
   }
 
+  return unionText(parts, hookCall.initializer);
+}
+
+/**
+ * The union of the `value` props the Providers in this file pass. Every other
+ * use of a context reads the value rather than sets it, so it says nothing
+ * about the type; a Provider whose value cannot be read here does, which
+ * leaves this file with no evidence at all.
+ */
+function contextEvidence(
+  hookCall: HookCall,
+  checker: ts.TypeChecker,
+  source: ts.SourceFile,
+): string | undefined {
+  // A `{}` default accepts every value, so a Provider in another file is clean
+  // against this context today and nothing here can see whether one exists.
+  // The alias accepts everything too, which is what makes it the safe answer.
+  if (hookCall.initializer === 'object') {
+    return undefined;
+  }
+
+  const parts: string[] = [];
+
+  for (const reference of hookCall.valueReferences) {
+    const element = providerElement(reference);
+    if (element === undefined) continue;
+
+    const value = providerValue(element);
+    if (value === undefined) return undefined;
+
+    const type = checker.getBaseTypeOfLiteralType(checker.getTypeAtLocation(value));
+    const text = writableTypeText(type, checker, source);
+    if (text === undefined) return undefined;
+    parts.push(text);
+  }
+
+  return unionText(parts, hookCall.initializer);
+}
+
+/** The `<Ctx.Provider>` element the reference is the tag of. */
+function providerElement(reference: ts.Identifier): ts.JsxOpeningLikeElement | undefined {
+  const tagName = reference.parent;
+  if (
+    !ts.isPropertyAccessExpression(tagName) ||
+    tagName.expression !== reference ||
+    tagName.name.text !== 'Provider'
+  ) {
+    return undefined;
+  }
+  const element = tagName.parent;
+  return ts.isJsxOpeningElement(element) || ts.isJsxSelfClosingElement(element)
+    ? element
+    : undefined;
+}
+
+/** The expression the Provider's `value` prop is given, when it has one. */
+function providerValue(element: ts.JsxOpeningLikeElement): ts.Expression | undefined {
+  let value: ts.Expression | undefined;
+
+  for (const property of element.attributes.properties) {
+    // A spread carries whatever the object it spreads holds, value included.
+    if (!ts.isJsxAttribute(property)) return undefined;
+    if (ts.isIdentifier(property.name) && property.name.text === 'value') {
+      const { initializer } = property;
+      value = initializer && ts.isJsxExpression(initializer) ? initializer.expression : undefined;
+    }
+  }
+
+  return value;
+}
+
+/** The type text the collected parts make, widened by the default value. */
+function unionText(parts: string[], initializer: EmptyInitializer): string | undefined {
   const distinct = Array.from(new Set(parts));
   if (distinct.length === 0) {
     return undefined;
   }
-  const nullish = nullishOf(hookCall.initializer);
+  const nullish = nullishOf(initializer);
   return (nullish ? [...distinct, nullish] : distinct).join(' | ');
 }
 
 function nullishOf(initializer: EmptyInitializer): string | undefined {
   if (initializer === 'null') return 'null';
-  if (initializer === 'undefined') return 'undefined';
+  if (initializer === 'undefined' || initializer === 'absent') return 'undefined';
   return undefined;
 }
 
@@ -445,7 +568,7 @@ function provenCandidates(
 }
 
 function changesOf(candidates: Candidate[]): TextChange[] {
-  return [...candidates]
-    .sort((a, b) => a.index - b.index)
-    .map((candidate) => ({ start: candidate.index, length: 0, text: `<${candidate.evidence}>` }));
+  return candidates
+    .flatMap((candidate) => changesFor(candidate, candidate.evidence))
+    .sort((a, b) => a.start - b.start);
 }
