@@ -700,10 +700,16 @@ export function ThemeProvider({ theme, children }: { theme: Theme; children: Rea
 
   it('clears every hook error in a file with several components', () => {
     const text = `\
-import React, { useState, useRef, useEffect } from 'react';
+import React, { createContext, useState, useRef, useEffect } from 'react';
 
 interface Item {
   id: string;
+}
+
+const ItemsContext = createContext();
+
+export function ItemsProvider({ source, children }: { source: Item[]; children: React.ReactNode }) {
+  return <ItemsContext.Provider value={source}>{children}</ItemsContext.Provider>;
 }
 
 export function List({ source }: { source: Item[] }) {
@@ -730,6 +736,7 @@ export function Field() {
     expect(errorsIn(text).length).toBeGreaterThan(0);
     const result = run(text);
 
+    expect(result).toContain('createContext<Item[] | undefined>(undefined)');
     expect(result).toContain('useState<Item[]>([])');
     expect(result).toContain('useState<Item | null>(null)');
     expect(result).toContain('useRef<HTMLTextAreaElement | null>(null)');
