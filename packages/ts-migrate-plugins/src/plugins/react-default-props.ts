@@ -125,6 +125,7 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
     const modifyAndInsertPropsType = (
       propsTypeAliasDeclaration: ts.TypeAliasDeclaration,
       defaultPropsTypeName: string,
+      defaultPropsType: ts.TypeNode,
       propsTypeName: string,
       newTypeInsertPos: number,
       componentTypeReference: ts.TypeReferenceNode,
@@ -139,8 +140,7 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
       const alreadyHaveDefalutProps = ts.isIntersectionTypeNode(propsTypeAliasDeclaration.type)
         ? propsTypeAliasDeclaration.type.types.some(
             (typeExp) =>
-              (ts.isTypeQueryNode(typeExp) &&
-                typeExp.exprName.getText() === defaultPropsTypeName) ||
+              readsDefaultPropsType(typeExp, defaultPropsTypeName) ||
               typeExp.getText().includes(WITH_DEFAULT_PROPS_HELPER),
           )
         : ts.isTypeReferenceNode(propsTypeAliasDeclaration.type) &&
@@ -204,11 +204,11 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
       const newPropsTypeValue = options.useDefaultPropsHelper
         ? ts.factory.createTypeReferenceNode(WITH_DEFAULT_PROPS_HELPER, [
             ts.factory.createTypeReferenceNode(updatedPropTypesName, undefined),
-            ts.factory.createTypeQueryNode(ts.factory.createIdentifier(defaultPropsTypeName)),
+            defaultPropsType,
           ])
         : ts.factory.createIntersectionTypeNode([
             ts.factory.createTypeReferenceNode(updatedPropTypesName, undefined),
-            ts.factory.createTypeQueryNode(ts.factory.createIdentifier(defaultPropsTypeName)),
+            defaultPropsType,
           ]);
 
       const componentPropsTypeName = doesPropsTypeHaveExport
@@ -277,6 +277,9 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
       const defaultPropsTypeName = isObjectIdentifier
         ? expression.right.getText()
         : `${componentName}.defaultProps`;
+      const defaultPropsType = isObjectIdentifier
+        ? createTypeQuery(defaultPropsTypeName)
+        : createDefaultPropsIndexedAccess(componentName);
 
       const variableDeclaration = variableStatements.find(
         (variableStatement) =>
@@ -320,6 +323,7 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
           modifyAndInsertPropsType(
             propsTypeAliasDeclarations,
             defaultPropsTypeName,
+            defaultPropsType,
             propsTypeName,
             newTypeInsertPos,
             componentDeclaration.parameters[0].type,
@@ -387,6 +391,7 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
         modifyAndInsertPropsType(
           propsTypeAliasDeclarations,
           defaultPropsTypeName,
+          createTypeQuery(defaultPropsTypeName),
           propsTypeName,
           newTypeInsertPos,
           propsTypeReferenceNode,
@@ -400,6 +405,42 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
 
   validate: createValidate(optionProperties),
 };
+
+function createTypeQuery(name: string): ts.TypeQueryNode {
+  return ts.factory.createTypeQueryNode(ts.factory.createIdentifier(name));
+}
+
+/**
+ * `Comp.defaultProps` written on a function component is an expando property
+ * with no declaration of its own, so a `typeof Comp.defaultProps` query is
+ * checked by the same definite assignment analysis as a value read and reports
+ * TS2565 wherever it sits above the assignment. Indexing the type of the
+ * binding names the same property without a property access, so it holds at any
+ * position. A class states `defaultProps` as a member, which is assigned as the
+ * class is declared, so the query form is enough there.
+ */
+function createDefaultPropsIndexedAccess(componentName: string): ts.IndexedAccessTypeNode {
+  return ts.factory.createIndexedAccessTypeNode(
+    createTypeQuery(componentName),
+    ts.factory.createLiteralTypeNode(ts.factory.createStringLiteral('defaultProps')),
+  );
+}
+
+/** Both spellings of the defaults type, so an already migrated file is left alone. */
+function readsDefaultPropsType(type: ts.TypeNode, defaultPropsTypeName: string): boolean {
+  if (ts.isTypeQueryNode(type)) return type.exprName.getText() === defaultPropsTypeName;
+  if (!ts.isIndexedAccessTypeNode(type)) return false;
+
+  const objectType = ts.isParenthesizedTypeNode(type.objectType)
+    ? type.objectType.type
+    : type.objectType;
+  return (
+    ts.isTypeQueryNode(objectType) &&
+    ts.isLiteralTypeNode(type.indexType) &&
+    ts.isStringLiteral(type.indexType.literal) &&
+    `${objectType.exprName.getText()}.${type.indexType.literal.text}` === defaultPropsTypeName
+  );
+}
 
 type DefaultValue = { name: string; text: string };
 

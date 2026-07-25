@@ -223,7 +223,7 @@ type OwnProps = {
     test: string;
 };
 
-type Props = WithDefaultProps<OwnProps, typeof ExampleComponent.defaultProps>;
+type Props = WithDefaultProps<OwnProps, (typeof ExampleComponent)["defaultProps"]>;
 
 function ExampleComponent({ test }: Props) {
   return <React.Fragment>{test}</React.Fragment>;
@@ -233,6 +233,65 @@ ExampleComponent.defaultProps = {
 };
 
 export default ExampleComponent;`);
+  });
+
+  it('compiles with the object literal assignment below the generated alias', async () => {
+    const text = `import React from 'react';
+
+type Props = {
+  size?: string;
+  label: string;
+};
+
+function Button({ size, label }: Props) {
+  return <button className={size}>{label}</button>;
+}
+Button.defaultProps = {
+  size: 'md',
+};
+
+export default Button;`;
+
+    const intersection = (await reactDefaultPropsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx' }),
+    )) as string;
+    expect(intersection).toContain('type Props = OwnProps & (typeof Button)["defaultProps"];');
+    expect(typeCheck({ '/file.tsx': intersection })).toEqual([]);
+
+    const withHelper = (await reactDefaultPropsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx', options }),
+    )) as string;
+    expect(withHelper).toContain(
+      'type Props = WithDefaultProps<OwnProps, (typeof Button)["defaultProps"]>;',
+    );
+    expect(typeCheck({ '/file.tsx': withHelper })).toEqual([]);
+  });
+
+  it('compiles with the alias above a class that states its defaults', async () => {
+    const text = `import React from 'react';
+
+type Props = {
+  size?: string;
+  label: string;
+};
+
+class Button extends React.Component<Props> {
+  static defaultProps = {
+    size: 'md',
+  };
+
+  render() {
+    return <button className={this.props.size}>{this.props.label}</button>;
+  }
+}
+
+export default Button;`;
+
+    const result = (await reactDefaultPropsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx' }),
+    )) as string;
+    expect(result).toContain('type Props = OwnProps & typeof Button.defaultProps;');
+    expect(typeCheck({ '/file.tsx': result })).toEqual([]);
   });
 
   it('WithStylesProps in props type at first place', async () => {
@@ -875,7 +934,7 @@ type OwnUpdatedEmailProps = {
     email: string;
 };
 
-type UpdatedEmailProps = WithDefaultProps<OwnUpdatedEmailProps, typeof UpdatedEmail.defaultProps>;
+type UpdatedEmailProps = WithDefaultProps<OwnUpdatedEmailProps, (typeof UpdatedEmail)["defaultProps"]>;
 
 function UpdatedEmail({ size }: UpdatedEmailProps) {
   // @ts-ignore ts-migrate(7017) FIXME: Element implicitly has an 'any' type because type ... Remove this comment to see the full error message
@@ -896,7 +955,7 @@ type OwnEmailFormProps = {
     onClickSubmit: $TSFixMeFunction;
 };
 
-type EmailFormProps = WithDefaultProps<OwnEmailFormProps, typeof EmailForm.defaultProps>;
+type EmailFormProps = WithDefaultProps<OwnEmailFormProps, (typeof EmailForm)["defaultProps"]>;
 
 function EmailForm({ size, status }: EmailFormProps) {
   const inputClass = INPUT_CLASS[size];
@@ -1835,6 +1894,33 @@ export function Toolbar() {
     expect(typeCheck({ '/file.tsx': result })).toEqual([]);
   });
 
+  it('produces output that compiles for a component it left the defaults on', async () => {
+    const text = `import React from 'react';
+
+type Props = {
+  size?: string;
+  onClick?: () => void;
+};
+
+function Button({ size, onClick }: Props) {
+  return <button className={size} onClick={onClick} />;
+}
+Button.defaultProps = {
+  size: 'md',
+  onClick: () => {},
+};
+
+export default Button;`;
+
+    const notices: PluginFileNotice[] = [];
+    const result = (await modernize(text, notices)) as string;
+    expect(result).toContain('type Props = OwnProps & (typeof Button)["defaultProps"];');
+    expect(notices.map((notice) => notice.reason)).toEqual([
+      'Left defaultProps in place: a default value is not a literal.',
+    ]);
+    expect(typeCheck({ '/file.tsx': result })).toEqual([]);
+  });
+
   it('is idempotent', async () => {
     const text = `import React from 'react';
 
@@ -2237,6 +2323,6 @@ export default Button;`;
     )) as string;
 
     expect(result).toContain('Button.defaultProps = { size: \'md\' };');
-    expect(result).toContain('type Props = OwnProps & typeof Button.defaultProps;');
+    expect(result).toContain('type Props = OwnProps & (typeof Button)["defaultProps"];');
   });
 });
