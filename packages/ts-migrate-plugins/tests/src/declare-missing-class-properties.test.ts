@@ -2,7 +2,13 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import ts from 'typescript';
-import { midRunProject, mockDiagnostic, mockPluginParams, realPluginParams } from '../test-utils';
+import {
+  midRunProject,
+  mockDiagnostic,
+  mockPluginParams,
+  realPluginParams,
+  typeCheck,
+} from '../test-utils';
 import declareMissingClassPropertiesPlugin from '../../src/plugins/declare-missing-class-properties';
 
 async function runReal(
@@ -396,6 +402,203 @@ class Box {
 
   bump() {
     this.count += 1;
+  }
+}
+`;
+
+      const once = await runReal(text);
+      expect(once).not.toBe(text);
+      expect(await runReal(once as string)).toBe(once);
+    });
+  });
+
+  describe('empty object literal properties', () => {
+    it('types a property the constructor assigns the empty object literal to', async () => {
+      const text = `class C {
+  constructor() {
+    this.cache = {};
+  }
+
+  load() {
+    this.cache.total = 1;
+    this.cache.label = 'x';
+  }
+}
+`;
+
+      const result = await runReal(text);
+
+      expect(result).toBe(`class C {
+  cache: { total?: number; label?: string };
+  constructor() {
+    this.cache = {};
+  }
+
+  load() {
+    this.cache.total = 1;
+    this.cache.label = 'x';
+  }
+}
+`);
+      expect(typeCheck(result as string)).toEqual([]);
+    });
+
+    it('declares string-literal keys and quotes the ones that need it', async () => {
+      const text = `class C {
+  constructor() {
+    this.cache = {};
+  }
+
+  load() {
+    this.cache['total'] = 1;
+    this.cache['a-b'] = 'x';
+  }
+}
+`;
+
+      const result = await runReal(text);
+
+      expect(result).toContain(`cache: { total?: number; "a-b"?: string };`);
+      expect(typeCheck(result as string)).toEqual([]);
+    });
+
+    it('takes the alias for a key the checker only types any', async () => {
+      const text = `declare const raw: any;
+
+class C {
+  constructor() {
+    this.cache = {};
+  }
+
+  load() {
+    this.cache.total = raw;
+  }
+}
+`;
+
+      expect(await runReal(text)).toContain('cache: { total?: $TSFixMe };');
+    });
+
+    it('types the property without noImplicitAny', async () => {
+      const text = `class C {
+  constructor() {
+    this.cache = {};
+  }
+
+  load() {
+    this.cache.total = 1;
+  }
+}
+`;
+
+      expect(await runReal(text, { strict: false, noImplicitAny: false })).toContain(
+        'cache: { total?: number };',
+      );
+    });
+
+    it('types the empty object property alongside an inferred one', async () => {
+      const text = `class C {
+  constructor() {
+    this.count = 0;
+    this.cache = {};
+  }
+
+  load() {
+    this.cache.total = 1;
+  }
+}
+`;
+
+      const result = await runReal(text);
+
+      expect(result).toBe(`class C {
+  cache: { total?: number };
+  count;
+  constructor() {
+    this.count = 0;
+    this.cache = {};
+  }
+
+  load() {
+    this.cache.total = 1;
+  }
+}
+`);
+      expect(typeCheck(result as string)).toEqual([]);
+    });
+
+    it('leaves a property with no reported write on it to the checker', async () => {
+      const text = `class C {
+  constructor() {
+    this.cache = {};
+  }
+}
+`;
+
+      expect(await runReal(text)).toBe(`class C {
+  cache;
+  constructor() {
+    this.cache = {};
+  }
+}
+`);
+    });
+
+    it('types a property the constructor assigns anything else with the alias', async () => {
+      const text = `class C {
+  constructor() {
+    this.cache = {};
+  }
+
+  reset() {
+    this.cache = { label: 'x' };
+    this.cache.total = 1;
+  }
+}
+`;
+
+      expect(await runReal(text)).toContain('cache: $TSFixMe;');
+    });
+
+    it('types a property only a method assigns the literal to with the alias', async () => {
+      const text = `class C {
+  load() {
+    this.cache = {};
+    this.cache.total = 1;
+  }
+}
+`;
+
+      expect(await runReal(text)).toContain('cache: $TSFixMe;');
+    });
+
+    it('takes the alias when the property list would introduce an error', async () => {
+      const text = `class C {
+  constructor() {
+    this.cache = {};
+  }
+
+  load() {
+    this.cache.total = 1;
+  }
+
+  read() {
+    return this.cache.missing;
+  }
+}
+`;
+
+      expect(await runReal(text)).toContain('cache: $TSFixMe;');
+    });
+
+    it('changes nothing on a second run', async () => {
+      const text = `class C {
+  constructor() {
+    this.cache = {};
+  }
+
+  load() {
+    this.cache.total = 1;
   }
 }
 `;

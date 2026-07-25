@@ -76,7 +76,11 @@ export function asWrite(node: ts.Node): Write | undefined {
 }
 
 /** Whether a reported error covers the write, which is what the list would fix. */
-export function isBlamed(write: Write, source: ts.SourceFile, diagnostics: ts.Diagnostic[]): boolean {
+export function isBlamed(
+  write: Write,
+  source: ts.SourceFile,
+  diagnostics: ts.Diagnostic[],
+): boolean {
   const start = write.access.getStart(source);
   const { end } = write.access;
   return diagnostics.some(
