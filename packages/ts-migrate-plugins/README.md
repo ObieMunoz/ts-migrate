@@ -111,8 +111,23 @@ typing above) otherwise:
 Class components are left alone: `defaultProps` still works there in React 19.
 A prop read through `React.createElement` results rather than through the
 component, and a `Component.defaultProps` read from another file, are not
-visible to the plugin; the assignments it keeps are reported at the end of the
-run.
+visible to the plugin.
+
+Every assignment the plugin keeps gets a comment above it naming what to do and
+why it was left, so the work is in the file it has to happen in rather than in
+the run log:
+
+```jsx
+// TODO(ts-migrate): React 19 ignores defaultProps on function components. Convert to
+// destructured parameter defaults by hand.
+// Left defaultProps in place: a default value is not a literal.
+Chip.defaultProps = { tone: TONE };
+```
+
+`grep -rn "TODO(ts-migrate)"` is the worklist. Re-running does not stack the
+markers: a site that already carries one is left as it is. The end of the run
+prints how many files and causes there were, and `--jsonSummary` records them
+under `pluginNotices`.
 
 A kept assignment is typed by naming its defaults when the component is a
 `const`:

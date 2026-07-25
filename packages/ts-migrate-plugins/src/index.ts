@@ -29,6 +29,7 @@ import widenAnnotationsPlugin from './plugins/widen-annotations';
 import updateSourceText, {
   SourceTextUpdate as SourceTextUpdateType,
 } from './utils/updateSourceText';
+import { FOLLOW_UP_MARKER } from './utils/followUpMarker';
 import {
   createGlobalDeclarations,
   formatGlobalDeclarationsReport,
@@ -123,6 +124,7 @@ export {
   formatTypesPackageReport,
   collectModuleSpecifiers,
   preflightTypesPackages,
+  FOLLOW_UP_MARKER,
   GLOBAL_DECLARATIONS_FILE,
   MODULE_DECLARATIONS_FILE,
 };

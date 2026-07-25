@@ -14,6 +14,30 @@ declare module 'react' {
   export const forwardRef: any;
 }`;
 
+/** Enough of the hint to recognize the marker without restating its wording. */
+const REACT_19_HINT_START = 'React 19 ignores defaultProps on function components.';
+
+/**
+ * The output without the follow-up markers, to compare against the typing path.
+ * A marker is a TODO line plus the wrapped comment lines that continue it.
+ */
+const withoutMarkers = (text: string | undefined) => {
+  if (text === undefined) return undefined;
+  let inMarker = false;
+  return text
+    .split('\n')
+    .filter((line) => {
+      if (line.trim().startsWith('// TODO(ts-migrate):')) {
+        inMarker = true;
+        return false;
+      }
+      if (inMarker && line.trim().startsWith('//')) return false;
+      inMarker = false;
+      return true;
+    })
+    .join('\n');
+};
+
 /** Parsed once: every typeCheck call below pulls in the same lib files. */
 const libSourceFiles = new Map<string, ts.SourceFile | undefined>();
 
@@ -345,13 +369,15 @@ export default Greeting;`;
       }),
     );
 
-    expect(result).toBe(text);
+    expect(withoutMarkers(result as string)).toBe(text);
+    expect(result).toContain('// TODO(ts-migrate): Declare the defaults in a const above the');
     expect(notices).toEqual([
       {
         reason:
           'Left Greeting without a defaults type: naming its defaults would move them above a binding they read.',
         hint: 'Declare the defaults in a const above the component to have them typed.',
         recovered: true,
+        marked: true,
       },
     ]);
     expect(typeCheck({ '/file.tsx': result as string })).toEqual([]);
@@ -1955,12 +1981,14 @@ describe('react-default-props plugin, modernizeDefaultProps', () => {
       mockPluginParams({ text, fileName: 'file.tsx', options: {} }),
     );
 
-    expect(modernized).toEqual(legacy);
+    // The marker is the only thing the modernize run adds over the typing path.
+    expect(withoutMarkers(modernized) ?? text).toEqual(legacy ?? text);
     expect(modernized ?? text).toContain('defaultProps');
     if (reason !== undefined) {
       expect(notices.map((notice) => notice.reason)).toEqual([
         `Left defaultProps in place: ${reason}.`,
       ]);
+      expect(modernized).toContain(`// TODO(ts-migrate): ${REACT_19_HINT_START}`);
     }
     return notices;
   };
@@ -2333,10 +2361,61 @@ export default List;`;
     expect(notices).toEqual([
       {
         reason: 'Left defaultProps in place: a default value is not a literal.',
-        hint: 'React 19 ignores defaultProps on function components, so these need converting by hand.',
+        hint:
+          'React 19 ignores defaultProps on function components. Convert to destructured ' +
+          'parameter defaults by hand.',
         recovered: true,
+        marked: true,
       },
     ]);
+  });
+
+  it('marks the site it left, so the file carries the work the log would bury', async () => {
+    const text = `import React from 'react';
+
+type Props = {
+  items: string[];
+};
+
+function List({ items }: Props) {
+  return <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul>;
+}
+List.defaultProps = { items: [] };
+
+export default List;`;
+
+    const marked = (await modernize(text)) as string;
+
+    expect(marked).toContain(`// TODO(ts-migrate): ${REACT_19_HINT_START} Convert to
+// destructured parameter defaults by hand.
+// Left defaultProps in place: a default value is not a literal.
+List.defaultProps = { items: [] };`);
+    expect(typeCheck({ '/file.tsx': marked })).toEqual([]);
+  });
+
+  it('leaves the marker it already wrote alone when the run repeats', async () => {
+    const text = `import React from 'react';
+
+type Props = {
+  items: string[];
+};
+
+function List({ items }: Props) {
+  return <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul>;
+}
+List.defaultProps = { items: [] };
+
+export default List;`;
+
+    const notices: PluginFileNotice[] = [];
+    const once = (await modernize(text)) as string;
+    const twice = await modernize(once, notices);
+
+    // Identical text is what the runner reads as unchanged, so nothing is rewritten.
+    expect(twice).toBe(once);
+    expect(once.match(/TODO\(ts-migrate\)/g)).toHaveLength(1);
+    // Still reported: the work is outstanding whether or not this run wrote the marker.
+    expect(notices.map((notice) => notice.marked)).toEqual([true]);
   });
 
   describe('falls back to the typing path when', () => {
@@ -2543,7 +2622,7 @@ Chip.defaultProps = { size: 'sm' };
 export { Button, Chip };`;
 
     const result = (await modernize(text)) as string;
-    expect(result).toBe(`import React from 'react';
+    expect(withoutMarkers(result)).toBe(`import React from 'react';
 
 type Props = {
   size?: string;
@@ -2660,7 +2739,7 @@ export default Greeting;`;
     const notices: PluginFileNotice[] = [];
     const fromDeclaration = (await modernize(declaration, notices)) as string;
 
-    expect(fromDeclaration).toBe(`import React from 'react';
+    expect(withoutMarkers(fromDeclaration)).toBe(`import React from 'react';
 
 const DEFAULT_TITLE = 'hi';
 
