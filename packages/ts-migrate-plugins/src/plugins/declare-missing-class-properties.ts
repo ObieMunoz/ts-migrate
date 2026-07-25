@@ -12,6 +12,16 @@ import {
   TextChange,
   toOriginalPos,
 } from '../utils/candidateValidation';
+import {
+  asWrite,
+  blamableDiagnosticCodes,
+  declareProperties,
+  isBlamed,
+  isEmptyObject,
+  printProperties,
+  Property,
+  Write,
+} from './utils/empty-object-properties';
 
 type Options = AnyAliasOptions;
 
@@ -25,6 +35,8 @@ interface Candidate {
   name: string;
   index: number;
   indent: string;
+  /** Set where the constructor assigns the empty object literal. */
+  properties?: Property[];
 }
 
 /**
@@ -37,9 +49,18 @@ interface Candidate {
  * error is not enough on its own, since a property assigned from an `any`
  * infers `any` and reports nothing.
  *
- * Whatever is not kept takes the any alias, and so does everything when
- * `noImplicitAny` is off, where a bare declaration would be an implicit any
- * nothing reports and nothing later annotates.
+ * A property the constructor assigns the empty object literal to is proposed
+ * as the list of the keys written on it instead, `cache: { total?: number }`,
+ * which is derived in ./utils/empty-object-properties and gates itself on the
+ * same evidence declare-empty-object-properties uses. The checker infers `{}`
+ * for that assignment, so a bare declaration makes every key write report and
+ * the property would otherwise reach the alias. Nothing later annotates it:
+ * declare-empty-object-properties only reads declarations whose initializer is
+ * the literal, and this plugin writes no initializer.
+ *
+ * Whatever is not kept takes the any alias, and so does everything with no
+ * property list when `noImplicitAny` is off, where a bare declaration would be
+ * an implicit any nothing reports and nothing later annotates.
  */
 const declareMissingClassPropertiesPlugin: Plugin<Options> = {
   name: 'declare-missing-class-properties',
@@ -47,25 +68,36 @@ const declareMissingClassPropertiesPlugin: Plugin<Options> = {
   run(params) {
     const { fileName, sourceFile, getLanguageService, options } = params;
     const languageService = getLanguageService();
-    const diagnostics = languageService
-      .getSemanticDiagnostics(fileName)
+    const semanticDiagnostics = languageService.getSemanticDiagnostics(fileName);
+    const diagnostics = semanticDiagnostics
       .filter(isDiagnosticWithLinePosition)
       .filter((diagnostic) => diagnostic.code === 2339 || diagnostic.code === 2551);
 
-    const candidates = collectCandidates(sourceFile, diagnostics);
+    let candidates = collectCandidates(sourceFile, diagnostics);
     if (candidates.length === 0) {
       return sourceFile.text;
     }
 
     const anyType = options.anyAlias ?? 'any';
-    let inferred = new Set<Candidate>();
+    let proven = new Set<Candidate>();
     try {
-      inferred = new Set(inferrableCandidates(languageService, sourceFile, fileName, candidates));
+      const program = languageService.getProgram();
+      const source = program && program.getSourceFile(fileName);
+      if (program && source && source.text === sourceFile.text) {
+        candidates = withPropertyLists(
+          source,
+          program.getTypeChecker(),
+          semanticDiagnostics,
+          candidates,
+        );
+        proven = new Set(provenCandidates(program, sourceFile, fileName, candidates));
+      }
     } catch (e) {
       fileNoticeReporter(params, '[declare-missing-class-properties]')({
         reason: e instanceof Error ? e.message.split('\n')[0].trim() : String(e),
         hint: `The declared properties are typed ${anyType}.`,
       });
+      proven = new Set();
     }
 
     const updates: SourceTextUpdate[] = groupByClass(candidates).map((group) => ({
@@ -74,9 +106,7 @@ const declareMissingClassPropertiesPlugin: Plugin<Options> = {
       text: group
         .map(
           (candidate) =>
-            `\n${candidate.indent}${candidate.name}${
-              inferred.has(candidate) ? '' : `: ${anyType}`
-            };`,
+            `\n${candidate.indent}${declarationOf(candidate, proven.has(candidate), anyType)}`,
         )
         .join(''),
     }));
@@ -164,23 +194,22 @@ function groupByClass(candidates: Candidate[]): Candidate[][] {
 }
 
 /**
- * The declarations the checker types on its own. Inference from constructor
- * assignments is a `noImplicitAny` feature, and without it nothing reports
- * the declarations the checker cannot type, so none are left bare.
+ * The declarations that hold up as proposed. Inference from constructor
+ * assignments is a `noImplicitAny` feature, and without it nothing reports the
+ * declarations the checker cannot type, so none are left bare there; a
+ * property list is an annotation of its own and is proposed either way.
  */
-function inferrableCandidates(
-  languageService: ts.LanguageService,
+function provenCandidates(
+  program: ts.Program,
   sourceFile: ts.SourceFile,
   fileName: string,
   candidates: Candidate[],
 ): Candidate[] {
-  const program = languageService.getProgram();
-  const source = program && program.getSourceFile(fileName);
-  if (!program || !source || source.text !== sourceFile.text) {
-    return [];
-  }
   const programOptions = program.getCompilerOptions();
-  if (!(programOptions.noImplicitAny ?? programOptions.strict ?? false)) {
+  const proposed = (programOptions.noImplicitAny ?? programOptions.strict ?? false)
+    ? candidates
+    : candidates.filter((candidate) => candidate.properties);
+  if (proposed.length === 0) {
     return [];
   }
 
@@ -188,9 +217,20 @@ function inferrableCandidates(
     fileName,
     sourceFile,
     getValidationOptions(programOptions),
-    candidates,
+    proposed,
     program,
   );
+}
+
+/** What one declaration is written as, once it is known whether it held up. */
+function declarationOf(candidate: Candidate, proven: boolean, anyType: string): string {
+  if (!proven) {
+    return `${candidate.name}: ${anyType};`;
+  }
+  if (candidate.properties) {
+    return `${candidate.name}: ${printProperties(candidate.properties, anyType)};`;
+  }
+  return `${candidate.name};`;
 }
 
 /** What one program says about the group it was built for. */
@@ -205,11 +245,11 @@ function isProven(result: CheckResult): boolean {
 }
 
 /**
- * Keeps the bare declarations the checker gives a type of its own: no error
- * the file did not already have, and nothing that resolved to `any`. The full
- * set is checked first, which is one program for the common file; the blamed
- * declarations are then dropped and the remainder proven in one more, and
- * only an unattributable failure falls back to bisection.
+ * Keeps the declarations that check out as proposed: no error the file did not
+ * already have, and, for the bare ones, nothing that resolved to `any`. The
+ * full set is checked first, which is one program for the common file; the
+ * blamed declarations are then dropped and the remainder proven in one more,
+ * and only an unattributable failure falls back to bisection.
  */
 function validateCandidates(
   fileName: string,
@@ -344,8 +384,117 @@ function changesOf(candidates: Candidate[]): TextChange[] {
   return candidates.map((candidate) => ({
     start: candidate.index,
     length: 0,
-    text: `\n${candidate.indent}${candidate.name};`,
+    // Candidate text spells the alias `any`: the alias is declared in a file a
+    // single-file program does not see.
+    text: `\n${candidate.indent}${declarationOf(candidate, true, 'any')}`,
   }));
+}
+
+/** What the class assigns to one property, and what is written through it. */
+interface ThisProperty {
+  assigned: ts.Expression[];
+  /** Whether the constructor is one of the places it is assigned. */
+  constructed: boolean;
+  writes: Write[];
+}
+
+/**
+ * Gives each candidate whose value is an empty object literal the list of the
+ * keys written on it. A property assigned anything else, or assigned only
+ * outside the constructor, where the checker infers nothing from it, keeps the
+ * declaration it would have had.
+ */
+function withPropertyLists(
+  source: ts.SourceFile,
+  checker: ts.TypeChecker,
+  diagnostics: ts.Diagnostic[],
+  candidates: Candidate[],
+): Candidate[] {
+  const blamable = diagnostics.filter((diagnostic) => blamableDiagnosticCodes.has(diagnostic.code));
+  const properties = collectThisProperties(source);
+  const printer = ts.createPrinter({ removeComments: true });
+
+  return candidates.map((candidate) => {
+    const property = properties.get(propertyKey(candidate.classDeclaration.pos, candidate.name));
+    if (
+      !property ||
+      !property.constructed ||
+      !property.assigned.every(isEmptyObject) ||
+      !property.writes.some((write) => isBlamed(write, source, blamable))
+    ) {
+      return candidate;
+    }
+    const list = declareProperties(property.writes, {
+      enclosingDeclaration: candidate.classDeclaration,
+      source,
+      checker,
+      printer,
+    });
+    return list.length > 0 ? { ...candidate, properties: list } : candidate;
+  });
+}
+
+function propertyKey(classPos: number, name: string): string {
+  return `${classPos}:${name}`;
+}
+
+/**
+ * Every `this.foo = value` and `this.foo.key = value` in the file, keyed by the
+ * class the `this` belongs to and the property name. Candidates are collected
+ * from the plugin's source file and these from the program's, so the class is
+ * identified by position rather than by node.
+ */
+function collectThisProperties(source: ts.SourceFile): Map<string, ThisProperty> {
+  const properties = new Map<string, ThisProperty>();
+
+  const entryFor = (classDeclaration: ts.ClassLikeDeclaration, name: string): ThisProperty => {
+    const key = propertyKey(classDeclaration.pos, name);
+    let property = properties.get(key);
+    if (!property) {
+      property = { assigned: [], constructed: false, writes: [] };
+      properties.set(key, property);
+    }
+    return property;
+  };
+
+  const visit = (node: ts.Node): void => {
+    const write = asWrite(node);
+    if (write) {
+      const target = write.access.expression;
+      if (target.kind === ts.SyntaxKind.ThisKeyword) {
+        const classDeclaration = findEnclosingClass(write.access);
+        if (classDeclaration) {
+          const property = entryFor(classDeclaration, write.key);
+          property.assigned.push(write.value);
+          property.constructed ||= isInConstructor(write.access, classDeclaration);
+        }
+      } else if (
+        ts.isPropertyAccessExpression(target) &&
+        target.expression.kind === ts.SyntaxKind.ThisKeyword &&
+        ts.isIdentifier(target.name)
+      ) {
+        const classDeclaration = findEnclosingClass(target);
+        if (classDeclaration) {
+          entryFor(classDeclaration, target.name.text).writes.push(write);
+        }
+      }
+    }
+    node.forEachChild(visit);
+  };
+  source.forEachChild(visit);
+
+  return properties;
+}
+
+function isInConstructor(node: ts.Node, classDeclaration: ts.ClassLikeDeclaration): boolean {
+  let cur: ts.Node | undefined = node;
+  while (cur && cur !== classDeclaration) {
+    if (ts.isConstructorDeclaration(cur) && cur.parent === classDeclaration) {
+      return true;
+    }
+    cur = cur.parent;
+  }
+  return false;
 }
 
 /** Where each change's text lands in the candidate file. */

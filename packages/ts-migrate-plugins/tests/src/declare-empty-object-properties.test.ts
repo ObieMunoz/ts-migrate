@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import { mockPluginParams, realPluginParams } from '../test-utils';
+import { mockPluginParams, realPluginParams, typeCheck } from '../test-utils';
 import declareEmptyObjectPropertiesPlugin from '../../src/plugins/declare-empty-object-properties';
 import declareMissingClassPropertiesPlugin from '../../src/plugins/declare-missing-class-properties';
 
@@ -15,41 +15,6 @@ async function declareMissingProperties(text: string): Promise<string> {
     await realPluginParams({ text, options: { anyAlias: '$TSFixMe' } }),
   );
   return result ?? text;
-}
-
-/** Compiles the given text in memory, resolving the lib files from disk. */
-function typeCheck(text: string, compilerOptions?: ts.CompilerOptions): string[] {
-  const fileName = '/checked.ts';
-  const files: { [name: string]: string } = { [fileName]: text };
-  const options: ts.CompilerOptions = {
-    strict: true,
-    noEmit: true,
-    target: ts.ScriptTarget.ES2020,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-    ...compilerOptions,
-  };
-  const host: ts.CompilerHost = {
-    getSourceFile: (name, languageVersion) => {
-      const contents = files[name] ?? ts.sys.readFile(name);
-      return contents === undefined
-        ? undefined
-        : ts.createSourceFile(name, contents, languageVersion, true);
-    },
-    getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
-    writeFile: () => {},
-    getCurrentDirectory: () => '/',
-    getCanonicalFileName: (name) => name,
-    useCaseSensitiveFileNames: () => true,
-    getNewLine: () => '\n',
-    fileExists: (name) => name in files || ts.sys.fileExists(name),
-    readFile: (name) => files[name] ?? ts.sys.readFile(name),
-  };
-  const program = ts.createProgram([fileName], options, host);
-  return [...program.getSyntacticDiagnostics(), ...program.getSemanticDiagnostics()].map(
-    (diagnostic) =>
-      `TS${diagnostic.code}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`,
-  );
 }
 
 describe('declare-empty-object-properties plugin', () => {
@@ -443,6 +408,31 @@ export default C;
       expect(typeCheck(result)).toEqual([]);
     });
 
+    it('types its own empty object property and not the one it declared', async () => {
+      const text = `class C {
+  cache = {};
+  constructor() {
+    this.pending = {};
+  }
+  load() {
+    this.cache.total = 1;
+    this.pending.id = 'x';
+  }
+}
+export default C;
+`;
+
+      const declared = await declareMissingProperties(text);
+      expect(declared).toContain(`pending: { id?: string };`);
+      expect(declared).toContain('cache = {};');
+
+      const result = await run(declared);
+
+      expect(result).toContain('cache: { total?: number } = {};');
+      expect(result).toContain(`pending: { id?: string };`);
+      expect(typeCheck(result)).toEqual([]);
+    });
+
     it('leaves the declarations it added alone', async () => {
       const text = `class C {
   constructor() {
@@ -458,9 +448,10 @@ export default C;
 
       const declared = await declareMissingProperties(text);
       expect(declared).toContain('pending;');
-      expect(declared).toContain('cache: $TSFixMe;');
+      expect(declared).toContain('cache: { total?: number };');
 
       expect(await run(declared)).toBe(declared);
+      expect(typeCheck(declared)).toEqual([]);
     });
   });
 });

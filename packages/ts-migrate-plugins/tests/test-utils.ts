@@ -131,6 +131,41 @@ export async function realPluginParams<TOptions = unknown>(params: {
   };
 }
 
+/** Compiles the given text in memory, resolving the lib files from disk. */
+export function typeCheck(text: string, compilerOptions?: ts.CompilerOptions): string[] {
+  const fileName = '/checked.ts';
+  const files: { [name: string]: string } = { [fileName]: text };
+  const options: ts.CompilerOptions = {
+    strict: true,
+    noEmit: true,
+    target: ts.ScriptTarget.ES2020,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    ...compilerOptions,
+  };
+  const host: ts.CompilerHost = {
+    getSourceFile: (name, languageVersion) => {
+      const contents = files[name] ?? ts.sys.readFile(name);
+      return contents === undefined
+        ? undefined
+        : ts.createSourceFile(name, contents, languageVersion, true);
+    },
+    getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
+    writeFile: () => {},
+    getCurrentDirectory: () => '/',
+    getCanonicalFileName: (name) => name,
+    useCaseSensitiveFileNames: () => true,
+    getNewLine: () => '\n',
+    fileExists: (name) => name in files || ts.sys.fileExists(name),
+    readFile: (name) => files[name] ?? ts.sys.readFile(name),
+  };
+  const program = ts.createProgram([fileName], options, host);
+  return [...program.getSyntacticDiagnostics(), ...program.getSemanticDiagnostics()].map(
+    (diagnostic) =>
+      `TS${diagnostic.code}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`,
+  );
+}
+
 export interface MidRunFile {
   onDisk: string;
   inRun?: string;
