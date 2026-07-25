@@ -99,28 +99,72 @@ describe('plugin file notices', () => {
     ]);
   });
 
-  it('leaves a recovered notice out of the failures the run records', async () => {
+  it('records a recovered notice for the end of the run instead of warning mid-pass', async () => {
     writeFiles(['a.ts']);
 
     const config = new MigrateConfig().addPlugin(
       {
         name: 'recovering-plugin',
         run({ reportFileNotice }) {
-          reportFileNotice?.({ reason: 'took the slow path', recovered: true });
+          reportFileNotice?.({
+            reason: 'took the slow path',
+            hint: 'Do the thing by hand.',
+            recovered: true,
+            marked: true,
+          });
           return undefined;
         },
       },
       {},
     );
 
-    const { pluginFailures, exitCode } = await migrate({ rootDir, config });
+    const { pluginFailures, pluginNotices, exitCode } = await migrate({ rootDir, config });
 
-    expect(warnings()).toEqual([
-      '[recovering-plugin] 1 file(s): took the slow path. First: a.ts.',
-    ]);
+    // The pass says nothing: 30 plugins each reporting theirs is the wall of
+    // warnings this replaced.
+    expect(warnings()).toEqual([]);
     expect(pluginFailures).toEqual([]);
+    expect(pluginNotices).toEqual([
+      {
+        pluginName: 'recovering-plugin',
+        reason: 'took the slow path',
+        hint: 'Do the thing by hand.',
+        ruleId: undefined,
+        marked: true,
+        fileCount: 1,
+        files: ['a.ts'],
+      },
+    ]);
     // A notice is not a failed run; nothing about the exit code changes.
     expect(exitCode).toBe(0);
+  });
+
+  it('merges a recovered cause across the passes of a repeated plugin group', async () => {
+    writeFiles(['a.ts', 'b.ts']);
+
+    let pass = 0;
+    const config = new MigrateConfig().addPlugin(
+      {
+        name: 'flaky-plugin',
+        run({ fileName, text, reportFileNotice }) {
+          // Only the second pass marks, so the merged entry has to pick it up.
+          reportFileNotice?.({ reason: 'left for a person', recovered: true, marked: pass > 0 });
+          if (fileName.endsWith('a.ts') && pass === 0) {
+            pass += 1;
+            return `${text}// changed\n`;
+          }
+          return undefined;
+        },
+      },
+      {},
+      { repeatUntilStable: true },
+    );
+
+    const { pluginNotices } = await migrate({ rootDir, config });
+
+    expect(pluginNotices).toEqual([
+      expect.objectContaining({ fileCount: 2, files: ['a.ts', 'b.ts'], marked: true }),
+    ]);
   });
 
   it('reports after the pass, so the progress counter cannot render over it', async () => {

@@ -20,6 +20,12 @@ export interface PluginFileNotice {
    * are reported without being counted as files left unchanged.
    */
   recovered?: boolean;
+  /**
+   * Set when the plugin wrote a comment at the site this is about, so the run
+   * can send people to the files instead of listing them. A cause with no one
+   * site to point at leaves this unset.
+   */
+  marked?: boolean;
 }
 
 export interface PluginParams<TPluginOptions> {

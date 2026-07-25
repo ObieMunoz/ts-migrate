@@ -1,6 +1,7 @@
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
+import createFollowUpMarkers from '../utils/followUpMarker';
 import { createValidate, Properties } from '../utils/validateOptions';
 import {
   isReactForwardRefName,
@@ -26,6 +27,10 @@ const optionProperties: Properties = {
  *  in the file
  */
 const WITH_DEFAULT_PROPS_HELPER = `WithDefaultProps`;
+
+const REACT_19_HINT =
+  'React 19 ignores defaultProps on function components. Convert to destructured parameter ' +
+  'defaults by hand.';
 
 // defaulted keys stay required, typed as the declared prop type or the default's type;
 // defaults without a declared prop are added as-is
@@ -70,6 +75,15 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
     const processedPropTypes = new Map<string, string>();
     let takenNames: Set<string> | undefined;
 
+    // Both passes below can decline the same assignment, and a site carries one
+    // marker however many reasons it collected.
+    const markers = createFollowUpMarkers(sourceFile);
+    const noteFollowUp = (node: ts.Node, reason: string, hint: string) => {
+      const { update, marked } = markers.add(node, { hint, reason });
+      if (update) updates.push(update);
+      if (reportFileNotice) reportFileNotice({ reason, hint, recovered: true, marked });
+    };
+
     // Function components whose defaults moved into the parameter no longer
     // have an assignment to type, so they skip the intersection path below.
     const modernized = new Set<ts.ExpressionStatement>();
@@ -89,12 +103,8 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
         if (result.updates) {
           updates.push(...result.updates);
           modernized.add(assignment);
-        } else if (result.reason && reportFileNotice) {
-          reportFileNotice({
-            reason: `Left defaultProps in place: ${result.reason}.`,
-            hint: 'React 19 ignores defaultProps on function components, so these need converting by hand.',
-            recovered: true,
-          });
+        } else if (result.reason) {
+          noteFollowUp(assignment, `Left defaultProps in place: ${result.reason}.`, REACT_19_HINT);
         }
       });
     }
@@ -352,13 +362,11 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
             );
             defaultPropsType = createTypeQuery(hoistedName);
           } else {
-            if (reportFileNotice) {
-              reportFileNotice({
-                reason: `Left ${componentName} without a defaults type: naming its defaults would move them above a binding they read.`,
-                hint: 'Declare the defaults in a const above the component to have them typed.',
-                recovered: true,
-              });
-            }
+            noteFollowUp(
+              defaultProp,
+              `Left ${componentName} without a defaults type: naming its defaults would move them above a binding they read.`,
+              'Declare the defaults in a const above the component to have them typed.',
+            );
             return;
           }
 

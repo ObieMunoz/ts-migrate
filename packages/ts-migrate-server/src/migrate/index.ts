@@ -7,7 +7,7 @@ import MigrateConfig from './MigrateConfig';
 import MigrationProject from './MigrationProject';
 import computeDirtyFiles from './dirtyFiles';
 import PassProgress from '../utils/PassProgress';
-import PassNotices from '../utils/PassNotices';
+import PassNotices, { FileNoticeGroup } from '../utils/PassNotices';
 import PerfTimer from '../utils/PerfTimer';
 import errorMessage from '../utils/errorMessage';
 import { PluginParams, LintConfig } from '../../types';
@@ -110,6 +110,21 @@ export interface MigrateResult {
     pluginName: string;
     reason: string;
     ruleId?: string;
+    fileCount: number;
+    files: string[];
+  }>;
+  /**
+   * Work a plugin recognized but left for a person, grouped by cause and merged
+   * the same way. The plugins mark each site in place, so this is the shape of
+   * the worklist rather than the worklist itself.
+   */
+  pluginNotices: Array<{
+    pluginName: string;
+    reason: string;
+    hint?: string;
+    ruleId?: string;
+    /** True when the plugin left a comment at each site, so the files carry the list. */
+    marked: boolean;
     fileCount: number;
     files: string[];
   }>;
@@ -230,6 +245,7 @@ export default async function migrate({
   const updatedSourceFiles = new Set<string>();
   const changedFilesByPlugin = config.plugins.map(() => new Set<string>());
   const pluginFailures: MigrateResult['pluginFailures'] = [];
+  const pluginNotices: MigrateResult['pluginNotices'] = [];
   const pluginErrors: MigrateResult['pluginErrors'] = [];
 
   // Consecutive repeatUntilStable plugins form one group; other plugins are
@@ -343,7 +359,17 @@ export default async function migrate({
         progress.finish();
         // After the counter is cleared, so nothing renders over the report.
         notices.report(pluginLogPrefix);
-        mergePluginFailures(pluginFailures, plugin.name, notices);
+        const passGroups = notices.groups();
+        mergePluginFailures(
+          pluginFailures,
+          plugin.name,
+          passGroups.filter((group) => !group.recovered),
+        );
+        mergePluginNotices(
+          pluginNotices,
+          plugin.name,
+          passGroups.filter((group) => group.recovered),
+        );
 
         for (const { fileName, text } of deferredWrites) {
           project.updateSourceFile(fileName, text);
@@ -473,6 +499,7 @@ export default async function migrate({
     nonMigratedFilesWithSyntaxErrors,
     pluginStats,
     pluginFailures,
+    pluginNotices,
     pluginErrors,
     generatedFiles,
   };
@@ -519,33 +546,63 @@ function diagnoseEmptyMigrationSet({
 }
 
 /**
- * Folds one pass's failures into the run's. A repeated plugin group retries the
- * files it changed, so the same cause can arrive from several passes; those
- * merge into one entry with the union of the files.
+ * The union of the files a cause was already known for and the ones this pass
+ * added. A repeated plugin group retries the files it changed, so the same
+ * cause arrives from several passes, and one file reporting it twice is still
+ * one file.
  */
+function mergeFiles(existing: { files: string[] } | undefined, files: string[]): string[] {
+  return [...new Set([...(existing?.files ?? []), ...files])].sort();
+}
+
+function findCause<T extends { pluginName: string; reason: string; ruleId?: string }>(
+  entries: T[],
+  pluginName: string,
+  { reason, ruleId }: FileNoticeGroup,
+): T | undefined {
+  return entries.find(
+    (entry) => entry.pluginName === pluginName && entry.reason === reason && entry.ruleId === ruleId,
+  );
+}
+
+/** Folds one pass's failures into the run's. */
 function mergePluginFailures(
   failures: MigrateResult['pluginFailures'],
   pluginName: string,
-  notices: PassNotices,
+  groups: FileNoticeGroup[],
 ): void {
-  notices
-    .groups()
-    .filter((group) => !group.recovered)
-    .forEach(({ reason, ruleId, files }) => {
-      const existing = failures.find(
-        (failure) =>
-          failure.pluginName === pluginName &&
-          failure.reason === reason &&
-          failure.ruleId === ruleId,
-      );
-      const merged = [...new Set([...(existing?.files ?? []), ...files])].sort();
-      if (existing) {
-        existing.files = merged;
-        existing.fileCount = merged.length;
-      } else {
-        failures.push({ pluginName, reason, ruleId, fileCount: merged.length, files: merged });
-      }
-    });
+  groups.forEach((group) => {
+    const existing = findCause(failures, pluginName, group);
+    const files = mergeFiles(existing, group.files);
+    if (existing) {
+      existing.files = files;
+      existing.fileCount = files.length;
+    } else {
+      const { reason, ruleId } = group;
+      failures.push({ pluginName, reason, ruleId, fileCount: files.length, files });
+    }
+  });
+}
+
+/** Folds one pass's recovered notices into the run's. */
+function mergePluginNotices(
+  notices: MigrateResult['pluginNotices'],
+  pluginName: string,
+  groups: FileNoticeGroup[],
+): void {
+  groups.forEach((group) => {
+    const existing = findCause(notices, pluginName, group);
+    const files = mergeFiles(existing, group.files);
+    if (existing) {
+      existing.files = files;
+      existing.fileCount = files.length;
+      // A later pass can mark a site an earlier one only reported.
+      existing.marked = existing.marked || group.marked;
+    } else {
+      const { reason, ruleId, hint, marked } = group;
+      notices.push({ pluginName, reason, hint, ruleId, marked, fileCount: files.length, files });
+    }
+  });
 }
 
 /** A declaration file in any of its module formats: .d.ts, .d.mts, .d.cts. */

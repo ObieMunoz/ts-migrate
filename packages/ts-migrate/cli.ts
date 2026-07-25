@@ -34,6 +34,7 @@ import readAgentsPlaybook from './utils/agentsPlaybook';
 import ensureAliasDeclarations from './utils/aliasDeclarations';
 import { combineFileFilters, createBootstrapMigrationFilter } from './utils/bootstrapFiles';
 import { createGitignoreMigrationFilter } from './utils/gitignore';
+import formatFollowUpReport from './utils/followUpReport';
 import packageVersion from './utils/packageVersion';
 import { describeTypeScript, typeScriptWarning } from './utils/resolveTypeScript';
 import {
@@ -301,6 +302,20 @@ function reportGeneratedFileInclusion(
       break;
     default:
       break;
+  }
+}
+
+/**
+ * What the run left for a person to do. Printed at the end because that is the
+ * only point the whole list is known and the only part of a long run's output
+ * anyone reliably reads. Must never fail an otherwise successful run.
+ */
+function printFollowUpReport(pluginNotices: MigrateResult['pluginNotices']): void {
+  try {
+    const reportText = formatFollowUpReport(pluginNotices);
+    if (reportText) log.warn(reportText);
+  } catch (err) {
+    log.warn(`Skipped the follow-up report: ${errorMessage(err)}`);
   }
 }
 
@@ -758,6 +773,7 @@ yargs
         nonMigratedFilesWithSyntaxErrors,
         pluginStats,
         pluginFailures,
+        pluginNotices,
         pluginErrors,
         generatedFiles,
       } = await migrate({
@@ -805,6 +821,7 @@ yargs
         printTypeDebtSummary(rootDir, args.folder, args.gitignore);
       }
       logTypeScriptWarning();
+      printFollowUpReport(pluginNotices);
 
       const runExitCode = emptyMigrationSet ? -1 : exitCode;
       if (runExitCode !== 0) {
@@ -827,6 +844,7 @@ yargs
             nonMigratedFilesWithSyntaxErrors,
             pluginStats,
             pluginFailures,
+            pluginNotices,
             pluginErrors,
             generatedFiles,
             skippedGitignoredFiles: gitignoreFilter?.skippedFiles().length ?? 0,
@@ -928,6 +946,7 @@ yargs
         nonMigratedFilesWithSyntaxErrors,
         pluginStats,
         pluginFailures,
+        pluginNotices,
         pluginErrors,
         generatedFiles,
         skippedGitignoredFiles,
@@ -956,6 +975,7 @@ yargs
         printTypeDebtSummary(rootDir, args.folder, args.gitignore);
       }
       logTypeScriptWarning();
+      printFollowUpReport(pluginNotices);
 
       if (exitCode !== 0) {
         logRunFailure(pluginErrors, migratedFilesWithSyntaxErrors);
@@ -977,6 +997,7 @@ yargs
             nonMigratedFilesWithSyntaxErrors,
             pluginStats,
             pluginFailures,
+            pluginNotices,
             pluginErrors,
             generatedFiles,
             skippedGitignoredFiles,

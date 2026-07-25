@@ -65,6 +65,20 @@ export interface MigrateRunSummary extends RunSummaryBase {
     files: string[];
   }>;
   /**
+   * Work a plugin recognized and left for a person, grouped by cause. Marked
+   * causes have a comment at every site, so this duplicates what the files
+   * already say; it is here because nobody reads a CI log.
+   */
+  pluginNotices: Array<{
+    plugin: string;
+    reason: string;
+    hint?: string;
+    ruleId?: string;
+    marked: boolean;
+    fileCount: number;
+    files: string[];
+  }>;
+  /**
    * Exceptions thrown out of a plugin, one entry per file. These fail the run,
    * unlike pluginFailures above. The message is bounded; the run log has the
    * full error.
@@ -140,6 +154,7 @@ export function buildMigrateRunSummary(params: {
   nonMigratedFilesWithSyntaxErrors: string[];
   pluginStats: MigrateResult['pluginStats'];
   pluginFailures?: MigrateResult['pluginFailures'];
+  pluginNotices?: MigrateResult['pluginNotices'];
   pluginErrors?: MigrateResult['pluginErrors'];
   generatedFiles?: ReadonlyMap<string, string>;
   skippedGitignoredFiles?: number;
@@ -186,6 +201,17 @@ export function buildMigrateRunSummary(params: {
         files: [...files].sort(),
       }),
     ),
+    pluginNotices: (params.pluginNotices ?? [])
+      .map(({ pluginName, reason, hint, ruleId, marked, fileCount, files }) => ({
+        plugin: pluginName,
+        reason,
+        hint,
+        ruleId,
+        marked,
+        fileCount,
+        files: [...files].sort(),
+      }))
+      .sort((a, b) => (a.plugin + a.reason < b.plugin + b.reason ? -1 : 1)),
     pluginErrors: (params.pluginErrors ?? [])
       .map(({ pluginName, file, message }) => ({ plugin: pluginName, file, message }))
       .sort((a, b) => (a.file + a.plugin < b.file + b.plugin ? -1 : 1)),
