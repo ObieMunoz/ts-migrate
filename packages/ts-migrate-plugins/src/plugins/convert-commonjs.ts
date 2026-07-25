@@ -1,6 +1,7 @@
 import ts from 'typescript';
 import { fileNoticeReporter, Plugin, PluginFileNotice } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
+import createFollowUpMarkers, { FollowUpMarkers } from '../utils/followUpMarker';
 import { createValidate, Properties } from '../utils/validateOptions';
 import { hasDefaultExport, isEsmSourceFile } from '../utils/moduleFormat';
 
@@ -218,22 +219,29 @@ function convertExports(
 
   if (whole.length === 0 && named.length === 0) return [];
 
+  // The first assignment: the decision is about the file's exports as a whole,
+  // and that is where someone reading it would start.
+  const leave = leaveExports.bind(null, createFollowUpMarkers(sourceFile), report, [
+    ...whole,
+    ...named,
+  ][0].statement);
+
   const structural = structuralBlockingReason(scope, whole, named);
-  if (structural) return leaveExports(report, structural);
+  if (structural) return leave(structural);
 
   const plan =
     whole.length === 1
       ? { updates: wholeExportUpdates(scope, whole[0]), locals: new Map<string, string>() }
       : namedExportPlan(scope, named);
-  if (!plan) return leaveExports(report, 'an export name is already declared in the file');
+  if (!plan) return leave('an export name is already declared in the file');
 
   const references = scanExportsReferences(sourceFile, recognized, plan.locals);
-  if (references.reason) return leaveExports(report, references.reason);
+  if (references.reason) return leave(references.reason);
 
   const nested = collectNestedBindingNames(sourceFile);
   const shadowed = references.reads.some((read) => nested.has(plan.locals.get(read.name.text)!));
   if (shadowed) {
-    return leaveExports(report, 'an exported name is also declared inside the file');
+    return leave('an exported name is also declared inside the file');
   }
 
   return [
@@ -248,11 +256,15 @@ function convertExports(
 }
 
 function leaveExports(
+  markers: FollowUpMarkers,
   report: (notice: PluginFileNotice) => void,
+  site: ts.ExpressionStatement,
   reason: string,
 ): SourceTextUpdate[] {
-  report({ reason, hint: 'Its exports are left as they are.', recovered: true });
-  return [];
+  const hint = 'Rewrite these as ES module exports by hand; they are left as they are.';
+  const { update, marked } = markers.add(site, { hint, reason });
+  report({ reason, hint, recovered: true, marked });
+  return update ? [update] : [];
 }
 
 function structuralBlockingReason(

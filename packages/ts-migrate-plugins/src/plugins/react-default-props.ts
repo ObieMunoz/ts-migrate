@@ -1,7 +1,7 @@
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
-import followUpMarkerUpdate, { hasFollowUpMarker } from '../utils/followUpMarker';
+import createFollowUpMarkers from '../utils/followUpMarker';
 import { createValidate, Properties } from '../utils/validateOptions';
 import {
   isReactForwardRefName,
@@ -77,17 +77,11 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
 
     // Both passes below can decline the same assignment, and a site carries one
     // marker however many reasons it collected.
-    const markedSites = new Set<ts.Node>();
+    const markers = createFollowUpMarkers(sourceFile);
     const noteFollowUp = (node: ts.Node, reason: string, hint: string) => {
-      if (!markedSites.has(node)) {
-        const marker = followUpMarkerUpdate(node, sourceFile, { hint, reason });
-        if (marker) updates.push(marker);
-        // One left by an earlier run is still a marked site.
-        if (marker || hasFollowUpMarker(node, sourceFile)) markedSites.add(node);
-      }
-      if (reportFileNotice) {
-        reportFileNotice({ reason, hint, recovered: true, marked: markedSites.has(node) });
-      }
+      const { update, marked } = markers.add(node, { hint, reason });
+      if (update) updates.push(update);
+      if (reportFileNotice) reportFileNotice({ reason, hint, recovered: true, marked });
     };
 
     // Function components whose defaults moved into the parameter no longer

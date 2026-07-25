@@ -13,6 +13,8 @@ export interface SkippedJSDocTypeAlias {
   /** The tag as it reads in the source, e.g. `@typedef Foo`. */
   tagText: string;
   reason: string;
+  /** The comment the tag is in, which is what stays behind and can be marked. */
+  doc: ts.JSDoc;
 }
 
 export interface JSDocTypeAliasScan {
@@ -65,8 +67,13 @@ export function scanJSDocTypeAliases(sourceFile: ts.SourceFile): JSDocTypeAliasS
   const skippedNames = new Set<string>();
   const taken = new Set<string>();
 
-  const skip = (tag: JSDocTypeAliasTag, name: string | undefined, reason: string) => {
-    skipped.push({ tagText: tagText(tag, sourceFile), reason });
+  const skip = (
+    tag: JSDocTypeAliasTag,
+    doc: ts.JSDoc,
+    name: string | undefined,
+    reason: string,
+  ) => {
+    skipped.push({ tagText: tagText(tag, sourceFile), reason, doc });
     if (name !== undefined) {
       skippedNames.add(name);
     }
@@ -78,20 +85,20 @@ export function scanJSDocTypeAliases(sourceFile: ts.SourceFile): JSDocTypeAliasS
         if (!ts.isJSDocTypedefTag(tag) && !ts.isJSDocCallbackTag(tag)) return;
 
         if (tag.fullName && !ts.isIdentifier(tag.fullName)) {
-          skip(tag, tag.fullName.getText(sourceFile), 'the name is qualified');
+          skip(tag, doc, tag.fullName.getText(sourceFile), 'the name is qualified');
           return;
         }
         if (!tag.name || !ts.isIdentifier(tag.name)) {
-          skip(tag, undefined, 'the tag has no name');
+          skip(tag, doc, undefined, 'the tag has no name');
           return;
         }
         const { text: name } = tag.name;
         if (declared.has(name)) {
-          skip(tag, name, 'the file already declares that name');
+          skip(tag, doc, name, 'the file already declares that name');
           return;
         }
         if (taken.has(name)) {
-          skip(tag, undefined, 'another tag in the file declares that name');
+          skip(tag, doc, undefined, 'another tag in the file declares that name');
           return;
         }
         taken.add(name);

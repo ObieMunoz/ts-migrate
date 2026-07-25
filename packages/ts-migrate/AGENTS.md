@@ -416,11 +416,7 @@ run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
   same file, nothing else reading the defaults or `Component.defaultProps`, a
   destructured props parameter that binds every defaulted prop, and a props
   type declared in full in that file. Everything else, class components
-  included, keeps the assignment. Each kept function-component assignment gets
-  a `// TODO(ts-migrate):` comment above it naming the conversion and the
-  reason it was skipped, so `grep -rn "TODO(ts-migrate)"` is the worklist; the
-  end of the run prints the counts and `--jsonSummary` records them under
-  `pluginNotices`.
+  included, keeps the assignment, marked in place (see below).
 - `--aliases tsfixme`: use `$TSFixMe`/`$TSFixMeFunction` instead of plain
   `any`. If the project does not already declare those globals, the migration
   writes them to `ts-migrate-aliases.d.ts` in `<folder>` so the output still
@@ -512,6 +508,31 @@ existing suppression comments, then re-adds only the ones still needed.
 
 Both `migrate` and `reignore` end the run by printing a one-paragraph type
 debt summary (the `report` totals for the project).
+
+### Follow-up markers
+
+Four plugins recognize something they cannot convert and leave it for a person:
+react-default-props (a function component's `defaultProps`, which React 19
+ignores), jsdoc (a `@type` cast, a `@template` on an unnamed class, a
+`@typedef`/`@callback` that stays a comment), convert-commonjs (exports it
+cannot rewrite), and ts-ignore (a diagnostic inside a multiline string,
+template, or comment, which cannot take a suppression). Each writes a comment
+at the site:
+
+```
+// TODO(ts-migrate): React 19 ignores defaultProps on function components. Convert to
+// destructured parameter defaults by hand.
+// Left defaultProps in place: a default value is not a literal.
+Chip.defaultProps = { tone: TONE };
+```
+
+So `grep -rn "TODO(ts-migrate)"` is the worklist after a run, and it stays
+accurate as the markers are deleted. Re-running does not stack them: a site
+already carrying one is left alone and still reported. The end of the run
+prints the counts per plugin with no file names, since the files hold the list,
+and `--jsonSummary` records the same grouping under `pluginNotices`. A cause
+with nowhere to write a marker is reported with `"marked": false` and the run
+leaves the `grep` line off.
 
 ### Suppression report
 

@@ -898,7 +898,9 @@ when every plugin processed every file. `pluginNotices` lists what a plugin
 recognized and left for a person, grouped the same way, with the `hint` naming
 what to do about it. A cause with `"marked": true` also has a
 `TODO(ts-migrate)` comment at every one of its sites, so the entry duplicates
-what the files already say and is here for runs nobody watches.
+what the files already say and is here for runs nobody watches; react-default-props,
+jsdoc, convert-commonjs and ts-ignore all write those, and
+`grep -rn "TODO(ts-migrate)"` is the worklist after a run.
 `changedFilesTypeDebt` counts only the files this run
 changed, so a scoped or incremental run reports its own debt; the `report`
 command measures the whole project. `dryRun` is true when the run was a

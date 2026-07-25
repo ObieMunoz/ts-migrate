@@ -46,7 +46,7 @@ process.exit(exitCode);
 | ---- | ----------- |
 | [add-conversions](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/add-conversions.ts) | Add conversions to `any` (`$TSFixMe`) in the case of type errors. |
 | [collect-global-assignments](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/utils/globalDeclarations.ts) | Read-only. Records every `window.x = ...`, `global.x = ...` and `globalThis.x = ...` in the project, at any nesting depth. Skips a property the environment already declares, and an assignment whose root an enclosing scope binds (an IIFE parameter named `window`, a local named `global`), since those properties are not globals. Created per run with `createGlobalDeclarations()` together with declare-globals. |
-| [convert-commonjs](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/convert-commonjs.ts) | Rewrite top level `require` and `module.exports` into TypeScript module syntax, so imports carry types across files instead of `any`. Emits the interop pair `import x = require('m')` / `export = x` by default, and named exports (`import { a } from 'm'`, `export const a`) where a named import has to reach them. `{ esm: true }` forces `import x from 'm'` / `export default`, which is also what a file already using ESM gets; a `.cts`/`.cjs` file is CommonJS whatever its package says or its syntax already looks like. Dynamic, conditional and non top level forms are left alone. |
+| [convert-commonjs](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/convert-commonjs.ts) | Rewrite top level `require` and `module.exports` into TypeScript module syntax, so imports carry types across files instead of `any`. Emits the interop pair `import x = require('m')` / `export = x` by default, and named exports (`import { a } from 'm'`, `export const a`) where a named import has to reach them. `{ esm: true }` forces `import x from 'm'` / `export default`, which is also what a file already using ESM gets; a `.cts`/`.cjs` file is CommonJS whatever its package says or its syntax already looks like. Dynamic, conditional and non top level forms are left alone. A file whose exports it cannot convert keeps them and is marked at the first assignment (see "Follow-up markers"). |
 | [declare-empty-object-properties](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/declare-empty-object-properties.ts) | Type the accumulator idiom `const cache = {}; cache.total = 1;` from the values assigned to it, so one optional-property annotation replaces the cast add-conversions writes at every access site. Covers the same idiom on a class property, `foo = {}` written through `this.foo.x`, an instance or the class for a static, and on a `let` whose value arrives later, `let cache; cache = {};`, which reports only under `noImplicitAny`. Identifier and string-literal keys only; computed keys fall through. A value the checker types `any`, or one of the spellings it uses where it found nothing (`never[]`, `{}`, `null`), takes the any alias. The annotation is re-checked against the file and dropped when it introduces an error the file did not already have. Properties a class never declares belong to declare-missing-class-properties, which runs earlier, builds the same property list for the ones a constructor assigns the literal to, and writes no initializer, so the two never type the same property. |
 | [declare-globals](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/utils/globalDeclarations.ts) | Writes what collect-global-assignments found to `types/ts-migrate-globals.d.ts` as one `declare global` block: an `interface Window` member per property assigned through `window`, a `var` for the ones assigned through `global` or `globalThis`. A property's type comes from its assigned expressions only where they say what they are, unioned across the project, and is the any alias otherwise. Placed before add-conversions, so those sites resolve instead of taking a cast. The file is rewritten from its own declarations each run, keeping a type that was narrowed by hand; a file at that path it cannot read back is never overwritten. |
 | [declare-missing-class-properties](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/declare-missing-class-properties.ts) | Declare missing class properties. A declaration is left bare where the checker types it from the constructor assignments; a property the constructor assigns an empty object literal to is declared as the list of the keys written on it, `cache: { total?: number }`, the same annotation declare-empty-object-properties writes for the same idiom on a property that was declared. Anything else takes the any alias, and so does a declaration that introduces an error the file did not already have. |
@@ -56,7 +56,7 @@ process.exit(exitCode);
 | [hoist-class-statics](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/hoist-class-statics.ts) | Hoist static class members into the class body (vs. assigning them after the class definition). |
 | [hoist-declarations](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/hoist-declarations.ts) | Move a top-level `const`/`let` above its first use when it is referenced before its definition and can't be converted into a hoisting function declaration (e.g. an HOC-wrapped component). Only relocates when it is provably safe. |
 | [infer-types](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/infer-types.ts) | Annotate implicit anys with types TypeScript can infer from usage, so only the truly undeterminable ones fall through to explicit-any. |
-| [jsdoc](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/jsdoc.ts) | Convert JSDoc types to TypeScript annotations: `@param`, `@type` on variables and class properties, `@template` on signatures and classes, and, with `{ annotateReturns: true }`, `@returns`. A `@type` written on a parenthesized expression is a cast, which the checker reads only in a JavaScript file, so it becomes `(expr as T)` and the comment goes; a cast that is assigned to, or that `delete` takes, keeps its comment and is reported. `@typedef` and `@callback` become type aliases, exported when the file is a module. Type parameters written on a class or a type alias are given an `any` default, so a reference that passes no type arguments keeps working. A tag that cannot be converted, because the name is qualified or the file already declares it, keeps its comment and its references are annotated with `any`. A converted name that resolves to nothing is written anyway and reported at the end of the run, grouped by name (see the suppression report in the CLI docs). |
+| [jsdoc](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/jsdoc.ts) | Convert JSDoc types to TypeScript annotations: `@param`, `@type` on variables and class properties, `@template` on signatures and classes, and, with `{ annotateReturns: true }`, `@returns`. A `@type` written on a parenthesized expression is a cast, which the checker reads only in a JavaScript file, so it becomes `(expr as T)` and the comment goes; a cast that is assigned to, or that `delete` takes, keeps its comment and is marked (see "Follow-up markers"). `@typedef` and `@callback` become type aliases, exported when the file is a module. Type parameters written on a class or a type alias are given an `any` default, so a reference that passes no type arguments keeps working. A tag that cannot be converted, because the name is qualified or the file already declares it, keeps its comment, is marked, and its references are annotated with `any`. A converted name that resolves to nothing is written anyway and reported at the end of the run, grouped by name (see the suppression report in the CLI docs). |
 | [member-accessibility](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/member-accessibility.ts) | Add accessibility modifiers (private, protected, or public) to class members according to naming conventions. |
 | [react-class-lifecycle-methods](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-class-lifecycle-methods.ts) | Annotate React lifecycle method types. |
 | [react-class-state](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-class-state.ts) | Declare React state type. |
@@ -69,7 +69,7 @@ process.exit(exitCode);
 | [retry-conversions](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/retry-conversions.ts) | Reconsider the `as any` assertions add-conversions inserted, once `@types` have landed or a neighboring directory has been migrated. Each one is dropped and the file re-checked; the ones the file still needs are then retyped to the tightest type the checker can name for them, so `f(raw as any)` reads `f(raw as Opts)`. Only the tool's own output is in scope: `as any`, and an assertion to a type alias declared as `any`. See "What retry-conversions will and will not write" below. |
 | [strip-ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/strip-ts-ignore.ts) | Strip `// @ts-ignore`. comments |
 | [detect-types-packages](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/utils/typesPackages.ts) | Read-only. Classifies the diagnostics ts-ignore is about to suppress into `@types` package recommendations (missing, not loaded, outdated, or redundant), reported at the end of the run. Created per run with `createTypesPackageDetector()` and placed immediately before ts-ignore. |
-| [ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/ts-ignore.ts) | Add `// @ts-ignore` comments for the remaining errors. |
+| [ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/ts-ignore.ts) | Add `// @ts-ignore` comments for the remaining errors. A diagnostic inside a multiline string, template, or comment cannot take one, so the statement around it is marked instead (see "Follow-up markers"). |
 | [update-import-paths](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/update-import-paths.ts) | Re-point relative imports that still say `./foo.js`/`./foo.jsx` after the file was renamed to `.ts`/`.tsx`. Drops the extension by default; keeps a `.js` extension in ESM packages (`"type": "module"`) or with `{ extension: 'js' }`. A `.cts`/`.cjs` file keeps the extensionless form even there: it emits `.cjs`, which is CommonJS whatever the package says. Imports whose target still exists on disk are left alone. |
 | [widen-annotations](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/widen-annotations.ts) | Union an annotation with the types the assignments in its own file give it, so `let x: number` later assigned null reads `number \| null` instead of taking a suppression. Covers variable, class property, interface member and return annotations; never parameters. `{ maxUnionMembers: n }` (default 4) caps how wide an annotation may get. |
 
@@ -113,21 +113,7 @@ A prop read through `React.createElement` results rather than through the
 component, and a `Component.defaultProps` read from another file, are not
 visible to the plugin.
 
-Every assignment the plugin keeps gets a comment above it naming what to do and
-why it was left, so the work is in the file it has to happen in rather than in
-the run log:
-
-```jsx
-// TODO(ts-migrate): React 19 ignores defaultProps on function components. Convert to
-// destructured parameter defaults by hand.
-// Left defaultProps in place: a default value is not a literal.
-Chip.defaultProps = { tone: TONE };
-```
-
-`grep -rn "TODO(ts-migrate)"` is the worklist. Re-running does not stack the
-markers: a site that already carries one is left as it is. The end of the run
-prints how many files and causes there were, and `--jsonSummary` records them
-under `pluginNotices`.
+Every assignment the plugin keeps gets a follow-up marker above it (see below).
 
 A kept assignment is typed by naming its defaults when the component is a
 `const`:
@@ -150,6 +136,39 @@ a value under a function in the defaults, keeps its assignment untouched and
 gets no defaults type, reported at the end of the run. Moving those defaults
 would read a binding in its temporal dead zone, which is a `ReferenceError` at
 module load rather than a type to fix later.
+
+## Follow-up markers
+
+A plugin that recognizes something and leaves it for a person writes a comment
+at the site, naming what to do and why it was left, so the work is in the file
+it has to happen in rather than in a run log that scrolls past:
+
+```jsx
+// TODO(ts-migrate): React 19 ignores defaultProps on function components. Convert to
+// destructured parameter defaults by hand.
+// Left defaultProps in place: a default value is not a literal.
+Chip.defaultProps = { tone: TONE };
+```
+
+`grep -rn "TODO(ts-migrate)"` is the worklist. The plugins that write them:
+
+| Plugin | Marked when |
+| --- | --- |
+| react-default-props | A function component's `defaultProps` cannot be moved into the props destructuring, so React 19 ignores it. |
+| jsdoc | A `@type` cast, a `@template` on an unnamed class, or a `@typedef`/`@callback` stays a comment. |
+| convert-commonjs | A file's `module.exports`/`exports.<name>` cannot become ES module exports. |
+| ts-ignore | A diagnostic inside a multiline string, template, or comment cannot take a suppression comment. |
+
+A marker goes above the whole statement, above its doc comment when it has one,
+and never where a line comment would run into code beside it. Re-running does
+not stack them: a site already carrying one is left as it is, and still
+reported, since the work is outstanding either way. One site gets one marker
+however many causes land on it.
+
+The end of the run prints how many files and causes there were, and
+`--jsonSummary` records them under `pluginNotices`. A cause with nowhere to
+write a marker, such as a diagnostic that falls inside a comment, is reported
+with `"marked": false` and the run leaves the `grep` line off.
 
 ## What infer-types annotations mean
 

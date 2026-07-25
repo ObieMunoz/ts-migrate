@@ -627,7 +627,12 @@ comsole.log(sql);
       }),
     );
 
-    expect(result).toBe(`const sql = \`SELECT *
+    // The marker goes on the statement around the template: inside it a `//`
+    // would be more of the string.
+    expect(result).toBe(`// TODO(ts-migrate): The TypeScript compile check will report them; they need a source change.
+// could not add @ts-expect-error inside a multiline string, template, or comment, so those
+// diagnostics are left unsuppressed
+const sql = \`SELECT *
   FROM widgets\`;
 // @ts-expect-error TS(123) FIXME: diagnostic message
 comsole.log(sql);
@@ -635,6 +640,27 @@ comsole.log(sql);
     expect(notices).toHaveLength(1);
     expect(notices[0].reason).toContain('could not add @ts-expect-error inside a multiline');
     expect(notices[0].recovered).toBe(true);
+    expect(notices[0].marked).toBe(true);
+  });
+
+  it('has nowhere to mark a diagnostic that falls in a comment, and says so', async () => {
+    const text = `/* a comment
+   spanning lines */
+const a = 1;
+`;
+
+    const notices: PluginFileNotice[] = [];
+    const result = await tsIgnorePlugin.run(
+      mockPluginParams({
+        text,
+        // Inside the comment, which belongs to no node at all.
+        semanticDiagnostics: [mockDiagnostic(text, 'spanning', { code: 2554 })],
+        reportFileNotice: (notice) => notices.push(notice),
+      }),
+    );
+
+    expect(result).toBe(text);
+    expect(notices[0].marked).toBe(false);
   });
 
   it('suppresses module errors on imports with webpackChunkName magic comments', async () => {

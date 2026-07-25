@@ -5,6 +5,29 @@ import { PluginFileNotice, PluginParams } from '@obiemunoz/ts-migrate-server';
 
 type WithoutFile<T> = Omit<T, 'file'>;
 
+/**
+ * Output without the follow-up markers, for asserting what a plugin did to the
+ * code itself. A marker is a TODO line plus the comment lines that continue it.
+ */
+export function withoutMarkers(text: string): string;
+export function withoutMarkers(text: string | undefined): string | undefined;
+export function withoutMarkers(text: string | undefined): string | undefined {
+  if (text === undefined) return undefined;
+  let inMarker = false;
+  return text
+    .split('\n')
+    .filter((line) => {
+      if (line.trim().startsWith('// TODO(ts-migrate):')) {
+        inMarker = true;
+        return false;
+      }
+      if (inMarker && line.trim().startsWith('//')) return false;
+      inMarker = false;
+      return true;
+    })
+    .join('\n');
+}
+
 export function mockPluginParams<TOptions = unknown>(params: {
   fileName?: string;
   text?: string;

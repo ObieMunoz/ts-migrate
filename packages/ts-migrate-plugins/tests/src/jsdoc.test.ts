@@ -1,6 +1,6 @@
 import ts from 'typescript';
 import { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
-import { mockPluginParams } from '../test-utils';
+import { mockPluginParams, withoutMarkers } from '../test-utils';
 import jsDocPlugin from '../../src/plugins/jsdoc';
 
 /** Compiles the given files in memory, resolving the lib files from disk. */
@@ -957,6 +957,9 @@ export default class {
     );
 
     expect(result).toBe(`\
+// TODO(ts-migrate): Name the class so the type parameters can be written on it; members that
+// reference them keep the name the comment declared.
+// @template T stays a comment because the class has no name
 /**
  * @template T
  */
@@ -968,8 +971,11 @@ export default class {
     expect(notices).toEqual([
       {
         reason: '@template T stays a comment because the class has no name',
-        hint: 'Members that reference it keep the name the comment declared.',
+        hint:
+          'Name the class so the type parameters can be written on it; members that reference ' +
+          'them keep the name the comment declared.',
         recovered: true,
+        marked: true,
       },
     ]);
   });
@@ -1120,7 +1126,7 @@ function f(k) {}
       }),
     );
 
-    expect(result).toBe(`\
+    expect(withoutMarkers(result as string)).toBe(`\
 class Key {}
 
 /** @typedef {string} Key */
@@ -1131,8 +1137,9 @@ function f(k: $TSFixMe) {}
     expect(notices).toEqual([
       {
         reason: '@typedef Key stays a comment because the file already declares that name',
-        hint: 'References to it are annotated with any.',
+        hint: 'Declare it as a type of its own; references to it are annotated with any.',
         recovered: true,
+        marked: true,
       },
     ]);
   });
@@ -1147,7 +1154,7 @@ function f(k) {}
 
     const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
 
-    expect(result).toBe(`\
+    expect(withoutMarkers(result as string)).toBe(`\
 /** @typedef {string} NS.Key */
 
 /** @param k {NS.Key} */
@@ -1285,28 +1292,40 @@ delete /** @type {Row} */ (obj.row);
       mockPluginParams({ text, fileName: 'file.ts', reportFileNotice: (n) => notices.push(n) }),
     );
 
-    expect(result).toBe(text);
+    expect(withoutMarkers(result as string)).toBe(text);
     expect(notices).toEqual([
       {
         reason: '@type {Row} stays a comment because the cast is an assignment target',
-        hint: 'The expression keeps the type it has without the comment.',
+        hint:
+          'Write the cast as an as expression by hand; the expression keeps the type it has ' +
+          'without the comment.',
         recovered: true,
+        marked: true,
       },
       {
         reason:
           '@type {Row} stays a comment because delete takes a property reference and not an assertion',
-        hint: 'The expression keeps the type it has without the comment.',
+        hint:
+          'Write the cast as an as expression by hand; the expression keeps the type it has ' +
+          'without the comment.',
         recovered: true,
+        marked: true,
       },
       {
         reason: '@type {Row} stays a comment because the cast is an assignment target',
-        hint: 'The expression keeps the type it has without the comment.',
+        hint:
+          'Write the cast as an as expression by hand; the expression keeps the type it has ' +
+          'without the comment.',
         recovered: true,
+        marked: true,
       },
       {
         reason: '@type {Row} stays a comment because the cast is an assignment target',
-        hint: 'The expression keeps the type it has without the comment.',
+        hint:
+          'Write the cast as an as expression by hand; the expression keeps the type it has ' +
+          'without the comment.',
         recovered: true,
+        marked: true,
       },
     ]);
   });
@@ -1382,7 +1401,7 @@ function i(a = /** @type {Row} */ (json)) {
       }),
     );
 
-    expect(result).toBe(`\
+    expect(withoutMarkers(result as string)).toBe(`\
 /** @param {Row} a */
 function f(a: Row = (json)) {}
 
@@ -1400,14 +1419,20 @@ function i(a = (json as Row)): Row {
       {
         reason:
           '@type {Row} stays a comment because the parameter list it sits in is written out again from its own tags',
-        hint: 'The expression keeps the type it has without the comment.',
+        hint:
+          'Write the cast as an as expression by hand; the expression keeps the type it has ' +
+          'without the comment.',
         recovered: true,
+        marked: true,
       },
       {
         reason:
           '@type {Row} stays a comment because the parameter list it sits in is written out again from its own tags',
-        hint: 'The expression keeps the type it has without the comment.',
+        hint:
+          'Write the cast as an as expression by hand; the expression keeps the type it has ' +
+          'without the comment.',
         recovered: true,
+        marked: true,
       },
     ]);
   });
@@ -1446,7 +1471,7 @@ const d = /** @type {*} */ (json);
       mockPluginParams({ text, fileName: 'file.ts', options: { anyAlias: '$TSFixMe' } }),
     );
 
-    expect(result).toBe(`\
+    expect(withoutMarkers(result as string)).toBe(`\
 /** @typedef {string} Key */
 class Key {}
 

@@ -1,6 +1,6 @@
 import path from 'path';
 import { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
-import { mockPluginParams } from '../test-utils';
+import { mockPluginParams, withoutMarkers } from '../test-utils';
 import convertCommonjsPlugin from '../../src/plugins/convert-commonjs';
 
 const fixturesDir = path.resolve(__dirname, '../fixtures/convert-commonjs');
@@ -205,7 +205,7 @@ exports.timeouts = function (options) {
 `;
 
     const { result, notices } = runWithNotices(text);
-    expect(result).toBe(text);
+    expect(withoutMarkers(result as string)).toBe(text);
     expect(notices[0].reason).toBe('an exported name is also declared inside the file');
   });
 
@@ -215,7 +215,7 @@ const doubled = exports.limit * 2;
 `;
 
     const { result, notices } = runWithNotices(text);
-    expect(result).toBe(text);
+    expect(withoutMarkers(result as string)).toBe(text);
     expect(notices[0].reason).toBe('an export is read at the top level of the file');
   });
 
@@ -225,11 +225,12 @@ module.exports.helper = helper;
 `;
 
     const { result, notices } = runWithNotices(text);
-    expect(result).toBe(text);
+    expect(withoutMarkers(result as string)).toBe(text);
     expect(notices).toEqual([
       {
         reason: 'the file assigns both module.exports and exports.<name>',
-        hint: 'Its exports are left as they are.',
+        hint: 'Rewrite these as ES module exports by hand; they are left as they are.',
+        marked: true,
         recovered: true,
       },
     ]);
@@ -241,8 +242,38 @@ console.log(Object.keys(exports));
 `;
 
     const { result, notices } = runWithNotices(text);
-    expect(result).toBe(text);
+    expect(withoutMarkers(result as string)).toBe(text);
     expect(notices[0].reason).toBe('exports is used outside a top level assignment');
+  });
+
+  it('marks the exports it left, at the first assignment, once for the file', async () => {
+    const text = `exports.foo = 1;
+exports.bar = 2;
+console.log(Object.keys(exports));
+`;
+
+    const { result, notices } = runWithNotices(text);
+
+    expect(result).toBe(`// TODO(ts-migrate): Rewrite these as ES module exports by hand; they are left as they are.
+// exports is used outside a top level assignment
+exports.foo = 1;
+exports.bar = 2;
+console.log(Object.keys(exports));
+`);
+    expect(notices[0].marked).toBe(true);
+  });
+
+  it('leaves the marker it already wrote alone when the run repeats', async () => {
+    const text = `exports.foo = 1;
+console.log(Object.keys(exports));
+`;
+
+    const once = runWithNotices(text).result as string;
+    const { result: twice, notices } = runWithNotices(once);
+
+    expect(twice).toBe(once);
+    expect(once.match(/TODO\(ts-migrate\)/g)).toHaveLength(1);
+    expect(notices[0].marked).toBe(true);
   });
 
   it('leaves a file that assigns module.exports inside a branch', async () => {
@@ -253,7 +284,7 @@ if (legacy) {
 `;
 
     const { result, notices } = runWithNotices(text);
-    expect(result).toBe(text);
+    expect(withoutMarkers(result as string)).toBe(text);
     expect(notices[0].reason).toBe('module.exports is used outside a top level assignment');
   });
 
@@ -263,7 +294,7 @@ exports.foo = 2;
 `;
 
     const { result, notices } = runWithNotices(text);
-    expect(result).toBe(text);
+    expect(withoutMarkers(result as string)).toBe(text);
     expect(notices[0].reason).toBe('the file assigns the same export name more than once');
   });
 
@@ -273,7 +304,7 @@ exports.foo = 2;
 `;
 
     const { result, notices } = runWithNotices(text);
-    expect(result).toBe(text);
+    expect(withoutMarkers(result as string)).toBe(text);
     expect(notices[0].reason).toBe('an export name is already declared in the file');
   });
 
@@ -286,7 +317,7 @@ exports.foo = 2;
 `;
 
     const { result, notices } = runWithNotices(text);
-    expect(result).toBe(text);
+    expect(withoutMarkers(result as string)).toBe(text);
     expect(notices).toEqual([]);
   });
 
@@ -330,7 +361,7 @@ module.exports = Widget;
 `;
 
     const { result, notices } = runWithNotices(text);
-    expect(result).toBe(text);
+    expect(withoutMarkers(result as string)).toBe(text);
     expect(notices[0].reason).toBe('the file already has a default export');
   });
 
@@ -355,7 +386,7 @@ export const bar = foo;
 `;
 
     const { result, notices } = runWithNotices(text);
-    expect(result).toBe(text);
+    expect(withoutMarkers(result as string)).toBe(text);
     expect(notices).toEqual([]);
   });
 

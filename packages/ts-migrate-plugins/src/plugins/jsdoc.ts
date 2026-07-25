@@ -7,6 +7,7 @@ import {
   createValidate,
 } from '../utils/validateOptions';
 import UpdateTracker from './utils/update';
+import createFollowUpMarkers, { FollowUpMarkers } from '../utils/followUpMarker';
 import {
   aliasTemplateTags,
   isHostTemplateTag,
@@ -100,21 +101,40 @@ const jsDocTransformerFactory =
       : factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
     const typeMap: TypeMap = { ...defaultTypeMap, ...optionsTypeMap };
     let sourceFile!: ts.SourceFile;
+    let markers!: FollowUpMarkers;
     let aliasNames = new Set<string>();
     let danglingNames = new Set<string>();
     let exportAliases = false;
+
+    /** Reports a tag left as a comment, and marks where it stayed. */
+    function noteFollowUp(node: ts.Node, reason: string, hint: string): void {
+      const { update, marked } = markers.add(node, { hint, reason });
+      if (update) updates.replaceText(update.index, update.index, update.text);
+      report({ reason, hint, recovered: true, marked });
+    }
+
     return (file: ts.SourceFile) => {
       sourceFile = file;
+      markers = createFollowUpMarkers(file);
       const scan = scanJSDocTypeAliases(file);
       aliasNames = new Set(scan.aliases.map((alias) => alias.name));
       danglingNames = scan.skippedNames;
       exportAliases = ts.isExternalModule(file);
-      scan.skipped.forEach(({ tagText, reason }) => {
-        report({
+      // declareTypeAliases replaces a comment it took aliases out of, starting
+      // at the same position a marker would be inserted at. Those comments are
+      // rewritten anyway, so the skipped tags in them are reported unmarked
+      // rather than risking an update that overlaps the rewrite.
+      const rewrittenDocs = new Set(scan.aliases.map((alias) => alias.doc));
+      scan.skipped.forEach(({ tagText, reason, doc }) => {
+        const note = {
           reason: `${tagText} stays a comment because ${reason}`,
-          hint: 'References to it are annotated with any.',
-          recovered: true,
-        });
+          hint: 'Declare it as a type of its own; references to it are annotated with any.',
+        };
+        if (rewrittenDocs.has(doc)) {
+          report({ ...note, recovered: true });
+        } else {
+          noteFollowUp(doc, note.reason, note.hint);
+        }
       });
       declareTypeAliases(scan);
       visit(file);
@@ -222,11 +242,12 @@ const jsDocTransformerFactory =
       }
       const refusal = castRefusal(node);
       if (refusal) {
-        report({
-          reason: `@type ${tag.typeExpression.getText(sourceFile)} stays a comment because ${refusal}`,
-          hint: 'The expression keeps the type it has without the comment.',
-          recovered: true,
-        });
+        noteFollowUp(
+          node,
+          `@type ${tag.typeExpression.getText(sourceFile)} stays a comment because ${refusal}`,
+          'Write the cast as an as expression by hand; the expression keeps the type it has ' +
+            'without the comment.',
+        );
         return;
       }
       const type = printer.printNode(
@@ -261,11 +282,12 @@ const jsDocTransformerFactory =
       }
       if (!node.name) {
         const names = typeParameters.map((typeParameter) => typeParameter.name.text).join(', ');
-        report({
-          reason: `@template ${names} stays a comment because the class has no name`,
-          hint: 'Members that reference it keep the name the comment declared.',
-          recovered: true,
-        });
+        noteFollowUp(
+          node,
+          `@template ${names} stays a comment because the class has no name`,
+          'Name the class so the type parameters can be written on it; members that reference ' +
+            'them keep the name the comment declared.',
+        );
         return;
       }
       const pos = node.name.end;
