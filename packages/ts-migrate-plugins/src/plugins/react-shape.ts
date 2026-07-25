@@ -193,7 +193,7 @@ const reactShapePlugin: Plugin<Options> = {
         updates.push({
           kind: 'replace',
           index: node.pos,
-          length: node.end,
+          length: node.end - node.pos,
           text: `${ts.sys.newLine}${printer.printNode(
             ts.EmitHint.Unspecified,
             ts.factory.createVariableStatement(

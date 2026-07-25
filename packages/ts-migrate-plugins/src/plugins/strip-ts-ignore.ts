@@ -83,8 +83,14 @@ function expandToWhitespace(text: string, range: ts.TextRange): ts.TextRange {
 }
 
 function getCommentRanges(text: string, pos: number): ts.CommentRange[] {
-  return [
+  const ranges = [
     ...(ts.getLeadingCommentRanges(text, pos) || []),
     ...(ts.getTrailingCommentRanges(text, pos) || []),
   ];
+  // A comment at the very start of a file is reported as both, and one comment
+  // is one deletion however many ways it was found.
+  return ranges.filter(
+    (range, i) =>
+      ranges.findIndex((other) => other.pos === range.pos && other.end === range.end) === i,
+  );
 }
