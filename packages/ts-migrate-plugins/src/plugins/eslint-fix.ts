@@ -761,6 +761,114 @@ function lintFailureNotice(error: unknown): PluginFileNotice {
   };
 }
 
+// Code inside ESLint sometimes writes straight to the console: a parser
+// announcing something about its setup, or a rule left with a debug print.
+// Neither is ts-migrate's to lose, and neither can be left alone either. The
+// pass counter is drawn in place, so a write that lands under it is overdrawn
+// on the next render (this is why ts-migrate's own output goes through
+// updatable-log), and typescript-estree's version banner is thirteen lines of
+// borders and blank lines that say one thing.
+//
+// Only the main thread needs this. typescript-estree gates the banner on
+// `process.stdout.isTTY`, and a worker's stdout is a pipe to this process,
+// never a TTY, so the files that lint in the pool never produce it.
+const FILTERED_CONSOLE_METHODS = ['log', 'info', 'warn', 'error'] as const;
+type FilteredConsoleMethod = (typeof FILTERED_CONSOLE_METHODS)[number];
+type ConsoleWriter = (...args: unknown[]) => void;
+
+/**
+ * A console write ts-migrate recognizes, and the one line worth keeping from
+ * it. A `summarize` that returns undefined drops the write outright.
+ */
+interface KnownConsoleNoise {
+  match: RegExp;
+  summarize: (text: string) => string | undefined;
+}
+
+const KNOWN_CONSOLE_NOISE: KnownConsoleNoise[] = [
+  {
+    // Printed the first time typescript-estree parses, whenever the compiler
+    // in the process is outside the range the @typescript-eslint doing the
+    // parsing was released against. ts-migrate runs the project's own compiler
+    // (see ts-migrate's utils/resolveTypeScript), so a project whose lint
+    // stack is older than its TypeScript sees this on every run.
+    match: /not officially supported by @typescript-eslint\/typescript-estree/,
+    summarize: (text) => {
+      // The two versions are the whole of what the banner says. Its labels are
+      // capitalized differently across @typescript-eslint majors.
+      const supported = /supported typescript versions:[ \t]*(.+)/i.exec(text)?.[1].trim();
+      const running = /your typescript version:[ \t]*(.+)/i.exec(text)?.[1].trim();
+      const skew =
+        supported && running
+          ? `supports TypeScript ${supported} and this migration runs ${running}`
+          : 'does not officially support the TypeScript version this migration runs';
+      return `[eslint-fix] This project's @typescript-eslint ${skew}, so syntax it does not know can parse wrong.`;
+    },
+  },
+];
+
+function knownNoiseIn(args: unknown[]): KnownConsoleNoise | undefined {
+  const [first] = args;
+  if (typeof first !== 'string') return undefined;
+  return KNOWN_CONSOLE_NOISE.find(({ match }) => match.test(first));
+}
+
+/* eslint-disable no-console -- this is what keeps other writers off the console */
+let consoleFilterDepth = 0;
+const unfilteredConsole = new Map<FilteredConsoleMethod, ConsoleWriter>();
+
+function installConsoleFilter(): void {
+  FILTERED_CONSOLE_METHODS.forEach((method) => {
+    const original = console[method] as ConsoleWriter;
+    unfilteredConsole.set(method, original);
+    // Bound: what goes back is the method as it was found, but calling it from
+    // the wrapper cannot assume a console hands out bound methods.
+    const write = original.bind(console) as ConsoleWriter;
+    console[method] = (...args: unknown[]) => {
+      const known = knownNoiseIn(args);
+      if (known) {
+        // The summary goes back out on the channel it came in on, and past
+        // this filter rather than through log.info, which would re-enter it.
+        const summary = known.summarize(args[0] as string);
+        if (summary !== undefined && !log.quiet) {
+          log.clear();
+          write(summary);
+        }
+        return;
+      }
+      // Nothing ts-migrate recognizes is nothing for it to drop. It only has
+      // to survive the counter.
+      log.clear();
+      write(...args);
+    };
+  });
+}
+
+function restoreConsole(): void {
+  unfilteredConsole.forEach((write, method) => {
+    console[method] = write;
+  });
+  unfilteredConsole.clear();
+}
+/* eslint-enable no-console */
+
+/**
+ * Filters direct console writes while a lint call is in flight, and returns
+ * that call's release. The filter comes off when the last caller releases it,
+ * so nothing is left patched between passes.
+ */
+function filterConsole(): () => void {
+  if (consoleFilterDepth === 0) installConsoleFilter();
+  consoleFilterDepth += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    consoleFilterDepth -= 1;
+    if (consoleFilterDepth === 0) restoreConsole();
+  };
+}
+
 const eslintFixPlugin: Plugin<Options> = {
   name: 'eslint-fix',
 
@@ -775,6 +883,7 @@ const eslintFixPlugin: Plugin<Options> = {
       return text;
     }
     const reportNotice = fileNoticeReporter(params, '[eslint-fix]');
+    const releaseConsole = filterConsole();
     pendingLintCalls += 1;
     try {
       // rootDir is the project: where its ESLint is searched for, and where
@@ -789,6 +898,7 @@ const eslintFixPlugin: Plugin<Options> = {
       return text;
     } finally {
       pendingLintCalls -= 1;
+      releaseConsole();
     }
   },
 
