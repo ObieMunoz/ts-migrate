@@ -129,3 +129,35 @@ describe('help output off a terminal', () => {
     expect(output).toContain('--publicRegex');
   }, 30000);
 });
+
+describe('a migrate run with nothing to migrate', () => {
+  let emptyDir: string;
+
+  beforeAll(() => {
+    emptyDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-unrenamed-'));
+    fs.writeFileSync(
+      path.join(emptyDir, 'tsconfig.json'),
+      '{ "compilerOptions": { "types": [] }, "include": ["**/*.ts"] }\n',
+    );
+    fs.writeFileSync(path.join(emptyDir, 'a.js'), 'export const a = 1;\n');
+  });
+
+  afterAll(() => {
+    fs.rmSync(emptyDir, { recursive: true, force: true });
+  });
+
+  it('exits nonzero naming TS18003 and the rename command', () => {
+    const summaryFile = path.join(emptyDir, 'summary.json');
+    const { status, output } = runCli(['migrate', emptyDir, '--jsonSummary', summaryFile]);
+
+    expect(output).toContain('Migrating 0 file(s)');
+    expect(output).toContain('No files to migrate');
+    expect(output).toContain('TS18003');
+    expect(output).toContain(`ts-migrate rename ${emptyDir}`);
+    expect(status).not.toBe(0);
+
+    const summary = JSON.parse(fs.readFileSync(summaryFile, 'utf8'));
+    expect(summary.filesToMigrate).toBe(0);
+    expect(summary.exitCode).not.toBe(0);
+  }, 120000);
+});

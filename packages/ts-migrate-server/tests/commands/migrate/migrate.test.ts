@@ -884,6 +884,121 @@ describe('migrate command', () => {
     }, 15000);
   });
 
+  describe('migration set size', () => {
+    const writeTsConfig = (include: string[]) =>
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({ compilerOptions: { strict: true, types: [] }, include }),
+      );
+
+    it('reports the count before the first plugin banner', async () => {
+      copyDir(path.resolve(__dirname, 'config'), rootDir);
+      fs.writeFileSync(path.resolve(rootDir, 'a.ts'), 'export const a = 1;\n');
+      fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 2;\n');
+
+      const infoSpy = jest.spyOn(log, 'info');
+      try {
+        const config = new MigrateConfig().addPlugin(
+          { name: 'noop', run: ({ text }) => text },
+          {},
+        );
+
+        const { filesToMigrate, emptyMigrationSet } = await migrate({ rootDir, config });
+
+        expect(filesToMigrate).toBe(2);
+        expect(emptyMigrationSet).toBeUndefined();
+        const messages = infoSpy.mock.calls.map((call) => call.join(' '));
+        const countIndex = messages.findIndex((message) => /^Migrating 2 file\(s\) in /.test(message));
+        const bannerIndex = messages.findIndex((message) => message.includes('Plugin 1 of 1'));
+        expect(countIndex).toBeGreaterThanOrEqual(0);
+        expect(bannerIndex).toBeGreaterThan(countIndex);
+      } finally {
+        infoSpy.mockRestore();
+      }
+    });
+
+    it('resolves with the tsconfig diagnostics when the include matches nothing', async () => {
+      writeTsConfig(['**/*.ts']);
+      fs.writeFileSync(path.resolve(rootDir, 'a.js'), 'export const a = 1;\n');
+
+      const { exitCode, filesToMigrate, emptyMigrationSet } = await migrate({
+        rootDir,
+        config: new MigrateConfig(),
+      });
+
+      // The server reports the empty set; deciding it is a failure is the CLI's.
+      expect(exitCode).toBe(0);
+      expect(filesToMigrate).toBe(0);
+      expect(emptyMigrationSet?.reason).toBe('tsconfig-matched-nothing');
+      expect(emptyMigrationSet?.diagnostics).toEqual([
+        expect.stringContaining('TS18003: No inputs were found in config file'),
+      ]);
+    });
+
+    it('names the JavaScript case when the tsconfig matches only unrenamed files', async () => {
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: { allowJs: true, strict: true, types: [] },
+          include: ['**/*.js'],
+        }),
+      );
+      fs.writeFileSync(path.resolve(rootDir, 'a.js'), 'export const a = 1;\n');
+
+      const { filesToMigrate, emptyMigrationSet } = await migrate({
+        rootDir,
+        config: new MigrateConfig(),
+      });
+
+      expect(filesToMigrate).toBe(0);
+      expect(emptyMigrationSet?.reason).toBe('only-javascript-files');
+      // The tsconfig itself is fine here, so it contributes no diagnostic.
+      expect(emptyMigrationSet?.diagnostics).toEqual([]);
+    });
+
+    it('names the sources case when the glob matches nothing', async () => {
+      writeTsConfig(['**/*.ts']);
+      fs.writeFileSync(path.resolve(rootDir, 'a.ts'), 'export const a = 1;\n');
+
+      const { filesToMigrate, emptyMigrationSet } = await migrate({
+        rootDir,
+        config: new MigrateConfig(),
+        sources: 'nowhere/**/*',
+      });
+
+      expect(filesToMigrate).toBe(0);
+      expect(emptyMigrationSet?.reason).toBe('sources-matched-nothing');
+    });
+
+    it('names the filter when it dropped every migratable file', async () => {
+      writeTsConfig(['**/*.ts']);
+      fs.writeFileSync(path.resolve(rootDir, 'a.ts'), 'export const a = 1;\n');
+
+      const { filesToMigrate, emptyMigrationSet } = await migrate({
+        rootDir,
+        config: new MigrateConfig(),
+        filterMigrationFiles: () => [],
+      });
+
+      expect(filesToMigrate).toBe(0);
+      expect(emptyMigrationSet?.reason).toBe('all-files-filtered');
+    });
+
+    it('names the declaration case when the tsconfig matches only .d.ts files', async () => {
+      writeTsConfig(['**/*.d.ts']);
+      fs.writeFileSync(path.resolve(rootDir, 'globals.d.ts'), 'declare const g: string;\n');
+      fs.writeFileSync(path.resolve(rootDir, 'a.ts'), 'export const a = 1;\n');
+
+      const { filesToMigrate, emptyMigrationSet } = await migrate({
+        rootDir,
+        config: new MigrateConfig(),
+      });
+
+      expect(filesToMigrate).toBe(0);
+      expect(emptyMigrationSet?.reason).toBe('only-declaration-files');
+    });
+  });
+
   describe('pluginStats', () => {
     it('counts distinct changed files per plugin in pipeline order', async () => {
       const configDir = path.resolve(__dirname, 'config');

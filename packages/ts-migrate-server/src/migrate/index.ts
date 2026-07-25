@@ -46,6 +46,23 @@ interface MigrateParams {
   virtualFiles?: Array<{ fileName: string; text: string }>;
 }
 
+/**
+ * Which signal explains an empty migration set. Every one of them is a fact the
+ * run already had; none of them is a guess from a further scan of the disk.
+ */
+export type EmptyMigrationSetReason =
+  /** The tsconfig's include matched no file at all, which it reports as TS18003. */
+  | 'tsconfig-matched-nothing'
+  /** `sources` was given and matched no file. */
+  | 'sources-matched-nothing'
+  /** Everything matched was a declaration file, which holds nothing to migrate. */
+  | 'only-declaration-files'
+  /** Everything matched was JavaScript, which no plugin may edit. */
+  | 'only-javascript-files'
+  /** Every migratable file was dropped by `filterMigrationFiles`. */
+  | 'all-files-filtered'
+  | 'no-migratable-files';
+
 export interface MigrateResult {
   exitCode: number;
   updatedSourceFiles: Set<string>;
@@ -54,10 +71,18 @@ export interface MigrateResult {
    * the only place the would-be contents exist.
    */
   updatedFileTexts: Map<string, string>;
+  /** How many files the plugins were handed, counted before the first one ran. */
+  filesToMigrate: number;
+  /**
+   * Why filesToMigrate was 0, present only when it was. `diagnostics` carries
+   * the tsconfig's own errors, formatted with their codes.
+   */
+  emptyMigrationSet?: { reason: EmptyMigrationSetReason; diagnostics: string[] };
   /**
    * Program files with syntax errors that no plugin can edit (declaration
    * files, files outside the migration set). They will fail any tsc run
-   * over this project until fixed, regenerated, or excluded.
+   * over this project until fixed, regenerated, or excluded. Unlike
+   * migratedFilesWithSyntaxErrors, these do not fail the run.
    */
   nonMigratedFilesWithSyntaxErrors: string[];
   /**
@@ -115,31 +140,39 @@ export default async function migrate({
 
   // If we passed in our own sources, let's add them to the project.
   // If not, let's just get all the sources in the project.
+  let ambientFileNames: string[] = [];
   if (sources) {
     // Manual sources replace the tsconfig include, which would drop ambient
     // declaration files and turn resolvable globals into bogus suppressions,
     // so the include's declaration files stay in the program unless opted out.
     if (ambientSources) {
-      const ambientFiles = project.getTsConfigFileNames().filter(isDeclarationFile);
-      if (ambientFiles.length > 0) {
-        project.addSourceFilesByPaths(ambientFiles);
+      ambientFileNames = project.getTsConfigFileNames().filter(isDeclarationFile);
+      if (ambientFileNames.length > 0) {
+        project.addSourceFilesByPaths(ambientFileNames);
         log.info(
-          `Retaining ${ambientFiles.length} ambient declaration file(s) from tsconfig.json: ` +
-            `${ambientFiles.map((fileName) => path.relative(rootDir, fileName)).join(', ')}.`,
+          `Retaining ${ambientFileNames.length} ambient declaration file(s) from tsconfig.json: ` +
+            `${ambientFileNames.map((fileName) => path.relative(rootDir, fileName)).join(', ')}.`,
         );
       }
     }
     project.addSourceFilesByPaths(sources);
   }
 
+  const rootFileNamesBeforeFilter = project.getRootFileNames();
+
   // Runs before the first program is created, once every on-disk root is
   // registered. Virtual files join afterwards: they model files this run
   // itself creates, which no filter should drop.
+  let filteredOutMigratableFiles = 0;
   if (filterMigrationFiles) {
     project.retainRootFiles((rootFiles) => {
       const declarationFiles = rootFiles.filter(isDeclarationFile);
       const candidates = rootFiles.filter((fileName) => !isDeclarationFile(fileName));
-      return [...declarationFiles, ...filterMigrationFiles(candidates)];
+      const kept = new Set(filterMigrationFiles(candidates));
+      filteredOutMigratableFiles = candidates.filter(
+        (fileName) => !kept.has(fileName) && isMigratableFile(fileName),
+      ).length;
+      return [...declarationFiles, ...kept];
     });
   }
 
@@ -149,7 +182,30 @@ export default async function migrate({
 
   log.info(`Initialized tsserver project in ${serverInitTimer.elapsedStr()}.`);
 
-  log.info('Start...');
+  const originalSourceFilesToMigrate = new Set<string>(
+    getSourceFilesToMigrate(project).map((file) => file.fileName),
+  );
+  const emptyMigrationSet =
+    originalSourceFilesToMigrate.size === 0
+      ? {
+          reason: diagnoseEmptyMigrationSet({
+            sources,
+            ambientFileNames,
+            rootFileNames: rootFileNamesBeforeFilter,
+            tsConfigFileNames: project.getTsConfigFileNames(),
+            filteredOutMigratableFiles,
+          }),
+          diagnostics: project
+            .getConfigDiagnostics()
+            .map(
+              (diagnostic) =>
+                `TS${diagnostic.code}: ` +
+                `${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`,
+            ),
+        }
+      : undefined;
+  log.info(`Migrating ${originalSourceFilesToMigrate.size} file(s) in ${rootDir}.`);
+
   const pluginsTimer = new PerfTimer();
   const generatedFiles = new Map<string, string>();
   const addGeneratedFile = (fileName: string, text: string) => {
@@ -162,9 +218,6 @@ export default async function migrate({
   const updatedSourceFiles = new Set<string>();
   const changedFilesByPlugin = config.plugins.map(() => new Set<string>());
   const pluginFailures: MigrateResult['pluginFailures'] = [];
-  const originalSourceFilesToMigrate = new Set<string>(
-    getSourceFilesToMigrate(project).map((file) => file.fileName),
-  );
 
   // Consecutive repeatUntilStable plugins form one group; other plugins are
   // groups of one that run a single pass.
@@ -395,11 +448,43 @@ export default async function migrate({
     updatedSourceFiles,
     updatedFileTexts,
     exitCode,
+    filesToMigrate: originalSourceFilesToMigrate.size,
+    emptyMigrationSet,
     nonMigratedFilesWithSyntaxErrors,
     pluginStats,
     pluginFailures,
     generatedFiles,
   };
+}
+
+/**
+ * Names the signal that left the migration set empty. Ordered by how specific
+ * the signal is, so the first one that holds is the one worth reporting.
+ */
+function diagnoseEmptyMigrationSet({
+  sources,
+  ambientFileNames,
+  rootFileNames,
+  tsConfigFileNames,
+  filteredOutMigratableFiles,
+}: {
+  sources: string[] | undefined;
+  ambientFileNames: string[];
+  rootFileNames: string[];
+  tsConfigFileNames: string[];
+  filteredOutMigratableFiles: number;
+}): EmptyMigrationSetReason {
+  if (filteredOutMigratableFiles > 0) return 'all-files-filtered';
+
+  const ambient = new Set(ambientFileNames);
+  const selected = sources
+    ? rootFileNames.filter((fileName) => !ambient.has(fileName))
+    : rootFileNames;
+  if (sources && selected.length === 0) return 'sources-matched-nothing';
+  if (!sources && tsConfigFileNames.length === 0) return 'tsconfig-matched-nothing';
+  if (selected.length > 0 && selected.every(isDeclarationFile)) return 'only-declaration-files';
+  if (selected.some((fileName) => /\.[cm]?jsx?$/.test(fileName))) return 'only-javascript-files';
+  return 'no-migratable-files';
 }
 
 /**
@@ -438,19 +523,19 @@ function isDeclarationFile(fileName: string) {
 }
 
 /**
- * The program files plugins may edit. Declaration and JSON files hold nothing
- * to migrate, and TypeScript written into a JavaScript file stops that file
- * from parsing as JavaScript, so every JavaScript extension is context only:
- * it still types the files that import it. `rename` is what makes a file
+ * Whether plugins may edit a file. Declaration and JSON files hold nothing to
+ * migrate, and TypeScript written into a JavaScript file stops that file from
+ * parsing as JavaScript, so every JavaScript extension is context only: it
+ * still types the files that import it. `rename` is what makes a file
  * migratable.
  */
+function isMigratableFile(fileName: string) {
+  return !isDeclarationFile(fileName) && !/(\.json|\.[cm]?jsx?)$|node_modules/.test(fileName);
+}
+
+/** The program files plugins may edit. */
 function getSourceFilesToMigrate(project: MigrationProject) {
-  return project
-    .getSourceFiles()
-    .filter(
-      ({ fileName }) =>
-        !isDeclarationFile(fileName) && !/(\.json|\.[cm]?jsx?)$|node_modules/.test(fileName),
-    );
+  return project.getSourceFiles().filter(({ fileName }) => isMigratableFile(fileName));
 }
 
 export { MigrateConfig };

@@ -75,6 +75,8 @@ export default class MigrationProject {
 
   private readonly tsConfigFileNames: string[];
 
+  private readonly configDiagnostics: readonly ts.Diagnostic[];
+
   private readonly rootFileNames: Set<string>;
 
   private readonly overlays = new Map<string, FileOverlay>();
@@ -107,6 +109,7 @@ export default class MigrationProject {
 
     this.compilerOptions = parsedConfig.options;
     this.tsConfigFileNames = parsedConfig.fileNames.map(normalizeSlashes);
+    this.configDiagnostics = parsedConfig.errors;
     this.rootFileNames = new Set(skipAddingFilesFromTsConfig ? [] : this.tsConfigFileNames);
 
     const currentDirectory = path.dirname(tsConfigFilePath);
@@ -259,6 +262,20 @@ export default class MigrationProject {
   /** File names matched by the tsconfig, whether or not they were added as root files. */
   getTsConfigFileNames(): string[] {
     return [...this.tsConfigFileNames];
+  }
+
+  /**
+   * What the compiler made of the tsconfig itself, short of the unrecoverable
+   * errors the constructor throws on. An `include` that matches no file is
+   * reported here as TS18003 and nowhere else.
+   */
+  getConfigDiagnostics(): readonly ts.Diagnostic[] {
+    return this.configDiagnostics;
+  }
+
+  /** The files the program starts from, as they stand after any filtering. */
+  getRootFileNames(): string[] {
+    return Array.from(this.rootFileNames);
   }
 
   getLanguageService(): ts.LanguageService {

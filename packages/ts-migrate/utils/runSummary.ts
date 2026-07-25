@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 
-import { MigrateResult } from '@obiemunoz/ts-migrate-server';
+import { errorMessage, MigrateResult } from '@obiemunoz/ts-migrate-server';
 import { BootstrapFile } from './bootstrapFiles';
 import { PackageJsonNotice, PackageJsonRewrite } from './packageJsonReferences';
 import packageVersion from './packageVersion';
@@ -36,6 +36,11 @@ export interface RenameRunSummary extends RunSummaryBase {
 
 export interface MigrateRunSummary extends RunSummaryBase {
   command: 'migrate' | 'reignore';
+  /**
+   * How many files the plugins were handed. 0 means the run touched nothing,
+   * whatever else the summary says.
+   */
+  filesToMigrate: number;
   changedFiles: string[];
   /** Declaration files the run generated (e.g. the untyped module declarations). */
   generatedFiles: string[];
@@ -115,6 +120,7 @@ export function buildMigrateRunSummary(params: {
   rootDir: string;
   exitCode: number;
   dryRun?: boolean;
+  filesToMigrate: number;
   updatedSourceFiles: ReadonlySet<string>;
   /** In-memory contents to scan instead of the disk state; required for a dry run. */
   fileContents?: ReadonlyMap<string, string>;
@@ -133,7 +139,7 @@ export function buildMigrateRunSummary(params: {
     const debt = scanTypeDebtForFiles(rootDir, [...updatedSourceFiles], params.fileContents);
     changedFilesTypeDebt = { aliasNames: debt.aliasNames, totals: debt.totals };
   } catch (err) {
-    log.warn('Skipped the type debt scan of the changed files:', err);
+    log.warn(`Skipped the type debt scan of the changed files: ${errorMessage(err)}`);
   }
 
   return {
@@ -142,6 +148,7 @@ export function buildMigrateRunSummary(params: {
     rootDir,
     exitCode,
     dryRun: params.dryRun ?? false,
+    filesToMigrate: params.filesToMigrate,
     changedFiles: [...updatedSourceFiles].map((fileName) => relativeTo(rootDir, fileName)).sort(),
     generatedFiles: [...(params.generatedFiles?.keys() ?? [])]
       .map((fileName) => relativeTo(rootDir, fileName))

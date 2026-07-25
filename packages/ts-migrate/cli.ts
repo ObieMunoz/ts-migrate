@@ -21,7 +21,7 @@ import {
   SuppressionExplainer,
   TypesPackageDetector,
 } from '@obiemunoz/ts-migrate-plugins';
-import { errorMessage, migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
+import { errorMessage, migrate, MigrateConfig, MigrateResult } from '@obiemunoz/ts-migrate-server';
 import check from './commands/check';
 import init from './commands/init';
 import buildMigrateConfig, { availablePlugins } from './commands/migrate';
@@ -131,7 +131,7 @@ function printTypesPackageReport(
       log.info(reportText);
     }
   } catch (err) {
-    log.warn('Skipped type definition recommendations:', err);
+    log.warn(`Skipped type definition recommendations: ${errorMessage(err)}`);
   }
 }
 
@@ -153,7 +153,7 @@ function printSuppressionReport(
     const summary = formatSuppressionSummary(report, reportFile);
     if (summary) log.info(summary);
   } catch (err) {
-    log.warn('Skipped the suppression report:', err);
+    log.warn(`Skipped the suppression report: ${errorMessage(err)}`);
   }
 }
 
@@ -168,7 +168,7 @@ function printGlobalDeclarationsReport(globalDeclarations: GlobalDeclarationsCol
     const reportText = formatGlobalDeclarationsReport(globalDeclarations.summarize());
     if (reportText) log.info(reportText);
   } catch (err) {
-    log.warn('Skipped the global declarations report:', err);
+    log.warn(`Skipped the global declarations report: ${errorMessage(err)}`);
   }
 }
 
@@ -197,9 +197,54 @@ function printGeneratedFiles(
         );
       }
     } catch (err) {
-      log.warn('Skipped checking whether tsconfig.json includes the generated declarations:', err);
+      log.warn(
+        'Skipped checking whether tsconfig.json includes the generated declarations: ' +
+          errorMessage(err),
+      );
     }
   });
+}
+
+/**
+ * Names an empty migration set in terms of the signal that produced it, and
+ * attaches the tsconfig's own diagnostics. Nothing here scans the disk to
+ * narrow the cause further: a confident wrong guess costs more than a plain
+ * count with the diagnostic attached.
+ */
+function describeEmptyMigrationSet(
+  { reason, diagnostics }: NonNullable<MigrateResult['emptyMigrationSet']>,
+  folder: string,
+): string {
+  const lines = [`No files to migrate in ${folder}.`];
+  switch (reason) {
+    case 'tsconfig-matched-nothing':
+      lines.push(
+        `tsconfig.json matched no input files. If ${folder} is still JavaScript, run ` +
+          `ts-migrate rename ${folder} first.`,
+      );
+      break;
+    case 'only-javascript-files':
+      lines.push(
+        `Every file matched is JavaScript, which migrate never edits. Run ` +
+          `ts-migrate rename ${folder} first.`,
+      );
+      break;
+    case 'sources-matched-nothing':
+      lines.push(`--sources matched no file under ${folder}.`);
+      break;
+    case 'only-declaration-files':
+      lines.push('Only declaration files were matched, and they hold nothing to migrate.');
+      break;
+    case 'all-files-filtered':
+      lines.push(
+        'Every candidate file was skipped as gitignored or as a build system file. ' +
+          'Pass --no-gitignore or --no-bootstrap to include them.',
+      );
+      break;
+    default:
+      lines.push('Nothing the program includes is a file this command can edit.');
+  }
+  return [...lines, ...diagnostics].join('\n');
 }
 
 /** The end-of-run debt summary must never fail an otherwise successful run. */
@@ -207,7 +252,7 @@ function printTypeDebtSummary(rootDir: string, folder: string, gitignore?: boole
   try {
     log.info(formatTypeDebtSummary(scanTypeDebt(rootDir, gitignore), folder));
   } catch (err) {
-    log.warn('Skipped type debt summary:', err);
+    log.warn(`Skipped type debt summary: ${errorMessage(err)}`);
   }
 }
 
@@ -231,7 +276,7 @@ function printDryRunSummary(
   try {
     debtByFile = scanTypeDebtForFiles(rootDir, [...updatedSourceFiles], fileContents).files;
   } catch (err) {
-    log.warn('Skipped the suppression counts of the dry run summary:', err);
+    log.warn(`Skipped the suppression counts of the dry run summary: ${errorMessage(err)}`);
   }
 
   const lines = [
@@ -562,6 +607,8 @@ yargs
         : undefined;
       const {
         exitCode,
+        filesToMigrate,
+        emptyMigrationSet,
         updatedSourceFiles,
         updatedFileTexts,
         nonMigratedFilesWithSyntaxErrors,
@@ -582,6 +629,12 @@ yargs
             ? [{ fileName: aliasDeclarations.filePath, text: aliasDeclarations.text }]
             : undefined,
       });
+
+      // A run that migrated nothing is otherwise indistinguishable from one
+      // that had nothing left to do, and it is the commonest first-run mistake.
+      if (emptyMigrationSet) {
+        log.error(describeEmptyMigrationSet(emptyMigrationSet, args.folder));
+      }
 
       // The would-be state of every touched file, including the alias
       // declarations a dry run held back, so the summaries below never
@@ -608,15 +661,18 @@ yargs
       }
       logTypeScriptWarning();
 
-      let finalExitCode = exitCode;
+      const runExitCode = emptyMigrationSet ? -1 : exitCode;
+
+      let finalExitCode = runExitCode;
       if (args.jsonSummary) {
         finalExitCode = writeRunSummary(
           args.jsonSummary,
           buildMigrateRunSummary({
             command: 'migrate',
             rootDir,
-            exitCode,
+            exitCode: runExitCode,
             dryRun,
+            filesToMigrate,
             updatedSourceFiles,
             fileContents,
             nonMigratedFilesWithSyntaxErrors,
@@ -709,6 +765,7 @@ yargs
 
       const {
         exitCode,
+        filesToMigrate,
         typesPackageDetector,
         suppressionExplainer,
         updatedSourceFiles,
@@ -751,6 +808,7 @@ yargs
             rootDir,
             exitCode,
             dryRun,
+            filesToMigrate,
             updatedSourceFiles,
             fileContents: updatedFileTexts,
             nonMigratedFilesWithSyntaxErrors,

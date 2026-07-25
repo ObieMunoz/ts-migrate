@@ -517,7 +517,10 @@ machine-readable preview. Per command:
   `{"file", "key", "from", "to"}`), and `packageJsonNotices` (the entry point
   fields that still name a renamed file and were left for a build step, as
   `{"file", "key", "value", "target"}`).
-- `migrate` and `reignore`: `changedFiles` (every file the run modified),
+- `migrate` and `reignore`: `filesToMigrate` (how many files the plugins were
+  handed, counted before the first one ran; `0` means the run touched nothing
+  whatever the rest of the summary says),
+  `changedFiles` (every file the run modified),
   `generatedFiles` (declaration files the run wrote itself, e.g.
   `types/ts-migrate-modules.d.ts` and `types/ts-migrate-globals.d.ts`, which
   are new files rather than edits),
@@ -562,6 +565,14 @@ need both summaries.
   `rename` and `migrate` and the two accept different flags.
 - `migrate`/`reignore` exit `0` on success and nonzero (255) if a plugin
   errored or a file still has syntax errors after migration.
+- `migrate` exits nonzero when it has nothing to migrate, and names the signal
+  that produced the empty set: a tsconfig `include` that matched no file
+  (reported as TS18003, and the usual cause is that `rename` has not run yet),
+  a `--sources` glob that matched nothing, a tsconfig matching only declaration
+  files or only JavaScript, or every candidate skipped as gitignored or as a
+  build system file. The run prints the size of the migration set before the
+  first plugin banner, so a scoped run that selected less than intended is
+  visible from the first screen rather than from a diff that never appeared.
 - `check` exits `1` when a per-file count exceeds the baseline; `report` and
   `check` exit nonzero (255) if the tsconfig cannot be read.
 - `ts-migrate-full` stops at the first failing step; the final `tsc` check

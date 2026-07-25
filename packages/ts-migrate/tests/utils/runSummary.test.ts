@@ -82,6 +82,7 @@ describe('run summary', () => {
       command: 'migrate',
       rootDir,
       exitCode: 0,
+      filesToMigrate: 2,
       updatedSourceFiles: new Set([
         path.join(rootDir, 'src', 'zz.ts'),
         path.join(rootDir, 'src', 'changed.ts'),
@@ -94,6 +95,7 @@ describe('run summary', () => {
     });
 
     expect(summary.command).toBe('migrate');
+    expect(summary.filesToMigrate).toBe(2);
     expect(summary.changedFiles).toEqual(['src/changed.ts', 'src/zz.ts']);
     expect(summary.nonMigratedFilesWithSyntaxErrors).toEqual(['gen/broken.d.ts']);
     expect(summary.plugins).toEqual([
@@ -114,6 +116,7 @@ describe('run summary', () => {
       command: 'migrate',
       rootDir,
       exitCode: 0,
+      filesToMigrate: 2,
       updatedSourceFiles: new Set(),
       nonMigratedFilesWithSyntaxErrors: [],
       pluginStats: [{ pluginName: 'eslint-fix', changedFileCount: 0 }],
@@ -148,6 +151,7 @@ describe('run summary', () => {
       command: 'migrate',
       rootDir,
       exitCode: 0,
+      filesToMigrate: 2,
       updatedSourceFiles: new Set(),
       nonMigratedFilesWithSyntaxErrors: [],
       pluginStats: [],
@@ -166,6 +170,7 @@ describe('run summary', () => {
       command: 'migrate',
       rootDir,
       exitCode: 0,
+      filesToMigrate: 2,
       dryRun: true,
       updatedSourceFiles: new Set([path.join(rootDir, 'changed.ts')]),
       fileContents: new Map([
@@ -193,6 +198,7 @@ describe('run summary', () => {
       command: 'reignore',
       rootDir,
       exitCode: 0,
+      filesToMigrate: 2,
       updatedSourceFiles: new Set(),
       nonMigratedFilesWithSyntaxErrors: [],
       pluginStats: [],
