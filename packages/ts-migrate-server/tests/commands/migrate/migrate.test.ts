@@ -902,6 +902,108 @@ describe('migrate command', () => {
     expect(exitCode).toBe(0);
   });
 
+  describe('JavaScript files', () => {
+    const jsFiles = {
+      'legacy/shapes.js': "export const itemShape = { id: 1 };\n",
+      'legacy/widget.jsx': 'export const Widget = () => null;\n',
+      'legacy/esm.mjs': 'export const esm = 1;\n',
+      'legacy/tool.cjs': 'module.exports = { tool: 1 };\n',
+    };
+
+    beforeEach(() => {
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            allowJs: true,
+            module: 'commonjs',
+            target: 'es2019',
+            strict: true,
+            noEmit: true,
+            types: [],
+          },
+          include: ['.'],
+        }),
+      );
+      fs.writeFileSync(
+        path.resolve(rootDir, 'app.ts'),
+        "import { itemShape } from './legacy/shapes';\nexport const id: number = itemShape.id;\n",
+      );
+      fs.mkdirSync(path.resolve(rootDir, 'legacy'));
+      Object.entries(jsFiles).forEach(([relPath, text]) => {
+        fs.writeFileSync(path.resolve(rootDir, relPath), text);
+      });
+    });
+
+    // Records the files it is handed and rewrites each one, so anything in the
+    // migration set is both named and edited.
+    const rewritingConfig = () => {
+      const visited: string[] = [];
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'rewriting-plugin',
+          run({ fileName, text }) {
+            visited.push(path.relative(rootDir, fileName).split(path.sep).join('/'));
+            return `${text}// touched\n`;
+          },
+        },
+        {},
+      );
+      return { config, visited };
+    };
+
+    it('leaves every JavaScript extension out of the migration set under allowJs', async () => {
+      const { config, visited } = rewritingConfig();
+
+      const { exitCode, updatedSourceFiles } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      expect(visited).toEqual(['app.ts']);
+      expect([...updatedSourceFiles]).toEqual([path.resolve(rootDir, 'app.ts')]);
+      Object.entries(jsFiles).forEach(([relPath, text]) => {
+        expect(fs.readFileSync(path.resolve(rootDir, relPath), 'utf8')).toBe(text);
+      });
+    });
+
+    it('keeps them in the program so imports of them still resolve', async () => {
+      const diagnostics: number[] = [];
+      let importedSourceFile: ts.SourceFile | undefined;
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'record-diagnostics',
+          run({ fileName, getLanguageService }) {
+            const languageService = getLanguageService();
+            importedSourceFile = languageService
+              .getProgram()
+              ?.getSourceFile(path.resolve(rootDir, 'legacy/shapes.js'));
+            diagnostics.push(...languageService.getSemanticDiagnostics(fileName).map((d) => d.code));
+            return undefined;
+          },
+        },
+        {},
+      );
+
+      const { exitCode } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      // The .js file still types its importer, so nothing there needs suppressing.
+      expect(diagnostics).toEqual([]);
+      expect(importedSourceFile).toBeDefined();
+    });
+
+    it('leaves them out of a sources-scoped run that globs them in', async () => {
+      const { config, visited } = rewritingConfig();
+
+      const { exitCode } = await migrate({ rootDir, config, sources: '**/*' });
+
+      expect(exitCode).toBe(0);
+      expect(visited).toEqual(['app.ts']);
+      Object.entries(jsFiles).forEach(([relPath, text]) => {
+        expect(fs.readFileSync(path.resolve(rootDir, relPath), 'utf8')).toBe(text);
+      });
+    });
+  });
+
   describe('filterMigrationFiles', () => {
     it('keeps filtered files out of the migration and the program, except as dependencies', async () => {
       const writeFile = (relPath: string, text: string) =>

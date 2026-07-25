@@ -317,9 +317,12 @@ the rename mapping, which is also what protects the package.json references to
 it: `"build": "node scripts/build.js"` still says `.js` when the run finishes,
 and a `bin` entry pointing at a file some script runs with `node` stays valid
 and is never reported, because that file was never renamed in the first place.
-Two overrides exist: `--no-bootstrap` renames and migrates them anyway (use it
-when the project already loads TypeScript configs through ts-node or tsx), and
-a tsconfig `exclude` entry keeps a specific file out of every run.
+Two overrides exist: `--no-bootstrap` renames them anyway (use it when the
+project already loads TypeScript configs through ts-node or tsx), and a
+tsconfig `exclude` entry keeps a specific file out of every run. In `migrate`
+and `reignore` the flag only decides whether the files are loaded into the
+program: neither command edits JavaScript, so a build system file left as
+`.js` is never rewritten.
 
 Two safeguards bound the detection. A detected file whose require tree spans
 more than half the project (and more than eight files) is treated as an
