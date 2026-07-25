@@ -436,6 +436,52 @@ export interface GlobalDeclarationsReport {
   foreignFile?: string;
 }
 
+function pluralize(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * The end-of-run report: what the file declares now, and what this run found
+ * that it could not declare. Short by construction (one line per global), so it
+ * goes to the log rather than a file: every line is an edit worth making right
+ * after the run.
+ */
+export function formatGlobalDeclarationsReport(report: GlobalDeclarationsReport): string | null {
+  const evidence = new Map(report.properties.map((property) => [property.name, property]));
+  const lines: string[] = [];
+
+  if (report.filePath && report.declarations.length > 0) {
+    lines.push(
+      `  ${pluralize(report.declarations.length, 'global')} declared in ` +
+        `${GLOBAL_DECLARATIONS_FILE}, so reads and writes of them type-check instead of ` +
+        'taking a cast at each site:',
+    );
+    report.declarations.forEach(({ name, type }) => {
+      const property = evidence.get(name);
+      const where = property
+        ? ` (${pluralize(property.assignments, 'assignment')} in ` +
+          `${pluralize(property.fileCount, 'file')})`
+        : '';
+      lines.push(`    ${name}: ${type}${where}`);
+    });
+    lines.push(
+      '  Narrow a type to the real shape when you know it and a later run keeps it. Delete ' +
+        'an entry once something else declares that property.',
+    );
+  }
+
+  if (report.foreignFile && report.properties.length > 0) {
+    const names = report.properties.map((property) => property.name).sort();
+    lines.push(
+      `  ${pluralize(names.length, 'global')} went undeclared because ` +
+        `${GLOBAL_DECLARATIONS_FILE} is not a file ts-migrate wrote: ${names.join(', ')}.`,
+    );
+  }
+
+  if (lines.length === 0) return null;
+  return ['Global declarations:', ...lines].join('\n');
+}
+
 export interface GlobalDeclarationsCollector {
   /** Records the global assignments in each file. */
   plugin: Plugin<unknown>;

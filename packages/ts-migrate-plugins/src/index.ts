@@ -30,6 +30,7 @@ import updateSourceText, {
 } from './utils/updateSourceText';
 import {
   createGlobalDeclarations,
+  formatGlobalDeclarationsReport,
   GLOBAL_DECLARATIONS_FILE,
   GlobalDeclarationsCollector as GlobalDeclarationsCollectorType,
   GlobalDeclarationsReport as GlobalDeclarationsReportType,
@@ -105,6 +106,7 @@ export {
   createGlobalDeclarations,
   createSuppressionExplainer,
   createTypesPackageDetector,
+  formatGlobalDeclarationsReport,
   formatSuppressionReport,
   formatSuppressionSummary,
   formatTypesPackageReport,

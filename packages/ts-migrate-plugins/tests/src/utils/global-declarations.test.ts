@@ -8,6 +8,7 @@ import {
   collectGlobalAssignments,
   createGlobalAssignmentEvidence,
   createGlobalDeclarations,
+  formatGlobalDeclarationsReport,
   GlobalAssignmentEvidence,
   GlobalDeclaration,
   GLOBAL_DECLARATIONS_FILE,
@@ -550,5 +551,56 @@ describe('createGlobalDeclarations', () => {
     expect(notices).toHaveLength(1);
     expect(notices[0].reason).toContain('declarations ts-migrate did not write');
     expect(collector.summarize().foreignFile).toBe(path.join(rootDir, GLOBAL_DECLARATIONS_FILE));
+  });
+});
+
+describe('formatGlobalDeclarationsReport', () => {
+  it('names each declaration and where its assignments are', () => {
+    const report = formatGlobalDeclarationsReport({
+      filePath: `/root/${GLOBAL_DECLARATIONS_FILE}`,
+      declarations: [
+        { name: 'appConfig', target: 'window', type: 'any' },
+        { name: 'buildId', target: 'globalThis', type: 'string' },
+      ],
+      properties: [
+        { name: 'appConfig', assignments: 4, fileCount: 2 },
+        { name: 'buildId', assignments: 1, fileCount: 1 },
+      ],
+    });
+
+    expect(report).toContain('2 globals declared in types/ts-migrate-globals.d.ts');
+    expect(report).toContain('appConfig: any (4 assignments in 2 files)');
+    expect(report).toContain('buildId: string (1 assignment in 1 file)');
+    expect(report).toContain('Narrow a type to the real shape');
+  });
+
+  it('leaves an entry an earlier run declared without a count', () => {
+    const report = formatGlobalDeclarationsReport({
+      filePath: `/root/${GLOBAL_DECLARATIONS_FILE}`,
+      declarations: [{ name: 'legacy', target: 'window', type: 'any' }],
+      properties: [],
+    });
+
+    expect(report).toContain('    legacy: any\n');
+  });
+
+  it('names the globals a file it cannot rewrite left undeclared', () => {
+    const report = formatGlobalDeclarationsReport({
+      declarations: [],
+      properties: [
+        { name: 'buildId', assignments: 1, fileCount: 1 },
+        { name: 'appConfig', assignments: 2, fileCount: 1 },
+      ],
+      foreignFile: `/root/${GLOBAL_DECLARATIONS_FILE}`,
+    });
+
+    expect(report).toContain(
+      '2 globals went undeclared because types/ts-migrate-globals.d.ts is not a file ' +
+        'ts-migrate wrote: appConfig, buildId.',
+    );
+  });
+
+  it('says nothing when the run declared nothing', () => {
+    expect(formatGlobalDeclarationsReport({ declarations: [], properties: [] })).toBeNull();
   });
 });
