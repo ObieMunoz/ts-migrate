@@ -225,6 +225,36 @@ a = Symbol('s');
     expect(run('let a: number = new Map<string, number>();\n')).toBeUndefined();
   });
 
+  it('leaves an annotation a call with no return contradicts', () => {
+    const text = `class Module {
+  identifier() {
+    throw new Error('not implemented');
+  }
+}
+
+export let id: string = new Module().identifier();
+`;
+    expect(run(text)).toBeUndefined();
+    // What is left is the error ts-ignore suppresses.
+    expect(typeCheck(text)).toEqual(["TS2322: Type 'void' is not assignable to type 'string'."]);
+  });
+
+  it('widens to undefined where the contradicting call returns it', () => {
+    expect(
+      widen(`function find() {
+  return undefined;
+}
+
+export let id: string = find();
+`),
+    ).toBe(`function find() {
+  return undefined;
+}
+
+export let id: string | undefined = find();
+`);
+  });
+
   it('leaves a type that is not in scope alone', () => {
     expect(
       run(`import { makeWidget } from './types';
