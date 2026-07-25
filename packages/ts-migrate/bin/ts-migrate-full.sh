@@ -218,16 +218,14 @@ function maybe_commit() {
   if [ "$no_commit" = "true" ]; then
     return
   fi
-  cd $frontend_folder
   # Scope the dirtiness check to the folder being committed; `git status`
   # alone reports the whole repository, and changes elsewhere would send an
   # empty commit to `git commit`, which fails and aborts the run (set -e).
-  if [[ `git status --porcelain .` ]]
+  if [[ `git -C "$frontend_folder" status --porcelain .` ]]
   then
-    git add . && git commit "$@"
-    migration_commits+=("$(git rev-parse HEAD)")
+    git -C "$frontend_folder" add . && git -C "$frontend_folder" commit "$@"
+    migration_commits+=("$(git -C "$frontend_folder" rev-parse HEAD)")
   fi
-  cd -
 }
 
 echo "
@@ -235,7 +233,7 @@ echo "
 "
 
 if [ ! -f "$frontend_folder/tsconfig.json" ]; then
-  cli init $frontend_folder
+  cli init "$frontend_folder"
 fi
 
 # Look for any ESLint config the project may have: extensionless .eslintrc,
@@ -273,7 +271,7 @@ echo "
 cli migrate "$frontend_folder" --typesReportFile "$types_report_file" "${additional_args[@]}"
 
 if [ "$should_remove_eslintrc" = "true" ]; then
-  rm -f $frontend_folder/.eslintrc
+  rm -f "$frontend_folder/.eslintrc"
 fi
 
 maybe_commit -m "[ts-migrate][$folder_name] Run TS Migrate" -m 'Co-authored-by: ts-migrate <>'
