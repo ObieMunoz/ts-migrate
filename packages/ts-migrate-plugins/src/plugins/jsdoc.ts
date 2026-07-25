@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import { Plugin } from '@obiemunoz/ts-migrate-server';
+import { fileNoticeReporter, Plugin, PluginFileNotice } from '@obiemunoz/ts-migrate-server';
 import {
   AnyAliasOptions,
   Properties,
@@ -7,6 +7,13 @@ import {
   createValidate,
 } from '../utils/validateOptions';
 import UpdateTracker from './utils/update';
+import {
+  aliasTemplateTags,
+  isHostTemplateTag,
+  JSDocTypeAlias,
+  JSDocTypeAliasScan,
+  scanJSDocTypeAliases,
+} from './utils/jsdoc-type-aliases';
 
 type TypeMap = Record<string, TypeOptions>;
 
@@ -66,9 +73,11 @@ const optionProperties: Properties = {
 const jsDocPlugin: Plugin<Options> = {
   name: 'jsdoc',
 
-  run({ sourceFile, options }) {
+  run(params) {
+    const { sourceFile, options } = params;
     const updates = new UpdateTracker(sourceFile);
-    ts.transform(sourceFile, [jsDocTransformerFactory(updates, options)]);
+    const report = fileNoticeReporter(params, '[jsdoc]');
+    ts.transform(sourceFile, [jsDocTransformerFactory(updates, options, report)]);
     return updates.apply();
   },
 
@@ -78,14 +87,36 @@ const jsDocPlugin: Plugin<Options> = {
 export default jsDocPlugin;
 
 const jsDocTransformerFactory =
-  (updates: UpdateTracker, { annotateReturns, anyAlias, typeMap: optionsTypeMap }: Options) =>
+  (
+    updates: UpdateTracker,
+    { annotateReturns = true, anyAlias, typeMap: optionsTypeMap }: Options,
+    report: (notice: PluginFileNotice) => void,
+  ) =>
   (context: ts.TransformationContext) => {
     const { factory } = context;
+    const printer = ts.createPrinter();
     const anyType = anyAlias
       ? factory.createTypeReferenceNode(anyAlias, undefined)
       : factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
     const typeMap: TypeMap = { ...defaultTypeMap, ...optionsTypeMap };
+    let sourceFile!: ts.SourceFile;
+    let aliasNames = new Set<string>();
+    let danglingNames = new Set<string>();
+    let exportAliases = false;
     return (file: ts.SourceFile) => {
+      sourceFile = file;
+      const scan = scanJSDocTypeAliases(file);
+      aliasNames = new Set(scan.aliases.map((alias) => alias.name));
+      danglingNames = scan.skippedNames;
+      exportAliases = ts.isExternalModule(file);
+      scan.skipped.forEach(({ tagText, reason }) => {
+        report({
+          reason: `${tagText} stays a comment because ${reason}`,
+          hint: 'References to it are annotated with any.',
+          recovered: true,
+        });
+      });
+      declareTypeAliases(scan);
       visit(file);
       return file;
     };
@@ -94,6 +125,8 @@ const jsDocTransformerFactory =
       origNode.forEachChild(visit);
       if (ts.isFunctionLike(origNode)) {
         visitFunctionLike(origNode, ts.isClassDeclaration(origNode.parent));
+      } else if (ts.isVariableDeclaration(origNode) || ts.isPropertyDeclaration(origNode)) {
+        visitTypeTag(origNode);
       }
     }
 
@@ -105,10 +138,12 @@ const jsDocTransformerFactory =
         ts.isMethodDeclaration(node) && insideClass
           ? modifiersFromJSDoc(node, factory)
           : nodeModifiers;
+      const typeParameters = node.typeParameters ? undefined : visitTypeParameters(node);
       const parameters = visitParameters(node);
       const returnType = annotateReturns ? visitReturnType(node) : node.type;
       if (
         modifiers === nodeModifiers &&
+        !typeParameters &&
         parameters === node.parameters &&
         returnType === node.type
       ) {
@@ -125,6 +160,12 @@ const jsDocTransformerFactory =
         }
       }
 
+      if (typeParameters) {
+        // Before the parameter list, which an arrow function without parentheses replaces.
+        const pos = typeParameterPos(node);
+        updates.replaceText(pos, pos, printTypeParameters(node, typeParameters));
+      }
+
       const newParameters = factory.createNodeArray(parameters);
       const addParens =
         ts.isArrowFunction(node) && node.getFirstToken()?.kind !== ts.SyntaxKind.OpenParenToken;
@@ -134,6 +175,78 @@ const jsDocTransformerFactory =
       if (newType) {
         updates.addReturnAnnotation(node, newType);
       }
+    }
+
+    function visitTypeTag(node: ts.VariableDeclaration | ts.PropertyDeclaration): void {
+      if (node.type) {
+        // Don't overwrite existing annotations.
+        return;
+      }
+      const typeNode = ts.getJSDocType(node);
+      if (!typeNode) {
+        return;
+      }
+      const type = printer.printNode(
+        ts.EmitHint.Unspecified,
+        visitJSDocType(typeNode),
+        sourceFile,
+      );
+      const questionToken = ts.isPropertyDeclaration(node) ? node.questionToken : undefined;
+      const pos = (node.exclamationToken ?? questionToken ?? node.name).end;
+      updates.replaceText(pos, pos, `: ${type}`);
+    }
+
+    function visitTypeParameters(
+      node: ts.SignatureDeclaration,
+    ): ts.TypeParameterDeclaration[] | undefined {
+      return typeParametersFromTags(
+        ts.getAllJSDocTags(node, ts.isJSDocTemplateTag).filter(isHostTemplateTag),
+      );
+    }
+
+    function typeParametersFromTags(
+      tags: readonly ts.JSDocTemplateTag[],
+    ): ts.TypeParameterDeclaration[] | undefined {
+      if (tags.length === 0) {
+        return undefined;
+      }
+      const typeParameters: ts.TypeParameterDeclaration[] = [];
+      tags.forEach((tag) => {
+        const constraint = tag.constraint ? visitJSDocType(tag.constraint.type) : undefined;
+        tag.typeParameters.forEach((typeParameter) => {
+          typeParameters.push(
+            factory.createTypeParameterDeclaration(
+              undefined,
+              typeParameter.name.text,
+              constraint,
+              typeParameter.default ? visitJSDocType(typeParameter.default) : undefined,
+            ),
+          );
+        });
+      });
+      return typeParameters;
+    }
+
+    function typeParameterPos(node: ts.SignatureDeclaration): number {
+      const paren = node
+        .getChildren(sourceFile)
+        .find((child) => child.kind === ts.SyntaxKind.OpenParenToken);
+      return paren ? paren.getStart(sourceFile) : node.parameters.pos;
+    }
+
+    function printTypeParameters(
+      node: ts.SignatureDeclaration,
+      typeParameters: ts.TypeParameterDeclaration[],
+    ): string {
+      // `<T>` on an arrow function reads as a JSX element in a .tsx file.
+      const trailingComma = ts.isArrowFunction(node) && /\.[jt]sx$/.test(sourceFile.fileName);
+      return printer.printList(
+        trailingComma
+          ? ts.ListFormat.TypeParameters | ts.ListFormat.AllowTrailingComma
+          : ts.ListFormat.TypeParameters,
+        factory.createNodeArray(typeParameters, trailingComma),
+        sourceFile,
+      );
     }
 
     function visitParameters(
@@ -194,6 +307,142 @@ const jsDocTransformerFactory =
         return functionDeclaration.type;
       }
       return visitJSDocType(returnTypeNode);
+    }
+
+    /**
+     * Writes a type alias for every convertible `@typedef` and `@callback`,
+     * in place of the comment that declared it when the comment says nothing
+     * else, and next to it otherwise. A tag in a nested scope moves out to the
+     * statement that contains it, since the names it declares are file-wide.
+     */
+    function declareTypeAliases(scan: JSDocTypeAliasScan): void {
+      const byDoc = new Map<ts.JSDoc, JSDocTypeAlias[]>();
+      scan.aliases.forEach((alias) => {
+        const group = byDoc.get(alias.doc);
+        if (group) {
+          group.push(alias);
+        } else {
+          byDoc.set(alias.doc, [alias]);
+        }
+      });
+
+      byDoc.forEach((aliases, doc) => {
+        const statement = topLevelStatement(doc.parent);
+        if (!statement) {
+          return;
+        }
+        if (statement !== doc.parent) {
+          const pos = statement.getStart(sourceFile);
+          const indent = indentAt(pos);
+          updates.replaceText(pos, pos, `${printAliases(aliases, indent)}\n${indent}`);
+          return;
+        }
+
+        const pos = doc.getStart(sourceFile);
+        const indent = indentAt(pos);
+        const declarations = printAliases(aliases, indent);
+        if (!consumesComment(doc, aliases)) {
+          updates.replaceText(pos, pos, `${declarations}\n${indent}`);
+          return;
+        }
+        const description = ts.getTextOfJSDocComment(doc.comment);
+        const kept = description ? `${printComment(description, indent)}\n${indent}` : '';
+        updates.replaceText(pos, doc.end, `${kept}${declarations}`);
+      });
+    }
+
+    /** The statement of the file that contains a node, or the node itself. */
+    function topLevelStatement(node: ts.Node): ts.Node | undefined {
+      let current: ts.Node | undefined = node;
+      while (current && current.parent !== sourceFile) {
+        current = current.parent;
+      }
+      return current;
+    }
+
+    /** Whether the comment says nothing beyond the aliases taken out of it. */
+    function consumesComment(doc: ts.JSDoc, aliases: JSDocTypeAlias[]): boolean {
+      const converted = new Set<ts.Node>(aliases.map((alias) => alias.tag));
+      return (doc.tags ?? []).every((tag) => converted.has(tag) || ts.isJSDocTemplateTag(tag));
+    }
+
+    function printAliases(aliases: JSDocTypeAlias[], indent: string): string {
+      return aliases
+        .map((alias) => printStatement(typeAliasFromTag(alias), indent))
+        .join(`\n${indent}`);
+    }
+
+    function printStatement(node: ts.Statement, indent: string): string {
+      const text = printer.printNode(ts.EmitHint.Unspecified, node, sourceFile);
+      return indent ? text.split('\n').join(`\n${indent}`) : text;
+    }
+
+    function printComment(description: string, indent: string): string {
+      const lines = description.split('\n').map((line) => ` * ${line}`.trimEnd());
+      return ['/**', ...lines, ' */'].join(`\n${indent}`);
+    }
+
+    function indentAt(pos: number): string {
+      const lineStart = sourceFile.text.lastIndexOf('\n', pos - 1) + 1;
+      return /^[ \t]*/.exec(sourceFile.text.slice(lineStart, pos))![0];
+    }
+
+    function typeAliasFromTag({ tag, doc, name }: JSDocTypeAlias): ts.TypeAliasDeclaration {
+      return factory.createTypeAliasDeclaration(
+        exportAliases ? [factory.createModifier(ts.SyntaxKind.ExportKeyword)] : undefined,
+        factory.createIdentifier(name),
+        typeParametersFromTags(aliasTemplateTags(doc)),
+        ts.isJSDocCallbackTag(tag) ? visitJSDocSignature(tag.typeExpression) : visitTypedefType(tag),
+      );
+    }
+
+    function visitTypedefType(tag: ts.JSDocTypedefTag): ts.TypeNode {
+      const { typeExpression } = tag;
+      if (!typeExpression) {
+        return anyType;
+      }
+      if (!ts.isJSDocTypeLiteral(typeExpression)) {
+        return visitJSDocType(typeExpression.type);
+      }
+      const type = visitJSDocTypeLiteral(typeExpression);
+      // An object with no documented property says no more than any does.
+      return ts.isTypeLiteralNode(type) && type.members.length === 0 ? anyType : type;
+    }
+
+    function visitJSDocSignature(node: ts.JSDocSignature): ts.TypeNode {
+      const parameters: ts.ParameterDeclaration[] = [];
+      node.parameters.forEach((tag, index) => {
+        if (!ts.isIdentifier(tag.name)) {
+          // A nested `@param opts.x` tag, already part of the parent's type.
+          return;
+        }
+        parameters.push(visitJSDocParameterTag(tag, tag.name, index === node.parameters.length - 1));
+      });
+      const returnType = node.type?.typeExpression?.type;
+      return factory.createFunctionTypeNode(
+        undefined,
+        parameters,
+        returnType ? visitJSDocType(returnType) : anyType,
+      );
+    }
+
+    function visitJSDocParameterTag(
+      tag: ts.JSDocParameterTag,
+      name: ts.Identifier,
+      isLast: boolean,
+    ): ts.ParameterDeclaration {
+      const typeNode = tag.typeExpression?.type;
+      const isRest = !!typeNode && ts.isJSDocVariadicType(typeNode) && isLast;
+      const optional =
+        !isRest && (tag.isBracketed || (!!typeNode && ts.isJSDocOptionalType(typeNode)));
+      return factory.createParameterDeclaration(
+        undefined,
+        isRest ? factory.createToken(ts.SyntaxKind.DotDotDotToken) : undefined,
+        name.text,
+        optional ? factory.createToken(ts.SyntaxKind.QuestionToken) : undefined,
+        typeNode ? visitJSDocType(typeNode, true) : anyType,
+        undefined,
+      );
     }
 
     // All visitJSDoc functions are adapted from:
@@ -270,7 +519,8 @@ const jsDocTransformerFactory =
           }
         });
       }
-      return factory.createTypeLiteralNode(propertySignatures);
+      const type = factory.createTypeLiteralNode(propertySignatures);
+      return node.isArrayType ? factory.createArrayTypeNode(type) : type;
     }
 
     function visitJSDocPropertyLikeTag(node: ts.JSDocPropertyLikeTag) {
@@ -321,6 +571,15 @@ const jsDocTransformerFactory =
       if (ts.isIdentifier(node.typeName)) {
         if (isJSDocIndexSignature(node)) {
           return visitJSDocIndexSignature(node);
+        }
+        if (danglingNames.has(node.typeName.text)) {
+          return anyType;
+        }
+        if (aliasNames.has(node.typeName.text)) {
+          return factory.createTypeReferenceNode(
+            factory.createIdentifier(node.typeName.text),
+            ts.visitNodes(node.typeArguments, visitJSDocType, ts.isTypeNode),
+          );
         }
         let { text } = node.typeName;
         let acceptsTypeParameters = true;

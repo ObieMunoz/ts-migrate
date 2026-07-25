@@ -46,6 +46,19 @@ class UpdateTracker {
     this.insert(pos, `: ${text}`);
   }
 
+  /**
+   * Splices text over [pos, end). An empty range inserts.
+   * For text a printed node cannot express on its own, such as a declaration
+   * that takes the place of the comment that declared it.
+   */
+  public replaceText(pos: number, end: number, text: string): void {
+    if (end > pos) {
+      this.replace(pos, end - pos, text);
+    } else {
+      this.insert(pos, text);
+    }
+  }
+
   public insertNodes<T extends ts.Node>(pos: number, nodes: ts.NodeArray<T>): void {
     const text = this.printer.printList(ts.ListFormat.SpaceAfterList, nodes, this.sourceFile);
     this.insert(pos, text);
