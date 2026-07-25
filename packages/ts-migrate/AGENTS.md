@@ -233,7 +233,8 @@ JavaScript, so a `bin` pointing at it stays valid and needs no notice.
 
 Runs the codemod pipeline on an already-renamed project: re-points stale
 relative imports, rewrites CommonJS `require`/`module.exports` into TypeScript
-module syntax, converts React propTypes to types, infers types from usage,
+module syntax, converts React propTypes to types, writes the type arguments
+React hook calls need, infers types from usage,
 annotates remaining implicit `any`s, and suppresses residual compiler errors
 with `@ts-expect-error` so the project compiles. Only TypeScript files are
 migration targets. `.js`, `.jsx`, `.mjs` and `.cjs` are never edited, even
@@ -253,6 +254,17 @@ observe. A file that is already ESM gets `import x from 'm'` and
 `export default`. Dynamic, conditional and non top level forms are left for
 ts-ignore, and the run reports each file it left alone and why. Pass
 `--exclude-plugin convert-commonjs` to keep CommonJS syntax as it is.
+
+The hook step covers `useState(null)`, `useState(undefined)`, `useState([])`,
+`useState({})` and `useRef(null)`, whose initializers infer `null`,
+`undefined`, `never[]` and `{}` and turn every later use into an error. It
+only touches calls an existing error already blames, takes the arguments the
+setter is called with (or, for a ref, the intrinsic tag it is attached to) as
+the type, and writes it only when re-checking the file reports no new error.
+A hook whose evidence leaves the file gets an `any` (`$TSFixMe`) type
+argument, which is one visible any in place of the suppressions the call would
+otherwise earn. Pass `--exclude-plugin react-hook-types` to leave hook calls
+as they are.
 
 - `--sources <glob>` (`-s`, repeatable): migrate only a subset. Quote globs.
   Ambient `.d.ts` files matched by the tsconfig `include` (vite-env.d.ts,
