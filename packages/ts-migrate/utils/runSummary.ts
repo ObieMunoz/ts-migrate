@@ -4,6 +4,7 @@ import log from 'updatable-log';
 
 import { MigrateResult } from '@obiemunoz/ts-migrate-server';
 import { BootstrapFile } from './bootstrapFiles';
+import { PackageJsonNotice, PackageJsonRewrite } from './packageJsonReferences';
 import packageVersion from './packageVersion';
 import { FileDebt, scanTypeDebtForFiles } from './typeDebt';
 
@@ -27,6 +28,10 @@ export interface RenameRunSummary extends RunSummaryBase {
   skippedGitignoredFiles: number;
   /** Build system files kept as JavaScript, with the detection evidence (empty with --no-bootstrap). */
   skippedBootstrapFiles: Array<{ file: string; reason: string }>;
+  /** package.json script paths and test globs repointed at the renamed files. */
+  packageJsonRewrites: PackageJsonRewrite[];
+  /** package.json entry points that name a renamed file and were left for a build step. */
+  packageJsonNotices: PackageJsonNotice[];
 }
 
 export interface MigrateRunSummary extends RunSummaryBase {
@@ -78,6 +83,8 @@ export function buildRenameRunSummary(params: {
   renamedFiles: Array<{ oldFile: string; newFile: string }>;
   skippedGitignoredFiles?: number;
   skippedBootstrapFiles?: BootstrapFile[];
+  packageJsonRewrites?: PackageJsonRewrite[];
+  packageJsonNotices?: PackageJsonNotice[];
 }): RenameRunSummary {
   const { rootDir, exitCode, renamedFiles } = params;
   return {
@@ -94,7 +101,15 @@ export function buildRenameRunSummary(params: {
       .sort((a, b) => (a.from < b.from ? -1 : 1)),
     skippedGitignoredFiles: params.skippedGitignoredFiles ?? 0,
     skippedBootstrapFiles: summarizeBootstrapFiles(rootDir, params.skippedBootstrapFiles),
+    packageJsonRewrites: sortByFileAndKey(params.packageJsonRewrites ?? []),
+    packageJsonNotices: sortByFileAndKey(params.packageJsonNotices ?? []),
   };
+}
+
+function sortByFileAndKey<T extends { file: string; key: string }>(entries: T[]): T[] {
+  return [...entries].sort((a, b) =>
+    a.file + a.key < b.file + b.key ? -1 : 1,
+  );
 }
 
 export function buildMigrateRunSummary(params: {

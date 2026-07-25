@@ -280,5 +280,166 @@ describe('rename command', () => {
       expect(result?.renamedFiles).toEqual([]);
       expect(fs.existsSync(path.resolve(rootDir, 'src/app.js'))).toBe(true);
     });
+
+    it('leaves a node script path in package.json alone', () => {
+      setUpBootstrapProject();
+
+      rename({ rootDir });
+
+      expect(JSON.parse(fs.readFileSync(path.resolve(rootDir, 'package.json'), 'utf-8'))).toEqual({
+        scripts: { build: 'node scripts/build.js' },
+      });
+    });
+
+    it('repoints it once --no-bootstrap renames the target', () => {
+      setUpBootstrapProject();
+
+      rename({ rootDir, bootstrap: false });
+
+      expect(JSON.parse(fs.readFileSync(path.resolve(rootDir, 'package.json'), 'utf-8'))).toEqual({
+        scripts: { build: 'node scripts/build.ts' },
+      });
+    });
+  });
+
+  describe('package.json references', () => {
+    const writeFile = (relPath: string, text: string) => {
+      const filePath = path.resolve(rootDir, relPath);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, text);
+    };
+    const readPackageJson = () => fs.readFileSync(path.resolve(rootDir, 'package.json'), 'utf-8');
+
+    const packageJsonText = `{
+  "name": "demo",
+  "main": "src/index.js",
+  "bin": {
+    "demo": "src/cli.js"
+  },
+  "scripts": {
+    "build": "node scripts/build.js",
+    "lint": "eslint .",
+    "test": "mocha 'test/**/*.test.js'",
+    "coverage": "nyc --reporter=text mocha test/unit.test.js"
+  },
+  "jest": {
+    "testMatch": ["**/*.spec.js"],
+    "setupFiles": ["<rootDir>/jest.setup.js"]
+  }
+}
+`;
+
+    const setUpProject = () => {
+      writeFile('tsconfig.json', JSON.stringify({ include: ['./**/*'] }));
+      writeFile('package.json', packageJsonText);
+      writeFile('scripts/build.js', 'console.log(1);\n');
+      writeFile('jest.setup.js', 'global.x = 1;\n');
+      writeFile('src/index.js', 'const a = 1;\n');
+      writeFile('src/cli.js', 'const b = 2;\n');
+      writeFile('src/util.spec.js', 'const c = 3;\n');
+      writeFile('test/unit.test.js', 'const d = 4;\n');
+    };
+
+    it('repoints script paths and test globs, and preserves the formatting', () => {
+      setUpProject();
+
+      const result = rename({ rootDir });
+
+      expect(readPackageJson()).toBe(
+        packageJsonText
+          .replace("mocha 'test/**/*.test.js'", "mocha 'test/**/*.test.ts'")
+          .replace('mocha test/unit.test.js', 'mocha test/unit.test.ts')
+          .replace('"**/*.spec.js"', '"**/*.spec.ts"')
+          .replace('"<rootDir>/jest.setup.js"', '"<rootDir>/jest.setup.ts"'),
+      );
+      expect(result?.packageJsonRewrites.map(({ key, to }) => ({ key, to }))).toEqual([
+        { key: 'scripts.test', to: "mocha 'test/**/*.test.ts'" },
+        { key: 'scripts.coverage', to: 'nyc --reporter=text mocha test/unit.test.ts' },
+        { key: 'jest.testMatch[0]', to: '**/*.spec.ts' },
+        { key: 'jest.setupFiles[0]', to: '<rootDir>/jest.setup.ts' },
+      ]);
+    });
+
+    it('reports main and bin instead of rewriting them', () => {
+      setUpProject();
+      const infoSpy = jest.spyOn(log, 'info');
+
+      const result = rename({ rootDir });
+
+      expect(readPackageJson()).toContain('"main": "src/index.js"');
+      expect(readPackageJson()).toContain('"demo": "src/cli.js"');
+      expect(result?.packageJsonNotices).toEqual([
+        { file: 'package.json', key: 'main', value: 'src/index.js', target: 'src/index.ts' },
+        { file: 'package.json', key: 'bin.demo', value: 'src/cli.js', target: 'src/cli.ts' },
+      ]);
+      const infoMessages = infoSpy.mock.calls.map((call) => call.join(' '));
+      expect(infoMessages).toContainEqual(
+        expect.stringContaining('Left 2 package.json entry point(s) alone'),
+      );
+      expect(infoMessages).toContainEqual(expect.stringContaining('need to name build output'));
+      infoSpy.mockRestore();
+    });
+
+    it('writes nothing during a dry run', () => {
+      setUpProject();
+      const infoSpy = jest.spyOn(log, 'info');
+
+      const result = rename({ rootDir, dryRun: true });
+
+      expect(readPackageJson()).toBe(packageJsonText);
+      expect(result?.packageJsonRewrites.map(({ key }) => key)).toEqual([
+        'scripts.test',
+        'scripts.coverage',
+        'jest.testMatch[0]',
+        'jest.setupFiles[0]',
+      ]);
+      const infoMessages = infoSpy.mock.calls.map((call) => call.join(' '));
+      expect(infoMessages).toContainEqual(
+        expect.stringContaining('Dry run: would update 4 package.json reference(s)'),
+      );
+      infoSpy.mockRestore();
+    });
+
+    it('widens a glob that still matches unmigrated files', () => {
+      writeFile('tsconfig.json', JSON.stringify({ include: ['./**/*'], exclude: ['legacy'] }));
+      writeFile('package.json', JSON.stringify({ scripts: { test: 'mocha "**/*.test.js"' } }));
+      writeFile('src/a.test.js', 'const a = 1;\n');
+      writeFile('legacy/b.test.js', 'const b = 2;\n');
+
+      const result = rename({ rootDir });
+
+      expect(fs.existsSync(path.resolve(rootDir, 'legacy/b.test.js'))).toBe(true);
+      expect(result?.packageJsonRewrites.map(({ key, to }) => ({ key, to }))).toEqual([
+        { key: 'scripts.test', to: 'mocha "**/*.test.{js,ts}"' },
+      ]);
+    });
+
+    it('widens a glob whose matches renamed to more than one extension', () => {
+      writeFile('tsconfig.json', JSON.stringify({ include: ['./**/*'] }));
+      writeFile('package.json', JSON.stringify({ jest: { testMatch: ['**/*.test.js'] } }));
+      writeFile('src/a.test.js', 'const a = 1;\n');
+      writeFile(
+        'src/Widget.test.js',
+        "import React from 'react';\nexport const W = () => <div />;\n",
+      );
+
+      const result = rename({ rootDir });
+
+      expect(result?.packageJsonRewrites.map(({ key, to }) => ({ key, to }))).toEqual([
+        { key: 'jest.testMatch[0]', to: '**/*.test.{ts,tsx}' },
+      ]);
+    });
+
+    it('leaves a glob alone when the rename matched none of it', () => {
+      writeFile('tsconfig.json', JSON.stringify({ include: ['src/**/*'] }));
+      writeFile('package.json', JSON.stringify({ scripts: { test: 'mocha "test/**/*.js"' } }));
+      writeFile('src/a.js', 'const a = 1;\n');
+      writeFile('test/b.js', 'const b = 2;\n');
+
+      const result = rename({ rootDir });
+
+      expect(result?.packageJsonRewrites).toEqual([]);
+      expect(JSON.parse(readPackageJson()).scripts.test).toBe('mocha "test/**/*.js"');
+    });
   });
 });
