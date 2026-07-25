@@ -1,7 +1,9 @@
 import path from 'path';
 import ts from 'typescript';
 import { PluginParams } from '@obiemunoz/ts-migrate-server';
+import { mockPluginParams } from '../test-utils';
 import reactDestructuredPropsPlugin from '../../src/plugins/react-destructured-props';
+import reactDefaultPropsPlugin from '../../src/plugins/react-default-props';
 
 // A real directory, so `react` resolves through the repo's node_modules both
 // here and in the single-file programs the plugin validates against.
@@ -515,6 +517,32 @@ export default function Greeting({ title }) {
 
     const params = pluginParams(text, {}, {}, { strict: false, noImplicitAny: false });
     expect(reactDestructuredPropsPlugin.run(params)).toBeUndefined();
+  });
+
+  // react-default-props runs next and only fires on a component that already
+  // carries a props type, which these components did not have before.
+  it('does not send react-default-props down its helper path', () => {
+    const text = `import React from 'react';
+
+export default function Greeting({ title }) {
+  return <div>{title}</div>;
+}
+
+Greeting.defaultProps = { title: 'hi' };
+`;
+
+    const withProps = run(text);
+    const withDefaults = reactDefaultPropsPlugin.run(
+      mockPluginParams({
+        text: withProps,
+        fileName: fixtureFile,
+        options: { useDefaultPropsHelper: false },
+      }),
+    );
+    const result = typeof withDefaults === 'string' ? withDefaults : withProps;
+
+    expect(result).not.toContain('WithDefaultProps');
+    expect(result).toContain('type Props = OwnProps & typeof Greeting.defaultProps;');
   });
 
   it('leaves files that are not .tsx alone', () => {

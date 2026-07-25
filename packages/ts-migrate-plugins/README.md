@@ -61,6 +61,7 @@ process.exit(exitCode);
 | [react-class-lifecycle-methods](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-class-lifecycle-methods.ts) | Annotate React lifecycle method types. |
 | [react-class-state](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-class-state.ts) | Declare React state type. |
 | [react-default-props](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-default-props.ts) | Annotate React default props. With `{ modernizeDefaultProps: true }`, a function component's defaults move into its props destructuring instead, the defaulted props become optional, and the assignment is deleted (see "Function component defaultProps" below). Class components and the components that cannot be converted are typed instead: with `{ useDefaultPropsHelper: true }` through a `WithDefaultProps` helper type generated into each migrated file, otherwise through a `Props & typeof defaultProps` intersection. |
+| [react-destructured-props](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-destructured-props.ts) | Name the props of a function component that destructures them and has no propTypes, which react-props skips and explicit-any would annotate as one `any` over the whole pattern. Emits an all-optional `Props` type from the destructured keys and types the members from single-file evidence only. |
 | [react-hook-types](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-hook-types.ts) | Write the type argument a React hook call needs when its initializer infers nothing useful: `useState(null)`, `useState(undefined)`, `useState([])`, `useState({})` and `useRef(null)`. Only calls an existing error blames are touched. `useState` reads the arguments its setter is called with in the same file, `useRef` reads the intrinsic tag its ref is attached to; an argument the checker types `any` is not evidence. The proposed argument is written only when re-checking the file with it in place reports no new error, and everything else takes `any` (`$TSFixMe`). |
 | [react-inline-imported-prop-types](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-inline-imported-prop-types.ts) | Copy propTypes objects imported from other modules into the file that assigns them (including spreads of them), carrying over the imports the copied text needs, so react-props converts them structurally like colocated propTypes. Runs before the other React plugins. |
 | [react-props](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-props.ts) | Convert React prop types to TypeScript type. Imported propTypes objects that react-inline-imported-prop-types could not copy (non-relative modules, non-literal exports, references to module-local values) are typed with `InferProps<typeof importedPropTypes>` instead. |
@@ -171,6 +172,41 @@ than a suppressed line.
   which can turn consumers that assumed otherwise into errors of their own.
   Validation is per file and does not see those, the same way infer-types does
   not see the call sites it makes into errors.
+
+## What react-destructured-props will and will not infer
+
+A component's props come from its JSX call sites, and those are usually in
+other files. This plugin reads one file at a time and checks its proposals
+against a program built from that file alone, so it writes down only what the
+file it is migrating proves:
+
+- The prop names always come from the destructuring pattern. That is the
+  component's own statement of what it reads, and TypeScript already treats it
+  as a closed props type: a call site passing a prop the pattern never names is
+  an error before this plugin runs as much as after. Naming the props keeps it
+  that way instead of letting explicit-any widen the whole pattern to `any`.
+- The default in the pattern types the prop it defaults. `({ start = 0 })`
+  gives `start?: number`. A default of `null` or `undefined` proves nothing and
+  the prop takes the any alias.
+- A JSX attribute at a call site types a prop only for a component nothing
+  outside the file can render, meaning every reference to it in the file is a
+  JSX tag and the file does not export it. For an exported component an
+  attribute seen here says nothing about the call sites elsewhere, so its props
+  take the any alias.
+- Evidence the checker resolves to `any` is discarded before anything is
+  checked. `any` is assignable in both directions, so no later check would
+  reject it and it would be written as if it had been proven.
+- Call sites that disagree with each other, a spread attribute, and a prop read
+  through a nested pattern all fall back to the any alias. A wrong prop type
+  type-checks everywhere and misleads; the alias does not.
+- Every member is optional, because whether a prop is always passed cannot be
+  established from one file.
+- A component whose pattern has a rest element is left alone. The props it
+  forwards are not in the pattern, so no closed type describes them.
+- Nothing is written unless the file already reports the pattern as untyped,
+  and nothing is written that the file does not then still check clean. The
+  props an error blames drop to the alias, and a file that fails even with
+  every prop aliased is left as it was.
 
 
 # Type of plugins
