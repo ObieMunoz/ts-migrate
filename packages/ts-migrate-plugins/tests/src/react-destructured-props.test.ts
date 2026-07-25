@@ -542,7 +542,7 @@ Greeting.defaultProps = { title: 'hi' };
     const result = typeof withDefaults === 'string' ? withDefaults : withProps;
 
     expect(result).not.toContain('WithDefaultProps');
-    expect(result).toContain('type Props = OwnProps & typeof Greeting.defaultProps;');
+    expect(result).toContain('type Props = OwnProps & (typeof Greeting)["defaultProps"];');
   });
 
   it('leaves files that are not .tsx alone', () => {
