@@ -368,13 +368,15 @@ echo "
 Remaining cleanup — the rest of your tooling doesn't know about the rename yet:
 
 1. Sanity check the commits (or, with --no-commit, the working tree).
-2. Add a build step (tsc) or a TS-aware runner (ts-node, tsx). If package.json
-   \"main\" pointed at a renamed file, point it at build output that exists.
-3. Update scripts that reference old .js paths (mocha globs, jest patterns).
-4. Teach ESLint about TypeScript (the @typescript-eslint parser and plugin)."
+2. Add a build step (tsc) or a TS-aware runner (ts-node, tsx). The rename
+   repointed package.json script paths and test globs; entry points (\"main\",
+   \"bin\", \"exports\", \"types\", \"files\") were left alone and listed in the
+   rename output where they still name a renamed file. Point those at the
+   build output instead.
+3. Teach ESLint about TypeScript (the @typescript-eslint parser and plugin)."
 
 if [ ${#migration_commits[@]} -gt 0 ]; then
-  echo "5. Keep git blame useful. This run created mechanical rewrite commits:"
+  echo "4. Keep git blame useful. This run created mechanical rewrite commits:"
   for sha in "${migration_commits[@]}"; do
     git -C "$frontend_folder" --no-pager show -s --format='     %H  %s' "$sha"
   done
@@ -391,9 +393,9 @@ if [ ${#migration_commits[@]} -gt 0 ]; then
   echo "   Once the file is committed, \`git config blame.ignoreRevsFile .git-blame-ignore-revs\`
    makes local git blame skip those commits; github.com applies the root file
    automatically.
-6. Push your changes with \`git push\` and open a PR!
+5. Push your changes with \`git push\` and open a PR!
 "
 else
-  echo "5. Push your changes with \`git push\` and open a PR!
+  echo "4. Push your changes with \`git push\` and open a PR!
 "
 fi

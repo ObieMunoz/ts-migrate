@@ -251,6 +251,8 @@ yargs
             renamedFiles: result.renamedFiles,
             skippedGitignoredFiles: result.skippedGitignoredFiles,
             skippedBootstrapFiles: result.skippedBootstrapFiles,
+            packageJsonRewrites: result.packageJsonRewrites,
+            packageJsonNotices: result.packageJsonNotices,
           }),
         );
         if (exitCode !== 0) process.exit(exitCode);
