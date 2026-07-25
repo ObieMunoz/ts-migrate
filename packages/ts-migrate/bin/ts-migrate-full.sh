@@ -232,8 +232,13 @@ echo "
 [Step $((step_i++)) of ${step_count}] Initializing ts-config for the \"$frontend_folder\"...
 "
 
+# init names the type packages worth installing before the pipeline; the
+# migrate step says it instead whenever a tsconfig already exists and Step 1
+# has nothing to do.
+migrate_preflight_args=()
 if [ ! -f "$frontend_folder/tsconfig.json" ]; then
   cli init "$frontend_folder"
+  migrate_preflight_args=(--no-typesPreflight)
 fi
 
 # Look for any ESLint config the project may have: extensionless .eslintrc,
@@ -268,7 +273,8 @@ maybe_commit -m "[ts-migrate][$folder_name] Rename files from JS/JSX to TS/TSX" 
 echo "
 [Step $((step_i++)) of ${step_count}] Fixing TypeScript errors...
 "
-cli migrate "$frontend_folder" --typesReportFile "$types_report_file" "${additional_args[@]}"
+cli migrate "$frontend_folder" --typesReportFile "$types_report_file" \
+  "${migrate_preflight_args[@]}" "${additional_args[@]}"
 
 if [ "$should_remove_eslintrc" = "true" ]; then
   rm -f "$frontend_folder/.eslintrc"
