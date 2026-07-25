@@ -117,6 +117,28 @@ export = run;
 `);
   });
 
+  it('names the module a barrel re-exports', async () => {
+    expect(await run("module.exports = require('./lib/retry');\n")).toBe(
+      "import retry = require('./lib/retry');\nexport = retry;\n",
+    );
+    expect(await run("module.exports = require('safe-buffer');\n")).toBe(
+      "import safeBuffer = require('safe-buffer');\nexport = safeBuffer;\n",
+    );
+    expect(await run("module.exports = require('./lib/retry');\n", { options: { esm: true } })).toBe(
+      "import retry from './lib/retry';\nexport default retry;\n",
+    );
+  });
+
+  it('keeps the require when the barrel name is already used', async () => {
+    const text = `const retry = 1;
+module.exports = require('./retry');
+`;
+
+    expect(await run(text)).toBe(`const retry = 1;
+export = require('./retry');
+`);
+  });
+
   it('converts a statically named module.exports object to named exports', async () => {
     const text = `const version = '1';
 function run() {}

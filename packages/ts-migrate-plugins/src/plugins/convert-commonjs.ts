@@ -59,6 +59,9 @@ const convertCommonjsPlugin: Plugin<Options> = {
   run(params) {
     const { fileName, sourceFile, text, options } = params;
     if (sourceFile.isDeclarationFile) return text;
+    if (!text.includes('require') && !text.includes('module') && !text.includes('exports')) {
+      return text;
+    }
 
     const report = fileNoticeReporter(params, '[convert-commonjs]');
     const esm = options.esm ?? isEsmSourceFile(fileName, sourceFile);
@@ -121,13 +124,18 @@ function convertRequires(scope: Scope): SourceTextUpdate[] {
   return updates;
 }
 
-/** The raw quoted specifier of a `require('m')` call, or undefined. */
-function requireSpecifier(node: ts.Expression, scope: Scope): string | undefined {
-  if (!ts.isCallExpression(node)) return undefined;
+/** The literal argument of a `require('m')` call, or undefined. */
+function requireArgument(node: ts.Expression): ts.StringLiteralLike | undefined {
+  if (!ts.isCallExpression(node) || node.arguments.length !== 1) return undefined;
   if (!ts.isIdentifier(node.expression) || node.expression.text !== 'require') return undefined;
   const [argument] = node.arguments;
-  if (node.arguments.length !== 1 || !argument || !ts.isStringLiteralLike(argument)) return undefined;
-  return textOf(scope, argument);
+  return argument && ts.isStringLiteralLike(argument) ? argument : undefined;
+}
+
+/** The raw quoted specifier of a `require('m')` call, or undefined. */
+function requireSpecifier(node: ts.Expression, scope: Scope): string | undefined {
+  const argument = requireArgument(node);
+  return argument && textOf(scope, argument);
 }
 
 function requireImportLine(
@@ -334,6 +342,24 @@ function wholeExportUpdates(scope: Scope, assignment: ExportAssignment): SourceT
   }
 
   const exportKeyword = scope.esm ? 'export default' : 'export =';
+  // Re-exporting a module wholesale: naming it keeps the specifier an import,
+  // where `export = require('m')` would leave a bare require behind.
+  const required = requireArgument(value);
+  if (required) {
+    const alias = moduleAlias(required.text, scope);
+    if (alias) {
+      const specifier = textOf(scope, required);
+      return [
+        replaceStatement(scope, statement, [
+          scope.esm
+            ? `import ${alias} from ${specifier};`
+            : `import ${alias} = require(${specifier});`,
+          `${exportKeyword} ${alias};`,
+        ]),
+      ];
+    }
+  }
+
   // A named function or class expression prints unchanged as a declaration,
   // which gives the export a type name the rest of the project can use.
   if (
@@ -625,6 +651,35 @@ const reservedWords = new Set(
 function bindableName(text: string): string | undefined {
   if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(text)) return undefined;
   return reservedWords.has(text) ? undefined : text;
+}
+
+/** A name for a module specifier that the file does not already use. */
+function moduleAlias(specifier: string, scope: Scope): string | undefined {
+  const segment = specifier
+    .replace(/\.[cm]?[jt]sx?$/, '')
+    .split('/')
+    .filter(Boolean)
+    .pop();
+  if (!segment) return undefined;
+  const camelCased = segment.replace(/[^A-Za-z0-9_$]+(.)?/g, (_match, next: string | undefined) =>
+    next ? next.toUpperCase() : '',
+  );
+  const name = bindableName(camelCased);
+  return name && !usesName(scope.sourceFile, name) ? name : undefined;
+}
+
+function usesName(sourceFile: ts.SourceFile, name: string): boolean {
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (found) return;
+    if (ts.isIdentifier(node) && node.text === name) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return found;
 }
 
 function hasModifiers(statement: ts.Statement): boolean {
