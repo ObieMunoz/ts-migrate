@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import ensureAliasDeclarations from '../../utils/aliasDeclarations';
-import { createDir, deleteDir } from '../test-utils';
+import { createDir, deleteDir } from '@obiemunoz/ts-migrate-test-utils';
 
 describe('ensureAliasDeclarations', () => {
   let rootDir: string;

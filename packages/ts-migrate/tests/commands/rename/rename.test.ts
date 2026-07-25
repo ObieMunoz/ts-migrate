@@ -3,11 +3,11 @@ import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 import rename from '../../../commands/rename';
-import { createDir, copyDir, deleteDir, getDirData, hashDir } from '../../test-utils';
+import { createDir, copyDir, deleteDir, getDirData, hashDir } from '@obiemunoz/ts-migrate-test-utils';
 
 jest.mock('updatable-log', () => {
   // eslint-disable-next-line global-require
-  const { mockUpdatableLog } = require('../../test-utils');
+  const { mockUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
   return mockUpdatableLog();
 });
 

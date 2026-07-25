@@ -4,7 +4,7 @@ import os from 'os';
 import path from 'path';
 import full, { FullParams, Prompter } from '../../../commands/full';
 import { TypeScriptDecision } from '../../../utils/resolveTypeScript';
-import { deleteDir, hashDir, transcriptLines } from '../../test-utils';
+import { deleteDir, hashDir, transcriptLines } from '@obiemunoz/ts-migrate-test-utils';
 
 /**
  * The pipeline driven in process, the way a caller drives it, rather than
@@ -15,7 +15,7 @@ import { deleteDir, hashDir, transcriptLines } from '../../test-utils';
  */
 jest.mock('updatable-log', () => {
   // eslint-disable-next-line global-require
-  const { collectingUpdatableLog } = require('../../test-utils');
+  const { collectingUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
   return collectingUpdatableLog();
 });
 

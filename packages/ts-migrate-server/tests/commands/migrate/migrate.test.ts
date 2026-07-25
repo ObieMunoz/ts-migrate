@@ -2,12 +2,12 @@ import path from 'path';
 import fs from 'fs';
 import ts from 'typescript';
 import log from 'updatable-log';
-import { createDir, copyDir, deleteDir, getDirData, hashDir } from '../../test-utils';
+import { createDir, copyDir, deleteDir, getDirData, hashDir } from '@obiemunoz/ts-migrate-test-utils';
 import migrate, { MigrateConfig } from '../../../src/migrate';
 
 jest.mock('updatable-log', () => {
   // eslint-disable-next-line global-require
-  const { mockUpdatableLog } = require('../../test-utils');
+  const { mockUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
   return mockUpdatableLog();
 });
 

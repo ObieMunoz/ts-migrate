@@ -3,11 +3,11 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { partitionGitignored, sampleIgnoredPaths } from '../../utils/gitignore';
-import { createDir, deleteDir } from '../test-utils';
+import { createDir, deleteDir } from '@obiemunoz/ts-migrate-test-utils';
 
 jest.mock('updatable-log', () => {
   // eslint-disable-next-line global-require
-  const { mockUpdatableLog } = require('../test-utils');
+  const { mockUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
   return mockUpdatableLog();
 });
 

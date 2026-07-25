@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { BundlerDetection } from '../../utils/bundler';
 import { detectPathAliases, renderPathAliases } from '../../utils/pathAliases';
-import { deleteDir } from '../test-utils';
+import { deleteDir } from '@obiemunoz/ts-migrate-test-utils';
 
 const webpack: BundlerDetection = { name: 'webpack', evidence: 'webpack.config.js' };
 const vite: BundlerDetection = { name: 'vite', evidence: 'vite.config.js' };

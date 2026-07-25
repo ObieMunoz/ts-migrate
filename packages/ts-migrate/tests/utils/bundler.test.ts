@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { detectBundler, hasViteClientTypes } from '../../utils/bundler';
-import { deleteDir } from '../test-utils';
+import { deleteDir } from '@obiemunoz/ts-migrate-test-utils';
 
 // An OS temp dir rather than one inside this repo: hasViteClientTypes walks
 // the project's ancestors, and the workspace's own node_modules would answer
