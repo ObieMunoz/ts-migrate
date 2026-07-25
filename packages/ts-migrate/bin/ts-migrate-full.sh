@@ -233,7 +233,7 @@ echo "
 "
 
 if [ ! -f "$frontend_folder/tsconfig.json" ]; then
-  cli init $frontend_folder
+  cli init "$frontend_folder"
 fi
 
 # Look for any ESLint config the project may have: extensionless .eslintrc,
@@ -271,7 +271,7 @@ echo "
 cli migrate "$frontend_folder" --typesReportFile "$types_report_file" "${additional_args[@]}"
 
 if [ "$should_remove_eslintrc" = "true" ]; then
-  rm -f $frontend_folder/.eslintrc
+  rm -f "$frontend_folder/.eslintrc"
 fi
 
 maybe_commit -m "[ts-migrate][$folder_name] Run TS Migrate" -m 'Co-authored-by: ts-migrate <>'

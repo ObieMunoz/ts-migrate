@@ -152,3 +152,19 @@ describe('the ts-migrate-full commit step', () => {
     expect(bareDirectories).toEqual([]);
   });
 });
+
+describe('a ts-migrate-full folder whose path has a space', () => {
+  it('is one argument to every command the run passes it to', () => {
+    const spacedDir = path.join(installDir, 'my project');
+    fs.renameSync(projectDir, spacedDir);
+    projectDir = spacedDir;
+
+    const { status, output } = runFull(['y', writeTsc('5.7.2')]);
+
+    expect(status).toBe(0);
+    // Step 1 writes this when the project has no ESLint config, and the
+    // migrate step removes it again.
+    expect(fs.existsSync(path.join(spacedDir, '.eslintrc'))).toBe(false);
+    expect(output).toContain('All done!');
+  });
+});
