@@ -284,7 +284,7 @@ yargs
     },
   )
   .command(
-    'rename [options] <folder>',
+    'rename <folder>',
     'Rename files in folder from JS/JSX to TS/TSX',
     (cmd) =>
       cmd
@@ -345,7 +345,7 @@ yargs
     },
   )
   .command(
-    'migrate [options] <folder>',
+    'migrate <folder>',
     'Fix TypeScript errors, using codemods',
     (cmd) =>
       cmd
@@ -638,7 +638,7 @@ yargs
     },
   )
   .command(
-    'reignore [options] <folder>',
+    'reignore <folder>',
     'Re-run ts-ignore on a project',
     (cmd) =>
       cmd
@@ -772,7 +772,7 @@ yargs
     },
   )
   .command(
-    'report [options] <folder>',
+    'report <folder>',
     'Print per-file counts of suppression comments and any-type annotations',
     (cmd) =>
       cmd
@@ -794,7 +794,7 @@ yargs
     },
   )
   .command(
-    'check [options] <folder>',
+    'check <folder>',
     'Compare suppression and any counts against a committed baseline',
     (cmd) =>
       cmd

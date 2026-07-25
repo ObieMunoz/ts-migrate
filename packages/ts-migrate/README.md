@@ -54,23 +54,22 @@ prefix with your runner: `npx ts-migrate ...` or `pnpm ts-migrate ...`):
 ```
 $ npx -p @obiemunoz/ts-migrate ts-migrate --help
 
-ts-migrate v0.11.0
+ts-migrate v0.13.0
 
 Usage: ts-migrate <command> [options]
 
 Commands:
-  ts-migrate init <folder>                Initialize tsconfig.json file in <folder>
-  ts-migrate init:extended <folder>       Initialize tsconfig.json in <folder> extending a shared
-                                          base config
-  ts-migrate rename [options] <folder>    Rename files in folder from JS/JSX to TS/TSX
-  ts-migrate migrate [options] <folder>   Fix TypeScript errors, using codemods
-  ts-migrate reignore [options] <folder>  Re-run ts-ignore on a project
-  ts-migrate report [options] <folder>    Print per-file counts of suppression comments and any-type
-                                          annotations
-  ts-migrate check [options] <folder>     Compare suppression and any counts against a committed
-                                          baseline
-  ts-migrate agents                       Print usage instructions for AI coding agents
-                                          (non-interactive playbook)
+  ts-migrate init <folder>           Initialize tsconfig.json file in <folder>
+  ts-migrate init:extended <folder>  Initialize tsconfig.json in <folder> extending a shared base
+                                     config
+  ts-migrate rename <folder>         Rename files in folder from JS/JSX to TS/TSX
+  ts-migrate migrate <folder>        Fix TypeScript errors, using codemods
+  ts-migrate reignore <folder>       Re-run ts-ignore on a project
+  ts-migrate report <folder>         Print per-file counts of suppression comments and any-type
+                                     annotations
+  ts-migrate check <folder>          Compare suppression and any counts against a committed baseline
+  ts-migrate agents                  Print usage instructions for AI coding agents (non-interactive
+                                     playbook)
 
 Options:
   -h, --help     Show help                                                                 [boolean]
@@ -102,6 +101,10 @@ $ npx -p @obiemunoz/ts-migrate ts-migrate migate frontend/foo
 ...
 Did you mean migrate?
 ```
+
+An argument past the ones a command declares is reported the same way, so
+`ts-migrate report frontend/foo extra` exits 1 naming `extra` instead of
+ignoring it.
 
 An option a command does not declare is still accepted and ignored, because
 `ts-migrate-full` forwards one argument list to both `rename` and `migrate` and
