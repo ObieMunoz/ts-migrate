@@ -5,6 +5,7 @@ export type TypePrintRefusal =
   | 'any'
   | 'unknown'
   | 'never'
+  | 'void'
   | 'anonymous'
   | 'union-too-large'
   | 'type-arguments'
@@ -55,7 +56,6 @@ const PRIMITIVE_FLAGS =
   ts.TypeFlags.Boolean |
   ts.TypeFlags.BigInt |
   ts.TypeFlags.ESSymbol |
-  ts.TypeFlags.Void |
   ts.TypeFlags.Undefined |
   ts.TypeFlags.Null |
   ts.TypeFlags.NonPrimitive;
@@ -81,10 +81,15 @@ function printed(text: string): PrintedType {
  * A type is refused when it cannot be named without an import, when it is an
  * anonymous object or function shape, when it is a generic that would need its
  * type arguments spelled out, when its union is wider than `maxUnionMembers`,
- * and when it is `any` or `unknown`. `any` is called out on its own: it is
- * assignable both ways, so a caller validating a candidate by re-checking the
- * file gets no signal from it, and a `T | any` written into an annotation
- * silently erases `T`.
+ * and when it is `any`, `unknown`, `never` or `void`. `any` is called out on
+ * its own: it is assignable both ways, so a caller validating a candidate by
+ * re-checking the file gets no signal from it, and a `T | any` written into an
+ * annotation silently erases `T`.
+ *
+ * A `void` constituent refuses the union around it rather than being dropped
+ * from it. What comes back is the type it was handed or nothing, so a caller
+ * that wants a narrower type than the checker gave it narrows before printing,
+ * the way retry-conversions drops null and undefined from an operand.
  *
  * Accessibility comes from the compiler: `typeToString` given an enclosing
  * declaration prints a symbol it cannot reach from there as
@@ -140,6 +145,7 @@ function printMember(
   if ((type.flags & ts.TypeFlags.Any) !== 0) return refuse('any');
   if ((type.flags & ts.TypeFlags.Unknown) !== 0) return refuse('unknown');
   if ((type.flags & ts.TypeFlags.Never) !== 0) return refuse('never');
+  if ((type.flags & ts.TypeFlags.Void) !== 0) return refuse('void');
 
   const member = isWidenableLiteral(type, options) ? checker.getBaseTypeOfLiteralType(type) : type;
 

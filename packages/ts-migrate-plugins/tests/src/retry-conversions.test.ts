@@ -225,6 +225,16 @@ export const size = accept(raw as any);
     expect(await run(text)).toBe(text);
   });
 
+  it('leaves an assertion alone when the type the position expects carries void', async () => {
+    const text = `declare function accept(value: string | void): number;
+declare const raw: unknown;
+
+export const size = accept(raw as any);
+`;
+
+    expect(await run(text)).toBe(text);
+  });
+
   it('leaves an oversized union alone', async () => {
     const text = `declare function accept(key: 'a' | 'b' | 'c' | 'd' | 'e'): number;
 declare const raw: unknown;

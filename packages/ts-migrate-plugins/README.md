@@ -181,10 +181,18 @@ than a suppressed line.
   and the annotation stays exactly as it was.
 - Types are refused rather than guessed. A type that cannot be named without
   adding an import, an anonymous object or function shape, a generic that
-  would need its type arguments spelled out, `any` and `unknown`, and a union
-  wider than `maxUnionMembers` all leave the error for ts-ignore. A confidently
-  wrong annotation type checks everywhere and misleads; the error it replaced
-  was at least visible.
+  would need its type arguments spelled out, `any`, `unknown`, `never`,
+  `void`, and a union wider than `maxUnionMembers` all leave the error for
+  ts-ignore. A confidently wrong annotation type checks everywhere and
+  misleads; the error it replaced was at least visible.
+- `void` is refused wherever it appears, in a union as much as on its own.
+  It reaches an annotation from an abstract method stub that throws, which
+  types as `void` unless its `@returns` is written out, so a member assigned
+  from one would read `string | void`. Nothing but `undefined` is assignable
+  to `void`, so that member is harder to use than it was before it was
+  widened and says something about the declaration that is not true. A
+  declaration that can really be missing gets `| undefined`, which stays
+  printable.
 - Parameters are never widened, in either direction: not from a call that
   disagrees, and not from the body reassigning the parameter. That is the
   infer-types rule above, and widening here would undo it.
@@ -222,8 +230,11 @@ compete for the same site.
   file is re-checked with the assertion in place.
 - Types come from the same printer widen-annotations uses, so a type that
   cannot be named without adding an import, an anonymous object or function
-  shape, a generic that would need its type arguments spelled out, and a union
-  wider than four members are all refused and the site keeps its `any`.
+  shape, a generic that would need its type arguments spelled out, `void`,
+  and a union wider than four members are all refused and the site keeps its
+  `any`. `void` is refused here on the contextual type: dropping null and
+  undefined from an operand typed `void` already leaves `never`, which the
+  printer refuses too.
 - A narrowing is kept only when the re-checked file has no error it did not
   already have and the expression the assertion covers is no longer `any`. The
   second condition is not redundant: a printed name can resolve to a different
