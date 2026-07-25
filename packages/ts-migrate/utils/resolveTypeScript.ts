@@ -16,6 +16,12 @@ export interface TypeScriptDecision {
   source: 'override' | 'project' | 'bundled';
   /** A project compiler that was found but not used, and why. */
   refused?: { packageDir: string; version: string; reason: string };
+  /**
+   * The project's own compiler when `--typescript` took its place and the two
+   * disagree about diagnostics. A refused compiler is reported through
+   * `refused` instead; this field is only about a skew the user asked for.
+   */
+  skew?: { packageDir: string; version: string };
 }
 
 // The range the three packages declare as their typescript peer dependency.
@@ -31,6 +37,17 @@ function isSupportedVersion(version: string): boolean {
     major >= SUPPORTED_MAJORS.min &&
     major < SUPPORTED_MAJORS.maxExclusive
   );
+}
+
+/**
+ * Whether two compilers report the same diagnostics. TypeScript's checker
+ * moves in every minor release, so a minor apart is enough for one to call a
+ * suppression the other needed unused (TS2578); patch releases are fixes that
+ * do not move diagnostics, so `5.7.2` against `5.7.3` counts as the same.
+ */
+export function isSameCheckerVersion(a: string, b: string): boolean {
+  const majorMinor = (version: string) => version.split('.', 2).join('.');
+  return majorMinor(a) === majorMinor(b);
 }
 
 function readPackageVersion(packageDir: string): string | undefined {
@@ -105,7 +122,16 @@ export function resolveTypeScript({
   override?: string;
 }): TypeScriptDecision {
   if (override) {
-    return { ...readTypeScriptOverride(override), source: 'override' };
+    const chosen = readTypeScriptOverride(override);
+    const installed = findProjectTypeScript(rootDir);
+    return {
+      ...chosen,
+      source: 'override',
+      skew:
+        installed && !isSameCheckerVersion(installed.version, chosen.version)
+          ? installed
+          : undefined,
+    };
   }
 
   const project = findProjectTypeScript(rootDir);
@@ -142,30 +168,76 @@ export function describeTypeScript(decision: TypeScriptDecision, version = decis
   }
 }
 
-/** The warning that belongs with the banner, when the choice is a compromise. */
+/**
+ * The warning that belongs with the banner, when the choice is a compromise.
+ * Names the path of every compiler it mentions: a version pair alone does not
+ * say which install is which, and the one that is not the project's usually
+ * lives in an npx cache directory nobody would guess.
+ */
 export function typeScriptWarning(decision: TypeScriptDecision): string | undefined {
   if (decision.refused) {
     return (
-      `This project has typescript ${decision.refused.version} installed, which is ` +
-      `${decision.refused.reason}; using the TypeScript ${decision.version} bundled with ` +
-      `ts-migrate instead. The suppressions added here may not match what the project's ` +
-      `own tsc reports.`
+      `This project has typescript ${decision.refused.version} installed ` +
+      `(${decision.refused.packageDir}), which is ${decision.refused.reason}; using the ` +
+      `TypeScript ${decision.version} bundled with ts-migrate instead (${decision.packageDir}). ` +
+      `The suppressions added here are the ones ${decision.version} reports, so the project's ` +
+      `own tsc may report them as unused (TS2578).`
     );
   }
   if (decision.source === 'bundled') {
     return (
       `This project has no typescript installed, so the TypeScript ${decision.version} ` +
-      `bundled with ts-migrate is used. Install typescript in the project to make sure ` +
-      `the suppressions added here match what its own tsc reports.`
+      `bundled with ts-migrate is used (${decision.packageDir}). Install typescript in the ` +
+      `project to make sure the suppressions added here match what its own tsc reports.`
     );
   }
+  const warnings: string[] = [];
   if (decision.source === 'override' && !isSupportedVersion(decision.version)) {
-    return (
+    warnings.push(
       `--typescript names TypeScript ${decision.version}, outside the range ts-migrate ` +
-      `supports (${SUPPORTED_RANGE}). Continuing as asked.`
+        `supports (${SUPPORTED_RANGE}). Continuing as asked.`,
     );
   }
-  return undefined;
+  if (decision.skew) {
+    warnings.push(
+      `--typescript names TypeScript ${decision.version} (${decision.packageDir}), and this ` +
+        `project has typescript ${decision.skew.version} installed (${decision.skew.packageDir}). ` +
+        `TypeScript's checker changes in every minor release, so the suppressions added here are ` +
+        `the ones ${decision.version} reports and the project's own tsc may report them as ` +
+        `unused (TS2578). Align the two compilers first: reignore under the same skew re-derives ` +
+        `the same suppressions.`,
+    );
+  }
+  return warnings.length > 0 ? warnings.join(' ') : undefined;
+}
+
+/**
+ * The mismatch between the compiler a migration reasons with and the one a
+ * later `tsc` run checks its work with. Undefined when the two agree.
+ */
+export function checkerSkewWarning(
+  migration: { version: string; packageDir: string },
+  check: { version: string; path: string },
+): string | undefined {
+  if (isSameCheckerVersion(migration.version, check.version)) return undefined;
+  let checkPackageDir: string | undefined;
+  try {
+    checkPackageDir = readTypeScriptOverride(check.path).packageDir;
+  } catch {
+    // A tsc outside a typescript package (a wrapper script, a global shim):
+    // it can still check, it just cannot be named as a --typescript value.
+  }
+  return (
+    `The check would run TypeScript ${check.version} (${check.path}), and the migration runs ` +
+    `TypeScript ${migration.version} (${migration.packageDir}). TypeScript's checker changes ` +
+    `in every minor release, so the check reports suppressions the migration needed as unused ` +
+    `(TS2578), and reignore does not converge: it re-derives them from the migration's ` +
+    `compiler every time.\n` +
+    `Align the two before starting: leave the custom tsc path empty to check with ` +
+    `${migration.packageDir}` +
+    (checkPackageDir ? `, or migrate with --typescript ${checkPackageDir}` : '') +
+    `.`
+  );
 }
 
 type ResolveFilename = (request: string, ...rest: any[]) => string;

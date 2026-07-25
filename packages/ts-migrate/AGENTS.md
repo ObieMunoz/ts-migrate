@@ -53,7 +53,11 @@ docs live in this package's README.md.
    compiler with a warning. Pass `--typescript <path>` (the package directory
    or any file inside it) to name a compiler that is not under
    `node_modules`, or to force a specific one; `ts-migrate-full` applies it to
-   the migrate step and the final compile check alike.
+   the migrate step and the final compile check alike. Any compiler a minor or
+   more away from the project's own install is warned about, at the start of
+   the run and again at the end: the checker changes in every minor release,
+   so the suppressions written are not the set the project's `tsc` reports.
+   Patch differences are quiet.
 9. **The eslint-fix step runs the project's own ESLint**, the
    `node_modules/eslint` found by searching from `<folder>` upward, because
    the project's config was written for that engine: a rule using the ESLint 8
@@ -139,7 +143,10 @@ verify with `tsc --noEmit`.
 - `--version` (`-v`): print the ts-migrate version and exit.
 - `--typescript <path>`: run the migrate step and the final `tsc --noEmit`
   check with the compiler at `<path>`. Without it, both use whatever compiler
-  the migrate step resolved (the project's own, when it has one).
+  the migrate step resolved (the project's own, when it has one). The
+  interactive prompt for a custom tsc path is the only way the two steps end up
+  on different compilers; a mismatch there stops the run before Step 1 rather
+  than at the check. `--yes` sets no custom path, so it never applies.
 - All other flags are forwarded to the underlying `rename` and `migrate`
   commands (e.g. `--sources`, `--no-inferTypes`, `--exclude-plugin`,
   `--no-projectEslint`, which is also repeated in the reignore hint printed
@@ -338,8 +345,9 @@ need both summaries.
   failing means the migration did not reach a compiling state. Its failure
   message distinguishes the common causes: TS2578 (the check ran a different
   compiler than the migration, which is left only by a custom tsc path or a
-  project compiler outside the supported range; run both with the compiler
-  named in the migration log, then `reignore`), TS1xxx syntax errors in
+  project compiler outside the supported range; align the two compilers first,
+  because `reignore` under the skew re-derives the same suppressions, then
+  `reignore`), TS1xxx syntax errors in
   generated/third-party `.d.ts` files (fix, regenerate, or exclude them —
   the migrate step lists these files up front; re-running the migration
   cannot change them), and ordinary type errors (`reignore`).

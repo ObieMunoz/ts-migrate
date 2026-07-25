@@ -174,6 +174,32 @@ and the compile check, so the two steps cannot disagree about which errors
 exist. Without the flag, the check runs whatever compiler the migrate step
 resolved.
 
+## When two compilers disagree
+
+TypeScript's checker changes in every minor release, so two compilers a minor
+apart are enough for one to report a suppression the other needed as unused
+(TS2578). Patch releases do not move diagnostics, so `5.7.2` against `5.7.3`
+is treated as the same compiler.
+
+A `--typescript` path that is a minor or more away from the project's own
+install is warned about, with both versions and both paths, at the start of
+the run and again on the last screen:
+
+```
+--typescript names TypeScript 5.5.4 (/repo/vendor/typescript), and this project
+has typescript 5.7.3 installed (/repo/node_modules/typescript). ...
+```
+
+The interactive `ts-migrate-full` prompt for a custom tsc path is the other way
+to end up with two compilers. It is checked before Step 1: if that tsc cannot
+report what the migration is about to write, the run says so and stops rather
+than spending the whole pipeline on a check it already knows will fail. This
+never fires under `--yes`, which sets no custom path.
+
+Reignoring does not fix a skew. `reignore` strips the suppressions and
+re-derives them with the migration's compiler, which produces the same set the
+check just rejected. Align the two compilers first, then reignore.
+
 # Which ESLint eslint-fix runs
 
 Same principle, same search: the eslint-fix step lints with the project's own
