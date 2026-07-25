@@ -2,6 +2,8 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import ts from 'typescript';
+import log from 'updatable-log';
 import init from '../../../commands/init';
 import { deleteDir } from '../../test-utils';
 
@@ -15,6 +17,47 @@ jest.mock('updatable-log', () => {
 function readConfig(rootDir: string) {
   const raw = fs.readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf-8');
   return JSON.parse(raw.replace(/^\s*\/\/.*$/gm, ''));
+}
+
+/** A vite install holding only what `types: ["vite/client"]` resolves to. */
+function installVite(rootDir: string) {
+  const viteDir = path.join(rootDir, 'node_modules', 'vite');
+  fs.mkdirSync(viteDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(viteDir, 'package.json'),
+    JSON.stringify({
+      name: 'vite',
+      version: '5.4.0',
+      exports: { './client': { types: './client.d.ts' }, './package.json': './package.json' },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(viteDir, 'client.d.ts'),
+    `interface ImportMetaEnv {
+  readonly MODE: string;
+  readonly DEV: boolean;
+}
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+declare module '*.svg' {
+  const src: string;
+  export default src;
+}
+`,
+  );
+}
+
+/** Type-checks rootDir with the generated tsconfig, the way the project would. */
+function typeCheck(rootDir: string): string[] {
+  const configFile = path.join(rootDir, 'tsconfig.json');
+  const { config } = ts.readConfigFile(configFile, ts.sys.readFile);
+  const parsed = ts.parseJsonConfigFileContent(config, ts.sys, rootDir, undefined, configFile);
+  const program = ts.createProgram(parsed.fileNames, parsed.options);
+  return ts.getPreEmitDiagnostics(program).map((diagnostic) => {
+    const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ');
+    return `TS${diagnostic.code}: ${message}`;
+  });
 }
 
 describe('init command', () => {
@@ -49,6 +92,8 @@ describe('init command', () => {
     // freshly-converted CommonJS project with suppressions.
     expect(config.compilerOptions.types).toBeUndefined();
     expect(config.compilerOptions.verbatimModuleSyntax).toBeUndefined();
+    // Left to the module setting, as it was before bundler detection existed.
+    expect(config.compilerOptions.moduleResolution).toBeUndefined();
     // No git repository here, so the built-in exclude defaults stay implicit.
     expect(config.exclude).toBeUndefined();
   });
@@ -144,7 +189,105 @@ describe('init command', () => {
 
     init({ rootDir, isExtendedConfig: false });
 
-    expect(readConfig(rootDir).compilerOptions.module).toBe('nodenext');
+    const { compilerOptions } = readConfig(rootDir);
+    expect(compilerOptions.module).toBe('nodenext');
+    expect(compilerOptions.moduleResolution).toBeUndefined();
+  });
+
+  it('uses bundler module settings and pins vite/client for a Vite project', () => {
+    fs.writeFileSync(
+      path.join(rootDir, 'package.json'),
+      JSON.stringify({ devDependencies: { vite: '^5.4.0' } }),
+    );
+    installVite(rootDir);
+
+    init({ rootDir, isExtendedConfig: false });
+
+    const { compilerOptions } = readConfig(rootDir);
+    expect(compilerOptions.module).toBe('esnext');
+    expect(compilerOptions.moduleResolution).toBe('bundler');
+    expect(compilerOptions.types).toEqual(['vite/client']);
+  });
+
+  it('type-checks import.meta.env with the config it writes for a Vite project', () => {
+    fs.writeFileSync(
+      path.join(rootDir, 'package.json'),
+      JSON.stringify({ devDependencies: { vite: '^5.4.0' } }),
+    );
+    installVite(rootDir);
+    fs.mkdirSync(path.join(rootDir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(rootDir, 'src/icon.svg'), '<svg />\n');
+    fs.writeFileSync(
+      path.join(rootDir, 'src/app.ts'),
+      "import icon from './icon.svg';\n\nexport const mode = import.meta.env.MODE;\nexport const logo = icon;\n",
+    );
+
+    init({ rootDir, isExtendedConfig: false });
+
+    // Without the bundler settings this is TS1343 for import.meta plus a
+    // TS2307 for the asset import, both of which migrate into suppressions.
+    expect(typeCheck(rootDir)).toEqual([]);
+  }, 60000);
+
+  it('prefers the bundler module setting over the ESM one', () => {
+    fs.writeFileSync(
+      path.join(rootDir, 'package.json'),
+      JSON.stringify({ type: 'module', devDependencies: { vite: '^5.4.0' } }),
+    );
+
+    init({ rootDir, isExtendedConfig: false });
+
+    const { compilerOptions } = readConfig(rootDir);
+    expect(compilerOptions.module).toBe('esnext');
+    expect(compilerOptions.moduleResolution).toBe('bundler');
+    // vite is declared but not installed, so nothing would resolve the entry.
+    expect(compilerOptions.types).toBeUndefined();
+  });
+
+  it('detects a bundler from its config file alone', () => {
+    fs.writeFileSync(path.join(rootDir, 'vite.config.ts'), 'export default {};\n');
+
+    init({ rootDir, isExtendedConfig: false });
+
+    expect(readConfig(rootDir).compilerOptions.moduleResolution).toBe('bundler');
+  });
+
+  it('recommends @types/webpack-env for a webpack project without it', () => {
+    const warn = jest.spyOn(log, 'warn');
+    fs.writeFileSync(
+      path.join(rootDir, 'package.json'),
+      JSON.stringify({ devDependencies: { webpack: '^5.90.0' } }),
+    );
+
+    init({ rootDir, isExtendedConfig: false });
+
+    const { compilerOptions } = readConfig(rootDir);
+    expect(compilerOptions.module).toBe('esnext');
+    expect(compilerOptions.moduleResolution).toBe('bundler');
+    expect(warn.mock.calls.map((call) => call.join(' ')).join('\n')).toContain(
+      '@types/webpack-env',
+    );
+    warn.mockRestore();
+  });
+
+  it('pins an installed @types/webpack-env instead of recommending it', () => {
+    const warn = jest.spyOn(log, 'warn');
+    fs.writeFileSync(
+      path.join(rootDir, 'package.json'),
+      JSON.stringify({ devDependencies: { webpack: '^5.90.0' } }),
+    );
+    const typesDir = path.join(rootDir, 'node_modules', '@types', 'webpack-env');
+    fs.mkdirSync(typesDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(typesDir, 'package.json'),
+      JSON.stringify({ name: '@types/webpack-env' }),
+    );
+
+    init({ rootDir, isExtendedConfig: false });
+
+    expect(readConfig(rootDir).compilerOptions.types).toEqual(['webpack-env']);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('uses the automatic JSX runtime for React 17+ projects', () => {
