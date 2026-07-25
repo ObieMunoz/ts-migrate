@@ -22,6 +22,7 @@ import tsIgnorePlugin from './plugins/ts-ignore';
 import updateImportPathsPlugin, {
   collectModuleSpecifiers,
 } from './plugins/update-import-paths';
+import widenAnnotationsPlugin from './plugins/widen-annotations';
 import updateSourceText, {
   SourceTextUpdate as SourceTextUpdateType,
 } from './utils/updateSourceText';
@@ -33,6 +34,13 @@ import {
   SuppressionReport as SuppressionReportType,
   SuppressionSite as SuppressionSiteType,
 } from './utils/suppressionExplainer';
+import {
+  printType,
+  DEFAULT_MAX_UNION_MEMBERS,
+  PrintTypeOptions as PrintTypeOptionsType,
+  PrintTypeResult as PrintTypeResultType,
+  TypePrintRefusal as TypePrintRefusalType,
+} from './utils/typePrinter';
 import {
   createTypesPackageDetector,
   formatTypesPackageReport,
@@ -49,6 +57,9 @@ export type SuppressionReport = SuppressionReportType;
 export type SuppressionSite = SuppressionSiteType;
 export type TypesPackageDetector = TypesPackageDetectorType;
 export type TypesPackageReport = TypesPackageReportType;
+export type PrintTypeOptions = PrintTypeOptionsType;
+export type PrintTypeResult = PrintTypeResultType;
+export type TypePrintRefusal = TypePrintRefusalType;
 
 export {
   addConversionsPlugin,
@@ -72,9 +83,12 @@ export {
   stripTSIgnorePlugin,
   tsIgnorePlugin,
   updateImportPathsPlugin,
+  widenAnnotationsPlugin,
 };
 
 export {
+  printType,
+  DEFAULT_MAX_UNION_MEMBERS,
   updateSourceText,
   createSuppressionExplainer,
   createTypesPackageDetector,
