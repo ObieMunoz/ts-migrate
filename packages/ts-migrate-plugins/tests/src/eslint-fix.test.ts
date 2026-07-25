@@ -154,6 +154,20 @@ module.exports = { ESLint };
 
 const PROJECT_ENGINE_MARKER = '// linted by the project engine\n';
 
+function stubEngineSource({
+  broken,
+  loadESLint,
+}: {
+  broken?: boolean;
+  loadESLint?: boolean;
+}): string {
+  // A half-installed copy: the manifest is there, loading it is not.
+  if (broken) return "require('a-dependency-that-is-not-installed');\n";
+  // 8.57 and later also export loadESLint, which is what a flat config needs.
+  if (loadESLint) return `${STUB_ENGINE_SOURCE}module.exports.loadESLint = async () => ESLint;\n`;
+  return STUB_ENGINE_SOURCE;
+}
+
 function packageDir(specifier: string): string {
   return fs.realpathSync(
     path.dirname(require.resolve(`${specifier}/package.json`, { paths: [packageRoot] })),
@@ -167,7 +181,16 @@ const bundledESLintDir = () => packageDir('eslint');
 const bundledESLintVersion = () =>
   JSON.parse(fs.readFileSync(path.join(bundledESLintDir(), 'package.json'), 'utf8')).version;
 
-type ProjectESLint = 'v8' | { version: string; broken?: boolean };
+type ProjectESLint =
+  | 'v8'
+  | {
+      version: string;
+      broken?: boolean;
+      /** Export loadESLint too, as 8.57 and later do. */
+      loadESLint?: boolean;
+      /** Install a jiti the project's ESLint can resolve. */
+      jiti?: boolean;
+    };
 
 // Git will not track a directory named node_modules, so a fixture keeps the
 // packages its config needs in `deps` and they are installed on the way in.
@@ -190,11 +213,17 @@ function installProjectDependencies(tmpDir: string, projectESLint?: ProjectESLin
     path.join(eslintDir, 'package.json'),
     JSON.stringify({ name: 'eslint', version: projectESLint.version, main: 'index.js' }),
   );
-  fs.writeFileSync(
-    path.join(eslintDir, 'index.js'),
-    // A half-installed copy: the manifest is there, loading it is not.
-    projectESLint.broken ? "require('a-dependency-that-is-not-installed');\n" : STUB_ENGINE_SOURCE,
-  );
+  fs.writeFileSync(path.join(eslintDir, 'index.js'), stubEngineSource(projectESLint));
+  if (projectESLint.jiti) {
+    // Only the manifest is read: what the plugin decides is whether the
+    // project's ESLint has a jiti to resolve, not what that jiti does.
+    const jitiDir = path.join(nodeModules, 'jiti');
+    fs.mkdirSync(jitiDir);
+    fs.writeFileSync(
+      path.join(jitiDir, 'package.json'),
+      JSON.stringify({ name: 'jiti', version: '2.4.2' }),
+    );
+  }
 }
 
 interface RunOptions {
@@ -675,6 +704,61 @@ describe('eslint-fix engine selection', () => {
         'project has eslint 8.30.0, which predates flat config support in the ESLint public API ' +
           '(8.57)',
       );
+    },
+    20000,
+  );
+
+  it(
+    'keeps the bundled engine when no jiti resolves from a project ESLint with a TypeScript config',
+    () => {
+      const { results, stdout, stderr } = runInFixture(
+        'eslint-flat-ts',
+        [
+          { fileName: 'Foo.js', text: unfixed },
+          { fileName: 'Bar.js', text: unfixed },
+        ],
+        { projectESLint: { version: '9.39.0', loadESLint: true } },
+      );
+
+      // The bundled engine has jiti, so the project's own eslint.config.ts is
+      // still what lints, and the cause is stated once rather than per file.
+      expect(results).toEqual([fixed, fixed]);
+      expect(stdout).toContain(
+        'project has eslint 9.39.0, which cannot load a TypeScript config without jiti installed',
+      );
+      expect(
+        stderr.match(/This project's eslint 9\.39\.0 cannot load a TypeScript config/g),
+      ).toHaveLength(1);
+    },
+    20000,
+  );
+
+  it(
+    'runs a TypeScript config under the project ESLint when jiti resolves from it',
+    () => {
+      const { results, stdout } = runInFixture(
+        'eslint-flat-ts',
+        [{ fileName: 'Foo.js', text: unfixed }],
+        { projectESLint: { version: '9.39.0', loadESLint: true, jiti: true } },
+      );
+
+      expect(results).toEqual([unfixed + PROJECT_ENGINE_MARKER]);
+      expect(stdout).toContain('[eslint-fix] ESLint 9.39.0 (project:');
+    },
+    20000,
+  );
+
+  it(
+    'keeps a project ESLint without jiti for a config that is not TypeScript',
+    () => {
+      const { results, stdout } = runInFixture(
+        'eslint-flat',
+        [{ fileName: 'Foo.js', text: unfixed }],
+        { projectESLint: { version: '9.39.0', loadESLint: true } },
+      );
+
+      expect(results).toEqual([unfixed + PROJECT_ENGINE_MARKER]);
+      expect(stdout).toContain('[eslint-fix] ESLint 9.39.0 (project:');
     },
     20000,
   );
