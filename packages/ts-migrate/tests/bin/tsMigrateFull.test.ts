@@ -139,6 +139,27 @@ describe('the ts-migrate-full compiler preflight', () => {
   });
 });
 
+describe('the ts-migrate-full type package preflight', () => {
+  it('is left to the migrate step for a folder that already has a tsconfig', () => {
+    fs.writeFileSync(path.join(projectDir, 'tsconfig.json'), '{}\n');
+
+    const { status, output } = runFull(['y', writeTsc('5.7.2')]);
+
+    expect(status).toBe(0);
+    expect(output).not.toContain('[stub cli] init');
+    expect(output).toContain('[stub cli] migrate');
+    expect(output).not.toContain('--no-typesPreflight');
+  });
+
+  it('is said once when Step 1 writes the tsconfig itself', () => {
+    const { status, output } = runFull(['y', writeTsc('5.7.2')]);
+
+    expect(status).toBe(0);
+    expect(output).toContain('[stub cli] init');
+    expect(output).toContain('--no-typesPreflight');
+  });
+});
+
 describe('the ts-migrate-full commit step', () => {
   it('commits without printing a directory of its own between the steps', () => {
     initGitRepo();

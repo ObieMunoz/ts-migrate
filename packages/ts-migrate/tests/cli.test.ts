@@ -32,6 +32,19 @@ function runCli(args: string[]): { status: number | null; output: string } {
   return { status: result.status, output: `${result.stdout}${result.stderr}` };
 }
 
+/**
+ * The same run with stderr merged into stdout by the shell, so the transcript
+ * is in the order a terminal shows it. Concatenating the two captured streams
+ * instead would put every warning after every info line.
+ */
+function runCliInOrder(args: string[]): { status: number | null; output: string } {
+  const command = [process.execPath, cliPath, ...args]
+    .map((arg) => `'${arg.replace(/'/g, `'\\''`)}'`)
+    .join(' ');
+  const result = spawnSync('/bin/sh', ['-c', `${command} 2>&1`], { encoding: 'utf-8' });
+  return { status: result.status, output: result.stdout };
+}
+
 describe('command names', () => {
   it('rejects a name that is not a command', () => {
     const { status, output } = runCli(['frobnicate', projectDir]);
@@ -128,4 +141,104 @@ describe('help output off a terminal', () => {
     expect(output).toContain('--protectedRegex');
     expect(output).toContain('--publicRegex');
   }, 30000);
+
+  it.each([['migrate'], ['reignore']])('documents the type package preflight of %s', (name) => {
+    const { output } = runCli([name, '--help']);
+
+    expect(output).toContain('--typesPreflight');
+  }, 30000);
+});
+
+describe('the type package preflight', () => {
+  const PREFLIGHT_HEADING = 'Type packages worth installing before the migration:';
+  const PINNED_TYPES_REMINDER = 'Then add each one to the "types" array';
+
+  let preflightDir: string;
+
+  /**
+   * A project the preflight can read: a declared test runner that resolves
+   * through node_modules, and no @types package for it or for node.
+   */
+  function writeProject(compilerOptions: Record<string, unknown>): void {
+    fs.writeFileSync(
+      path.join(preflightDir, 'package.json'),
+      JSON.stringify({ name: 'preflight-project', devDependencies: { jest: '^29.0.0' } }),
+    );
+    fs.writeFileSync(path.join(preflightDir, 'pnpm-lock.yaml'), '');
+    const jestDir = path.join(preflightDir, 'node_modules', 'jest');
+    fs.mkdirSync(jestDir, { recursive: true });
+    fs.writeFileSync(path.join(jestDir, 'package.json'), JSON.stringify({ name: 'jest' }));
+    fs.writeFileSync(
+      path.join(preflightDir, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions, include: ['.'] }),
+    );
+    fs.writeFileSync(path.join(preflightDir, 'a.ts'), 'export const broken: number = "oops";\n');
+  }
+
+  beforeEach(() => {
+    preflightDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-preflight-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(preflightDir, { recursive: true, force: true });
+  });
+
+  it('names the missing type packages before migrate runs a plugin', () => {
+    writeProject({ noEmit: true, strict: true, types: [] });
+
+    const { status, output } = runCliInOrder(['migrate', preflightDir, '--plugin', 'ts-ignore']);
+
+    expect(output).toContain('@types/node is not installed');
+    expect(output).toContain('@types/jest is not installed');
+    expect(output).toContain('Install: pnpm add -D @types/node @types/jest');
+    expect(output.indexOf(PREFLIGHT_HEADING)).toBeLessThan(output.indexOf('[ts-ignore] Plugin 1'));
+    // Advice, so the run still finishes and suppresses what it found.
+    expect(fs.readFileSync(path.join(preflightDir, 'a.ts'), 'utf8')).toMatch(/@ts-expect-error/);
+    expect(status).toBe(0);
+  }, 60000);
+
+  it('names them before reignore runs a plugin too', () => {
+    writeProject({ noEmit: true, strict: true, types: [] });
+
+    const { status, output } = runCliInOrder(['reignore', preflightDir]);
+
+    expect(output).toContain('@types/node is not installed');
+    expect(output).toContain('@types/jest is not installed');
+    expect(output.indexOf(PREFLIGHT_HEADING)).toBeLessThan(
+      output.indexOf('[strip-ts-ignore] Plugin 1'),
+    );
+    expect(status).toBe(0);
+  }, 60000);
+
+  it('says nothing under --no-typesPreflight', () => {
+    writeProject({ noEmit: true, strict: true, types: [] });
+
+    const { status, output } = runCliInOrder([
+      'migrate',
+      preflightDir,
+      '--plugin',
+      'ts-ignore',
+      '--no-typesPreflight',
+    ]);
+
+    expect(output).not.toContain(PREFLIGHT_HEADING);
+    expect(status).toBe(0);
+  }, 60000);
+
+  it('asks for a "types" entry when the tsconfig it runs against pins one', () => {
+    writeProject({ noEmit: true, strict: true, types: [] });
+
+    const { output } = runCliInOrder(['migrate', preflightDir, '--plugin', 'ts-ignore']);
+
+    expect(output).toContain(PINNED_TYPES_REMINDER);
+  }, 60000);
+
+  it('leaves it out when the tsconfig pins no "types" array', () => {
+    writeProject({ noEmit: true, strict: true });
+
+    const { output } = runCliInOrder(['migrate', preflightDir, '--plugin', 'ts-ignore']);
+
+    expect(output).toContain(PREFLIGHT_HEADING);
+    expect(output).not.toContain(PINNED_TYPES_REMINDER);
+  }, 60000);
 });
