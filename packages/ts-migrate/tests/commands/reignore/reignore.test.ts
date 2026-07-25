@@ -83,7 +83,7 @@ const alsoFine: number = 2;
         evidence: expect.objectContaining({ expectedType: 'number', actualType: '"oops"' }),
       }),
     ]);
-  }, 10000);
+  });
 
   it('dry run leaves the tree byte-identical and returns the would-be text', async () => {
     fs.writeFileSync(
@@ -112,7 +112,7 @@ const broken: number = 'oops';
     const wouldBeText = updatedFileTexts.get(file);
     expect(wouldBeText).not.toContain('no longer needed');
     expect(wouldBeText).toMatch(/@ts-expect-error TS\(2322\) FIXME/);
-  }, 10000);
+  });
 
   it('leaves gitignored files unsuppressed and counts them', async () => {
     execFileSync('git', ['init'], { cwd: rootDir, stdio: 'ignore' });
@@ -138,5 +138,5 @@ const broken: number = 'oops';
       /@ts-expect-error TS\(2322\) FIXME/,
     );
     expect(fs.readFileSync(path.resolve(rootDir, 'generated/file.ts'), 'utf8')).toBe(generatedText);
-  }, 10000);
+  });
 });

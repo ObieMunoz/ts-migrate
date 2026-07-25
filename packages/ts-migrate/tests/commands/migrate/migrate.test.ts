@@ -48,7 +48,7 @@ describe('migrate command', () => {
     const [rootData, outputData] = getDirData(rootDir, outputDir);
     expect(rootData).toEqual(outputData);
     expect(exitCode).toBe(0);
-  }, 10000);
+  });
 
   it('annotates implicit anys that only surface after an earlier annotation', async () => {
     const inputDir = path.resolve(__dirname, 'input');
@@ -75,7 +75,7 @@ handlers.map((h: { onReady: any; }) => h.onReady);
 `,
     );
     expect(exitCode).toBe(0);
-  }, 10000);
+  });
 
   it('re-points imports of renamed files', async () => {
     const inputDir = path.resolve(__dirname, 'input');
@@ -99,7 +99,7 @@ export const value = util;
 `,
     );
     expect(exitCode).toBe(0);
-  }, 10000);
+  });
 
   describe('sources-scoped migration with ambient declaration files', () => {
     const sourceText = 'export const version: string = __APP_VERSION__;\n';
@@ -124,7 +124,7 @@ export const value = util;
 
       expect(exitCode).toBe(0);
       expect(fs.readFileSync(path.resolve(rootDir, 'feature/index.ts'), 'utf8')).toBe(sourceText);
-    }, 10000);
+    });
 
     it('suppresses the now-unresolvable global with ambientSources disabled', async () => {
       const config = new MigrateConfig().addPlugin(tsIgnorePlugin, { messagePrefix: 'FIXME' });
@@ -140,7 +140,7 @@ export const value = util;
       expect(fs.readFileSync(path.resolve(rootDir, 'feature/index.ts'), 'utf8')).toMatch(
         /@ts-expect-error TS\(2304\) FIXME/,
       );
-    }, 10000);
+    });
   });
 
   it('converts imported propTypes to a structural props type', async () => {
@@ -227,7 +227,7 @@ export const messagePropTypes = {
 `,
     );
     expect(exitCode).toBe(0);
-  }, 10000);
+  });
 
   it('skips gitignored files via the gitignore migration filter', async () => {
     execFileSync('git', ['init'], { cwd: rootDir, stdio: 'ignore' });
@@ -257,7 +257,7 @@ export const messagePropTypes = {
       /@ts-expect-error TS\(2322\) FIXME/,
     );
     expect(fs.readFileSync(path.resolve(rootDir, 'dist/bundle.ts'), 'utf8')).toBe(bundleText);
-  }, 10000);
+  });
 
   describe('imports of a package that ships no type definitions', () => {
     const sourceText = "import untyped from 'untyped-lib';\n\nexport const value = untyped;\n";
@@ -311,7 +311,7 @@ export const messagePropTypes = {
       expect([...generatedFiles.keys()]).toEqual([path.resolve(rootDir, declarationsFile)]);
       expect(fs.readFileSync(path.resolve(rootDir, 'app.ts'), 'utf8')).toBe(sourceText);
       expect(detector.summarize(rootDir).declared?.moduleNames).toEqual(['untyped-lib']);
-    }, 10000);
+    });
 
     it('suppresses the import when the declarations are turned off', async () => {
       const detector = createTypesPackageDetector();
@@ -327,7 +327,7 @@ export const messagePropTypes = {
       expect(fs.readFileSync(path.resolve(rootDir, 'app.ts'), 'utf8')).toMatch(
         /@ts-expect-error TS\(7016\) FIXME/,
       );
-    }, 10000);
+    });
   });
 
   describe('a project whose tsconfig sets allowJs', () => {
@@ -407,7 +407,7 @@ export const retries: number = config.retries;
 
       expect(exitCode).toBe(0);
       expect(fs.readFileSync(path.resolve(projectDir, 'app.ts'), 'utf8')).toBe(sourceText);
-    }, 10000);
+    });
 
     describe('with JavaScript the migration has not reached yet', () => {
       const utilText = 'export const util = { n: 1 };\n';
@@ -437,7 +437,7 @@ export const n: number = util.n;
         expect(fs.readFileSync(path.resolve(projectDir, 'feature/index.ts'), 'utf8')).toBe(
           featureText,
         );
-      }, 10000);
+      });
 
       it('leaves it untouched on a full run', async () => {
         const { config } = buildMigrateConfig({ inferTypes: false });
