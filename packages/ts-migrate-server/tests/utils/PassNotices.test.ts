@@ -64,14 +64,38 @@ describe('PassNotices', () => {
     expect(notices.failedFileCount()).toBe(1);
   });
 
-  it('reports a recovered notice without counting the file as unchanged', () => {
+  it('keeps a recovered notice out of the pass report, for the run to report at the end', () => {
     const notices = new PassNotices(rootDir);
     notices.add(file('src/a.ts'), { reason: 'linted in-process', recovered: true });
 
     notices.report('[eslint-fix]');
 
     expect(notices.failedFileCount()).toBe(0);
-    expect(warnings()).toEqual(['[eslint-fix] 1 file(s): linted in-process. First: src/a.ts.']);
+    expect(mockedLog.warn).not.toHaveBeenCalled();
+    expect(notices.groups()).toEqual([
+      expect.objectContaining({ reason: 'linted in-process', recovered: true, fileCount: 1 }),
+    ]);
+  });
+
+  it('reports the failures in a pass that also recovered from something', () => {
+    const notices = new PassNotices(rootDir);
+    notices.add(file('a.ts'), { reason: 'left for a person', recovered: true });
+    notices.add(file('b.ts'), { reason: 'the rule threw' });
+
+    notices.report('[p]');
+
+    expect(warnings()).toEqual([
+      '[p] 1 file(s) could not be processed and were left unchanged:',
+      '[p]   1 file(s): the rule threw. First: b.ts.',
+    ]);
+  });
+
+  it('marks a group when any of its files had its site marked in place', () => {
+    const notices = new PassNotices(rootDir);
+    notices.add(file('a.ts'), { reason: 'left for a person', recovered: true });
+    notices.add(file('b.ts'), { reason: 'left for a person', recovered: true, marked: true });
+
+    expect(notices.groups()[0].marked).toBe(true);
   });
 
   it('prints nothing when nothing was reported', () => {
@@ -103,6 +127,7 @@ describe('PassNotices', () => {
         ruleId: 'r',
         hint: undefined,
         recovered: false,
+        marked: false,
         fileCount: 2,
         files: ['src/a.ts', 'src/b.ts'],
       },
