@@ -182,8 +182,9 @@ describe('init command', () => {
         JSON.stringify({ type: 'module', scripts: { build: 'node scripts/build.mjs' } }),
       );
       writeFile('postcss.config.cjs', 'module.exports = {};\n');
-      writeFile('scripts/build.mjs', "import './paths.mjs';\n");
+      writeFile('scripts/build.mjs', "import './paths.mjs';\nimport './env.js';\n");
       writeFile('scripts/paths.mjs', 'export const paths = {};\n');
+      writeFile('scripts/env.js', 'export const env = {};\n');
       writeFile('src/app.js', 'const a = 1;\n');
     };
 
@@ -198,6 +199,7 @@ describe('init command', () => {
         'jspm_packages',
         'postcss.config.cjs',
         'scripts/build.mjs',
+        'scripts/env.js',
         'scripts/paths.mjs',
       ]);
     });

@@ -390,6 +390,11 @@ Detection, in order of confidence:
   literals, so `webpack.config.js` keeps `config/paths.js` with it. Dynamic
   requires are not followed; use the tsconfig `exclude` for those.
 
+Every extension the compiler reads as JavaScript counts, so
+`eslint.config.mjs`, `postcss.config.cjs` and `node scripts/build.mjs` are
+detected the same way `.js` files are, in `rename` and in the `"exclude"`
+`init` writes.
+
 Each run logs every kept file with its evidence, and `--jsonSummary` reports
 them as `skippedBootstrapFiles` with path and reason. A kept file never enters
 the rename mapping, which is also what protects the package.json references to
