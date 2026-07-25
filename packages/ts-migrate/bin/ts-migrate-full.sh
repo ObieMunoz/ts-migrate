@@ -76,6 +76,10 @@ if [ -z "$frontend_folder" ]; then
   echo "$usage"
   exit 1
 fi
+if [ ! -d "$frontend_folder" ]; then
+  echo "No such folder: $frontend_folder"
+  exit 1
+fi
 folder_name=$(basename "$frontend_folder")
 
 # A scoped run must be reignored with the same scope, with the same compiler,
@@ -155,12 +159,121 @@ step_count=4
 # the migrate step resolved.
 tsc_path=""
 should_remove_eslintrc=false
+in_git_work_tree=false
 
 # The migrate step writes its type definition recommendations here so they can
-# be shown at the end of the run, where they won't scroll out of view.
+# be shown at the end of the run, where they won't scroll out of view. A failed
+# run keeps the file and names it, since that is when the recommendations are
+# the only thing left to act on.
 types_report_file=$(mktemp)
-trap 'rm -f "$types_report_file"' EXIT
+keep_types_report=false
+report_shown=false
+function clean_up_types_report() {
+  if [ "$keep_types_report" != "true" ]; then
+    rm -f "$types_report_file"
+  fi
+}
+trap clean_up_types_report EXIT
 
+function show_types_report() {
+  if [ "$report_shown" = "true" ] || [ ! -s "$types_report_file" ]; then
+    return
+  fi
+  report_shown=true
+  echo ""
+  cat "$types_report_file"
+}
+
+# On a failure the recommendations are the only thing left to act on, and the
+# output they sit under can be long, so the file outlives the run too.
+function preserve_types_report() {
+  if [ ! -s "$types_report_file" ]; then
+    return
+  fi
+  keep_types_report=true
+  show_types_report
+  echo "
+The recommendations above are also in $types_report_file."
+}
+
+function remove_generated_eslintrc() {
+  if [ "$should_remove_eslintrc" = "true" ]; then
+    rm -f "$frontend_folder/.eslintrc"
+    should_remove_eslintrc=false
+  fi
+}
+
+function fail_step() {
+  local step_name=$1
+  local status=$2
+  remove_generated_eslintrc
+  echo "
+---
+$step_name failed (exit $status); the remaining steps did not run."
+  preserve_types_report
+  echo "
+This run's partial result is in the working tree; nothing was rolled back."
+  if [ "$in_git_work_tree" = "true" ]; then
+    echo "\`git -C \"$frontend_folder\" status\` shows what it wrote, and
+\`git -C \"$frontend_folder\" checkout .\` reverts the tracked files."
+  fi
+  exit "$status"
+}
+
+# Under `set -e` a failing step ends the run with no statement of which step
+# stopped it, what the working tree holds, or what the migration recommended.
+function run_step() {
+  local step_name=$1
+  shift
+  local status=0
+  "$@" || status=$?
+  if [ "$status" -ne 0 ]; then
+    fail_step "$step_name" "$status"
+  fi
+}
+
+# The tree state that matters is what `git add .` in maybe_commit would stage,
+# so this asks the same question with the same scope.
+function preflight_git_tree() {
+  if ! git -C "$frontend_folder" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if [ "$no_commit" != "true" ]; then
+      echo "$frontend_folder is not in a git repository, so this run cannot commit its
+steps. Continuing as though --no-commit had been passed.
+"
+      no_commit=true
+    fi
+    return
+  fi
+  in_git_work_tree=true
+
+  local dirty
+  dirty=$(git -C "$frontend_folder" status --porcelain .) || return
+  if [ -z "$dirty" ]; then
+    return
+  fi
+
+  local count
+  count=$(printf '%s\n' "$dirty" | wc -l | tr -d ' ')
+  echo "Uncommitted changes in $frontend_folder ($count):"
+  printf '%s\n' "$dirty" | head -10 | sed 's/^/  /'
+  if [ "$count" -gt 10 ]; then
+    echo "  ... and $((count - 10)) more"
+  fi
+  if [ "$no_commit" = "true" ]; then
+    echo "
+Steps 2 and 3 rename and rewrite those files in place, and an untracked one has
+no committed copy to recover it from. Set them aside with \`git stash -u\` first."
+  else
+    echo "
+Steps 2 and 3 rename and rewrite those files in place, and \`git add .\` puts them
+in this run's commits, attributed to the migration. Set them aside with
+\`git stash -u\` first."
+  fi
+  if [ "$auto_yes" = "true" ]; then
+    echo "--yes was passed, so the run continues."
+  fi
+  echo ""
+}
 
 echo "Welcome to TS Migrate! :D
 
@@ -189,6 +302,8 @@ It is recommended that you take the following steps before continuing...
 
 If you need help or have feedback, please file an issue at https://github.com/ObieMunoz/ts-migrate/issues
 "
+
+preflight_git_tree
 
 if [ "$auto_yes" != "true" ]; then
   read -p "Continue? (y/N) " should_fetch_and_reset || {
@@ -237,7 +352,7 @@ echo "
 # has nothing to do.
 migrate_preflight_args=()
 if [ ! -f "$frontend_folder/tsconfig.json" ]; then
-  cli init "$frontend_folder"
+  run_step "Step 1 of ${step_count} (init)" cli init "$frontend_folder"
   migrate_preflight_args=(--no-typesPreflight)
 fi
 
@@ -256,29 +371,31 @@ if [ "$eslint_config_found" != "true" ] && [ -f "$frontend_folder/package.json" 
   eslint_config_found=true
 fi
 
-if [ "$eslint_config_found" != "true" ]; then
-  touch "$frontend_folder/.eslintrc"
-  should_remove_eslintrc=true
-fi
-
 maybe_commit -m "[ts-migrate][$folder_name] Init tsconfig.json file" -m 'Co-authored-by: ts-migrate <>'
 
 echo "
 [Step $((step_i++)) of ${step_count}] Renaming files from JS/JSX to TS/TSX and updating project.json...
 "
-cli rename "$frontend_folder" "${additional_args[@]}"
+run_step "Step 2 of ${step_count} (rename)" cli rename "$frontend_folder" "${additional_args[@]}"
 
 maybe_commit -m "[ts-migrate][$folder_name] Rename files from JS/JSX to TS/TSX" -m 'Co-authored-by: ts-migrate <>'
 
 echo "
 [Step $((step_i++)) of ${step_count}] Fixing TypeScript errors...
 "
-cli migrate "$frontend_folder" --typesReportFile "$types_report_file" \
+
+# The migrate step is the only one that runs ESLint. Writing this between the
+# surrounding commits keeps a file the project never had out of all three.
+if [ "$eslint_config_found" != "true" ]; then
+  touch "$frontend_folder/.eslintrc"
+  should_remove_eslintrc=true
+fi
+
+run_step "Step 3 of ${step_count} (migrate)" \
+  cli migrate "$frontend_folder" --typesReportFile "$types_report_file" \
   "${migrate_preflight_args[@]}" "${additional_args[@]}"
 
-if [ "$should_remove_eslintrc" = "true" ]; then
-  rm -f "$frontend_folder/.eslintrc"
-fi
+remove_generated_eslintrc
 
 maybe_commit -m "[ts-migrate][$folder_name] Run TS Migrate" -m 'Co-authored-by: ts-migrate <>'
 
@@ -339,10 +456,7 @@ The TypeScript check failed. What the errors above usually mean:
 - Other type errors in migrated files: run the reignore command above to
   re-suppress them."
 
-  if [ -s "$types_report_file" ]; then
-    echo ""
-    cat "$types_report_file"
-  fi
+  preserve_types_report
   exit 1
 fi
 
@@ -350,10 +464,7 @@ echo "
 ---
 All done! Your project compiles with TypeScript now."
 
-if [ -s "$types_report_file" ]; then
-  echo ""
-  cat "$types_report_file"
-fi
+show_types_report
 
 # The mechanical rewrite commits are exactly what .git-blame-ignore-revs is
 # for. Writing the file is opt-in: on squash or rebase merge workflows these

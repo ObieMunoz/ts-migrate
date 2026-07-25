@@ -21,6 +21,10 @@ docs live in this package's README.md.
 3. **`ts-migrate-full` creates git commits** after each step by default. Pass
    `--no-commit` to leave every change in the working tree instead — do this
    when you manage commits yourself or the target is not a git repository.
+   Commit or stash the target folder first either way. The run reports what is
+   uncommitted there and then renames and rewrites those files, and with
+   commits enabled `git add .` also puts them in the migration's commits.
+   Under `--yes` that report is a warning and the run continues.
 4. **Suppressions in the output are success, not failure.** The tool's
    contract is that `tsc` compiles with zero errors afterwards; it fulfills it
    by annotating what it can prove and suppressing the rest with
@@ -164,6 +168,14 @@ Afterwards, update the project plumbing the tool deliberately does not touch:
 
 Runs the whole pipeline: init tsconfig → rename JS/JSX to TS/TSX → migrate →
 verify with `tsc --noEmit`.
+
+Before Step 1 it names a `<folder>` that is not in a git repository once and
+then runs without commits, and reports anything uncommitted in `<folder>`.
+
+It stops on a `<folder>` that does not exist. A failing step names itself,
+prints the type definition recommendations gathered so far along with the file
+holding them, and exits with that step's exit code; the partial result stays in
+the working tree.
 
 - `--yes` (`-y`): skip the interactive prompts (accept defaults).
 - `--no-commit`: do not create git commits after each step.
@@ -653,7 +665,9 @@ need both summaries.
   visible from the first screen rather than from a diff that never appeared.
 - `check` exits `1` when a per-file count exceeds the baseline; `report` and
   `check` exit nonzero (255) if the tsconfig cannot be read.
-- `ts-migrate-full` stops at the first failing step; the final `tsc` check
+- `ts-migrate-full` stops at the first failing step, naming it and exiting with
+  that step's code, and prints the type definition recommendations it had
+  gathered along with the file they stay in; the final `tsc` check
   failing means the migration did not reach a compiling state. Its failure
   message distinguishes the common causes: TS2578 (the check ran a different
   compiler than the migration, which is left only by a custom tsc path or a
