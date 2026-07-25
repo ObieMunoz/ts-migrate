@@ -14,6 +14,7 @@ import { logApplicationEntries, partitionBootstrapFiles } from '../utils/bootstr
 import { detectBundler, hasViteClientTypes } from '../utils/bundler';
 import { listGitignoredDirectories, partitionGitignored } from '../utils/gitignore';
 import { JS_EXTENSION_REGEX } from '../utils/jsExtensions';
+import { detectPathAliases, logPathAliases, renderPathAliases } from '../utils/pathAliases';
 import isIncludedByTsConfig from '../utils/tsConfigIncludes';
 
 interface InitParams {
@@ -177,6 +178,10 @@ function defaultConfig(rootDir: string): DefaultConfig {
     log.info(`Detected ${bundler.name} (${bundler.evidence}); writing bundler module settings.`);
   }
 
+  const pathAliases = detectPathAliases(rootDir, bundler);
+  const pathAliasesField = pathAliases ? renderPathAliases(pathAliases) : '';
+  if (pathAliases) logPathAliases(pathAliases);
+
   const typesPackages = installedTypesPackages(rootDir);
   const viteClient = bundler?.name === 'vite' && hasViteClientTypes(rootDir);
   const typesEntries = viteClient ? [...typesPackages, 'vite/client'] : typesPackages;
@@ -252,7 +257,7 @@ function defaultConfig(rootDir: string): DefaultConfig {
   // adjust as your codebase needs (see the ts-migrate README FAQ).
   "compilerOptions": {
     "target": "esnext",
-    "module": "${moduleSetting}",${moduleResolutionField}
+    "module": "${moduleSetting}",${moduleResolutionField}${pathAliasesField}
     // Renamed CommonJS files often have no import/export statements yet;
     // without this they would be treated as scripts sharing one global scope.
     "moduleDetection": "force",
