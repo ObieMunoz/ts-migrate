@@ -131,13 +131,19 @@ interface Site {
   assigned: ts.Type;
 }
 
+/** Every assignment blaming one annotation, and the diagnostics they raised. */
+interface Contradictions {
+  types: ts.Type[];
+  blamed: ts.DiagnosticWithLocation[];
+}
+
 function collectCandidates(
   checker: ts.TypeChecker,
   source: ts.SourceFile,
   diagnostics: ts.DiagnosticWithLocation[],
   maxUnionMembers: number,
 ): Candidate[] {
-  const byDeclaration = new Map<WidenableDeclaration, { types: ts.Type[]; blamed: ts.DiagnosticWithLocation[] }>();
+  const byDeclaration = new Map<WidenableDeclaration, Contradictions>();
 
   diagnostics.forEach((diagnostic) => {
     const node = findNodeAtSpan(source, diagnostic.start, diagnostic.length);
