@@ -36,6 +36,21 @@ describe('buildMigrateConfig', () => {
     expect(names).toContain('detect-types-packages');
   });
 
+  it('runs the suppression explainer immediately before ts-ignore', () => {
+    const { config, suppressionExplainer } = buildMigrateConfig({});
+    const names = pluginNames(config);
+    expect(suppressionExplainer).toBeDefined();
+    expect(names.indexOf('explain-suppressions')).toBe(names.indexOf('ts-ignore') - 1);
+  });
+
+  it('drops the suppression explainer when ts-ignore is excluded', () => {
+    const { config, suppressionExplainer } = buildMigrateConfig({
+      excludePlugins: ['ts-ignore'],
+    });
+    expect(suppressionExplainer).toBeUndefined();
+    expect(pluginNames(config)).not.toContain('explain-suppressions');
+  });
+
   it('rejects unknown excluded plugin names, listing the valid ones', () => {
     expect(() => buildMigrateConfig({ excludePlugins: ['eslint'] })).toThrow(
       /Cannot exclude unknown plugin\(s\): eslint\. Available plugins: .*eslint-fix/,
@@ -229,9 +244,14 @@ describe('buildMigrateConfig', () => {
   });
 
   it('exposes every default-pipeline plugin as excludable', () => {
-    // The types package detector's two plugins hold per-run state, so they are
-    // built per command rather than listed among the static plugins.
-    const perRunPlugins = ['detect-types-packages', 'declare-untyped-modules'];
+    // The detector's two plugins and the suppression explainer hold per-run
+    // state, so they are built per command rather than listed among the static
+    // plugins.
+    const perRunPlugins = [
+      'detect-types-packages',
+      'declare-untyped-modules',
+      'explain-suppressions',
+    ];
     const names = new Set(availablePlugins.map((plugin) => plugin.name));
     const defaultNames = pluginNames(buildMigrateConfig({}).config);
     defaultNames

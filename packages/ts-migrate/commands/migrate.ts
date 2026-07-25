@@ -18,7 +18,9 @@ import {
   stripTSIgnorePlugin,
   tsIgnorePlugin,
   updateImportPathsPlugin,
+  createSuppressionExplainer,
   createTypesPackageDetector,
+  SuppressionExplainer,
   TypesPackageDetector,
 } from '@obiemunoz/ts-migrate-plugins';
 import { MigrateConfig, Plugin } from '@obiemunoz/ts-migrate-server';
@@ -67,6 +69,7 @@ interface BuildMigrateConfigParams {
 interface MigrateCommandConfig {
   config: MigrateConfig;
   typesPackageDetector?: TypesPackageDetector;
+  suppressionExplainer?: SuppressionExplainer;
   anyAlias?: string;
   anyFunctionAlias?: string;
 }
@@ -246,6 +249,15 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     // for ts-ignore below instead of being suppressed one by one.
     config.addPlugin(typesPackageDetector.declarationsPlugin, {});
   }
+  // Records what the compiler knew about each diagnostic ts-ignore is about to
+  // hide, which nothing downstream can recover from the comment. Registered
+  // after the declarations above so it sees the diagnostics ts-ignore sees.
+  const suppressionExplainer = excludePlugins.includes(tsIgnorePlugin.name)
+    ? undefined
+    : createSuppressionExplainer();
+  if (suppressionExplainer) {
+    config.addPlugin(suppressionExplainer.plugin, {});
+  }
   config
     .addPlugin(tsIgnorePlugin, optionsFor(tsIgnorePlugin))
     // We need to run eslint-fix again after ts-ignore to fix up formatting.
@@ -256,5 +268,5 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     config.plugins = config.plugins.filter(({ plugin }) => !excluded.has(plugin.name));
   }
 
-  return { config, typesPackageDetector, anyAlias, anyFunctionAlias };
+  return { config, typesPackageDetector, suppressionExplainer, anyAlias, anyFunctionAlias };
 }

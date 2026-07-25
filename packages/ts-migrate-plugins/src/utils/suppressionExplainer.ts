@@ -548,12 +548,18 @@ type PropertyDiff = Pick<
   'missingProperties' | 'mismatchedProperties' | 'propertiesTruncated'
 >;
 
+/** Every primitive has apparent members, and diffing those describes nothing. */
+function hasOwnProperties(type: ts.Type): boolean {
+  return (type.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection)) !== 0;
+}
+
 function propertyDiff(
   checker: ts.TypeChecker,
   actual: ts.Type,
   expected: ts.Type,
   at: ts.Node,
 ): PropertyDiff {
+  if (!hasOwnProperties(expected) || !hasOwnProperties(actual)) return {};
   const isAssignable = (checker as AssignabilityReader).isTypeAssignableTo;
   const expectedProperties = checker.getPropertiesOfType(expected);
   if (expectedProperties.length === 0) return {};
@@ -812,10 +818,10 @@ export function formatSuppressionReport(report: SuppressionReport): string {
     '',
     `${pluralize(report.total, 'diagnostic')} in ${pluralize(report.fileCount, 'file')} ` +
       'were suppressed.',
-    `${report.commented} of them are written into a comment. ${report.sharedLine} share a line ` +
-      'with an earlier diagnostic, so ts-ignore writes no comment for them and ' +
-      '`ts-migrate report` cannot count them: its per-code totals match the "comments" ' +
-      'column below, not the "diagnostics" column.',
+    `${report.commented} of them are written into a comment. ${report.sharedLine} ` +
+      `${report.sharedLine === 1 ? 'shares' : 'share'} a line with an earlier diagnostic, so ` +
+      'ts-ignore writes no comment for them and `ts-migrate report` cannot count them: its ' +
+      'per-code totals match the "comments" column below, not the "diagnostics" column.',
     '',
     'By code:',
   ];

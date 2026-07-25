@@ -342,7 +342,7 @@ describe('reconciliation with the comments ts-ignore writes', () => {
     // The divergence the report has to state: two TS2554 on one line, one comment.
     expect(report.total).toBe(report.commented + report.sharedLine);
     expect(report.sharedLine).toBe(1);
-    expect(formatSuppressionReport(report)).toContain('1 share a line with an earlier diagnostic');
+    expect(formatSuppressionReport(report)).toContain('1 shares a line with an earlier diagnostic');
   });
 });
 
