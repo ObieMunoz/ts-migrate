@@ -12,7 +12,13 @@ import ts from 'typescript';
 import log from 'updatable-log';
 import yargs from 'yargs';
 
-import { formatTypesPackageReport, TypesPackageDetector } from '@obiemunoz/ts-migrate-plugins';
+import {
+  formatSuppressionReport,
+  formatSuppressionSummary,
+  formatTypesPackageReport,
+  SuppressionExplainer,
+  TypesPackageDetector,
+} from '@obiemunoz/ts-migrate-plugins';
 import { errorMessage, migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
 import check from './commands/check';
 import init from './commands/init';
@@ -124,6 +130,28 @@ function printTypesPackageReport(
     }
   } catch (err) {
     log.warn('Skipped type definition recommendations:', err);
+  }
+}
+
+/**
+ * The evidence the compiler had for every diagnostic ts-ignore suppressed. Only
+ * the grouped counts reach the log; the per-site detail goes to reportFile,
+ * since stdout is the progress log. Must never fail an otherwise successful run.
+ */
+function printSuppressionReport(
+  explainer: SuppressionExplainer,
+  rootDir: string,
+  reportFile?: string,
+): void {
+  try {
+    const report = explainer.summarize(rootDir);
+    if (reportFile) {
+      fs.writeFileSync(reportFile, `${formatSuppressionReport(report)}\n`);
+    }
+    const summary = formatSuppressionSummary(report, reportFile);
+    if (summary) log.info(summary);
+  } catch (err) {
+    log.warn('Skipped the suppression report:', err);
   }
 }
 
@@ -394,6 +422,11 @@ yargs
           'typesReportFile',
           'Write the type definition recommendations to this file instead of printing them. Used by ts-migrate-full to show the report at the end of the run.',
         )
+        .string('suppressionReportFile')
+        .describe(
+          'suppressionReportFile',
+          'Write what the compiler knew about every suppressed diagnostic to this file: the full message and its chain, the related information, and the resolved signatures and types. The comment keeps the code and 50 characters of the message, and nothing can recover the rest afterwards.',
+        )
         .boolean('dry-run')
         .default('dry-run', false)
         .describe(
@@ -424,6 +457,7 @@ yargs
 
       let config: MigrateConfig;
       let typesPackageDetector: TypesPackageDetector | undefined;
+      let suppressionExplainer: SuppressionExplainer | undefined;
       let aliasDeclarations: { filePath: string; text: string } | null = null;
       try {
         const built = buildMigrateConfig({
@@ -443,6 +477,7 @@ yargs
         });
         config = built.config;
         typesPackageDetector = built.typesPackageDetector;
+        suppressionExplainer = built.suppressionExplainer;
         // Written before the program is created so the aliases resolve during
         // the run; otherwise ts-ignore would suppress every annotation added.
         // A dry run keeps the file in memory and feeds it to the program as a
@@ -506,6 +541,9 @@ yargs
       printGeneratedFiles(rootDir, generatedFiles, dryRun);
       if (typesPackageDetector) {
         printTypesPackageReport(typesPackageDetector, rootDir, args.folder, args.typesReportFile);
+      }
+      if (suppressionExplainer) {
+        printSuppressionReport(suppressionExplainer, rootDir, args.suppressionReportFile);
       }
       if (dryRun) {
         printDryRunSummary(rootDir, args.folder, updatedSourceFiles, fileContents);
@@ -583,6 +621,11 @@ yargs
         )
         .string('typescript')
         .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
+        .string('suppressionReportFile')
+        .describe(
+          'suppressionReportFile',
+          'Write what the compiler knew about every suppressed diagnostic to this file, as in migrate.',
+        )
         .boolean('dry-run')
         .default('dry-run', false)
         .describe(
@@ -605,6 +648,7 @@ yargs
       const {
         exitCode,
         typesPackageDetector,
+        suppressionExplainer,
         updatedSourceFiles,
         updatedFileTexts,
         nonMigratedFilesWithSyntaxErrors,
@@ -627,6 +671,7 @@ yargs
 
       printGeneratedFiles(rootDir, generatedFiles, dryRun);
       printTypesPackageReport(typesPackageDetector, rootDir, args.folder);
+      printSuppressionReport(suppressionExplainer, rootDir, args.suppressionReportFile);
       if (dryRun) {
         printDryRunSummary(rootDir, args.folder, updatedSourceFiles, updatedFileTexts);
       } else {

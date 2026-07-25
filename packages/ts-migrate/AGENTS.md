@@ -304,6 +304,8 @@ ts-ignore, and the run reports each file it left alone and why. Pass
 - `--jsonSummary <file>`: write a JSON summary of the run to `<file>`: the
   changed files, per-plugin change counts, and the suppression and `any`
   counts in the changed files (see "Machine-readable summaries" below).
+- `--suppressionReportFile <file>`: write what the compiler knew about every
+  diagnostic the run suppressed to `<file>` (see "Suppression report" below).
 - `--typescript <path>`: run with the compiler at `<path>` instead of the one
   found by searching from `<folder>` upward (critical fact 8).
 - `--no-projectEslint`: run eslint-fix with the ESLint bundled with ts-migrate
@@ -330,9 +332,38 @@ existing suppression comments, then re-adds only the ones still needed.
   migration reignored later must use the same compiler, or the suppressions
   will not match.
 - `--no-projectEslint`: same lint engine override as `migrate`.
+- `--suppressionReportFile <file>`: same suppression report as `migrate`.
 
 Both `migrate` and `reignore` end the run by printing a one-paragraph type
 debt summary (the `report` totals for the project).
+
+### Suppression report
+
+A suppression comment keeps the error code and 50 characters of the message.
+Everything else the compiler knew is gone the moment the comment is written:
+`getSemanticDiagnostics` does not report a diagnostic a directive already
+suppressed, so no later command can recover it. `migrate` and `reignore` read
+that evidence just before it is hidden and end the run with a grouped count of
+what was suppressed and which fix each group needs. Pass
+`--suppressionReportFile <file>` to also write the per-diagnostic detail:
+
+- the full message through `flattenDiagnosticMessageText`, with every link of
+  the elaboration chain and its own error code;
+- the `relatedInformation` entries with their source locations, which name the
+  missing argument or the declaration the type came from;
+- per code, the checker evidence the message does not carry: the resolved
+  signature and the callee's declaration site for `TS2554`, the parameter type
+  against the argument type plus the missing and mismatched properties for
+  `TS2345` and `TS2322`, both member declarations for `TS2416` and `TS2425`,
+  and the paths the compiler tried for an unresolved `TS2307` module.
+
+Type strings in the report are never abbreviated.
+
+One entry is written per diagnostic, but ts-ignore writes at most one comment
+per line. Where a line held more than one diagnostic, only the first reaches a
+comment, so the per-code totals `ts-migrate report` scrapes match the report's
+"commented" column, not its "diagnostics" column. The report states how many
+diagnostics that covers.
 
 ### `ts-migrate report <folder> [--json]`
 

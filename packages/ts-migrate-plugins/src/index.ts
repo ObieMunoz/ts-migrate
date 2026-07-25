@@ -25,6 +25,14 @@ import updateSourceText, {
   SourceTextUpdate as SourceTextUpdateType,
 } from './utils/updateSourceText';
 import {
+  createSuppressionExplainer,
+  formatSuppressionReport,
+  formatSuppressionSummary,
+  SuppressionExplainer as SuppressionExplainerType,
+  SuppressionReport as SuppressionReportType,
+  SuppressionSite as SuppressionSiteType,
+} from './utils/suppressionExplainer';
+import {
   createTypesPackageDetector,
   formatTypesPackageReport,
   MODULE_DECLARATIONS_FILE,
@@ -35,6 +43,9 @@ import {
 export type Plugin<T = unknown> = PluginType<T>;
 export type EslintFixOptions = EslintFixOptionsType;
 export type SourceTextUpdate = SourceTextUpdateType;
+export type SuppressionExplainer = SuppressionExplainerType;
+export type SuppressionReport = SuppressionReportType;
+export type SuppressionSite = SuppressionSiteType;
 export type TypesPackageDetector = TypesPackageDetectorType;
 export type TypesPackageReport = TypesPackageReportType;
 
@@ -63,7 +74,10 @@ export {
 
 export {
   updateSourceText,
+  createSuppressionExplainer,
   createTypesPackageDetector,
+  formatSuppressionReport,
+  formatSuppressionSummary,
   formatTypesPackageReport,
   collectModuleSpecifiers,
   MODULE_DECLARATIONS_FILE,

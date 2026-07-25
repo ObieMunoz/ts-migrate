@@ -40,12 +40,17 @@ const alsoFine: number = 2;
 `;
     fs.writeFileSync(path.resolve(rootDir, 'untouched/file.ts'), untouchedText);
 
-    const { exitCode, updatedSourceFiles, nonMigratedFilesWithSyntaxErrors, pluginStats } =
-      await reignore({
-        rootDir,
-        sources: 'migrated/**/*',
-        messagePrefix: 'FIXME',
-      });
+    const {
+      exitCode,
+      updatedSourceFiles,
+      nonMigratedFilesWithSyntaxErrors,
+      pluginStats,
+      suppressionExplainer,
+    } = await reignore({
+      rootDir,
+      sources: 'migrated/**/*',
+      messagePrefix: 'FIXME',
+    });
 
     expect(exitCode).toBe(0);
     const migratedText = fs.readFileSync(path.resolve(rootDir, 'migrated/file.ts'), 'utf8');
@@ -60,11 +65,24 @@ const alsoFine: number = 2;
       'strip-ts-ignore',
       'detect-types-packages',
       'declare-untyped-modules',
+      'explain-suppressions',
       'ts-ignore',
       'eslint-fix-changed',
     ]);
     expect(pluginStats[0].changedFileCount).toBe(1);
-    expect(pluginStats[3].changedFileCount).toBe(1);
+    expect(pluginStats[4].changedFileCount).toBe(1);
+
+    // The evidence behind the suppression the run just wrote. Line 2 because
+    // strip-ts-ignore removed the stale comment before the explainer ran.
+    const report = suppressionExplainer.summarize(rootDir);
+    expect(report.sites).toEqual([
+      expect.objectContaining({
+        code: 2322,
+        location: { file: 'migrated/file.ts', line: 2, column: 7 },
+        commented: true,
+        evidence: expect.objectContaining({ expectedType: 'number', actualType: '"oops"' }),
+      }),
+    ]);
   }, 10000);
 
   it('dry run leaves the tree byte-identical and returns the would-be text', async () => {

@@ -1,10 +1,12 @@
 import {
+  createSuppressionExplainer,
   createTypesPackageDetector,
   eslintFixPlugin,
   stripTSIgnorePlugin,
   tsIgnorePlugin,
   EslintFixOptions,
   Plugin,
+  SuppressionExplainer,
   TypesPackageDetector,
 } from '@obiemunoz/ts-migrate-plugins';
 import { migrate, MigrateConfig, MigrateResult } from '@obiemunoz/ts-migrate-server';
@@ -34,6 +36,7 @@ interface ReignoreParams {
 
 interface ReignoreResult extends MigrateResult {
   typesPackageDetector: TypesPackageDetector;
+  suppressionExplainer: SuppressionExplainer;
   skippedGitignoredFiles: number;
   skippedBootstrapFiles: BootstrapFile[];
 }
@@ -77,6 +80,7 @@ export default async function reignore({
   };
 
   const typesPackageDetector = createTypesPackageDetector();
+  const suppressionExplainer = createSuppressionExplainer();
   const config = new MigrateConfig()
     .addPlugin(withChangeTracking(stripTSIgnorePlugin), {})
     .addPlugin(typesPackageDetector.plugin, {});
@@ -84,6 +88,7 @@ export default async function reignore({
     config.addPlugin(typesPackageDetector.declarationsPlugin, {});
   }
   config
+    .addPlugin(suppressionExplainer.plugin, {})
     .addPlugin(withChangeTracking(tsIgnorePlugin), { messagePrefix })
     .addPlugin(eslintFixChangedPlugin, { projectEslint });
 
@@ -101,6 +106,7 @@ export default async function reignore({
   return {
     ...result,
     typesPackageDetector,
+    suppressionExplainer,
     skippedGitignoredFiles: gitignoreFilter ? gitignoreFilter.skippedFiles().length : 0,
     skippedBootstrapFiles: bootstrapFilter ? bootstrapFilter.skippedFiles() : [],
   };
