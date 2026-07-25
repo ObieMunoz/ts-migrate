@@ -507,6 +507,26 @@ they are missing environment types. Without `@types/node`, every `require`,
 `process`, and `__dirname` becomes a suppressed "Cannot find name" error; without
 your test runner's types, so does every `describe` and `it`.
 
+`ts-migrate init` says what it can before anything runs. It already enumerates
+the installed `@types` packages to pin the tsconfig `types` array, so crossing
+those against the dependencies your package.json declares names the obvious gaps
+while installing them still saves the suppressions:
+
+```
+Type packages worth installing before the migration:
+  @types/node is not installed: node globals and imports of builtin modules have no types without it.
+  @types/jest is not installed: jest is a dependency here and its test globals have no types without it.
+  Install: pnpm add -D @types/node @types/jest
+  Installing them first keeps this migration from suppressing the errors they would fix.
+```
+
+That is advice, not a gate: `init` writes the config and exits 0 either way. It
+is also everything package.json alone can prove, so it stays narrow. Only
+`@types/node` and the `@types` for a declared test runner are named, a package
+your package.json already declares is left to the install, and nothing at all is
+named in a project whose dependencies are not installed, where every package
+would look missing. Everything else waits for the compiler.
+
 `migrate` and `reignore` detect this from the compiler diagnostics themselves and
 end the run with a report (`ts-migrate-full` holds it back until the very end,
 after the compile check):

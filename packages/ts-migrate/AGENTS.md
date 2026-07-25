@@ -93,6 +93,8 @@ npm i -D @types/node          # plus your test runner's types:
                               # and your bundler's, on a browser app:
                               # webpack -> @types/webpack-env
                               # vite -> nothing, init pins "vite/client"
+#    Skipping this is not fatal: init names what is still missing at Step 1,
+#    before the migration turns those errors into suppressions.
 
 # 1. Migrate. <folder> is the project (or sub-project) root, the directory
 #    where tsconfig.json belongs.
@@ -207,6 +209,14 @@ installed, which is what declares `import.meta.env` and the asset imports
 (`*.svg`, `*.css`). For a webpack project, install `@types/webpack-env` so
 `require.context` and `module.hot` type; init says so when it is missing.
 A webpack project also gets `types/ts-migrate-assets.d.ts`, described below.
+Before writing the config, init also names the type packages the project's
+dependencies imply and does not have installed: `@types/node`, and the
+`@types` for a declared test runner, with the install command for the
+detected package manager. It is advice, not a gate: init writes the config
+and exits 0 either way. It stays quiet in a project whose dependencies are
+not installed, where every package would look missing, and about a package
+package.json already declares. Everything else waits for the end of run
+report, which needs the compiler.
 Installed `@types` packages are pinned in a `types` array so that
 TypeScript 5 (which loads `node_modules/@types` automatically) and
 TypeScript 6 (which does not) check the project identically; add new
