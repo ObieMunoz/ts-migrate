@@ -60,7 +60,7 @@ export const availablePlugins = [
   widenAnnotationsPlugin,
 ];
 
-interface BuildMigrateConfigParams {
+export interface BuildMigrateConfigParams {
   // yargs collects a repeated --plugin into an array, which is not a valid
   // selection but has to be recognized to be reported.
   plugin?: string | string[];
