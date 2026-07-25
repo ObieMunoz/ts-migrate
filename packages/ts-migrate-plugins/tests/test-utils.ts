@@ -44,6 +44,7 @@ export function mockPluginParams<TOptions = unknown>(params: {
     reportFileNotice,
     getLanguageService: () =>
       ({
+        getProgram: () => undefined,
         getSemanticDiagnostics: () => semanticDiagnostics.map(withFile),
         getSyntacticDiagnostics: () => syntacticDiagnostics.map(withFile),
         getSuggestionDiagnostics: () => suggestionDiagnostics.map(withFile),
