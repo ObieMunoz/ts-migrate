@@ -17,6 +17,7 @@ import reactHookTypesPlugin from './plugins/react-hook-types';
 import reactInlineImportedPropTypesPlugin from './plugins/react-inline-imported-prop-types';
 import reactPropsPlugin from './plugins/react-props';
 import reactShapePlugin from './plugins/react-shape';
+import retryConversionsPlugin from './plugins/retry-conversions';
 import stripTSIgnorePlugin from './plugins/strip-ts-ignore';
 import tsIgnorePlugin from './plugins/ts-ignore';
 import updateImportPathsPlugin, {
@@ -80,6 +81,7 @@ export {
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
   reactShapePlugin,
+  retryConversionsPlugin,
   stripTSIgnorePlugin,
   tsIgnorePlugin,
   updateImportPathsPlugin,

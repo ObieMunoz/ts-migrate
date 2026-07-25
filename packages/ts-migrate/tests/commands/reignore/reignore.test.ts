@@ -20,6 +20,47 @@ describe('reignore command', () => {
     deleteDir(rootDir);
   });
 
+  /**
+   * A project whose one migrated file holds two conversions: one over a
+   * property the installed @types package now declares, one over a property
+   * nothing declares.
+   */
+  function writeConvertedProject(): string {
+    fs.writeFileSync(
+      path.resolve(rootDir, 'tsconfig.json'),
+      JSON.stringify({
+        compilerOptions: { noEmit: true, strict: true, types: ['legacy-widget'] },
+        include: ['.'],
+      }),
+    );
+    const typesDir = path.resolve(rootDir, 'node_modules/@types/legacy-widget');
+    fs.mkdirSync(typesDir, { recursive: true });
+    fs.writeFileSync(
+      path.resolve(typesDir, 'package.json'),
+      JSON.stringify({ name: '@types/legacy-widget', version: '1.0.0', types: 'index.d.ts' }),
+    );
+    fs.writeFileSync(
+      path.resolve(typesDir, 'index.d.ts'),
+      `declare module 'legacy-widget' {
+  export const widget: { name: string };
+}
+`,
+    );
+    const file = path.resolve(rootDir, 'src.ts');
+    fs.writeFileSync(
+      file,
+      `import { widget } from 'legacy-widget';
+
+export const name = (widget as any).name;
+
+export function missing(  ) {
+  return (widget as any).notDeclared;
+}
+`,
+    );
+    return file;
+  }
+
   it('only touches files matching sources', async () => {
     fs.writeFileSync(
       path.resolve(rootDir, 'tsconfig.json'),
@@ -139,4 +180,55 @@ const broken: number = 'oops';
     );
     expect(fs.readFileSync(path.resolve(rootDir, 'generated/file.ts'), 'utf8')).toBe(generatedText);
   });
+
+  it('leaves every conversion alone without --casts', async () => {
+    const file = writeConvertedProject();
+    const before = fs.readFileSync(file, 'utf8');
+
+    const { exitCode, pluginStats } = await reignore({ rootDir, gitignore: false });
+
+    expect(exitCode).toBe(0);
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+    expect(pluginStats.map(({ pluginName }) => pluginName)).not.toContain('retry-conversions');
+  }, 30000);
+
+  it('drops the conversion the installed types resolve and keeps the other', async () => {
+    const file = writeConvertedProject();
+
+    const { exitCode, updatedSourceFiles, pluginStats } = await reignore({
+      rootDir,
+      gitignore: false,
+      casts: true,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(pluginStats.map(({ pluginName }) => pluginName)).toContain('retry-conversions');
+    expect([...updatedSourceFiles]).toEqual([file]);
+    // The surviving assertion and the formatting around it are restored from
+    // the original bytes, so the odd spacing in the untouched statement stays.
+    expect(fs.readFileSync(file, 'utf8')).toBe(`import { widget } from 'legacy-widget';
+
+export const name = widget.name;
+
+export function missing(  ) {
+  return (widget as any).notDeclared;
+}
+`);
+  }, 30000);
+
+  it('changes nothing on a second --casts run', async () => {
+    const file = writeConvertedProject();
+    await reignore({ rootDir, gitignore: false, casts: true });
+    const afterFirst = fs.readFileSync(file, 'utf8');
+
+    const { exitCode, updatedSourceFiles } = await reignore({
+      rootDir,
+      gitignore: false,
+      casts: true,
+    });
+
+    expect(exitCode).toBe(0);
+    expect([...updatedSourceFiles]).toEqual([]);
+    expect(fs.readFileSync(file, 'utf8')).toBe(afterFirst);
+  }, 60000);
 });

@@ -2,6 +2,7 @@ import {
   createSuppressionExplainer,
   createTypesPackageDetector,
   eslintFixPlugin,
+  retryConversionsPlugin,
   stripTSIgnorePlugin,
   tsIgnorePlugin,
   EslintFixOptions,
@@ -30,6 +31,8 @@ interface ReignoreParams {
   projectEslint?: boolean;
   /** Declare modules with no types available instead of suppressing their imports (default). */
   declareUntypedModules?: boolean;
+  /** Retry the `as any` assertions add-conversions inserted. */
+  casts?: boolean;
   /** Run every pass but write nothing to disk. */
   dryRun?: boolean;
 }
@@ -50,6 +53,7 @@ export default async function reignore({
   bootstrap = true,
   projectEslint,
   declareUntypedModules = true,
+  casts = false,
   dryRun,
 }: ReignoreParams): Promise<ReignoreResult> {
   const changedFiles = new Map<string, string>();
@@ -86,6 +90,12 @@ export default async function reignore({
     .addPlugin(typesPackageDetector.plugin, {});
   if (declareUntypedModules) {
     config.addPlugin(typesPackageDetector.declarationsPlugin, {});
+  }
+  // After the declarations the new types come from, and before the passes that
+  // read and suppress what is left, so a removal that reintroduces an error
+  // still gets a suppression.
+  if (casts) {
+    config.addPlugin(withChangeTracking(retryConversionsPlugin), {});
   }
   config
     .addPlugin(suppressionExplainer.plugin, {})

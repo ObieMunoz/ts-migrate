@@ -105,7 +105,8 @@ npm i -D @types/jest
 
 # 3. Re-run reignore: it strips every suppression the new types resolve and
 #    prints an updated recommendations report. If step 1 was scoped with
-#    --sources, repeat the same flags here.
+#    --sources, repeat the same flags here. Add --casts to also retry the
+#    `as any` assertions the migration inserted; it is slower.
 npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>
 
 # 4. Verify:
@@ -381,6 +382,13 @@ existing suppression comments, then re-adds only the ones still needed.
   files from the tsconfig are kept automatically here too
   (`--no-ambientSources` disables).
 - `-p`/`--messagePrefix`: customizes the comment text.
+- `--casts`: also retry the `as any` assertions ts-migrate inserted. Each one
+  is dropped, the file is re-checked, and the removal is kept only where no
+  error appears that the file did not already have. Assertions to any other
+  type are left alone. Off by default: it costs a validation pass per file
+  holding one. Run it the way you run `reignore` itself, after installing
+  `@types` packages or after a neighboring directory has been migrated, and
+  read the reduction off `ts-migrate report`/`check`.
 - `--no-gitignore`: same behavior as in `migrate`.
 - `--no-bootstrap`: same behavior as in `migrate`.
 - `--no-declareUntypedModules`: same behavior as in `migrate`.
