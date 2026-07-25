@@ -418,6 +418,10 @@ resolve. The report only recommends what the diagnostics prove is missing:
   and bun are recognized by the `packageManager` field in your package.json, and
   by their lockfiles when the field is absent. A field that disagrees with the
   lockfile wins, and the report says which lockfile it passed over.
+- A directory holding more than one lockfile, as a repository midway through
+  switching managers does, is settled by the `packageManager` field, then by a
+  `pnpm-workspace.yaml`, and failing both by whichever lockfile was modified
+  last. The report names the lockfiles that lost a tie broken that way.
 
 The `Then try` line is separate because `@types` packages derived from untyped
 imports (rather than well-known globals) aren't guaranteed to exist on npm.
