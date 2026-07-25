@@ -76,16 +76,23 @@ export function assignedType(expression: ts.Expression): string | undefined {
   return undefined;
 }
 
+function isScope(node: ts.Node): boolean {
+  return ts.isSourceFile(node) || ts.isFunctionLike(node) || ts.isModuleDeclaration(node);
+}
+
 /**
- * Every name the file binds itself. `window` as an IIFE parameter or a
- * `const global = {}` is a local, and its properties are not globals. The
- * whole file is disqualified for that name rather than the enclosing scope
- * alone: the cost of missing a real global is one suppression, the cost of
- * declaring a local's property is a global that does not exist.
+ * The names this scope binds directly. Nested functions are not descended
+ * into: their bindings are their own, and an IIFE that takes a `window`
+ * parameter must not disqualify the assignments outside it.
+ *
+ * Blocks are not counted as scopes of their own, so a `let window` inside an
+ * `if` shadows the whole enclosing function here. That errs towards leaving an
+ * assignment alone, which costs a suppression; declaring a local's property
+ * would cost a global that does not exist.
  */
-function locallyBoundNames(sourceFile: ts.SourceFile): Set<string> {
+function scopeBindings(scope: ts.Node): Set<string> {
   const names = new Set<string>();
-  const addName = (name: ts.BindingName | ts.Identifier | undefined): void => {
+  const addName = (name: ts.BindingName | undefined): void => {
     if (!name) return;
     if (ts.isIdentifier(name)) {
       names.add(name.text);
@@ -96,23 +103,37 @@ function locallyBoundNames(sourceFile: ts.SourceFile): Set<string> {
     });
   };
 
+  if (ts.isFunctionLike(scope)) {
+    scope.parameters.forEach((parameter) => addName(parameter.name));
+  }
+
   const visit = (node: ts.Node): void => {
-    if (ts.isVariableDeclaration(node) || ts.isParameter(node)) {
+    if (ts.isVariableDeclaration(node)) {
       addName(node.name);
-    } else if (
-      ts.isFunctionDeclaration(node) ||
-      ts.isFunctionExpression(node) ||
-      ts.isClassDeclaration(node) ||
-      ts.isClassExpression(node)
-    ) {
+    } else if (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) {
       addName(node.name);
     } else if (ts.isImportClause(node) || ts.isNamespaceImport(node) || ts.isImportSpecifier(node)) {
       addName(node.name);
     }
+    if (node !== scope && (ts.isFunctionLike(node) || ts.isModuleDeclaration(node))) return;
     ts.forEachChild(node, visit);
   };
-  ts.forEachChild(sourceFile, visit);
+  visit(scope);
   return names;
+}
+
+/** Whether an enclosing scope binds the name, making it a local rather than the global. */
+function isShadowed(node: ts.Node, name: string, cache: Map<ts.Node, Set<string>>): boolean {
+  for (let current: ts.Node | undefined = node; current; current = current.parent) {
+    if (!isScope(current)) continue;
+    let bindings = cache.get(current);
+    if (!bindings) {
+      bindings = scopeBindings(current);
+      cache.set(current, bindings);
+    }
+    if (bindings.has(name)) return true;
+  }
+  return false;
 }
 
 /**
@@ -182,7 +203,7 @@ export function collectGlobalAssignments({
   /** Skips the properties the environment declares already. */
   checker?: ts.TypeChecker;
 }): void {
-  const bound = locallyBoundNames(sourceFile);
+  const bindings = new Map<ts.Node, Set<string>>();
 
   const visit = (node: ts.Node): void => {
     ts.forEachChild(node, visit);
@@ -195,7 +216,7 @@ export function collectGlobalAssignments({
 
     const rootName = left.expression.text;
     const target = GLOBAL_ROOTS[rootName];
-    if (!target || bound.has(rootName)) return;
+    if (!target || isShadowed(left.expression, rootName, bindings)) return;
     if (checker && environmentDeclares(checker, left)) return;
 
     record(evidence, left.name.text, target, sourceFile.fileName, assignedType(node.right));

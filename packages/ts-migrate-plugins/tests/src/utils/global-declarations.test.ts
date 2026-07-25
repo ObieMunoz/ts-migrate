@@ -116,18 +116,32 @@ globalThis.buildId = '42';
     expect(evidence.properties.get('buildId')!.target).toBe('globalThis');
   });
 
-  it('skips a root the file binds itself', () => {
+  it('skips a root an enclosing scope binds', () => {
     const evidence = collectText(`
 (function (window) {
   window.fromIife = 1;
 })(fakeWindow);
-const global = {};
-global.fromLocal = 2;
+function withLocal() {
+  const window = {};
+  window.fromLocal = 2;
+}
 import { globalThis } from './shim';
 globalThis.fromImport = 3;
 `);
 
     expect([...evidence.properties.keys()]).toEqual([]);
+  });
+
+  it('keeps the assignments outside the scope that binds the root', () => {
+    const evidence = collectText(`
+window.real = 1;
+(function (window) {
+  window.fromIife = 2;
+})(fakeWindow);
+window.alsoReal = 3;
+`);
+
+    expect([...evidence.properties.keys()].sort()).toEqual(['alsoReal', 'real']);
   });
 
   it('skips element access and compound assignment', () => {
