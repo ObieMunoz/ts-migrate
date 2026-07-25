@@ -11,6 +11,12 @@ import {
   partitionBootstrapFiles,
 } from '../utils/bootstrapFiles';
 import { logUnfilteredReason, partitionGitignored, sampleIgnoredPaths } from '../utils/gitignore';
+import {
+  PackageJsonNotice,
+  PackageJsonRewrite,
+  logPackageJsonReferences,
+  updatePackageJsonReferences,
+} from '../utils/packageJsonReferences';
 import { replaceJSON5Strings } from '../utils/updateJSON5';
 
 interface RenameParams {
@@ -35,6 +41,10 @@ export interface RenameResult {
   skippedGitignoredFiles: number;
   skippedBootstrapFiles: BootstrapFile[];
   skippedModuleFiles: SkippedRename[];
+  /** package.json script paths and test globs repointed at the renamed files. */
+  packageJsonRewrites: PackageJsonRewrite[];
+  /** package.json entry points that name a renamed file and were left alone. */
+  packageJsonNotices: PackageJsonNotice[];
 }
 
 export default function rename({
@@ -101,6 +111,8 @@ export default function rename({
       skippedGitignoredFiles,
       skippedBootstrapFiles,
       skippedModuleFiles: [],
+      packageJsonRewrites: [],
+      packageJsonNotices: [],
     };
   }
 
@@ -150,11 +162,15 @@ export default function rename({
         `(nothing was written):\n${mapping}`,
     );
     updateProjectJson(rootDir, dryRun);
+    const references = updatePackageJsonReferences(rootDir, toRename, { dryRun });
+    logPackageJsonReferences(references, dryRun);
     return {
       renamedFiles: toRename,
       skippedGitignoredFiles,
       skippedBootstrapFiles,
       skippedModuleFiles,
+      packageJsonRewrites: references.rewrites,
+      packageJsonNotices: references.notices,
     };
   }
 
@@ -165,6 +181,11 @@ export default function rename({
   });
 
   updateProjectJson(rootDir);
+  // The mapping is final here: the gitignore, bootstrap, and .mjs/.cjs
+  // partitions have all run, so a file that kept its .js extension is absent
+  // from it and every reference to it is left alone.
+  const references = updatePackageJsonReferences(rootDir, toRename);
+  logPackageJsonReferences(references);
 
   log.info('Done.');
   return {
@@ -172,6 +193,8 @@ export default function rename({
     skippedGitignoredFiles,
     skippedBootstrapFiles,
     skippedModuleFiles,
+    packageJsonRewrites: references.rewrites,
+    packageJsonNotices: references.notices,
   };
 }
 

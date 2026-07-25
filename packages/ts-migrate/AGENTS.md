@@ -35,11 +35,12 @@ docs live in this package's README.md.
 6. **Build system files stay JavaScript by default.** Configs and scripts
    that must keep running under plain Node (`webpack.config.js`,
    `jest.config.js`, paths run via `node scripts/build.js`, and the files
-   they require) are kept out of rename and migrate so the build still
-   boots; `init` writes them into the generated tsconfig's `exclude`. Runs
-   log every kept file with its evidence. Pass `--no-bootstrap` to convert
-   them anyway, e.g. when the project loads TypeScript configs through
-   ts-node or tsx.
+   they require) are kept out of rename so the build still boots; `init`
+   writes them into the generated tsconfig's `exclude`. Runs log every kept
+   file with its evidence. Pass `--no-bootstrap` to rename them anyway, e.g.
+   when the project loads TypeScript configs through ts-node or tsx. In
+   `migrate` and `reignore` the flag only decides whether those files are
+   loaded into the program; nothing there edits JavaScript.
 7. **Requirements:** Node >= 18.18. TypeScript 5.x or 6.x if the target
    project has TypeScript installed; if it has none, ts-migrate falls back to
    its own bundled compiler and plain JS projects work out of the box.
@@ -117,8 +118,9 @@ declarations to it — ts-migrate rewrites the file.
 Afterwards, update the project plumbing the tool deliberately does not touch:
 
 - Add a way to produce/run JS again: a `tsc` build step or a TS-aware runner
-  (tsx, ts-node). Point `package.json` `main` at output that exists.
-- Update scripts that reference old `.js` paths (mocha globs, jest patterns).
+  (tsx, ts-node). Point the entry point fields the rename listed (`main`,
+  `bin`, `exports`, and friends) at output that exists. Script paths and test
+  globs were repointed for you; see `ts-migrate rename` below.
 - Teach ESLint about TypeScript (`@typescript-eslint` parser + plugin).
 - If the run created commits, consider a repo-root `.git-blame-ignore-revs`
   so blame skips the mechanical rewrites; the run's final checklist prints
@@ -158,7 +160,9 @@ verify with `tsc --noEmit`.
 ### `ts-migrate init <folder>` / `ts-migrate init:extended <folder>`
 
 Writes a migration-friendly `tsconfig.json` in `<folder>` (no-op if one
-exists). Installed `@types` packages are pinned in a `types` array so that
+exists). `resolveJsonModule` is on, so JSON imports type as their contents
+instead of collecting a suppression each.
+Installed `@types` packages are pinned in a `types` array so that
 TypeScript 5 (which loads `node_modules/@types` automatically) and
 TypeScript 6 (which does not) check the project identically; add new
 `@types` packages to that array after installing them. Gitignored
@@ -183,12 +187,40 @@ old-to-new mapping (surfacing each `.ts` vs `.tsx` decision) and renames
 nothing. `--jsonSummary <file>` writes the old and new path of every
 renamed file as JSON (see "Machine-readable summaries" below).
 
+The rename also repoints the package.json references that follow
+mechanically from the mapping, in every package.json from the directory of
+a renamed file up to `<folder>`: the paths and globs in `scripts`, in the
+`jest` block (`testMatch`, `collectCoverageFrom`, `setupFiles`,
+`setupFilesAfterEnv`, `globalSetup`, `globalTeardown`) and in the `mocha`
+block (`spec`, `require`). Only references that resolve to a file in the
+mapping change, so a build system file kept as JavaScript keeps its `.js`
+path (`"build": "node scripts/build.js"` is left alone). A glob is
+rewritten to the new extension only when nothing it matched is still
+JavaScript; when unmigrated files still match, or the matches renamed to
+both `.ts` and `.tsx`, it is widened into a brace group instead
+(`**/*.test.js` becomes `**/*.test.{js,ts}`). Edits are text splices, so
+the file's formatting and key order survive.
+
+Entry points are reported, not rewritten. `main`, `module`, `browser`,
+`bin`, `exports`, `types`, `typings`, and `files` address the package from
+the outside, and after a TypeScript conversion they need to name build
+output rather than the renamed source, which the rename cannot produce.
+Every one that still names a renamed file is logged, and listed in the
+JSON summary, for you to repoint once a build step exists. An entry point
+that names a build system file is absent from both lists, because that file
+was never renamed: `"start": "node src/cli.js"` keeps `src/cli.js` as
+JavaScript, so a `bin` pointing at it stays valid and needs no notice.
+
 ### `ts-migrate migrate <folder> [flags]`
 
 Runs the codemod pipeline on an already-renamed project: re-points stale
 relative imports, converts React propTypes to types, infers types from usage,
 annotates remaining implicit `any`s, and suppresses residual compiler errors
-with `@ts-expect-error` so the project compiles.
+with `@ts-expect-error` so the project compiles. Only TypeScript files are
+migration targets. `.js`, `.jsx`, `.mjs` and `.cjs` are never edited, even
+when a tsconfig with `allowJs` pulls them in; they stay in the program and
+still type the files that import them. Run `rename` on a file to make it
+migratable.
 
 - `--sources <glob>` (`-s`, repeatable): migrate only a subset. Quote globs.
   Ambient `.d.ts` files matched by the tsconfig `include` (vite-env.d.ts,
@@ -200,9 +232,9 @@ with `@ts-expect-error` so the project compiles.
   out of the program entirely (neither parsed nor edited; files imported by
   migrated code and the tsconfig's `.d.ts` files stay in for type
   resolution).
-- `--no-bootstrap`: also migrate build system files. By default they are
-  kept out of the program the same way, so they stay JavaScript even under
-  a hand-written tsconfig with `allowJs`.
+- `--no-bootstrap`: also load build system files into the program. By
+  default they are kept out of it entirely. They stay JavaScript either
+  way; only `rename` converts them.
 - `--no-inferTypes`: skip type inference and annotate plain `any`. Much
   faster; use on very large projects or when annotation quality is secondary.
 - `--maxStablePasses <n>` (default 5): cap the repeat passes of the
@@ -301,7 +333,11 @@ describes what a real run would have changed (nothing was written except the
 summary file itself); combining `--dry-run` with `--jsonSummary` is the
 machine-readable preview. Per command:
 
-- `rename`: `renamedFiles` as `{"from": "src/a.js", "to": "src/a.ts"}` pairs.
+- `rename`: `renamedFiles` as `{"from": "src/a.js", "to": "src/a.ts"}` pairs,
+  `packageJsonRewrites` (the script paths and test globs it repointed, as
+  `{"file", "key", "from", "to"}`), and `packageJsonNotices` (the entry point
+  fields that still name a renamed file and were left for a build step, as
+  `{"file", "key", "value", "target"}`).
 - `migrate` and `reignore`: `changedFiles` (every file the run modified),
   `generatedFiles` (declaration files the run wrote itself, e.g.
   `types/ts-migrate-modules.d.ts`, which are new files rather than edits),

@@ -174,6 +174,9 @@ function defaultConfig(rootDir: string): string {
     "moduleDetection": "force",
     "jsx": "${jsx}",
     "esModuleInterop": true,
+    // JSON imports (package.json, fixtures, locale data) type as their
+    // contents instead of failing to resolve.
+    "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "skipLibCheck": true${typesField}

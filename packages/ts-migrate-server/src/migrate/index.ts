@@ -422,10 +422,17 @@ function mergePluginFailures(
     });
 }
 
+/**
+ * The program files plugins may edit. Declaration and JSON files hold nothing
+ * to migrate, and TypeScript written into a JavaScript file stops that file
+ * from parsing as JavaScript, so every JavaScript extension is context only:
+ * it still types the files that import it. `rename` is what makes a file
+ * migratable.
+ */
 function getSourceFilesToMigrate(project: MigrationProject) {
   return project
     .getSourceFiles()
-    .filter(({ fileName }) => !/(\.d\.ts|\.json)$|node_modules/.test(fileName));
+    .filter(({ fileName }) => !/(\.d\.ts|\.json|\.[cm]?jsx?)$|node_modules/.test(fileName));
 }
 
 export { MigrateConfig };

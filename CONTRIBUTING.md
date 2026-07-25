@@ -4,6 +4,11 @@
 build config across packages and
 [lerna](https://github.com/lerna/lerna/) is used to manage versioning and publishing.
 
+[AGENTS.md](./AGENTS.md) at the repo root is the short version of this document
+for coding agents; keep the two in step. It is unrelated to
+`packages/ts-migrate/AGENTS.md`, which is the published playbook for driving the
+CLI against another project.
+
 ## Pull request titles
 
 PRs are squash-merged, and the PR title becomes the commit message on master.
@@ -67,3 +72,41 @@ pnpm run lint
 
 The repo pins its pnpm version via the `packageManager` field in `package.json`;
 any pnpm >= 9.7 will automatically fetch and run the pinned version.
+
+## Adding a dependency
+
+Do not use `pnpm add` here. It reruns peer resolution for the whole workspace,
+and every package declares TypeScript as a peer with the range `>=5.0 <7`.
+`ts-migrate-server` also carries `typescript6` (`npm:typescript@6.0.3`) as a
+devDependency so the TypeScript 6 tests have a compiler to load. A fresh
+resolution sees 6.0.3 in the workspace, satisfies those peer ranges with it,
+and rewrites the committed 5.9.3 resolutions across the workspace.
+
+Add the dependency by hand instead:
+
+1. Edit the `package.json` of the package that needs it.
+2. Run `pnpm install` from the repo root.
+3. Confirm `git diff --stat pnpm-lock.yaml` shows insertions only. Removed
+   lines are the signal: `git diff pnpm-lock.yaml | grep '^-.*typescript@'`
+   prints nothing unless you are changing the compiler on purpose.
+
+A flipped lockfile puts two copies of the compiler in one type graph, so the
+build fails with about 70 cross-package `TypeChecker` and `Symbol`
+assignability errors in files the change never touched:
+
+```
+src/plugins/hoist-arrow-functions.ts(24,55): error TS2345: Argument of type
+  'import(".../@obiemunoz/ts-migrate-server/node_modules/typescript").TypeChecker'
+  is not assignable to parameter of type
+  'import(".../ts-migrate-plugins/node_modules/typescript").TypeChecker'.
+```
+
+Those errors name no dependency and survive a rebuild, so they read as a broken
+change. Recover with `git checkout -- pnpm-lock.yaml` followed by
+`pnpm install --frozen-lockfile`.
+
+The `lockfile` CI job fails a pull request whose `pnpm-lock.yaml` moves a
+package's TypeScript resolution. Run the same check locally with
+`scripts/check-lockfile-typescript.sh origin/master`. A pull request that
+changes the compiler on purpose passes it by editing the `typescript` version
+in a `package.json` in the same change.

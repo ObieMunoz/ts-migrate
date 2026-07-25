@@ -1,6 +1,7 @@
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
+import { isStatic } from './utils/modifiers';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 
@@ -60,10 +61,7 @@ const declareMissingClassPropertiesPlugin: Plugin<Options> = {
       // don't separate the statics from each other.
       let anchor: ts.ClassElement | undefined;
       classDeclaration.members.forEach((member) => {
-        if (
-          ts.isPropertyDeclaration(member) &&
-          member.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword)
-        ) {
+        if (ts.isPropertyDeclaration(member) && isStatic(member)) {
           anchor = member;
         }
       });
