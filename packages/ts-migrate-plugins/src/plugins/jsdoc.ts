@@ -170,9 +170,12 @@ const jsDocTransformerFactory =
         ts.isArrowFunction(node) && node.getFirstToken()?.kind !== ts.SyntaxKind.OpenParenToken;
       updates.replaceNodes(node.parameters, newParameters, addParens);
 
-      const newType = returnType;
-      if (newType) {
-        updates.addReturnAnnotation(node, newType, addParens && parameters !== node.parameters);
+      // `returnType` is the node's own annotation whenever the return type is
+      // not being changed, and addReturnAnnotation only inserts: the parameter
+      // list it is written after ends before the annotation the file already
+      // holds.
+      if (returnType && returnType !== node.type) {
+        updates.addReturnAnnotation(node, returnType, addParens && parameters !== node.parameters);
       }
     }
 

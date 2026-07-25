@@ -663,6 +663,65 @@ function A(): number {}
 `);
   });
 
+  it('keeps the return type a signature already declares while annotating its parameters', () => {
+    const text = `\
+/**
+ * @param {number} [d=1] - the default
+ * @returns {number} out
+ */
+export function f(d = 1): number {
+  return d;
+}
+
+/** @param {string} [s=''] - the default */
+export const g = (s = ''): void => {
+  void s;
+};
+
+export class C {
+  /** @param {string} [s=''] - the default */
+  public m(s = ''): this {
+    void s;
+    return this;
+  }
+}
+`;
+
+    const expected = `\
+/**
+ * @param {number} [d=1] - the default
+ * @returns {number} out
+ */
+export function f(d: number = 1): number {
+  return d;
+}
+
+/** @param {string} [s=''] - the default */
+export const g = (s: string = ''): void => {
+  void s;
+};
+
+export class C {
+  /** @param {string} [s=''] - the default */
+  public m(s: string = ''): this {
+    void s;
+    return this;
+  }
+}
+`;
+
+    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: '/file.ts' }));
+    expect(result).toBe(expected);
+    expect(typeCheck({ '/file.ts': result })).toEqual([]);
+
+    // The option only decides whether an undeclared return type is written.
+    expect(
+      jsDocPlugin.run(
+        mockPluginParams({ text, fileName: '/file.ts', options: { annotateReturns: true } }),
+      ),
+    ).toBe(expected);
+  });
+
   it('converts a typedef into a type alias and keeps the description', () => {
     const text = `\
 /**
