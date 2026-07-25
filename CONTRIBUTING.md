@@ -73,6 +73,25 @@ pnpm run lint
 The repo pins its pnpm version via the `packageManager` field in `package.json`;
 any pnpm >= 9.7 will automatically fetch and run the pinned version.
 
+## Test scratch projects
+
+The command tests copy a fixture project into
+`packages/<pkg>/tests/tmp/ts-migrate-XXXXXX`, and each suite deletes its own
+copy in `afterEach`. A run that dies first, on a timeout or a signal, leaves the
+copy on disk, so `scripts/jest-global-teardown.js` removes
+`packages/*/tests/tmp` once the run has finished. It runs whether the run passed
+or failed.
+
+A leftover copy is also the only record of what a run had written when it died.
+To keep it while debugging one:
+
+```sh
+TS_MIGRATE_KEEP_TEST_TMP=1 pnpm run test
+```
+
+The teardown then prints how many scratch projects it kept and where. They are
+gitignored, and the next run without the variable removes them.
+
 ## Adding a dependency
 
 Do not use `pnpm add` here. It reruns peer resolution for the whole workspace,
