@@ -416,7 +416,11 @@ run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
   same file, nothing else reading the defaults or `Component.defaultProps`, a
   destructured props parameter that binds every defaulted prop, and a props
   type declared in full in that file. Everything else, class components
-  included, keeps the assignment and is reported at the end of the run.
+  included, keeps the assignment. Each kept function-component assignment gets
+  a `// TODO(ts-migrate):` comment above it naming the conversion and the
+  reason it was skipped, so `grep -rn "TODO(ts-migrate)"` is the worklist; the
+  end of the run prints the counts and `--jsonSummary` records them under
+  `pluginNotices`.
 - `--aliases tsfixme`: use `$TSFixMe`/`$TSFixMeFunction` instead of plain
   `any`. If the project does not already declare those globals, the migration
   writes them to `ts-migrate-aliases.d.ts` in `<folder>` so the output still
@@ -610,7 +614,11 @@ machine-readable preview. Per command:
   that re-running cannot fix), `plugins` (`{"name", "changedFileCount"}` per
   pipeline step, in order), `pluginFailures` (files a plugin could not
   process, grouped by cause, as `{"plugin", "reason", "ruleId", "fileCount",
-  "files"}`; empty when every plugin processed every file), `pluginErrors`
+  "files"}`; empty when every plugin processed every file), `pluginNotices`
+  (work a plugin recognized and left for a person, grouped the same way, as
+  `{"plugin", "reason", "hint", "ruleId", "marked", "fileCount", "files"}`;
+  `marked` means every site also carries a `TODO(ts-migrate)` comment, so the
+  entry restates what the files already say), `pluginErrors`
   (one entry per file whose plugin threw, as `{"plugin", "file", "message"}`,
   with the message capped and the full error left in the run log), and
   `changedFilesTypeDebt` (the suppression, any-alias, and `any` totals now

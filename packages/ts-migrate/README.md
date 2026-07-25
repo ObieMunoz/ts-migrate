@@ -857,6 +857,16 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --jsonSummary migrate-s
       "files": ["src/a.ts", "src/b.ts"]
     }
   ],
+  "pluginNotices": [
+    {
+      "plugin": "react-default-props",
+      "reason": "Left defaultProps in place: a default value is not a literal.",
+      "hint": "React 19 ignores defaultProps on function components. Convert to destructured parameter defaults by hand.",
+      "marked": true,
+      "fileCount": 1,
+      "files": ["src/Chip.tsx"]
+    }
+  ],
   "changedFilesTypeDebt": {
     "aliasNames": [],
     "totals": { "tsExpectError": 3, "tsIgnore": 0, "anyAlias": 0, "any": 2, "codes": { "TS2304": 3 } }
@@ -884,7 +894,12 @@ itself, which are new files rather than changes to existing ones.
 `pluginFailures` lists the files a plugin could not process, grouped by cause:
 a lint config whose rules throw leaves files unchanged without failing the
 run, so a run that exits 0 can still have left files untouched. It is empty
-when every plugin processed every file. `changedFilesTypeDebt` counts only the files this run
+when every plugin processed every file. `pluginNotices` lists what a plugin
+recognized and left for a person, grouped the same way, with the `hint` naming
+what to do about it. A cause with `"marked": true` also has a
+`TODO(ts-migrate)` comment at every one of its sites, so the entry duplicates
+what the files already say and is here for runs nobody watches.
+`changedFilesTypeDebt` counts only the files this run
 changed, so a scoped or incremental run reports its own debt; the `report`
 command measures the whole project. `dryRun` is true when the run was a
 `--dry-run` preview: the summary then describes what a real run would have
