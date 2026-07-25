@@ -68,7 +68,7 @@
     "@obiemunoz/ts-migrate-server": "workspace:^",
     "json5": "^2.1.1",
     "updatable-log": "^0.2.0",
-    "yargs": "^15.0.2"
+    "yargs": "^17.7.3"
   },
   "devDependencies": {
     "@types/react": "^16.9.16",
