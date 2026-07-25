@@ -93,8 +93,9 @@ npm i -D @types/node          # plus your test runner's types:
                               # and your bundler's, on a browser app:
                               # webpack -> @types/webpack-env
                               # vite -> nothing, init pins "vite/client"
-#    Skipping this is not fatal: init names what is still missing at Step 1,
-#    before the migration turns those errors into suppressions.
+#    Skipping this is not fatal: whichever of init and migrate runs first
+#    names what is still missing, before the migration turns those errors
+#    into suppressions.
 
 # 1. Migrate. <folder> is the project (or sub-project) root, the directory
 #    where tsconfig.json belongs.
@@ -216,8 +217,12 @@ dependencies imply and does not have installed: `@types/node`, and the
 detected package manager. It is advice, not a gate: init writes the config
 and exits 0 either way. It stays quiet in a project whose dependencies are
 not installed, where every package would look missing, and about a package
-package.json already declares. Everything else waits for the end of run
-report, which needs the compiler.
+package.json already declares. `migrate` and `reignore` print the same
+thing with their opening banner, so a folder that already has a tsconfig
+and never reaches `init` still gets it before the pipeline rather than
+hours later (`--no-typesPreflight` turns it off; `ts-migrate-full` passes
+that flag to the migrate step whenever Step 1 already said it). Everything
+else waits for the end of run report, which needs the compiler.
 Installed `@types` packages are pinned in a `types` array so that
 TypeScript 5 (which loads `node_modules/@types` automatically) and
 TypeScript 6 (which does not) check the project identically; add new
@@ -424,6 +429,9 @@ run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
   found by searching from `<folder>` upward (critical fact 8).
 - `--no-projectEslint`: run eslint-fix with the ESLint bundled with ts-migrate
   instead of the project's own (critical fact 9).
+- `--no-typesPreflight`: start the pipeline without naming the type packages
+  the project declares dependencies for but has not installed. On by default,
+  printed with the opening banner, and never a reason for a nonzero exit.
 
 ### `ts-migrate reignore <folder> [flags]`
 
@@ -460,6 +468,10 @@ existing suppression comments, then re-adds only the ones still needed.
   will not match.
 - `--no-projectEslint`: same lint engine override as `migrate`.
 - `--suppressionReportFile <file>`: same suppression report as `migrate`.
+- `--no-typesPreflight`: same behavior as in `migrate`. Worth leaving on
+  here: the reason to run `reignore` is usually that `@types` packages were
+  just installed, and the preflight names the ones that were missed before
+  the pass rather than after it.
 
 Both `migrate` and `reignore` end the run by printing a one-paragraph type
 debt summary (the `report` totals for the project).

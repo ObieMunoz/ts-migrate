@@ -16,8 +16,10 @@ import {
   formatGlobalDeclarationsReport,
   formatSuppressionReport,
   formatSuppressionSummary,
+  formatTypesPackagePreflight,
   formatTypesPackageReport,
   GlobalDeclarationsCollector,
+  preflightTypesPackages,
   SuppressionExplainer,
   TypesPackageDetector,
 } from '@obiemunoz/ts-migrate-plugins';
@@ -89,6 +91,11 @@ const TYPESCRIPT_FLAG_DESCRIPTION =
   '(node_modules/typescript, searched from <folder> upward), then to the compiler bundled ' +
   'with ts-migrate.';
 
+const TYPES_PREFLIGHT_FLAG_DESCRIPTION =
+  'Name the type packages the project declares dependencies for but has not installed before ' +
+  'the pipeline starts, so they can be installed instead of suppressed. Disable with ' +
+  '--no-typesPreflight.';
+
 /**
  * The <folder> positional every command takes, resolved against the working
  * directory. A path that is not a directory holds no tsconfig.json, so the
@@ -133,6 +140,42 @@ function logTypeScriptDecision(): void {
     );
   }
   logTypeScriptWarning();
+}
+
+/**
+ * Whether the project's tsconfig pins a `types` array, which decides whether a
+ * newly installed @types package also needs an entry there to be loaded. Parsed
+ * with a host that enumerates nothing: only the compiler options are read.
+ */
+function tsConfigPinsTypes(rootDir: string): boolean {
+  const { config, error } = ts.readConfigFile(path.join(rootDir, 'tsconfig.json'), ts.sys.readFile);
+  if (error || !config) return false;
+  const host: ts.ParseConfigHost = {
+    useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
+    readDirectory: () => [],
+    fileExists: ts.sys.fileExists,
+    readFile: ts.sys.readFile,
+  };
+  return ts.parseJsonConfigFileContent(config, host, rootDir).options.types !== undefined;
+}
+
+/**
+ * What package.json and the install layout alone say about missing type
+ * packages, printed with the banner so it is read before the pipeline turns the
+ * errors those packages would resolve into suppressions. It claims no counts,
+ * so it cannot contradict the end of run report. Advice, and so it must never
+ * fail an otherwise successful run.
+ */
+function printTypesPackagePreflight(rootDir: string): void {
+  try {
+    const preflightText = formatTypesPackagePreflight(
+      preflightTypesPackages(rootDir),
+      tsConfigPinsTypes(rootDir),
+    );
+    if (preflightText) log.warn(preflightText);
+  } catch (err) {
+    log.warn('Skipped the type package preflight:', err);
+  }
 }
 
 /** A recommendation report must never fail an otherwise successful run. */
@@ -553,6 +596,9 @@ yargs
         )
         .string('typescript')
         .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
+        .boolean('typesPreflight')
+        .default('typesPreflight', true)
+        .describe('typesPreflight', TYPES_PREFLIGHT_FLAG_DESCRIPTION)
         .string('typesReportFile')
         .describe(
           'typesReportFile',
@@ -590,6 +636,7 @@ yargs
       const { sources } = args;
       const dryRun = args['dry-run'];
       logTypeScriptDecision();
+      if (args.typesPreflight) printTypesPackagePreflight(rootDir);
 
       let config: MigrateConfig;
       let typesPackageDetector: TypesPackageDetector | undefined;
@@ -789,6 +836,9 @@ yargs
         )
         .string('typescript')
         .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
+        .boolean('typesPreflight')
+        .default('typesPreflight', true)
+        .describe('typesPreflight', TYPES_PREFLIGHT_FLAG_DESCRIPTION)
         .string('suppressionReportFile')
         .describe(
           'suppressionReportFile',
@@ -812,6 +862,7 @@ yargs
       const { sources } = args;
       const dryRun = args['dry-run'];
       logTypeScriptDecision();
+      if (args.typesPreflight) printTypesPackagePreflight(rootDir);
 
       const {
         exitCode,
