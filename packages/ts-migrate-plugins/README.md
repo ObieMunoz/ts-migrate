@@ -171,7 +171,14 @@ than a suppressed line.
   property of an exported class) tells them the truth about what it holds,
   which can turn consumers that assumed otherwise into errors of their own.
   Validation is per file and does not see those, the same way infer-types does
-  not see the call sites it makes into errors.
+  not see the call sites it makes into errors. This is deliberate, and it is
+  measured. Across 1759 files of webpack, ESLint, three.js and jira_clone
+  (#238), 30 of the 32 widenings written were on declarations other files can
+  see; they removed 45 suppressions in the files they changed and added 4 in
+  files they did not. Skipping those declarations instead left 38 more
+  suppressions than widening them. On JavaScript typed with JSDoc the split is
+  not a tail: every `@typedef` becomes an exported type, so every member a
+  widening can reach is one other files can see.
 
 ## What react-destructured-props will and will not infer
 
