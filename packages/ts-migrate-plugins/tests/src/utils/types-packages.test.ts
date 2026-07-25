@@ -299,6 +299,56 @@ describe('package manager detection', () => {
     expect(report.packageManager).toBe('npm');
     expect(formatTypesPackageReport(report, 'src')).toContain('Install: npm install -D @types/node');
   });
+
+  describe('project boundary', () => {
+    const detect = (rootDir: string) =>
+      summarizeTypesEvidence(createTypesEvidence(), rootDir).packageManager;
+
+    /**
+     * A checkout inside a directory that has a lockfile of its own. The
+     * migration root is two levels below the top of the checkout, so the walk
+     * has to climb to reach anything, and one level too many puts it in
+     * `outer`. The outer lockfile is a `yarn.lock` rather than a
+     * `package-lock.json` so that adopting it is distinguishable from the npm
+     * fallback.
+     */
+    function nestedCheckout(projectFiles: { [filePath: string]: string }): string {
+      const dir = makeFixture({
+        'outer/package.json': JSON.stringify({}),
+        'outer/yarn.lock': '',
+        'outer/repo/package.json': JSON.stringify({}),
+        'outer/repo/pkg/src/a.ts': '',
+        ...Object.fromEntries(
+          Object.entries(projectFiles).map(([file, contents]) => [`outer/repo/${file}`, contents]),
+        ),
+      });
+      return path.join(dir, 'outer/repo/pkg/src');
+    }
+
+    it.each([
+      ['.git directory', { '.git/HEAD': 'ref: refs/heads/master\n' }],
+      ['.git file', { '.git': 'gitdir: /elsewhere/.git/worktrees/x\n' }],
+      ['pnpm-workspace.yaml', { 'pnpm-workspace.yaml': "packages:\n  - 'pkg'\n" }],
+      ['lerna.json', { 'lerna.json': '{}' }],
+      ['workspaces field', { 'package.json': JSON.stringify({ workspaces: ['pkg'] }) }],
+    ])('stops at the %s and does not adopt the lockfile above it', (_marker, files) => {
+      expect(detect(nestedCheckout(files))).toBe('npm');
+    });
+
+    // The boundary is inclusive: a workspace root is exactly where the
+    // lockfile normally lives, so stopping before probing it would break the
+    // case the upward walk exists to serve.
+    it.each([
+      ['.git directory', { '.git/HEAD': '' }],
+      ['workspaces field', { 'package.json': JSON.stringify({ workspaces: ['pkg'] }) }],
+    ])('finds a lockfile in the boundary directory itself, marked by the %s', (_marker, files) => {
+      expect(detect(nestedCheckout({ ...files, 'pnpm-lock.yaml': '' }))).toBe('pnpm');
+    });
+
+    it('keeps climbing when nothing marks the top of the project', () => {
+      expect(detect(nestedCheckout({}))).toBe('yarn');
+    });
+  });
 });
 
 describe('formatTypesPackageReport', () => {
