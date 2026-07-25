@@ -1252,6 +1252,62 @@ delete /** @type {Row} */ (obj.row);
     ]);
   });
 
+  it('leaves a cast in a parameter list the tags rewrite', () => {
+    const text = `\
+/** @param {Row} a */
+function f(a = /** @type {Row} */ (json)) {}
+
+/** @param {Row} a */
+const g = (a = /** @type {Row} */ (json)) => a;
+
+function h(a = /** @type {Row} */ (json)) {}
+
+/** @returns {Row} */
+function i(a = /** @type {Row} */ (json)) {
+  return a;
+}
+`;
+    const notices: PluginFileNotice[] = [];
+
+    const result = jsDocPlugin.run(
+      mockPluginParams({
+        text,
+        fileName: 'file.ts',
+        options: { annotateReturns: true },
+        reportFileNotice: (n) => notices.push(n),
+      }),
+    );
+
+    expect(result).toBe(`\
+/** @param {Row} a */
+function f(a: Row = (json)) {}
+
+/** @param {Row} a */
+const g = (a: Row = (json)) => a;
+
+function h(a = (json as Row)) {}
+
+/** @returns {Row} */
+function i(a = (json as Row)): Row {
+  return a;
+}
+`);
+    expect(notices).toEqual([
+      {
+        reason:
+          '@type {Row} stays a comment because the parameter list it sits in is written out again from its own tags',
+        hint: 'The expression keeps the type it has without the comment.',
+        recovered: true,
+      },
+      {
+        reason:
+          '@type {Row} stays a comment because the parameter list it sits in is written out again from its own tags',
+        hint: 'The expression keeps the type it has without the comment.',
+        recovered: true,
+      },
+    ]);
+  });
+
   it('leaves an as expression the comment already documents', () => {
     const text = `\
 const a = /** @type {Row} */ (json);

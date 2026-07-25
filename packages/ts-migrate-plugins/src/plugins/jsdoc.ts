@@ -759,7 +759,35 @@ function castRefusal(node: ts.ParenthesizedExpression): string | undefined {
   if (isWriteTarget(node)) {
     return 'the cast is an assignment target';
   }
+  if (inRewrittenParameters(node)) {
+    return 'the parameter list it sits in is written out again from its own tags';
+  }
   return undefined;
+}
+
+/**
+ * Whether an annotated parameter list is written out again over this node.
+ * visitParameters reprints the whole list, from the nodes the file was parsed
+ * with, so an edit inside one of the defaults is lost either way and the two
+ * ranges overlap.
+ */
+function inRewrittenParameters(node: ts.Node): boolean {
+  for (let current = node.parent; current && !ts.isSourceFile(current); current = current.parent) {
+    if (ts.isParameter(current) && rewritesParameters(current.parent)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function rewritesParameters(node: ts.SignatureDeclaration): boolean {
+  return (
+    ts.hasJSDocParameterTags(node) &&
+    node.parameters.some(
+      (parameter) =>
+        !parameter.type && ts.getJSDocParameterTags(parameter).some((tag) => tag.typeExpression),
+    )
+  );
 }
 
 /** Whether an expression is assigned to rather than read. */
