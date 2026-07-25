@@ -28,6 +28,10 @@ origin/master` runs the CI check locally.
 `pnpm run build`, `pnpm run test`, and `pnpm run lint` from the repo root, all
 three, before opening a pull request. Tests live in `packages/*/tests/`.
 
+The command tests write scratch projects under `packages/*/tests/tmp`, and a
+`globalTeardown` removes them after every run. Run with
+`TS_MIGRATE_KEEP_TEST_TMP=1` to keep them while debugging a run that died.
+
 The root build and lint scripts are `pnpm -r`. lerna is release-only: only
 `release.yml` invokes it, and `ci.yml` never does. Do not reach for it to verify
 a change, and note that it misresolves the workspace from a nested git worktree.
