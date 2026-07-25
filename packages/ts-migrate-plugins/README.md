@@ -66,6 +66,7 @@ process.exit(exitCode);
 | [react-inline-imported-prop-types](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-inline-imported-prop-types.ts) | Copy propTypes objects imported from other modules into the file that assigns them (including spreads of them), carrying over the imports the copied text needs, so react-props converts them structurally like colocated propTypes. Runs before the other React plugins. |
 | [react-props](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-props.ts) | Convert React prop types to TypeScript type. Imported propTypes objects that react-inline-imported-prop-types could not copy (non-relative modules, non-literal exports, references to module-local values) are typed with `InferProps<typeof importedPropTypes>` instead. |
 | [react-shape](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-shape.ts) | Convert prop types shapes to TypeScript type. |
+| [retry-conversions](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/retry-conversions.ts) | Reconsider the `as any` assertions add-conversions inserted, once `@types` have landed or a neighboring directory has been migrated. Each one is dropped and the file re-checked; the ones the file still needs are then retyped to the tightest type the checker can name for them, so `f(raw as any)` reads `f(raw as Opts)`. Only the tool's own output is in scope: `as any`, and an assertion to a type alias declared as `any`. See "What retry-conversions will and will not write" below. |
 | [strip-ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/strip-ts-ignore.ts) | Strip `// @ts-ignore`. comments |
 | [detect-types-packages](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/utils/typesPackages.ts) | Read-only. Classifies the diagnostics ts-ignore is about to suppress into `@types` package recommendations (missing, not loaded, outdated, or redundant), reported at the end of the run. Created per run with `createTypesPackageDetector()` and placed immediately before ts-ignore. |
 | [ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/ts-ignore.ts) | Add `// @ts-ignore` comments for the remaining errors. |
@@ -194,6 +195,37 @@ than a suppressed line.
   which can turn consumers that assumed otherwise into errors of their own.
   Validation is per file and does not see those, the same way infer-types does
   not see the call sites it makes into errors.
+
+## What retry-conversions will and will not write
+
+Removal comes first and a narrowing is only attempted where it failed, so an
+assertion that can go entirely never gets retyped instead. The two never
+compete for the same site.
+
+- Two types are tried, in order: the operand's own type, and the type the
+  position expects. The operand's type is what the checker already knows, so
+  it claims the least; null and undefined are dropped from it, since an
+  assertion the file still needs is one the code reads or passes the value
+  through and the nullable union is what the removal just failed on.
+  `(document.getElementById('root') as any).className` becomes
+  `(document.getElementById('root') as HTMLElement).className`.
+- The contextual type is tried second and is a claim rather than a
+  restatement: `f(raw as Opts)` says the value is what `f` wants. It is sound
+  only because converting between unrelated types is itself an error and the
+  file is re-checked with the assertion in place.
+- Types come from the same printer widen-annotations uses, so a type that
+  cannot be named without adding an import, an anonymous object or function
+  shape, a generic that would need its type arguments spelled out, and a union
+  wider than four members are all refused and the site keeps its `any`.
+- A narrowing is kept only when the re-checked file has no error it did not
+  already have and the expression the assertion covers is no longer `any`. The
+  second condition is not redundant: a printed name can resolve to a different
+  declaration in the scope it is written into, and landing back on `any`
+  produces no error to fail on. A narrowing that does not prove out is
+  discarded and the assertion is restored byte for byte.
+- Nothing here reads a user written `as SomeType`. The population is the tool's
+  own output: `as any`, and an assertion to a type alias the project declares
+  as `any`, resolved through the checker rather than matched by name.
 
 ## What react-destructured-props will and will not infer
 
