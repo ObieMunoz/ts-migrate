@@ -1,5 +1,8 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import ts from 'typescript';
-import type { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
+import type { PluginFileNotice, PluginParams } from '@obiemunoz/ts-migrate-server';
 import { realPluginParams } from '../test-utils';
 import inferTypesPlugin from '../../src/plugins/infer-types';
 import explicitAnyPlugin from '../../src/plugins/explicit-any';
@@ -541,5 +544,127 @@ add(1, 2);
         hint: 'The file keeps the annotations it had; explicit-any fills the rest in with any.',
       },
     ]);
+  });
+
+  describe('mid-run dependencies', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ts-migrate-infer-')));
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    /**
+     * Models the state a migration is in when it reaches a file: the run has
+     * already produced new text for a dependency, but nothing is persisted
+     * until the run ends, so the copy on disk is still the original.
+     */
+    function midRunParams({
+      mainText,
+      depOnDisk,
+      depInRun,
+    }: {
+      mainText: string;
+      depOnDisk: string;
+      depInRun: string;
+    }): PluginParams<unknown> {
+      const mainFile = path.join(tmpDir, 'main.ts');
+      const depFile = path.join(tmpDir, 'dep.ts');
+      fs.writeFileSync(depFile, depOnDisk);
+      fs.writeFileSync(mainFile, mainText);
+
+      const compilerOptions: ts.CompilerOptions = {
+        strict: true,
+        target: ts.ScriptTarget.Latest,
+      };
+      const inRun = new Map([
+        [mainFile, mainText],
+        [depFile, depInRun],
+      ]);
+      const read = (name: string) => (inRun.has(name) ? inRun.get(name) : ts.sys.readFile(name));
+
+      const serviceHost: ts.LanguageServiceHost = {
+        getCompilationSettings: () => compilerOptions,
+        getScriptFileNames: () => Array.from(inRun.keys()),
+        getScriptVersion: () => '0',
+        getScriptSnapshot: (name) => {
+          const text = read(name);
+          return text !== undefined ? ts.ScriptSnapshot.fromString(text) : undefined;
+        },
+        getCurrentDirectory: () => tmpDir,
+        getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
+        fileExists: (name) => inRun.has(name) || ts.sys.fileExists(name),
+        readFile: read,
+      };
+      const languageService = ts.createLanguageService(serviceHost);
+      const sourceFile = languageService.getProgram()?.getSourceFile(mainFile);
+      if (!sourceFile) throw new Error('Failed to create source file');
+
+      return {
+        options: {},
+        fileName: mainFile,
+        rootDir: tmpDir,
+        text: mainText,
+        sourceFile,
+        getLanguageService: () => languageService,
+      };
+    }
+
+    it('keeps an annotation the dependency text the run will write agrees with', async () => {
+      const result = await inferTypesPlugin.run(
+        midRunParams({
+          depOnDisk: `export const sink = { write( s: number ) { return s; } };
+`,
+          depInRun: `export const sink = { write( s: string ) { return s; } };
+`,
+          mainText: `import { sink } from './dep';
+
+export function forward( value ) {
+  sink.write( value );
+  return value.toUpperCase();
+}
+`,
+        }),
+      );
+
+      expect(result).toBe(`import { sink } from './dep';
+
+export function forward( value: string ) {
+  sink.write( value );
+  return value.toUpperCase();
+}
+`);
+    });
+
+    it('recomputes an annotation the dependency text the run will write contradicts', async () => {
+      const result = await inferTypesPlugin.run(
+        midRunParams({
+          depOnDisk: `export function send( value: string | number ) { return value; }
+`,
+          depInRun: `export function send( value: string ) { return value; }
+`,
+          mainText: `import { send } from './dep';
+
+export function relay( value ) {
+  send( value );
+}
+relay( 1 );
+relay( 'a' );
+`,
+        }),
+      );
+
+      expect(result).toBe(`import { send } from './dep';
+
+export function relay( value: string ) {
+  send( value );
+}
+relay( 1 );
+relay( 'a' );
+`);
+    });
   });
 });

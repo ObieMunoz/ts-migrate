@@ -68,9 +68,9 @@ export function findNewErrors(
 // Parsed and bound dependency files (default libs, node_modules, the import
 // graph) and disk reads are shared across all validation services: disk
 // content is stable for the whole run because migrate persists overlay
-// changes only at the very end. Only the file under migration differs
-// between services, so it gets a fresh version and everything else stays
-// cached in the registry.
+// changes only at the very end. Only the file under migration and the
+// dependencies the run has already rewritten differ between services, so
+// those get fresh versions and everything else stays cached in the registry.
 const sharedDocumentRegistry = ts.createDocumentRegistry(
   ts.sys.useCaseSensitiveFileNames,
   ts.sys.getCurrentDirectory(),
@@ -183,17 +183,56 @@ interface LanguageServiceHostWithCache extends ts.LanguageServiceHost {
   getModuleResolutionCache?(): ts.ModuleResolutionCache | undefined;
 }
 
+// Text a dependency has in the run rather than on disk, where the
+// pre-migration copy sits until the run ends. Judging a candidate against
+// that copy judges it against a file that will not exist when the run
+// finishes.
+//
+// Each source file object gets its own version, so the shared registry, which
+// reuses a cached file whenever the version matches without comparing
+// content, never serves one revision of a dependency in place of another.
+const dependencyVersions = new WeakMap<ts.SourceFile, string>();
+let dependencyVersion = 0;
+
+// Most of a validation program is default libs and node_modules, which the
+// runner excludes from migration and so cannot change. Ruling them out by
+// name keeps the lookup off them: resolving one costs a path
+// canonicalization, and the host asks for every file in the program several
+// times over.
+function couldBeMigrated(name: string): boolean {
+  return !name.includes('/node_modules/') && !name.endsWith('.d.ts');
+}
+
+function currentDependency(
+  projectProgram: ts.Program | undefined,
+  name: string,
+): { text: string; version: string } | undefined {
+  if (!projectProgram || !couldBeMigrated(name)) return undefined;
+  const sourceFile = projectProgram.getSourceFile(name);
+  if (!sourceFile) return undefined;
+  let version = dependencyVersions.get(sourceFile);
+  if (version === undefined) {
+    dependencyVersion += 1;
+    version = `d${dependencyVersion}`;
+    dependencyVersions.set(sourceFile, version);
+  }
+  return { text: sourceFile.text, version };
+}
+
 export function createFileLanguageService(
   fileName: string,
   content: string,
   compilerOptions: ts.CompilerOptions,
+  projectProgram?: ts.Program,
 ): ts.LanguageService {
-  // Only the file under migration is overridden; imports and default libs
-  // resolve from disk. The shared registry reuses cached files purely by
-  // version, so the overridden file must never repeat one for different
-  // content.
+  // Only the file under migration is overridden; default libs and anything the
+  // run does not track resolve from disk. The shared registry reuses cached
+  // files purely by version, so the overridden file must never repeat one for
+  // different content.
   overrideVersion += 1;
   const version = String(overrideVersion);
+  const dependencyText = (name: string) =>
+    currentDependency(projectProgram, name)?.text ?? readFileCached(name);
   const { moduleResolutionCache, typeReferenceDirectiveResolutionCache } =
     getResolutionCaches(compilerOptions);
   const getCurrentDirectory = () => path.dirname(fileName);
@@ -209,15 +248,16 @@ export function createFileLanguageService(
   const host: LanguageServiceHostWithCache = {
     getCompilationSettings: () => compilerOptions,
     getScriptFileNames: () => [fileName],
-    getScriptVersion: (name) => (name === fileName ? version : '0'),
+    getScriptVersion: (name) =>
+      name === fileName ? version : (currentDependency(projectProgram, name)?.version ?? '0'),
     getScriptSnapshot: (name) => {
-      const contents = name === fileName ? content : readFileCached(name);
+      const contents = name === fileName ? content : dependencyText(name);
       return contents !== undefined ? ts.ScriptSnapshot.fromString(contents) : undefined;
     },
     getCurrentDirectory,
     getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
     fileExists: (name) => name === fileName || fileExistsCached(name),
-    readFile: (name) => (name === fileName ? content : readFileCached(name)),
+    readFile: (name) => (name === fileName ? content : dependencyText(name)),
     directoryExists: directoryExistsCached,
     getDirectories: getDirectoriesCached,
     ...(realpathCached ? { realpath: realpathCached } : undefined),
