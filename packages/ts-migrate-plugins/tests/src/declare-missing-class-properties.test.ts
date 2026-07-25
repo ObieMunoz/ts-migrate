@@ -279,6 +279,44 @@ class Class2 {
 `);
     });
 
+    it('types a property assigned from an any with the alias', async () => {
+      const text = `declare const raw: any;
+
+class Wrapper {
+  constructor() {
+    this.value = raw;
+  }
+}
+`;
+
+      expect(await runReal(text)).toBe(`declare const raw: any;
+
+class Wrapper {
+  value: $TSFixMe;
+  constructor() {
+    this.value = raw;
+  }
+}
+`);
+    });
+
+    it('types a property assigned from an untyped parameter with the alias', async () => {
+      const text = `class Wrapper {
+  constructor(input) {
+    this.value = input;
+  }
+}
+`;
+
+      expect(await runReal(text)).toBe(`class Wrapper {
+  value: $TSFixMe;
+  constructor(input) {
+    this.value = input;
+  }
+}
+`);
+    });
+
     it('falls back on the properties that fail and keeps the rest', async () => {
       const text = `class Mixed {
   constructor() {
