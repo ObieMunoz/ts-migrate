@@ -26,7 +26,20 @@ beforeEach(() => {
   fs.mkdirSync(path.join(installDir, 'build', 'utils'), { recursive: true });
   fs.writeFileSync(
     path.join(installDir, 'build', 'cli.js'),
-    `console.log('[stub cli]', process.argv.slice(2).join(' '));\n`,
+    // STUB_CLI_TYPES_REPORT writes the report the migrate step would write, and
+    // STUB_CLI_FAIL_COMMAND fails the named command with STUB_CLI_EXIT_CODE
+    // after writing it, the order the real command uses.
+    `const fs = require('fs');
+const args = process.argv.slice(2);
+console.log('[stub cli]', args.join(' '));
+const reportFlag = args.indexOf('--typesReportFile');
+if (reportFlag !== -1 && process.env.STUB_CLI_TYPES_REPORT) {
+  fs.writeFileSync(args[reportFlag + 1], \`\${process.env.STUB_CLI_TYPES_REPORT}\\n\`);
+}
+if (process.env.STUB_CLI_FAIL_COMMAND === args[0]) {
+  process.exit(Number(process.env.STUB_CLI_EXIT_CODE || 1));
+}
+`,
   );
   fs.writeFileSync(
     path.join(installDir, 'build', 'utils', 'resolveTypeScript.js'),
@@ -66,7 +79,11 @@ function writeTsc(version: string): string {
 }
 
 /** Answers the prompts in order. --no-commit by default, so a run cannot reach `git commit`. */
-function runFull(answers: string[], args: string[] = ['--no-commit']): {
+function runFull(
+  answers: string[],
+  args: string[] = ['--no-commit'],
+  env: NodeJS.ProcessEnv = {},
+): {
   status: number;
   output: string;
 } {
@@ -74,7 +91,12 @@ function runFull(answers: string[], args: string[] = ['--no-commit']): {
     const output = execFileSync(
       'bash',
       [path.join(installDir, 'bin', 'ts-migrate-full.sh'), projectDir, ...args],
-      { input: `${answers.join('\n')}\n`, encoding: 'utf-8', stdio: 'pipe' },
+      {
+        input: `${answers.join('\n')}\n`,
+        encoding: 'utf-8',
+        stdio: 'pipe',
+        env: { ...process.env, ...env },
+      },
     );
     return { status: 0, output };
   } catch (err: any) {
@@ -277,6 +299,82 @@ describe('the ts-migrate-full git tree preflight', () => {
   });
 });
 
+describe('a ts-migrate-full step that fails', () => {
+  it('names the step and exits with its code', () => {
+    const { status, output } = runFull(['y', writeTsc('5.7.2')], ['--no-commit'], {
+      STUB_CLI_FAIL_COMMAND: 'migrate',
+      STUB_CLI_EXIT_CODE: '255',
+    });
+
+    expect(status).toBe(255);
+    expect(output).toContain('Step 3 of 4 (migrate) failed (exit 255)');
+    expect(output).toContain("This run's partial result is in the working tree");
+    expect(output).not.toContain('Step 4 of 4');
+  });
+
+  it('prints the types report and keeps the file it was written to', () => {
+    const { status, output } = runFull(['y', writeTsc('5.7.2')], ['--no-commit'], {
+      STUB_CLI_FAIL_COMMAND: 'migrate',
+      STUB_CLI_TYPES_REPORT: 'Type definition recommendations:\n  @types/node',
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain('Type definition recommendations:');
+    expect(output.split('Type definition recommendations:').length - 1).toBe(1);
+
+    const reportPath = /also in (\S+)\.\s*$/m.exec(output)?.[1];
+    expect(reportPath).toBeTruthy();
+    expect(fs.readFileSync(reportPath!, 'utf-8')).toContain('@types/node');
+    fs.rmSync(reportPath!);
+  });
+
+  it('removes the .eslintrc it created for the migrate step', () => {
+    const { status } = runFull(['y', writeTsc('5.7.2')], ['--no-commit'], {
+      STUB_CLI_FAIL_COMMAND: 'migrate',
+    });
+
+    expect(status).toBe(1);
+    expect(fs.existsSync(path.join(projectDir, '.eslintrc'))).toBe(false);
+  });
+
+  it('stops before the welcome screen on a folder that does not exist', () => {
+    projectDir = path.join(installDir, 'nope');
+
+    const { status, output } = runFull(['y', '']);
+
+    expect(status).toBe(1);
+    expect(output).toContain('No such folder:');
+    expect(output).not.toContain('Welcome to TS Migrate');
+  });
+});
+
+describe('a successful ts-migrate-full run', () => {
+  it('prints the types report once', () => {
+    const { status, output } = runFull(['y', writeTsc('5.7.2')], ['--no-commit'], {
+      STUB_CLI_TYPES_REPORT: 'Type definition recommendations:\n  @types/node',
+    });
+
+    expect(status).toBe(0);
+    expect(output.split('Type definition recommendations:').length - 1).toBe(1);
+    expect(output).not.toContain('The recommendations above are also in');
+  });
+
+  it('keeps the generated .eslintrc out of every commit', () => {
+    initGitRepo();
+
+    const { status } = runFull(['y', writeTsc('5.7.2')], []);
+
+    expect(status).toBe(0);
+    const committed = execFileSync(
+      'git',
+      ['-C', projectDir, 'log', '--format=', '--name-only'],
+      { encoding: 'utf-8' },
+    );
+    expect(committed).toContain('node_modules/typescript/package.json');
+    expect(committed).not.toContain('.eslintrc');
+  });
+});
+
 describe('a ts-migrate-full folder whose path has a space', () => {
   it('is one argument to every command the run passes it to', () => {
     const spacedDir = path.join(installDir, 'my project');
@@ -286,8 +384,8 @@ describe('a ts-migrate-full folder whose path has a space', () => {
     const { status, output } = runFull(['y', writeTsc('5.7.2')]);
 
     expect(status).toBe(0);
-    // Step 1 writes this when the project has no ESLint config, and the
-    // migrate step removes it again.
+    // Step 3 writes this when the project has no ESLint config, and removes it
+    // again once the migrate step is done with it.
     expect(fs.existsSync(path.join(spacedDir, '.eslintrc'))).toBe(false);
     expect(output).toContain('All done!');
   });

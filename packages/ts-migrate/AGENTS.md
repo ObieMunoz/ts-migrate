@@ -172,6 +172,11 @@ verify with `tsc --noEmit`.
 Before Step 1 it names a `<folder>` that is not in a git repository once and
 then runs without commits, and reports anything uncommitted in `<folder>`.
 
+It stops on a `<folder>` that does not exist. A failing step names itself,
+prints the type definition recommendations gathered so far along with the file
+holding them, and exits with that step's exit code; the partial result stays in
+the working tree.
+
 - `--yes` (`-y`): skip the interactive prompts (accept defaults).
 - `--no-commit`: do not create git commits after each step.
 - `--blame-ignore-revs`: append the SHAs of the commits this run creates to a
@@ -646,7 +651,9 @@ need both summaries.
   visible from the first screen rather than from a diff that never appeared.
 - `check` exits `1` when a per-file count exceeds the baseline; `report` and
   `check` exit nonzero (255) if the tsconfig cannot be read.
-- `ts-migrate-full` stops at the first failing step; the final `tsc` check
+- `ts-migrate-full` stops at the first failing step, naming it and exiting with
+  that step's code, and prints the type definition recommendations it had
+  gathered along with the file they stay in; the final `tsc` check
   failing means the migration did not reach a compiling state. Its failure
   message distinguishes the common causes: TS2578 (the check ran a different
   compiler than the migration, which is left only by a custom tsc path or a
