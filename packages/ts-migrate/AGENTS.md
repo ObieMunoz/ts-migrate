@@ -132,6 +132,15 @@ export and a wrong declaration type-checks while a suppression does not.
 `init` names each one it skipped. Declare those yourself, in a file of your
 own rather than in this one.
 
+A run may also add `types/ts-migrate-globals.d.ts`, declaring the properties
+the code assigns to `window`, `global` and `globalThis` so those reads and
+writes type-check instead of taking a cast at each site. Commit it too. Its
+types are the ones the assigned expressions state outright and the any alias
+everywhere else, so narrowing one to the real shape is the useful edit and a
+later run keeps it. Delete an entry once something else declares that
+property, since two declarations of one global is an error. Do not add
+entries by hand: the file is rewritten from its own declarations every run.
+
 Afterwards, update the project plumbing the tool deliberately does not touch:
 
 - Add a way to produce/run JS again: a `tsc` build step or a TS-aware runner
@@ -474,7 +483,8 @@ machine-readable preview. Per command:
   `{"file", "key", "value", "target"}`).
 - `migrate` and `reignore`: `changedFiles` (every file the run modified),
   `generatedFiles` (declaration files the run wrote itself, e.g.
-  `types/ts-migrate-modules.d.ts`, which are new files rather than edits),
+  `types/ts-migrate-modules.d.ts` and `types/ts-migrate-globals.d.ts`, which
+  are new files rather than edits),
   `nonMigratedFilesWithSyntaxErrors` (files that will keep failing `tsc` and
   that re-running cannot fix), `plugins` (`{"name", "changedFileCount"}` per
   pipeline step, in order), `pluginFailures` (files a plugin could not
