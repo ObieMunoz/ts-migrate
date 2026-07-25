@@ -89,7 +89,7 @@ export default jsDocPlugin;
 const jsDocTransformerFactory =
   (
     updates: UpdateTracker,
-    { annotateReturns = true, anyAlias, typeMap: optionsTypeMap }: Options,
+    { annotateReturns, anyAlias, typeMap: optionsTypeMap }: Options,
     report: (notice: PluginFileNotice) => void,
   ) =>
   (context: ts.TransformationContext) => {

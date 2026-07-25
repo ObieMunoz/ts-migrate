@@ -119,6 +119,16 @@ describe('buildMigrateConfig', () => {
     );
   });
 
+  it('passes --annotateReturns to a single --plugin jsdoc run', () => {
+    const annotateReturns = (params: Parameters<typeof buildMigrateConfig>[0]) =>
+      (buildMigrateConfig(params).config.plugins[0].options as { annotateReturns?: unknown })
+        .annotateReturns;
+
+    expect(annotateReturns({ plugin: 'jsdoc', annotateReturns: true })).toBe(true);
+    expect(annotateReturns({ plugin: 'jsdoc', annotateReturns: false })).toBe(false);
+    expect(annotateReturns({ plugin: 'jsdoc' })).toBeUndefined();
+  });
+
   it('exposes every default-pipeline plugin as excludable', () => {
     // The types package detector's two plugins hold per-run state, so they are
     // built per command rather than listed among the static plugins.

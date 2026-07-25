@@ -566,7 +566,9 @@ window.e = (e: number) => null;
 const A = a => String(a);
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
+    const result = jsDocPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx', options: { annotateReturns: true } }),
+    );
 
     expect(result).toBe(`\
 /**
@@ -609,22 +611,22 @@ function A($1: number) {}
 `);
   });
 
-  it('annotates returns unless the option turns it off', () => {
+  it('leaves return types to inference unless the option asks for them', () => {
     const text = `\
 /** @return {number} */
 function A() {}
 `;
 
-    expect(jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }))).toBe(`\
-/** @return {number} */
-function A(): number {}
-`);
+    expect(jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }))).toBe(text);
 
     expect(
       jsDocPlugin.run(
-        mockPluginParams({ text, fileName: 'file.tsx', options: { annotateReturns: false } }),
+        mockPluginParams({ text, fileName: 'file.tsx', options: { annotateReturns: true } }),
       ),
-    ).toBe(text);
+    ).toBe(`\
+/** @return {number} */
+function A(): number {}
+`);
   });
 
   it('converts a typedef into a type alias and keeps the description', () => {
@@ -735,7 +737,9 @@ function box(key) {
 }
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
+    const result = jsDocPlugin.run(
+      mockPluginParams({ text, fileName: 'file.ts', options: { annotateReturns: true } }),
+    );
 
     expect(result).toBe(`\
 type Box<T> = {
@@ -996,10 +1000,13 @@ export function use(opts) {
 }
 `;
 
+    const options = { annotateReturns: true };
     const files = {
-      '/file.ts': jsDocPlugin.run(mockPluginParams({ text, fileName: '/file.ts' })) as string,
+      '/file.ts': jsDocPlugin.run(
+        mockPluginParams({ text, fileName: '/file.ts', options }),
+      ) as string,
       '/consumer.ts': jsDocPlugin.run(
-        mockPluginParams({ text: consumer, fileName: '/consumer.ts' }),
+        mockPluginParams({ text: consumer, fileName: '/consumer.ts', options }),
       ) as string,
       '/helper.ts': 'export function helper(s: string): void {}\n',
     };

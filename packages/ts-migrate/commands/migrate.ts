@@ -50,6 +50,7 @@ interface BuildMigrateConfigParams {
   excludePlugins?: string[];
   aliases?: string;
   typeMap?: string;
+  annotateReturns?: boolean;
   useDefaultPropsHelper?: boolean;
   defaultAccessibility?: 'private' | 'protected' | 'public';
   privateRegex?: string;
@@ -105,7 +106,11 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
         throw new Error(`--typeMap must be valid JSON: ${(err as Error).message}`);
       }
       return {
-        config: new MigrateConfig().addPlugin(jsDocPlugin, { anyAlias, typeMap }),
+        config: new MigrateConfig().addPlugin(jsDocPlugin, {
+          anyAlias,
+          typeMap,
+          annotateReturns: params.annotateReturns,
+        }),
         anyAlias,
         anyFunctionAlias,
       };
