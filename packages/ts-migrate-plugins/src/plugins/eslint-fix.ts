@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { Worker } from 'worker_threads';
 import type { loadESLint } from 'eslint';
-import { Plugin } from '@obiemunoz/ts-migrate-server';
+import { fileNoticeReporter, Plugin, PluginFileNotice } from '@obiemunoz/ts-migrate-server';
 
 // Either the flat-config or legacy engine; both expose the `lintText` API.
 type AnyESLint = InstanceType<Awaited<ReturnType<typeof loadESLint>>>;
@@ -26,29 +26,46 @@ const FLAT_CONFIG_FILENAMES = [
   'eslint.config.cts',
 ];
 
-// Whether a flat config (`eslint.config.*`) is discoverable from `cwd` upward.
+// The flat config (`eslint.config.*`) discoverable from `dir` upward, if any.
 // ESLint 9 always defaults to flat config, so we detect it to fall back to the
 // legacy `.eslintrc` engine when absent.
-function hasFlatConfig(cwd: string): boolean {
-  let dir = cwd;
-  while (true) {
-    if (FLAT_CONFIG_FILENAMES.some((name) => fs.existsSync(path.join(dir, name)))) {
-      return true;
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) {
-      return false;
-    }
-    dir = parent;
+function findFlatConfig(dir: string): string | undefined {
+  for (let current = path.resolve(dir); ; current = path.dirname(current)) {
+    const found = FLAT_CONFIG_FILENAMES.map((name) => path.join(current, name)).find((file) =>
+      fs.existsSync(file),
+    );
+    if (found) return found;
+    if (path.dirname(current) === current) return undefined;
   }
 }
 
-// Respect an explicit ESLINT_USE_FLAT_CONFIG override if set; otherwise pick
-// flat vs. legacy based on whether a flat config file exists.
-function shouldUseFlatConfig(): boolean {
-  return process.env.ESLINT_USE_FLAT_CONFIG != null
-    ? process.env.ESLINT_USE_FLAT_CONFIG !== 'false'
-    : hasFlatConfig(process.cwd());
+/** Which config governs the run, and where the engine resolves it from. */
+interface ESLintConfigChoice {
+  useFlatConfig: boolean;
+  /** The flat config discovery found, when it found one. */
+  configFile?: string;
+  /** What the engine is given as its `cwd`: the project being migrated. */
+  cwd: string;
+  /** Set when ESLINT_USE_FLAT_CONFIG decided rather than discovery. */
+  fromEnv: boolean;
+}
+
+/**
+ * The migration root is the project, and `process.cwd()` need not be inside it
+ * (`ts-migrate migrate packages/app` from a repository root). Discovery starts
+ * at the root so a config under it is visible, and the engine is rooted there
+ * too, since flat config lookup starts at the engine's `cwd`. The walk from
+ * the working directory stays as a fallback for a root that sits outside it.
+ */
+function resolveESLintConfig(rootDir: string): ESLintConfigChoice {
+  const configFile = findFlatConfig(rootDir) ?? findFlatConfig(process.cwd());
+  const override = process.env.ESLINT_USE_FLAT_CONFIG;
+  return {
+    useFlatConfig: override != null ? override !== 'false' : configFile != null,
+    configFile,
+    cwd: path.resolve(rootDir),
+    fromEnv: override != null,
+  };
 }
 
 /**
@@ -67,7 +84,7 @@ interface ESLintEngine {
   source: 'project' | 'bundled';
   module: ESLintModule;
   /** Decided once, so every worker lints with the same engine and config. */
-  useFlatConfig: boolean;
+  config: ESLintConfigChoice;
   /**
    * A project copy that was found and not used. The reason is a verb phrase
    * about that copy, so it reads after both "eslint 7.32.0, which ..." and
@@ -78,7 +95,11 @@ interface ESLintEngine {
   optedOut?: boolean;
 }
 
-type ESLintConstructor = new (options: { fix: boolean; ignore: boolean }) => AnyESLint;
+type ESLintConstructor = new (options: {
+  fix: boolean;
+  ignore: boolean;
+  cwd: string;
+}) => AnyESLint;
 
 interface ESLintModule {
   /** 8.57 and later. Chooses the flat-config or the eslintrc engine. */
@@ -130,14 +151,14 @@ function findBundledESLint(): { entryPath: string; version: string } {
 function resolveESLintEngine(
   rootDir: string,
   useProjectESLint: boolean,
-  useFlatConfig: boolean,
+  config: ESLintConfigChoice,
 ): ESLintEngine {
   const bundled = findBundledESLint();
   const useBundled = (extra: Partial<ESLintEngine> = {}): ESLintEngine => ({
     ...bundled,
     source: 'bundled',
     module: require(bundled.entryPath),
-    useFlatConfig,
+    config,
     ...extra,
   });
 
@@ -164,7 +185,7 @@ function resolveESLintEngine(
     if (typeof projectModule.ESLint !== 'function') {
       return refuse('exports neither loadESLint nor an ESLint class');
     }
-    if (useFlatConfig) {
+    if (config.useFlatConfig) {
       // 8.0 through 8.56 reach flat config only through
       // eslint/use-at-your-own-risk, which is not an API to hold a migration to.
       return refuse('predates flat config support in the ESLint public API (8.57)');
@@ -176,7 +197,7 @@ function resolveESLintEngine(
     version: project.version,
     source: 'project',
     module: projectModule,
-    useFlatConfig,
+    config,
   };
 }
 
@@ -194,6 +215,27 @@ function describeESLintEngine(engine: ESLintEngine): string {
   return `[eslint-fix] ESLint ${engine.version} (bundled with ts-migrate; ${why})`;
 }
 
+/**
+ * The second banner line: which config lints. Without it nothing in the output
+ * separates "no rule matched these files" from "the config was never found",
+ * and the latter is silent because each file's throw is caught per file.
+ */
+function describeESLintConfig({
+  useFlatConfig,
+  configFile,
+  cwd,
+  fromEnv,
+}: ESLintConfigChoice): string {
+  const why = fromEnv ? ' [ESLINT_USE_FLAT_CONFIG]' : '';
+  if (!useFlatConfig) {
+    // The eslintrc engine resolves a config per file, so there is no one file
+    // to name; where it is rooted is the useful half.
+    const found = fromEnv ? '' : ' (no eslint.config.* found from there)';
+    return `[eslint-fix] eslintrc config, rooted at ${cwd}${why}${found}`;
+  }
+  return `[eslint-fix] flat config: ${configFile ?? `none found from ${cwd}`}${why}`;
+}
+
 // Lazily create one ESLint instance, shared across all files in a run.
 // (`jiti`, a dependency, is what lets ESLint load a TypeScript `eslint.config.ts`.)
 let eslintPromise: Promise<AnyESLint> | undefined;
@@ -201,11 +243,12 @@ let eslintPromise: Promise<AnyESLint> | undefined;
 let resolvedEngine: ESLintEngine | undefined;
 
 async function createESLint(rootDir: string, useProjectESLint: boolean): Promise<AnyESLint> {
-  const useFlatConfig = shouldUseFlatConfig();
-  const engine = resolveESLintEngine(rootDir, useProjectESLint, useFlatConfig);
+  const config = resolveESLintConfig(rootDir);
+  const engine = resolveESLintEngine(rootDir, useProjectESLint, config);
   resolvedEngine = engine;
 
   console.log(describeESLintEngine(engine));
+  console.log(describeESLintConfig(config));
   if (engine.refused) {
     console.warn(
       `[eslint-fix] This project's eslint ${engine.refused.version} ${engine.refused.reason}; ` +
@@ -219,9 +262,13 @@ async function createESLint(rootDir: string, useProjectESLint: boolean): Promise
     fix: true,
     // Set ignore to false so we can lint in `tmp` for testing.
     ignore: false,
+    // Flat config lookup, ignore file lookup, and relative paths inside the
+    // config all start here, so it has to be the project, not wherever the
+    // command was typed.
+    cwd: config.cwd,
   };
   if (typeof engine.module.loadESLint === 'function') {
-    const ESLintClass = await engine.module.loadESLint({ useFlatConfig });
+    const ESLintClass = await engine.module.loadESLint({ useFlatConfig: config.useFlatConfig });
     return new ESLintClass(options);
   }
   return new (engine.module.ESLint as ESLintConstructor)(options);
@@ -241,21 +288,25 @@ function getESLint(rootDir: string, useProjectESLint: boolean): Promise<AnyESLin
 // untouched instead of re-linting the whole project.
 const lastFixedText = new Map<string, string>();
 
-// Warned at most once per run: a project whose ESLint parser is not
-// TypeScript-aware fails the same way for every file.
-let warnedAboutParseErrors = false;
+type ReportNotice = (notice: PluginFileNotice) => void;
 
-function warnOnceAboutParseError(fileName: string, message: string): void {
-  if (warnedAboutParseErrors) return;
-  warnedAboutParseErrors = true;
-  console.warn(
-    `[eslint-fix] ESLint could not parse ${fileName} (${message}). ` +
-      'Lint fixes are skipped for files ESLint cannot parse. If this is a TypeScript ' +
-      'file, the project ESLint config likely needs the @typescript-eslint parser.',
-  );
+// A project whose ESLint parser is not TypeScript-aware fails this way for
+// every file it sees, so the cause is reported and the runner counts the files.
+function reportParseError(reportNotice: ReportNotice, message: string): void {
+  reportNotice({
+    reason: `ESLint could not parse the file (${message})`,
+    hint:
+      'Lint fixes are skipped for files ESLint cannot parse. If these are TypeScript ' +
+      'files, the project ESLint config likely needs the @typescript-eslint parser.',
+  });
 }
 
-async function fixToStable(cli: AnyESLint, fileName: string, text: string): Promise<string> {
+async function fixToStable(
+  cli: AnyESLint,
+  fileName: string,
+  text: string,
+  reportNotice: ReportNotice,
+): Promise<string> {
   let newText = text;
   while (true) {
     const [report] = await cli.lintText(newText, {
@@ -264,7 +315,7 @@ async function fixToStable(cli: AnyESLint, fileName: string, text: string): Prom
 
     const fatalMessage = report?.messages?.find((message) => message.fatal);
     if (fatalMessage) {
-      warnOnceAboutParseError(fileName, fatalMessage.message);
+      reportParseError(reportNotice, fatalMessage.message);
     }
 
     if (!report || !report.output || report.output === newText) {
@@ -345,7 +396,7 @@ const eslintModule = require(workerData.eslintPath);
 let cliPromise;
 function getCli() {
   if (!cliPromise) {
-    const options = { fix: true, ignore: false };
+    const options = { fix: true, ignore: false, cwd: workerData.cwd };
     cliPromise = workerData.useLoadESLint
       ? eslintModule
           .loadESLint({ useFlatConfig: workerData.useFlatConfig })
@@ -369,9 +420,12 @@ parentPort.on('message', async ({ fileName, text }) => {
     }
     parentPort.postMessage({ ok: true, text: newText, fatalMessage });
   } catch (error) {
+    // ESLint hangs the failing rule's id on the error it throws; only the
+    // message survives the structured clone, so send it alongside.
     parentPort.postMessage({
       ok: false,
       error: error instanceof Error ? error.message : String(error),
+      ruleId: error && typeof error.ruleId === 'string' ? error.ruleId : undefined,
     });
   }
 });
@@ -379,7 +433,7 @@ parentPort.on('message', async ({ fileName, text }) => {
 
 type WorkerResult =
   | { ok: true; text: string; fatalMessage?: string }
-  | { ok: false; error: string };
+  | { ok: false; error: string; ruleId?: string };
 
 interface PoolJob {
   fileName: string;
@@ -424,8 +478,10 @@ function failPool(error: Error): void {
 }
 
 function spawnWorker(): Worker {
-  // A job only reaches the pool after getESLint resolved, so the engine the
-  // main thread lints with is the one workers are handed.
+  // A job only reaches the pool after getESLint resolved, so the engine and
+  // config the main thread lints with are what workers are handed. A worker
+  // that resolved a different config would make a file's fix depend on which
+  // route it took.
   if (!resolvedEngine) {
     throw new Error('eslint-fix: no ESLint engine has been resolved yet');
   }
@@ -435,7 +491,8 @@ function spawnWorker(): Worker {
       eslintPath: resolvedEngine.entryPath,
       useLoadESLint: typeof resolvedEngine.module.loadESLint === 'function',
       typeScriptDir: typeScriptPackageDir(),
-      useFlatConfig: resolvedEngine.useFlatConfig,
+      useFlatConfig: resolvedEngine.config.useFlatConfig,
+      cwd: resolvedEngine.config.cwd,
     },
   });
   worker.on('message', (result: WorkerResult) => {
@@ -534,32 +591,43 @@ function shouldEnablePool(): boolean {
   return poolEnabled;
 }
 
-// Warned at most once per run: once the pool breaks it stays disabled.
-let warnedAboutPoolFailure = false;
-
 async function routeToPool(cli: AnyESLint, fileName: string): Promise<boolean> {
   return shouldEnablePool() && shouldLintInWorker(cli, fileName);
 }
 
+/** A lint failure carries the id of the rule that threw; a pooled one too. */
+class LintError extends Error {
+  readonly ruleId?: string;
+
+  constructor(message: string, ruleId?: string) {
+    super(message);
+    this.ruleId = ruleId;
+  }
+}
+
 // Returns undefined when the pool infrastructure failed (the file still needs
 // linting in-process); lint-level errors throw, as they do in-process.
-async function tryPool(fileName: string, text: string): Promise<string | undefined> {
+async function tryPool(
+  fileName: string,
+  text: string,
+  reportNotice: ReportNotice,
+): Promise<string | undefined> {
   let result: WorkerResult;
   try {
     result = await runJobInPool(fileName, text);
   } catch (poolError) {
-    if (!warnedAboutPoolFailure) {
-      warnedAboutPoolFailure = true;
-      const message = poolError instanceof Error ? poolError.message : String(poolError);
-      console.warn(`[eslint-fix] Lint workers unavailable (${message}); linting in-process.`);
-    }
+    const message = poolError instanceof Error ? poolError.message : String(poolError);
+    reportNotice({
+      reason: `lint workers unavailable (${message}); linted in-process`,
+      recovered: true,
+    });
     return undefined;
   }
   if (!result.ok) {
-    throw new Error(result.error);
+    throw new LintError(result.error, result.ruleId);
   }
   if (result.fatalMessage !== undefined) {
-    warnOnceAboutParseError(fileName, result.fatalMessage);
+    reportParseError(reportNotice, result.fatalMessage);
   }
   return result.text;
 }
@@ -572,9 +640,14 @@ async function tryPool(fileName: string, text: string): Promise<string | undefin
 // backlog hands off to it mid-pass.
 let inProcessChain: Promise<unknown> = Promise.resolve();
 
-async function lintFile(cli: AnyESLint, fileName: string, text: string): Promise<string> {
+async function lintFile(
+  cli: AnyESLint,
+  fileName: string,
+  text: string,
+  reportNotice: ReportNotice,
+): Promise<string> {
   if (await routeToPool(cli, fileName)) {
-    const pooled = await tryPool(fileName, text);
+    const pooled = await tryPool(fileName, text, reportNotice);
     if (pooled !== undefined) return pooled;
     // Pool broke; take the in-process route below (the gate is now off).
   }
@@ -583,7 +656,7 @@ async function lintFile(cli: AnyESLint, fileName: string, text: string): Promise
       return { handoff: true };
     }
     const started = Date.now();
-    const fixed = await fixToStable(cli, fileName, text);
+    const fixed = await fixToStable(cli, fileName, text, reportNotice);
     serialLintsSeen += 1;
     // The first in-process lint pays the one-time engine + config load and
     // would skew the per-file average.
@@ -596,9 +669,67 @@ async function lintFile(cli: AnyESLint, fileName: string, text: string): Promise
   inProcessChain = outcome.catch(() => undefined);
   const result = await outcome;
   if (result.handoff) {
-    return lintFile(cli, fileName, text);
+    return lintFile(cli, fileName, text, reportNotice);
   }
   return result.fixed as string;
+}
+
+// Rule context methods ESLint 9 removed. A rule written against the ESLint 8
+// context throws one of these for every file it is asked to lint.
+const REMOVED_CONTEXT_METHODS = [
+  'getScope',
+  'getDeclaredVariables',
+  'getAncestors',
+  'markVariableAsUsed',
+  'getSourceCode',
+  'getFilename',
+  'getPhysicalFilename',
+];
+
+function removedContextApiHint(reason: string): string | undefined {
+  const removed = REMOVED_CONTEXT_METHODS.find((name) =>
+    reason.includes(`context.${name} is not a function`),
+  );
+  if (!removed) return undefined;
+  const written =
+    `context.${removed}() was removed in ESLint 9, so this rule was written for the ` +
+    'ESLint 8 rule context.';
+  if (resolvedEngine?.source === 'project') {
+    return (
+      `${written} The project's own ESLint ${resolvedEngine.version} is what ran it, so the ` +
+      "project's lint script fails the same way; updating the plugin that owns the rule fixes " +
+      'both.'
+    );
+  }
+  const bundled = resolvedEngine ? ` ${resolvedEngine.version}` : '';
+  return (
+    `${written} ts-migrate linted with the ESLint${bundled} bundled with it (see the engine ` +
+    'line at the start of the pass); an ESLint ts-migrate can load from the project would run ' +
+    'these rules the way the project does.'
+  );
+}
+
+/** ESLint hangs the id of the rule that threw on the error it throws. */
+function ruleIdOf(error: unknown): string | undefined {
+  const ruleId = (error as { ruleId?: unknown } | undefined)?.ruleId;
+  return typeof ruleId === 'string' ? ruleId : undefined;
+}
+
+/** What is worth keeping from a thrown lint failure, once per cause. */
+function lintFailureNotice(error: unknown): PluginFileNotice {
+  // ESLint appends "Occurred while linting <file>:<line>" and the rule id to
+  // the message; the first line is the cause, and the rest is per-occurrence
+  // detail the grouped report carries anyway.
+  const message = error instanceof Error ? error.message : String(error);
+  const reason = message.split('\n')[0].trim();
+  return {
+    reason,
+    ruleId: ruleIdOf(error),
+    hint:
+      removedContextApiHint(reason) ??
+      'If the project lint config cannot be fixed now, --exclude-plugin eslint-fix skips this ' +
+        'plugin.',
+  };
 }
 
 const eslintFixPlugin: Plugin<Options> = {
@@ -609,21 +740,23 @@ const eslintFixPlugin: Plugin<Options> = {
   // into parallel lint work.
   independentFiles: true,
 
-  async run({ fileName, rootDir, text, options }) {
+  async run(params) {
+    const { fileName, rootDir, text, options } = params;
     if (lastFixedText.get(fileName) === text) {
       return text;
     }
+    const reportNotice = fileNoticeReporter(params, '[eslint-fix]');
     pendingLintCalls += 1;
     try {
-      // rootDir is where the project's ESLint is searched for. It is on every
-      // plugin's params; the fallback is for a direct caller that omits it,
-      // and matches the root the flat-config detection above uses.
+      // rootDir is the project: where its ESLint is searched for, and where
+      // its config is resolved from. It is on every plugin's params; the
+      // fallback is for a direct caller that omits it.
       const cli = await getESLint(rootDir ?? process.cwd(), options?.projectEslint !== false);
-      const newText = await lintFile(cli, fileName, text);
+      const newText = await lintFile(cli, fileName, text, reportNotice);
       lastFixedText.set(fileName, newText);
       return newText;
     } catch (e) {
-      console.error('Error occurred in eslint-fix plugin: ', e instanceof Error ? e.message : e);
+      reportNotice(lintFailureNotice(e));
       return text;
     } finally {
       pendingLintCalls -= 1;

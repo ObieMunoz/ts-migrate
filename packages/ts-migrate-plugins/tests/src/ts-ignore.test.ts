@@ -1,4 +1,5 @@
 import ts from 'typescript';
+import { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
 import tsIgnorePlugin from '../../src/plugins/ts-ignore';
 import { mockPluginParams, mockDiagnostic, realPluginParams } from '../test-utils';
 
@@ -610,31 +611,30 @@ beta"`);
 comsole.log(sql);
 `;
 
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    try {
-      const result = await tsIgnorePlugin.run(
-        mockPluginParams({
-          text,
-          semanticDiagnostics: [
-            // Span covers text inside the template token, so no node matches.
-            mockDiagnostic(text, 'FROM', { code: 2554 }),
-            mockDiagnostic(text, 'comsole'),
-          ],
-          options: { messagePrefix: 'FIXME' },
-        }),
-      );
+    // Reported rather than printed: the same cause repeats across a project,
+    // and the runner groups the files it happened to.
+    const notices: PluginFileNotice[] = [];
+    const result = await tsIgnorePlugin.run(
+      mockPluginParams({
+        text,
+        semanticDiagnostics: [
+          // Span covers text inside the template token, so no node matches.
+          mockDiagnostic(text, 'FROM', { code: 2554 }),
+          mockDiagnostic(text, 'comsole'),
+        ],
+        options: { messagePrefix: 'FIXME' },
+        reportFileNotice: (notice) => notices.push(notice),
+      }),
+    );
 
-      expect(result).toBe(`const sql = \`SELECT *
+    expect(result).toBe(`const sql = \`SELECT *
   FROM widgets\`;
 // @ts-expect-error TS(123) FIXME: diagnostic message
 comsole.log(sql);
 `);
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('file.ts:2'));
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('TS(2554)'));
-    } finally {
-      warn.mockRestore();
-    }
+    expect(notices).toHaveLength(1);
+    expect(notices[0].reason).toContain('could not add @ts-expect-error inside a multiline');
+    expect(notices[0].recovered).toBe(true);
   });
 
   it('suppresses module errors on imports with webpackChunkName magic comments', async () => {

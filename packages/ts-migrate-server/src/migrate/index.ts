@@ -7,6 +7,7 @@ import MigrateConfig from './MigrateConfig';
 import MigrationProject from './MigrationProject';
 import computeDirtyFiles from './dirtyFiles';
 import PassProgress from '../utils/PassProgress';
+import PassNotices from '../utils/PassNotices';
 import PerfTimer from '../utils/PerfTimer';
 import { PluginParams, LintConfig } from '../../types';
 
@@ -64,6 +65,17 @@ export interface MigrateResult {
    * distinct files that plugin changed across all passes.
    */
   pluginStats: Array<{ pluginName: string; changedFileCount: number }>;
+  /**
+   * Files a plugin could not process, grouped by cause. One entry per plugin
+   * and cause, merged across the passes of a repeated plugin group.
+   */
+  pluginFailures: Array<{
+    pluginName: string;
+    reason: string;
+    ruleId?: string;
+    fileCount: number;
+    files: string[];
+  }>;
   /**
    * Declaration files plugins generated during the run, with their contents.
    * Written like the updated files, so on a dry run this is the only place
@@ -152,6 +164,7 @@ export default async function migrate({
   };
   const updatedSourceFiles = new Set<string>();
   const changedFilesByPlugin = config.plugins.map(() => new Set<string>());
+  const pluginFailures: MigrateResult['pluginFailures'] = [];
   const originalSourceFilesToMigrate = new Set<string>(
     getSourceFilesToMigrate(project).map((file) => file.fileName),
   );
@@ -197,6 +210,7 @@ export default async function migrate({
           total: sourceFiles.length,
           showCurrentFile: !plugin.independentFiles,
         });
+        const notices = new PassNotices(rootDir);
 
         // A plugin whose edits never change any file's types can run its whole
         // pass against one program: holding its overlay writes until the pass
@@ -223,6 +237,7 @@ export default async function migrate({
             options: pluginOptions,
             getLanguageService,
             addGeneratedFile,
+            reportFileNotice: (notice) => notices.add(fileName, notice),
             // Overlapping runs would see each other's scratch text as the real
             // file, so this stays off for plugins whose files run concurrently.
             ...(plugin.independentFiles
@@ -265,6 +280,9 @@ export default async function migrate({
           }
         }
         progress.finish();
+        // After the counter is cleared, so nothing renders over the report.
+        notices.report(pluginLogPrefix);
+        mergePluginFailures(pluginFailures, plugin.name, notices);
 
         for (const { fileName, text } of deferredWrites) {
           project.updateSourceFile(fileName, text);
@@ -380,8 +398,39 @@ export default async function migrate({
     exitCode,
     nonMigratedFilesWithSyntaxErrors,
     pluginStats,
+    pluginFailures,
     generatedFiles,
   };
+}
+
+/**
+ * Folds one pass's failures into the run's. A repeated plugin group retries the
+ * files it changed, so the same cause can arrive from several passes; those
+ * merge into one entry with the union of the files.
+ */
+function mergePluginFailures(
+  failures: MigrateResult['pluginFailures'],
+  pluginName: string,
+  notices: PassNotices,
+): void {
+  notices
+    .groups()
+    .filter((group) => !group.recovered)
+    .forEach(({ reason, ruleId, files }) => {
+      const existing = failures.find(
+        (failure) =>
+          failure.pluginName === pluginName &&
+          failure.reason === reason &&
+          failure.ruleId === ruleId,
+      );
+      const merged = [...new Set([...(existing?.files ?? []), ...files])].sort();
+      if (existing) {
+        existing.files = merged;
+        existing.fileCount = merged.length;
+      } else {
+        failures.push({ pluginName, reason, ruleId, fileCount: merged.length, files: merged });
+      }
+    });
 }
 
 function getSourceFilesToMigrate(project: MigrationProject) {

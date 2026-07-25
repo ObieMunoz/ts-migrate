@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import { PluginParams } from '@obiemunoz/ts-migrate-server';
+import { PluginFileNotice, PluginParams } from '@obiemunoz/ts-migrate-server';
 
 type WithoutFile<T> = Omit<T, 'file'>;
 
@@ -10,6 +10,8 @@ export function mockPluginParams<TOptions = unknown>(params: {
   syntacticDiagnostics?: WithoutFile<ts.DiagnosticWithLocation>[];
   suggestionDiagnostics?: WithoutFile<ts.DiagnosticWithLocation>[];
   options?: TOptions;
+  /** Set to collect what the plugin reports, as the runner does. */
+  reportFileNotice?: (notice: PluginFileNotice) => void;
 }): PluginParams<TOptions> {
   const {
     fileName = 'file.ts',
@@ -18,6 +20,7 @@ export function mockPluginParams<TOptions = unknown>(params: {
     syntacticDiagnostics = [],
     suggestionDiagnostics = [],
     options = {},
+    reportFileNotice,
   } = params;
 
   const sourceFile = ts.createSourceFile(
@@ -38,6 +41,7 @@ export function mockPluginParams<TOptions = unknown>(params: {
     rootDir: __dirname,
     text,
     sourceFile,
+    reportFileNotice,
     getLanguageService: () =>
       ({
         getSemanticDiagnostics: () => semanticDiagnostics.map(withFile),

@@ -1,6 +1,27 @@
 import ts from 'typescript';
 
 export type Nullable<T> = T | null | undefined;
+
+/**
+ * Something that went wrong for one file. A cause that is a property of the
+ * project rather than of the file (a lint rule that throws, a parser that
+ * cannot read TypeScript) repeats identically for every file that reaches it,
+ * so plugins report these and the runner groups them.
+ */
+export interface PluginFileNotice {
+  /** The cause, as one line. Identical reasons group together. */
+  reason: string;
+  /** What the cause is attributed to, when the tool names one (an ESLint rule). */
+  ruleId?: string;
+  /** Guidance printed once under the group, for a cause the plugin recognizes. */
+  hint?: string;
+  /**
+   * Set when the plugin still produced its normal result for the file. Those
+   * are reported without being counted as files left unchanged.
+   */
+  recovered?: boolean;
+}
+
 export interface PluginParams<TPluginOptions> {
   options: TPluginOptions;
   fileName: string;
@@ -19,6 +40,13 @@ export interface PluginParams<TPluginOptions> {
    * run already wrote is a no-op.
    */
   addGeneratedFile?: (fileName: string, text: string) => void;
+  /**
+   * Reports something that went wrong for this file, instead of printing it.
+   * The runner groups identical causes across the pass and prints one line per
+   * cause once the progress counter is out of the way; printing from inside a
+   * pass both repeats the cause per file and gets overwritten by the counter.
+   */
+  reportFileNotice?: (notice: PluginFileNotice) => void;
   /**
    * Runs `use` with `fileName` reading as `text`, then restores the file's real
    * content. Lets a plugin type-check a candidate edit against the run's

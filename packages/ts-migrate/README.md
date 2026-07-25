@@ -213,6 +213,17 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --no-projectEslint
 Flat versus legacy config is detected separately, from the presence of an
 `eslint.config.*` file; set `ESLINT_USE_FLAT_CONFIG` to override that.
 
+The search starts at the folder being migrated and walks up, and ESLint is
+rooted there too, so `ts-migrate migrate packages/app` run from a repository
+root uses `packages/app`'s config, and still finds one at the repository root
+when the package has none. The run prints the config file it settled on next
+to the engine line:
+
+```
+[eslint-fix] ESLint 9.39.4 (project: /repo/node_modules/eslint)
+[eslint-fix] flat config: /repo/packages/app/eslint.config.js
+```
+
 # Gitignored files
 
 Build output often lives inside the source tree (webpack/SSR bundles, a
@@ -549,6 +560,15 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --jsonSummary migrate-s
     { "name": "infer-types", "changedFileCount": 2 },
     { "name": "ts-ignore", "changedFileCount": 1 }
   ],
+  "pluginFailures": [
+    {
+      "plugin": "eslint-fix",
+      "reason": "context.getScope is not a function",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "fileCount": 2,
+      "files": ["src/a.ts", "src/b.ts"]
+    }
+  ],
   "changedFilesTypeDebt": {
     "aliasNames": [],
     "totals": { "tsExpectError": 3, "tsIgnore": 0, "anyAlias": 0, "any": 2, "codes": { "TS2304": 3 } }
@@ -568,7 +588,11 @@ untouched because git ignores them (always 0 with `--no-gitignore`).
 `skippedBootstrapFiles` lists the build system files the run kept as
 JavaScript, each with its detection evidence (always empty with
 `--no-bootstrap`). `generatedFiles` lists the declaration files the run wrote
-itself, which are new files rather than changes to existing ones. `changedFilesTypeDebt` counts only the files this run
+itself, which are new files rather than changes to existing ones.
+`pluginFailures` lists the files a plugin could not process, grouped by cause:
+a lint config whose rules throw leaves files unchanged without failing the
+run, so a run that exits 0 can still have left files untouched. It is empty
+when every plugin processed every file. `changedFilesTypeDebt` counts only the files this run
 changed, so a scoped or incremental run reports its own debt; the `report`
 command measures the whole project. `dryRun` is true when the run was a
 `--dry-run` preview: the summary then describes what a real run would have

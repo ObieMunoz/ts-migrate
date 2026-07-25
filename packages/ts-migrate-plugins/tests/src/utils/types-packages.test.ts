@@ -11,6 +11,7 @@ import {
   renderModuleDeclarations,
   summarizeTypesEvidence,
   TypesEvidence,
+  TypesPackageReport,
 } from '../../../src/utils/typesPackages';
 import { realPluginParams } from '../../test-utils';
 
@@ -246,6 +247,107 @@ describe('summarizeTypesEvidence', () => {
     const report = summarizeTypesEvidence(nodeAndTestRunnerEvidence(), rootDir);
     expect(report.missing.map((rec) => rec.packageName)).toEqual(['@types/node']);
     expect(report.notes[0]).toContain('no test runner was found');
+  });
+});
+
+describe('package manager detection', () => {
+  const lockfiles: [string, TypesPackageReport['packageManager'], string][] = [
+    ['package-lock.json', 'npm', 'npm install -D'],
+    ['yarn.lock', 'yarn', 'yarn add -D'],
+    ['pnpm-lock.yaml', 'pnpm', 'pnpm add -D'],
+    ['bun.lock', 'bun', 'bun add -d'],
+    ['bun.lockb', 'bun', 'bun add -d'],
+  ];
+
+  it.each(lockfiles)('detects %s and prints its install command', (lockfile, manager, command) => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({ devDependencies: { jest: '^29.0.0' } }),
+      [lockfile]: '',
+    });
+
+    const report = summarizeTypesEvidence(nodeAndTestRunnerEvidence(), rootDir);
+
+    expect(report.packageManager).toBe(manager);
+    expect(formatTypesPackageReport(report, 'src')).toContain(
+      `Install: ${command} @types/jest @types/node`,
+    );
+  });
+
+  it('walks up to a lockfile above the migration root', () => {
+    // The monorepo case: a workspace package holds no lockfile of its own, so
+    // detection has to climb to the workspace root to find one.
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({}),
+      'pnpm-lock.yaml': '',
+      'packages/app/package.json': JSON.stringify({}),
+    });
+
+    const report = summarizeTypesEvidence(
+      nodeAndTestRunnerEvidence(),
+      path.join(rootDir, 'packages', 'app'),
+    );
+
+    expect(report.packageManager).toBe('pnpm');
+    expect(formatTypesPackageReport(report, 'src')).toContain('Install: pnpm add -D @types/node');
+  });
+
+  it('falls back to npm when there is no lockfile', () => {
+    const rootDir = makeFixture({ 'package.json': JSON.stringify({}) });
+
+    const report = summarizeTypesEvidence(nodeAndTestRunnerEvidence(), rootDir);
+
+    expect(report.packageManager).toBe('npm');
+    expect(formatTypesPackageReport(report, 'src')).toContain('Install: npm install -D @types/node');
+  });
+
+  describe('project boundary', () => {
+    const detect = (rootDir: string) =>
+      summarizeTypesEvidence(createTypesEvidence(), rootDir).packageManager;
+
+    /**
+     * A checkout inside a directory that has a lockfile of its own. The
+     * migration root is two levels below the top of the checkout, so the walk
+     * has to climb to reach anything, and one level too many puts it in
+     * `outer`. The outer lockfile is a `yarn.lock` rather than a
+     * `package-lock.json` so that adopting it is distinguishable from the npm
+     * fallback.
+     */
+    function nestedCheckout(projectFiles: { [filePath: string]: string }): string {
+      const dir = makeFixture({
+        'outer/package.json': JSON.stringify({}),
+        'outer/yarn.lock': '',
+        'outer/repo/package.json': JSON.stringify({}),
+        'outer/repo/pkg/src/a.ts': '',
+        ...Object.fromEntries(
+          Object.entries(projectFiles).map(([file, contents]) => [`outer/repo/${file}`, contents]),
+        ),
+      });
+      return path.join(dir, 'outer/repo/pkg/src');
+    }
+
+    it.each([
+      ['.git directory', { '.git/HEAD': 'ref: refs/heads/master\n' }],
+      ['.git file', { '.git': 'gitdir: /elsewhere/.git/worktrees/x\n' }],
+      ['pnpm-workspace.yaml', { 'pnpm-workspace.yaml': "packages:\n  - 'pkg'\n" }],
+      ['lerna.json', { 'lerna.json': '{}' }],
+      ['workspaces field', { 'package.json': JSON.stringify({ workspaces: ['pkg'] }) }],
+    ])('stops at the %s and does not adopt the lockfile above it', (_marker, files) => {
+      expect(detect(nestedCheckout(files))).toBe('npm');
+    });
+
+    // The boundary is inclusive: a workspace root is exactly where the
+    // lockfile normally lives, so stopping before probing it would break the
+    // case the upward walk exists to serve.
+    it.each([
+      ['.git directory', { '.git/HEAD': '' }],
+      ['workspaces field', { 'package.json': JSON.stringify({ workspaces: ['pkg'] }) }],
+    ])('finds a lockfile in the boundary directory itself, marked by the %s', (_marker, files) => {
+      expect(detect(nestedCheckout({ ...files, 'pnpm-lock.yaml': '' }))).toBe('pnpm');
+    });
+
+    it('keeps climbing when nothing marks the top of the project', () => {
+      expect(detect(nestedCheckout({}))).toBe('yarn');
+    });
   });
 });
 

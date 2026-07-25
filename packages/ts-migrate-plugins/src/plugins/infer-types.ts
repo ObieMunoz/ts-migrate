@@ -1,6 +1,6 @@
 import path from 'path';
 import ts from 'typescript';
-import { Plugin } from '@obiemunoz/ts-migrate-server';
+import { fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 
 export interface LintConfig {
@@ -46,7 +46,8 @@ interface TextChange {
 const inferTypesPlugin: Plugin = {
   name: 'infer-types',
 
-  run({ fileName, text, getLanguageService, withScratchText }, lintConfig?: LintConfig) {
+  run(params, lintConfig?: LintConfig) {
+    const { fileName, text, getLanguageService, withScratchText } = params;
     const languageService = getLanguageService();
     const projectOptions = languageService.getProgram()?.getCompilerOptions() ?? {};
     // Under noImplicitAny every inferable location is a semantic error
@@ -94,9 +95,10 @@ const inferTypesPlugin: Plugin = {
 
       return withBodyWins(fileName, text, changes, compilerOptions, formatSettings, validation);
     } catch (e) {
-      if (e instanceof Error) {
-        console.error('Error occurred in infer-types plugin: ', e.message);
-      }
+      fileNoticeReporter(params, '[infer-types]')({
+        reason: e instanceof Error ? e.message.split('\n')[0].trim() : String(e),
+        hint: 'The file keeps the annotations it had; explicit-any fills the rest in with any.',
+      });
       return undefined;
     }
   },
