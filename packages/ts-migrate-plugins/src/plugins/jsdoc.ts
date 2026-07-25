@@ -388,11 +388,14 @@ const jsDocTransformerFactory =
     }
 
     function typeAliasFromTag({ tag, doc, name }: JSDocTypeAlias): ts.TypeAliasDeclaration {
+      const type = ts.isJSDocCallbackTag(tag)
+        ? visitJSDocSignature(tag.typeExpression)
+        : visitTypedefType(tag);
       return factory.createTypeAliasDeclaration(
         exportAliases ? [factory.createModifier(ts.SyntaxKind.ExportKeyword)] : undefined,
         factory.createIdentifier(name),
         typeParametersFromTags(aliasTemplateTags(doc)),
-        ts.isJSDocCallbackTag(tag) ? visitJSDocSignature(tag.typeExpression) : visitTypedefType(tag),
+        type,
       );
     }
 
@@ -411,12 +414,13 @@ const jsDocTransformerFactory =
 
     function visitJSDocSignature(node: ts.JSDocSignature): ts.TypeNode {
       const parameters: ts.ParameterDeclaration[] = [];
+      const lastIndex = node.parameters.length - 1;
       node.parameters.forEach((tag, index) => {
         if (!ts.isIdentifier(tag.name)) {
           // A nested `@param opts.x` tag, already part of the parent's type.
           return;
         }
-        parameters.push(visitJSDocParameterTag(tag, tag.name, index === node.parameters.length - 1));
+        parameters.push(visitJSDocParameterTag(tag, tag.name, index === lastIndex));
       });
       const returnType = node.type?.typeExpression?.type;
       return factory.createFunctionTypeNode(
@@ -568,12 +572,12 @@ const jsDocTransformerFactory =
     function visitJSDocTypeReference(node: ts.TypeReferenceNode) {
       let name = node.typeName;
       let args = node.typeArguments;
+      if (danglingNames.has(entityNameText(node.typeName))) {
+        return anyType;
+      }
       if (ts.isIdentifier(node.typeName)) {
         if (isJSDocIndexSignature(node)) {
           return visitJSDocIndexSignature(node);
-        }
-        if (danglingNames.has(node.typeName.text)) {
-          return anyType;
         }
         if (aliasNames.has(node.typeName.text)) {
           return factory.createTypeReferenceNode(
@@ -657,6 +661,10 @@ function modifiersFromJSDoc(
   }
 
   return factory.createModifiersFromModifierFlags(modifierFlags);
+}
+
+function entityNameText(name: ts.EntityName): string {
+  return ts.isIdentifier(name) ? name.text : `${entityNameText(name.left)}.${name.right.text}`;
 }
 
 // Copied from: https://github.com/microsoft/TypeScript/blob/v4.0.2/src/compiler/utilities.ts#L1879

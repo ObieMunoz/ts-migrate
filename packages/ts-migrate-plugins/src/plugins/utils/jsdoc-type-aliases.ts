@@ -46,7 +46,9 @@ export function isHostTemplateTag(tag: ts.JSDocTemplateTag): boolean {
   if (!ts.isJSDoc(doc)) {
     return true;
   }
-  return !(doc.tags ?? []).some((other) => ts.isJSDocTypedefTag(other) || ts.isJSDocCallbackTag(other));
+  return !(doc.tags ?? []).some(
+    (other) => ts.isJSDocTypedefTag(other) || ts.isJSDocCallbackTag(other),
+  );
 }
 
 /** The `@template` tags of the comment that declares a type alias. */
@@ -76,7 +78,7 @@ export function scanJSDocTypeAliases(sourceFile: ts.SourceFile): JSDocTypeAliasS
         if (!ts.isJSDocTypedefTag(tag) && !ts.isJSDocCallbackTag(tag)) return;
 
         if (tag.fullName && !ts.isIdentifier(tag.fullName)) {
-          skip(tag, undefined, 'the name is qualified');
+          skip(tag, tag.fullName.getText(sourceFile), 'the name is qualified');
           return;
         }
         if (!tag.name || !ts.isIdentifier(tag.name)) {
