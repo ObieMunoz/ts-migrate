@@ -60,29 +60,52 @@ Usage: ts-migrate <command> [options]
 
 Commands:
   ts-migrate init <folder>                Initialize tsconfig.json file in <folder>
-  ts-migrate init:extended <folder>       Initialize tsconfig.json file in <folder>
+  ts-migrate init:extended <folder>       Initialize tsconfig.json in <folder> extending a shared
+                                          base config
   ts-migrate rename [options] <folder>    Rename files in folder from JS/JSX to TS/TSX
   ts-migrate migrate [options] <folder>   Fix TypeScript errors, using codemods
   ts-migrate reignore [options] <folder>  Re-run ts-ignore on a project
-  ts-migrate report [options] <folder>    Print per-file counts of suppression comments and any-type annotations
-  ts-migrate check [options] <folder>     Compare suppression and any counts against a committed baseline
-  ts-migrate agents                       Print usage instructions for AI coding agents (non-interactive playbook)
+  ts-migrate report [options] <folder>    Print per-file counts of suppression comments and any-type
+                                          annotations
+  ts-migrate check [options] <folder>     Compare suppression and any counts against a committed
+                                          baseline
+  ts-migrate agents                       Print usage instructions for AI coding agents
+                                          (non-interactive playbook)
 
 Options:
-  -h, --help     Show help  [boolean]
-  -v, --version  Show version number  [boolean]
+  -h, --help     Show help                                                                 [boolean]
+  -v, --version  Show version number                                                       [boolean]
 
 Examples:
   ts-migrate --help                             Show help
   ts-migrate migrate --help                     Show help for the migrate command
-  ts-migrate init frontend/foo                  Create tsconfig.json file at frontend/foo/tsconfig.json
-  ts-migrate init:extended frontend/foo         Create extended from the base tsconfig.json file at frontend/foo/tsconfig.json
+  ts-migrate init frontend/foo                  Create tsconfig.json file at
+                                                frontend/foo/tsconfig.json
+  ts-migrate init:extended frontend/foo         Create extended from the base tsconfig.json file at
+                                                frontend/foo/tsconfig.json
   ts-migrate rename frontend/foo                Rename files in frontend/foo from JS/JSX to TS/TSX
-  ts-migrate rename frontend/foo --s "bar/baz"  Rename files in frontend/foo/bar/baz from JS/JSX to TS/TSX
+  ts-migrate rename frontend/foo --s "bar/baz"  Rename files in frontend/foo/bar/baz from JS/JSX to
+                                                TS/TSX
   ts-migrate agents                             Print the agent playbook
 
-AI coding agents: run `npx -p @obiemunoz/ts-migrate ts-migrate agents` for the full non-interactive usage playbook.
+AI coding agents: run `npx -p @obiemunoz/ts-migrate ts-migrate agents` for the full non-interactive
+usage playbook.
 ```
+
+Help output wraps at 100 columns whether or not stdout is a terminal, and at the
+terminal width when that is narrower, so a piped or redirected `--help` is
+readable. A name that is not a command exits 1 and says so, suggesting the
+closest real command when there is one:
+
+```sh
+$ npx -p @obiemunoz/ts-migrate ts-migrate migate frontend/foo
+...
+Did you mean migrate?
+```
+
+An option a command does not declare is still accepted and ignored, because
+`ts-migrate-full` forwards one argument list to both `rename` and `migrate` and
+the two accept different flags.
 
 The `rename`, `migrate`, and `reignore` commands accept a `--sources` (or `-s`) flag. This flag
 accepts a relative path to a subset of your project as a string (glob patterns are
@@ -175,6 +198,21 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> \
 
 A flag the named plugin has no option for is reported and ignored, rather than
 silently doing nothing.
+
+Four flags feed the
+[member-accessibility](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/member-accessibility.ts)
+plugin, which runs in the default pipeline as well as under `--plugin`:
+
+- `--defaultAccessibility private|protected|public` writes that modifier on
+  every class member that declares none. Unset by default, so members keep the
+  implicit `public`.
+- `--privateRegex`, `--protectedRegex` and `--publicRegex` take a regular
+  expression matched against the member name, and override
+  `--defaultAccessibility` for the members they match. Private is tried first,
+  then protected, then public, so `--privateRegex "^_"` marks underscore-prefixed
+  members private and leaves every other member alone.
+
+A member that already declares an accessibility modifier is never rewritten.
 
 # Which TypeScript ts-migrate runs
 

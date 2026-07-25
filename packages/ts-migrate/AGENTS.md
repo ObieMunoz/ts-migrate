@@ -302,6 +302,15 @@ ts-ignore, and the run reports each file it left alone and why. Pass
   `any`. If the project does not already declare those globals, the migration
   writes them to `ts-migrate-aliases.d.ts` in `<folder>` so the output still
   compiles.
+- `--defaultAccessibility private|protected|public`: give every class member
+  that declares no accessibility modifier this one. Off by default, so members
+  keep the implicit `public`.
+- `--privateRegex <regex>`, `--protectedRegex <regex>`, `--publicRegex <regex>`:
+  give class members whose name matches the regex that modifier instead of
+  `--defaultAccessibility`. The first match in that order wins, so
+  `--privateRegex "^_"` marks underscore-prefixed members private and leaves
+  the rest alone. All four flags feed the `member-accessibility` plugin, which
+  runs in the default pipeline and under `--plugin member-accessibility`.
 - `--no-declareUntypedModules`: suppress every import of a package that ships
   no type definitions, instead of declaring those packages once in
   `types/ts-migrate-modules.d.ts`. By default the run generates that file
@@ -455,6 +464,11 @@ need both summaries.
 
 ## Exit codes and failure modes
 
+- A name that is not a command exits `1` and prints `Unknown command: <name>`,
+  or `Did you mean <command>?` when it is close to a real one. Options are not
+  checked the same way: one the command does not declare is accepted and
+  ignored, because `ts-migrate-full` forwards a single argument list to both
+  `rename` and `migrate` and the two accept different flags.
 - `migrate`/`reignore` exit `0` on success and nonzero (255) if a plugin
   errored or a file still has syntax errors after migration.
 - `check` exits `1` when a per-file count exceeds the baseline; `report` and
