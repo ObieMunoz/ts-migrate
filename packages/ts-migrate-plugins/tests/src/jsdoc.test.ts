@@ -1252,6 +1252,51 @@ delete /** @type {Row} */ (obj.row);
     ]);
   });
 
+  it('leaves an expression whose only comment annotates the statement', () => {
+    const text = `\
+/** @type {Row | undefined} */
+let a = (obj.row = undefined);
+
+/** @type {Ids} */
+const b = (map[
+  /** @type {Id} */
+  (chunk.id)
+] = []);
+
+const o = {
+  /** @type {Row} */
+  row: (json),
+};
+
+/** @type {Row} */
+function f() {
+  return (json);
+}
+`;
+
+    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
+
+    expect(result).toBe(`\
+/** @type {Row | undefined} */
+let a: Row | undefined = (obj.row = undefined);
+
+/** @type {Ids} */
+const b: Ids = (map[
+  (chunk.id as Id)
+] = []);
+
+const o = {
+  /** @type {Row} */
+  row: (json),
+};
+
+/** @type {Row} */
+function f() {
+  return (json);
+}
+`);
+  });
+
   it('leaves a cast in a parameter list the tags rewrite', () => {
     const text = `\
 /** @param {Row} a */

@@ -204,7 +204,9 @@ const jsDocTransformerFactory =
      */
     function visitTypeCast(node: ts.ParenthesizedExpression): void {
       const tag = ts.getJSDocTypeTag(node);
-      if (!tag || !ts.isJSDoc(tag.parent)) {
+      // getJSDocTypeTag also reads the comment on the statement an expression
+      // is the whole of, which annotates that statement and not this one.
+      if (!tag || !ts.isJSDoc(tag.parent) || tag.parent.parent !== node) {
         return;
       }
       const { expression } = node;
