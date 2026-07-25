@@ -170,9 +170,9 @@ package.json declares `"type": "module"`, or `esnext` with
 `"moduleResolution": "bundler"` when the project builds with Vite or webpack
 (either one in `dependencies`/`devDependencies`, or a
 `vite.config.*`/`webpack.config.*` file in `<folder>`). Bundler projects need
-that third setting because their imports are resolved by the bundler, not by
-node: `import.meta.env` is a hard error under the other two, and
-extensionless relative imports are a hard error under `nodenext`. A Vite
+that third setting because the bundler resolves their imports, not node:
+`import.meta` is TS1343 under `commonjs`, and extensionless relative imports
+are TS2835 under `nodenext`. A Vite
 project also gets `"vite/client"` in the `types` array when vite is
 installed, which is what declares `import.meta.env` and the asset imports
 (`*.svg`, `*.css`). For a webpack project, install `@types/webpack-env` so
