@@ -1252,9 +1252,11 @@ delete /** @type {Row} */ (obj.row);
     ]);
   });
 
-  it('leaves the as expression a previous run wrote', () => {
+  it('leaves an as expression the comment already documents', () => {
     const text = `\
 const a = /** @type {Row} */ (json);
+const b = /** @type {Row} */ (json as Row);
+const c = /** @type {Row} */ (<Row>json);
 `;
     const params = { fileName: 'file.ts' };
 
@@ -1263,6 +1265,8 @@ const a = /** @type {Row} */ (json);
 
     expect(once).toBe(`\
 const a = (json as Row);
+const b = /** @type {Row} */ (json as Row);
+const c = /** @type {Row} */ (<Row>json);
 `);
     expect(twice).toBe(once);
   });
