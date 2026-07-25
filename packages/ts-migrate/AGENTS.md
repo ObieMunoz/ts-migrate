@@ -304,7 +304,15 @@ setter is called with (or, for a ref, the intrinsic tag it is attached to) as
 the type, and writes it only when re-checking the file reports no new error.
 A hook whose evidence leaves the file gets an `any` (`$TSFixMe`) type
 argument, which is one visible any in place of the suppressions the call would
-otherwise earn. Pass `--exclude-plugin react-hook-types` to leave hook calls
+otherwise earn. The same step types `createContext()`, `createContext(null)`
+and `createContext(undefined)` from a `<Ctx.Provider value={...}>` in the same
+file, writing a union that keeps the default
+(`createContext<Theme | null>(null)`) and supplying `undefined` as the
+argument of the zero argument form, which a type argument alone leaves as
+TS2554. A context provided from another file takes the any type argument
+instead, since one file cannot see it, and `createContext({})` always does: a
+`{}` default accepts every value, so narrowing it would break a caller the run
+cannot see. Pass `--exclude-plugin react-hook-types` to leave hook calls
 as they are.
 
 The widening step unions an annotation with what the assignments in its own
