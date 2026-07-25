@@ -321,7 +321,7 @@ yargs
         .default('bootstrap', true)
         .describe(
           'bootstrap',
-          'Skip build system files (configs and node-run scripts): they are neither migrated nor added to the program. Disable with --no-bootstrap.',
+          'Skip build system files (configs and node-run scripts): they are kept out of the program. They stay JavaScript either way, since migrate never edits JavaScript files. Disable with --no-bootstrap.',
         )
         .boolean('inferTypes')
         .default('inferTypes', true)
@@ -532,7 +532,7 @@ yargs
         .default('bootstrap', true)
         .describe(
           'bootstrap',
-          'Skip build system files (configs and node-run scripts): they are neither reignored nor added to the program. Disable with --no-bootstrap.',
+          'Skip build system files (configs and node-run scripts): they are kept out of the program. They stay JavaScript either way, since reignore never edits JavaScript files. Disable with --no-bootstrap.',
         )
         .boolean('projectEslint')
         .default('projectEslint', true)

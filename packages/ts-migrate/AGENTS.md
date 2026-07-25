@@ -35,11 +35,12 @@ docs live in this package's README.md.
 6. **Build system files stay JavaScript by default.** Configs and scripts
    that must keep running under plain Node (`webpack.config.js`,
    `jest.config.js`, paths run via `node scripts/build.js`, and the files
-   they require) are kept out of rename and migrate so the build still
-   boots; `init` writes them into the generated tsconfig's `exclude`. Runs
-   log every kept file with its evidence. Pass `--no-bootstrap` to convert
-   them anyway, e.g. when the project loads TypeScript configs through
-   ts-node or tsx.
+   they require) are kept out of rename so the build still boots; `init`
+   writes them into the generated tsconfig's `exclude`. Runs log every kept
+   file with its evidence. Pass `--no-bootstrap` to rename them anyway, e.g.
+   when the project loads TypeScript configs through ts-node or tsx. In
+   `migrate` and `reignore` the flag only decides whether those files are
+   loaded into the program; nothing there edits JavaScript.
 7. **Requirements:** Node >= 18.18. TypeScript 5.x or 6.x if the target
    project has TypeScript installed; if it has none, ts-migrate falls back to
    its own bundled compiler and plain JS projects work out of the box.
@@ -215,7 +216,11 @@ JavaScript, so a `bin` pointing at it stays valid and needs no notice.
 Runs the codemod pipeline on an already-renamed project: re-points stale
 relative imports, converts React propTypes to types, infers types from usage,
 annotates remaining implicit `any`s, and suppresses residual compiler errors
-with `@ts-expect-error` so the project compiles.
+with `@ts-expect-error` so the project compiles. Only TypeScript files are
+migration targets. `.js`, `.jsx`, `.mjs` and `.cjs` are never edited, even
+when a tsconfig with `allowJs` pulls them in; they stay in the program and
+still type the files that import them. Run `rename` on a file to make it
+migratable.
 
 - `--sources <glob>` (`-s`, repeatable): migrate only a subset. Quote globs.
   Ambient `.d.ts` files matched by the tsconfig `include` (vite-env.d.ts,
@@ -227,9 +232,9 @@ with `@ts-expect-error` so the project compiles.
   out of the program entirely (neither parsed nor edited; files imported by
   migrated code and the tsconfig's `.d.ts` files stay in for type
   resolution).
-- `--no-bootstrap`: also migrate build system files. By default they are
-  kept out of the program the same way, so they stay JavaScript even under
-  a hand-written tsconfig with `allowJs`.
+- `--no-bootstrap`: also load build system files into the program. By
+  default they are kept out of it entirely. They stay JavaScript either
+  way; only `rename` converts them.
 - `--no-inferTypes`: skip type inference and annotate plain `any`. Much
   faster; use on very large projects or when annotation quality is secondary.
 - `--maxStablePasses <n>` (default 5): cap the repeat passes of the
