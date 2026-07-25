@@ -11,10 +11,13 @@ export interface SkippedAlias {
   reason: string;
 }
 
+/**
+ * Always `paths` and never `baseUrl`, which TypeScript 6 reports as deprecated
+ * (TS5101) and 7 drops. A `"*"` pattern covers what a baseUrl did: a specifier
+ * no pattern answers falls through to node_modules either way.
+ */
 export interface PathAliases {
-  /** rootDir-relative, forward slashes. */
-  baseUrl?: string;
-  /** Keys sorted, values rootDir-relative with forward slashes. */
+  /** Keys sorted, values relative to the tsconfig with forward slashes. */
   paths?: Record<string, string[]>;
   /** rootDir-relative names of the files the mapping was read from. */
   source: string;
@@ -250,6 +253,16 @@ function targetExists(rootDir: string, value: string): boolean {
 }
 
 /**
+ * A rootDir-relative path as a `paths` value. Without a baseUrl the compiler
+ * reads the value from the tsconfig and rejects one that is not written as a
+ * relative path (TS5090).
+ */
+function configValue(relative: string, suffix = ''): string {
+  if (relative === '.') return suffix === '' ? '.' : `./${suffix}`;
+  return suffix === '' ? `./${relative}` : `./${relative}/${suffix}`;
+}
+
+/**
  * The `paths` entries one alias needs. A directory answers both the alias
  * itself and everything under it, which is what webpack matches; a file
  * answers only itself, with the extension dropped so the compiler can pick
@@ -257,11 +270,13 @@ function targetExists(rootDir: string, value: string): boolean {
  */
 function aliasEntries(key: string, relative: string, isDirectory: boolean): [string, string[]][] {
   // A trailing $ is webpack's exact-match marker.
-  if (key.endsWith('$')) return [[key.slice(0, -1), [relative]]];
-  if (!isDirectory) return [[key, [relative.replace(CODE_EXTENSION_REGEX, '')]]];
+  if (key.endsWith('$')) return [[key.slice(0, -1), [configValue(relative)]]];
+  if (!isDirectory) {
+    return [[key, [configValue(relative.replace(CODE_EXTENSION_REGEX, ''))]]];
+  }
   return [
-    [key, [relative]],
-    [`${key}/*`, [`${relative}/*`]],
+    [key, [configValue(relative)]],
+    [`${key}/*`, [configValue(relative, '*')]],
   ];
 }
 
@@ -338,21 +353,6 @@ function sortPaths(paths: Record<string, string[]>): Record<string, string[]> {
 }
 
 /**
- * Without a baseUrl the compiler reads a `paths` value from the tsconfig and
- * rejects one that is not written as a relative path (TS5090).
- */
-function relativeToConfig(paths: Record<string, string[]>): Record<string, string[]> {
-  return Object.fromEntries(
-    Object.entries(paths).map(([pattern, values]) => [
-      pattern,
-      values.map((value) =>
-        value.startsWith('.') || path.isAbsolute(value) ? value : `./${value}`,
-      ),
-    ]),
-  );
-}
-
-/**
  * What a webpack config's `resolve` says, read without running it. A config
  * that computes its aliases, composes them or exports a function is only
  * partly readable, so each entry is translated on its own and the rest is
@@ -380,24 +380,36 @@ function webpackAliases(rootDir: string): PathAliases | null {
 
   const { moduleDirectories, paths, skipped } = translate(rootDir, resolves);
   const source = read.join(', ');
-  if (moduleDirectories.length === 1 && Object.keys(paths).length === 0) {
-    return { baseUrl: moduleDirectories[0], source, skipped };
-  }
-  // No baseUrl beside them: a bare specifier no pattern answers then falls
-  // through to node_modules, which is the order webpack resolves in.
+  // A specifier no pattern answers falls through to node_modules, which is
+  // where webpack's own modules list ends too.
   if (moduleDirectories.length > 0) {
-    paths['*'] = moduleDirectories.map((directory) => `${directory}/*`);
+    paths['*'] = moduleDirectories.map((directory) => configValue(directory, '*'));
   }
   if (Object.keys(paths).length === 0) {
     return skipped.length > 0 ? { source, skipped } : null;
   }
-  return { paths: relativeToConfig(sortPaths(paths)), source, skipped };
+  return { paths: sortPaths(paths), source, skipped };
 }
 
 /**
- * The `baseUrl` and `paths` a project already wrote for its editor. A
- * jsconfig.json is the project saying what its absolute imports mean, so it
- * needs no interpretation; entries whose target is gone are still left out.
+ * A jsconfig `paths` value, read from that config's baseUrl, rewritten to be
+ * read from the tsconfig instead. Null when it leaves the migration root.
+ */
+function rebase(baseUrlRelative: string, value: string): string | null {
+  if (path.isAbsolute(value)) return null;
+  const joined =
+    baseUrlRelative === '.'
+      ? path.posix.normalize(value)
+      : path.posix.normalize(`${baseUrlRelative}/${value}`);
+  if (joined.startsWith('..')) return null;
+  return configValue(joined);
+}
+
+/**
+ * The resolution a project already wrote for its editor. A jsconfig.json is
+ * the project saying what its absolute imports mean, so it needs no
+ * interpretation; its baseUrl becomes the `"*"` pattern that does the same
+ * job, and an entry whose target is gone is still left out.
  */
 function jsConfigAliases(rootDir: string): PathAliases | null {
   const file = path.join(rootDir, 'jsconfig.json');
@@ -414,42 +426,45 @@ function jsConfigAliases(rootDir: string): PathAliases | null {
   const { baseUrl, paths } = compilerOptions as { baseUrl?: unknown; paths?: unknown };
 
   const skipped: SkippedAlias[] = [];
-  const result: PathAliases = { source: 'jsconfig.json', skipped };
+  const declaredBaseUrl = typeof baseUrl === 'string' ? baseUrl : '.';
+  const baseUrlRelative = insideRoot(rootDir, path.resolve(rootDir, declaredBaseUrl));
+  let root: string | undefined;
   if (typeof baseUrl === 'string') {
-    const relative = insideRoot(rootDir, path.resolve(rootDir, baseUrl));
-    if (relative === null) {
+    if (baseUrlRelative === null) {
       skipped.push({ name: 'baseUrl', reason: `${baseUrl} is outside the migration root` });
-    } else if (!statOf(path.resolve(rootDir, relative))?.isDirectory()) {
+    } else if (!statOf(path.resolve(rootDir, baseUrlRelative))?.isDirectory()) {
       skipped.push({ name: 'baseUrl', reason: `${baseUrl} is not a directory` });
     } else {
-      result.baseUrl = relative;
+      root = configValue(baseUrlRelative, '*');
     }
   }
-  if (typeof paths === 'object' && paths !== null) {
-    const kept: Record<string, string[]> = {};
+
+  const kept: Record<string, string[]> = {};
+  if (typeof paths === 'object' && paths !== null && baseUrlRelative !== null) {
+    const from = path.resolve(rootDir, baseUrlRelative);
     Object.entries(paths as Record<string, unknown>).forEach(([pattern, values]) => {
       if (!Array.isArray(values) || values.some((value) => typeof value !== 'string')) return;
-      // paths are read from baseUrl when there is one, so the check is too.
-      const from = path.resolve(rootDir, result.baseUrl ?? '.');
-      const missing = (values as string[]).filter((value) => !targetExists(from, value));
-      if (missing.length > 0) {
+      const unusable = (values as string[]).filter(
+        (value) => rebase(baseUrlRelative, value) === null || !targetExists(from, value),
+      );
+      if (unusable.length > 0) {
         skipped.push({
           name: `paths "${pattern}"`,
-          reason: `${missing.join(', ')} does not exist`,
+          reason: `${unusable.join(', ')} does not exist`,
         });
         return;
       }
-      kept[pattern] = values as string[];
+      kept[pattern] = (values as string[]).map((value) => rebase(baseUrlRelative, value) as string);
     });
-    if (Object.keys(kept).length > 0) {
-      const sorted = sortPaths(kept);
-      result.paths = result.baseUrl === undefined ? relativeToConfig(sorted) : sorted;
-    }
   }
-  if (result.baseUrl === undefined && result.paths === undefined && skipped.length === 0) {
-    return null;
+  // The compiler tries every pattern before it tries the baseUrl, so the
+  // wildcard the baseUrl becomes goes last.
+  if (root !== undefined) kept['*'] = [...(kept['*'] ?? []), root];
+
+  if (Object.keys(kept).length === 0) {
+    return skipped.length > 0 ? { source: 'jsconfig.json', skipped } : null;
   }
-  return result;
+  return { paths: sortPaths(kept), source: 'jsconfig.json', skipped };
 }
 
 /**
@@ -465,46 +480,32 @@ export function detectPathAliases(
   bundler: BundlerDetection | null,
 ): PathAliases | null {
   const fromJsConfig = jsConfigAliases(rootDir);
-  if (fromJsConfig && (fromJsConfig.baseUrl !== undefined || fromJsConfig.paths !== undefined)) {
-    return fromJsConfig;
-  }
+  if (fromJsConfig?.paths !== undefined) return fromJsConfig;
   const fromWebpack = bundler?.name === 'webpack' ? webpackAliases(rootDir) : null;
   return fromWebpack ?? fromJsConfig;
 }
 
-function describe(aliases: PathAliases): string {
-  const parts: string[] = [];
-  if (aliases.baseUrl !== undefined) parts.push(`"baseUrl": "${aliases.baseUrl}"`);
-  if (aliases.paths !== undefined) {
-    parts.push(`"paths" for ${Object.keys(aliases.paths).join(', ')}`);
-  }
-  return parts.join(' and ');
-}
-
-/** The tsconfig fields, rendered for the generated config. */
+/** The tsconfig field, rendered for the generated config. */
 export function renderPathAliases(aliases: PathAliases): string {
-  const fields: string[] = [];
-  if (aliases.baseUrl !== undefined) fields.push(`    "baseUrl": "${aliases.baseUrl}",`);
-  if (aliases.paths !== undefined) {
-    const entries = Object.entries(aliases.paths).map(
-      ([pattern, values]) =>
-        `      "${pattern}": [${values.map((value) => `"${value}"`).join(', ')}]`,
-    );
-    fields.push(`    "paths": {\n${entries.join(',\n')}\n    },`);
-  }
-  if (fields.length === 0) return '';
+  if (aliases.paths === undefined) return '';
+  const entries = Object.entries(aliases.paths).map(
+    ([pattern, values]) =>
+      `      "${pattern}": [${values.map((value) => `"${value}"`).join(', ')}]`,
+  );
   return `
     // Absolute imports this project resolves through ${aliases.source}, which
-    // the compiler resolves only from here.
-${fields.join('\n')}`;
+    // the compiler resolves only from here. A "*" pattern is the whole-root
+    // form; anything it does not answer still resolves from node_modules.
+    "paths": {
+${entries.join(',\n')}
+    },`;
 }
 
 export function logPathAliases(aliases: PathAliases): void {
-  const mapped = describe(aliases);
-  if (mapped) {
+  if (aliases.paths !== undefined) {
     log.info(
-      `Read ${mapped} from ${aliases.source}, so this project's absolute imports resolve ` +
-        'instead of collecting a suppression.',
+      `Read "paths" for ${Object.keys(aliases.paths).join(', ')} from ${aliases.source}, so ` +
+        "this project's absolute imports resolve instead of collecting a suppression.",
     );
   }
   aliases.skipped.forEach(({ name, reason }) => {

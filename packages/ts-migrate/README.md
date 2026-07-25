@@ -669,15 +669,29 @@ and TypeScript resolves neither, so each one is a TS2307 that the migration
 turns into a suppression. On one measured project (`oldboyxx/jira_clone`, 149
 files, hand-rolled webpack 4) that was 180 of 609 suppressions, 30% of the run.
 
-`init` writes the tsconfig equivalent, `baseUrl` and `paths`, from two sources:
+`init` writes the tsconfig equivalent, `paths`, from two sources:
 
 - `jsconfig.json`, if the project has one. It is the project stating what its
-  absolute imports mean, so its `baseUrl` and `paths` are copied. This is also
-  what a Create React App project has, since `react-scripts` keeps its webpack
-  config to itself.
-- `webpack.config.*` at the project root, read as text. `resolve.modules`
-  becomes a `baseUrl` (or a `"*"` pattern when there is more than one root),
-  and each `resolve.alias` entry becomes a `paths` entry.
+  absolute imports mean, so its `baseUrl` and `paths` are taken as they are.
+  This is also what a Create React App project has, since `react-scripts` keeps
+  its webpack config to itself.
+- `webpack.config.*` at the project root, read as text. Each `resolve.modules`
+  root becomes a `"*"` pattern and each `resolve.alias` entry becomes a `paths`
+  entry.
+
+```jsonc
+"paths": {
+  "*": ["./src/*"],
+  "@": ["./client/app"],
+  "@/*": ["./client/app/*"]
+}
+```
+
+It is `paths` and never `baseUrl`, including where the source was a `baseUrl`:
+TypeScript 6 reports that option as deprecated (TS5101, an error unless the
+config also sets `ignoreDeprecations`) and TypeScript 7 drops it. A `"*"`
+pattern does the same job on every supported line, and a specifier no pattern
+answers still falls through to `node_modules` either way.
 
 **The config is never executed.** Running a project's build config to read it
 would run arbitrary code from the project being migrated. It is parsed instead,
@@ -694,7 +708,7 @@ written only when it cannot be wrong, and everything else is named in the log
 rather than guessed at:
 
 ```
-Read "baseUrl": "src" from webpack.config.js, so this project's absolute imports
+Read "paths" for * from webpack.config.js, so this project's absolute imports
 resolve instead of collecting a suppression.
 Leaving resolve.alias "extensions" out of the generated tsconfig: its target is
 computed when the config runs.

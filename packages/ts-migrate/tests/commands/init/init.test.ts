@@ -596,12 +596,16 @@ describe('init command', () => {
 
       init({ rootDir, isExtendedConfig: false });
 
-      expect(readConfig(rootDir).compilerOptions.baseUrl).toBe('src');
-      // Without the baseUrl this is a TS2307 that migrates into a suppression.
+      const { compilerOptions } = readConfig(rootDir);
+      expect(compilerOptions.paths).toEqual({ '*': ['./src/*'] });
+      // TypeScript 6 reports baseUrl as deprecated (TS5101), so the wildcard
+      // pattern is the only form that type-checks on every supported line.
+      expect(compilerOptions.baseUrl).toBeUndefined();
+      // Without it this is a TS2307 that migrates into a suppression.
       expect(typeCheck(rootDir)).toEqual([]);
     }, 60000);
 
-    it('copies the baseUrl and paths a jsconfig.json already declares', () => {
+    it('reads the resolution a jsconfig.json already declares', () => {
       writeAbsoluteImportProject();
       // What Create React App projects with absolute imports carry, since
       // react-scripts keeps its webpack config to itself.
@@ -613,7 +617,7 @@ describe('init command', () => {
 
       init({ rootDir, isExtendedConfig: false });
 
-      expect(readConfig(rootDir).compilerOptions.baseUrl).toBe('src');
+      expect(readConfig(rootDir).compilerOptions.paths).toEqual({ '*': ['./src/*'] });
       expect(typeCheck(rootDir)).toEqual([]);
     }, 60000);
 

@@ -210,9 +210,12 @@ installed, which is what declares `import.meta.env` and the asset imports
 `require.context` and `module.hot` type; init says so when it is missing.
 A webpack project also gets `types/ts-migrate-assets.d.ts`, described below.
 A project whose modules are imported by name rather than by relative path
-(`import App from 'shared/App'`) gets the `baseUrl` and `paths` that make
-those resolve, read from its `jsconfig.json` when it has one and otherwise
-from `resolve.modules`/`resolve.alias` in a root `webpack.config.*`. The
+(`import App from 'shared/App'`) gets the `paths` that make those resolve,
+read from its `jsconfig.json` when it has one and otherwise from
+`resolve.modules`/`resolve.alias` in a root `webpack.config.*`. It is always
+`paths` and never `baseUrl`, even when the source was a `baseUrl`, because
+TypeScript 6 reports that option as deprecated (TS5101) and 7 drops it; a
+`"*"` pattern does the same job on every supported compiler. The
 webpack config is parsed, never executed, so only entries written as string
 literals, `__dirname`, `path.join`/`path.resolve` or `const` bindings of
 those are translated. An entry whose target is computed at build time, does

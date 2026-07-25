@@ -39,7 +39,7 @@ describe('detectPathAliases', () => {
       writeConfig("{ resolve: { modules: [path.join(__dirname, 'src'), 'node_modules'] } }");
 
       expect(detectPathAliases(rootDir, webpack)).toEqual({
-        baseUrl: 'src',
+        paths: { '*': ['./src/*'] },
         source: 'webpack.config.js',
         skipped: [],
       });
@@ -48,17 +48,17 @@ describe('detectPathAliases', () => {
     it('reads path.resolve and a plain relative entry the same way', () => {
       makeDir('app');
       writeConfig("{ resolve: { modules: [path.resolve(__dirname, 'app')] } }");
-      expect(detectPathAliases(rootDir, webpack)).toMatchObject({ baseUrl: 'app' });
+      expect(detectPathAliases(rootDir, webpack)).toMatchObject({ paths: { '*': ['./app/*'] } });
 
       writeConfig("{ resolve: { modules: ['app', 'node_modules'] } }");
-      expect(detectPathAliases(rootDir, webpack)).toMatchObject({ baseUrl: 'app' });
+      expect(detectPathAliases(rootDir, webpack)).toMatchObject({ paths: { '*': ['./app/*'] } });
     });
 
     it('reads a template literal', () => {
       makeDir('src');
       writeConfig('{ resolve: { modules: [`${__dirname}/src`] } }');
 
-      expect(detectPathAliases(rootDir, webpack)).toMatchObject({ baseUrl: 'src' });
+      expect(detectPathAliases(rootDir, webpack)).toMatchObject({ paths: { '*': ['./src/*'] } });
     });
 
     it('follows a const binding', () => {
@@ -72,7 +72,7 @@ module.exports = { resolve: { modules: [libPath, 'node_modules'] } };
 `,
       );
 
-      expect(detectPathAliases(rootDir, webpack)).toMatchObject({ baseUrl: 'lib' });
+      expect(detectPathAliases(rootDir, webpack)).toMatchObject({ paths: { '*': ['./lib/*'] } });
     });
 
     it('reads an ESM import of the path module', () => {
@@ -82,10 +82,10 @@ module.exports = { resolve: { modules: [libPath, 'node_modules'] } };
         "import path from 'node:path';\n\nexport default { resolve: { modules: [path.join(__dirname, 'src')] } };\n",
       );
 
-      expect(detectPathAliases(rootDir, webpack)).toMatchObject({ baseUrl: 'src' });
+      expect(detectPathAliases(rootDir, webpack)).toMatchObject({ paths: { '*': ['./src/*'] } });
     });
 
-    it('writes more than one root as a wildcard pattern instead of a baseUrl', () => {
+    it('lists every root in one wildcard pattern, in the order webpack tries them', () => {
       makeDir('src');
       makeDir('vendor');
       writeConfig("{ resolve: { modules: ['src', 'vendor', 'node_modules'] } }");
@@ -104,7 +104,7 @@ module.exports = { resolve: { modules: [libPath, 'node_modules'] } };
       );
 
       expect(detectPathAliases(rootDir, webpack)).toEqual({
-        baseUrl: 'src',
+        paths: { '*': ['./src/*'] },
         source: 'webpack.config.js',
         skipped: [
           { name: 'resolve.modules[0]', reason: 'its value is computed when the config runs' },
@@ -226,7 +226,7 @@ module.exports = { resolve: { alias: { '@': appPath } } };
   });
 
   describe('jsconfig.json', () => {
-    it('copies the baseUrl and paths the project already wrote', () => {
+    it('takes the paths the project already wrote, and the baseUrl behind them', () => {
       makeDir('src/amo');
       writeFile(
         'jsconfig.json',
@@ -234,10 +234,21 @@ module.exports = { resolve: { alias: { '@': appPath } } };
       );
 
       expect(detectPathAliases(rootDir, null)).toEqual({
-        baseUrl: '.',
-        paths: { 'amo/*': ['src/amo/*'] },
+        paths: { '*': ['./*'], 'amo/*': ['./src/amo/*'] },
         source: 'jsconfig.json',
         skipped: [],
+      });
+    });
+
+    it('reads a paths value from the baseUrl it was written against', () => {
+      makeDir('src/amo');
+      writeFile(
+        'jsconfig.json',
+        '{ "compilerOptions": { "baseUrl": "src", "paths": { "amo/*": ["amo/*"] } } }',
+      );
+
+      expect(detectPathAliases(rootDir, null)).toMatchObject({
+        paths: { '*': ['./src/*'], 'amo/*': ['./src/amo/*'] },
       });
     });
 
@@ -248,7 +259,7 @@ module.exports = { resolve: { alias: { '@': appPath } } };
       writeConfig("{ resolve: { modules: [path.join(__dirname, 'app')] } }");
 
       expect(detectPathAliases(rootDir, webpack)).toMatchObject({
-        baseUrl: 'src',
+        paths: { '*': ['./src/*'] },
         source: 'jsconfig.json',
       });
     });
@@ -301,12 +312,13 @@ describe('renderPathAliases', () => {
 
   it('names the file the mapping came from', () => {
     const text = renderPathAliases({
-      baseUrl: 'src',
+      paths: { '*': ['./src/*'] },
       source: 'webpack.config.js',
       skipped: [],
     });
 
     expect(text).toContain('webpack.config.js');
-    expect(text).toContain('"baseUrl": "src",');
+    expect(text).toContain('"*": ["./src/*"]');
+    expect(text).not.toContain('baseUrl');
   });
 });
