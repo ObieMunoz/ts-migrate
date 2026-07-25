@@ -41,6 +41,7 @@ describe('init command', () => {
       moduleDetection: 'force',
       jsx: 'react',
       esModuleInterop: true,
+      resolveJsonModule: true,
       strict: true,
       skipLibCheck: true,
     });
