@@ -13,7 +13,7 @@ import log from 'updatable-log';
 import yargs from 'yargs';
 
 import { formatTypesPackageReport, TypesPackageDetector } from '@obiemunoz/ts-migrate-plugins';
-import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
+import { errorMessage, migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
 import check from './commands/check';
 import init from './commands/init';
 import buildMigrateConfig, { availablePlugins } from './commands/migrate';
@@ -39,6 +39,37 @@ import {
   scanTypeDebt,
   scanTypeDebtForFiles,
 } from './utils/typeDebt';
+
+const BUG_REPORT_URL = 'https://github.com/ObieMunoz/ts-migrate/issues';
+
+/**
+ * Every failure a run can expect is reported by the command that raised it, so
+ * a throw that reaches the process is a ts-migrate bug. Node prints one as a
+ * bare stack, which reads like a finding about the project being migrated;
+ * name it as a bug instead and keep what is worth pasting into an issue.
+ */
+function reportCrash(kind: string, error: unknown): void {
+  // A pass counter mid-update would otherwise leave a stale line on screen.
+  log.clear();
+  let version = 'unknown';
+  try {
+    version = packageVersion();
+  } catch {
+    // A crash report is the one thing that must not fail for a missing file.
+  }
+  log.error(`ts-migrate ${version} hit an unexpected ${kind}. This is a bug in ts-migrate.`);
+  // The stack names the failing line; the message carries the cause chain,
+  // which the stack leaves out.
+  log.error(errorMessage(error));
+  if (error instanceof Error && error.stack) log.error(error.stack);
+  log.error(`Please report this at ${BUG_REPORT_URL}`);
+  process.exit(1);
+}
+
+// Registered after the imports above have run, so this covers command
+// execution rather than module loading, where a throw means a broken install.
+process.on('uncaughtException', (error) => reportCrash('error', error));
+process.on('unhandledRejection', (reason) => reportCrash('promise rejection', reason));
 
 const PROJECT_ESLINT_FLAG_DESCRIPTION =
   "Run eslint-fix with the project's own ESLint (node_modules/eslint, searched from " +
@@ -430,7 +461,7 @@ yargs
           );
         }
       } catch (err) {
-        log.error(err instanceof Error ? err.message : err);
+        log.error(errorMessage(err));
         process.exit(1);
         return;
       }

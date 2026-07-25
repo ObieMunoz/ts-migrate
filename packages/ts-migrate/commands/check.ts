@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
+import { errorMessage } from '@obiemunoz/ts-migrate-server';
 import { debtTotal, scanTypeDebt } from '../utils/typeDebt';
 
 export const DEFAULT_BASELINE_FILE = '.ts-migrate-baseline.json';
@@ -60,9 +61,7 @@ function readBaseline(baselinePath: string): Baseline {
   try {
     parsed = JSON.parse(fs.readFileSync(baselinePath, 'utf-8'));
   } catch (err) {
-    throw new Error(
-      `Could not read baseline ${baselinePath}: ${err instanceof Error ? err.message : err}`,
-    );
+    throw new Error(`Could not read baseline ${baselinePath}: ${errorMessage(err)}`);
   }
   if (parsed?.version !== BASELINE_VERSION || typeof parsed.files !== 'object') {
     throw new Error(
@@ -101,7 +100,7 @@ export default function check({
     totalDebt = debtTotal(report.totals);
     filesScanned = report.filesScanned;
   } catch (err) {
-    log.error(err instanceof Error ? err.message : err);
+    log.error(errorMessage(err));
     return -1;
   }
 
@@ -124,7 +123,7 @@ export default function check({
   try {
     baseline = readBaseline(baselinePath);
   } catch (err) {
-    log.error(err instanceof Error ? err.message : err);
+    log.error(errorMessage(err));
     return -1;
   }
 
