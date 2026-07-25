@@ -335,8 +335,10 @@ Flat versus legacy config is detected separately, from the presence of an
 The search starts at the folder being migrated and walks up, and ESLint is
 rooted there too, so `ts-migrate migrate packages/app` run from a repository
 root uses `packages/app`'s config, and still finds one at the repository root
-when the package has none. The run prints the config file it settled on next
-to the engine line:
+when the package has none. The working directory is not searched: a config
+above it but not above the folder being migrated belongs to another project,
+and ESLint rooted at the folder would never load it. The run prints the config
+file it settled on next to the engine line:
 
 ```
 [eslint-fix] ESLint 9.39.4 (project: /repo/node_modules/eslint)

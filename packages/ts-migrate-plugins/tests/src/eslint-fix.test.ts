@@ -238,6 +238,12 @@ interface RunOptions {
    * packages/app` from a repository root looks like to the plugin.
    */
   rootDir?: string;
+  /**
+   * Where the child process runs, relative to the fixture. A directory that is
+   * not an ancestor of the migration root is what running ts-migrate from an
+   * unrelated checkout looks like to the plugin.
+   */
+  workingDir?: string;
 }
 
 interface FixtureRun {
@@ -261,7 +267,13 @@ interface FixtureRun {
 function runInFixture(
   fixture: string,
   files: { fileName: string; text: string }[],
-  { env: extraEnv = {}, projectESLint, pluginOptions, rootDir: rootSubDir }: RunOptions = {},
+  {
+    env: extraEnv = {},
+    projectESLint,
+    pluginOptions,
+    rootDir: rootSubDir,
+    workingDir,
+  }: RunOptions = {},
 ): FixtureRun {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ts-migrate-eslint-fix-'));
   try {
@@ -298,9 +310,12 @@ function runInFixture(
     const rootDir = rootSubDir ? path.join(tmpDir, rootSubDir) : tmpDir;
     const { status, stdout, stderr } = spawnSync(
       process.execPath,
-      ['driver.cjs', JSON.stringify({ files, rootDir, options: pluginOptions })],
+      [
+        path.join(tmpDir, 'driver.cjs'),
+        JSON.stringify({ files, rootDir, options: pluginOptions }),
+      ],
       {
-        cwd: tmpDir,
+        cwd: workingDir ? path.join(tmpDir, workingDir) : tmpDir,
         env,
         encoding: 'utf8',
       },
@@ -499,6 +514,29 @@ describe('eslint-fix config resolution', () => {
       expect(stdout).toContain(
         `[eslint-fix] eslintrc config, rooted at ${path.join(tmpDir, 'packages', 'app')}`,
       );
+    },
+    20000,
+  );
+
+  it(
+    'ignores a flat config that only the working directory can reach',
+    () => {
+      const { results, notices, stdout, tmpDir } = runInFixture(
+        'eslint-other-checkout',
+        [{ fileName: 'src/Foo.js', text: unfixed }],
+        { rootDir: 'project', workingDir: 'other' },
+      );
+
+      // The eslintrc engine reports the root it searched, per file; the flat
+      // engine would have failed every file with "Could not find config file."
+      expect(results).toEqual([unfixed]);
+      expect(stdout).toContain(
+        `[eslint-fix] eslintrc config, rooted at ${path.join(tmpDir, 'project')}`,
+      );
+      expect(stdout).not.toContain('[eslint-fix] flat config:');
+      expect(notices.map(({ reason }) => reason)).toEqual([
+        expect.stringContaining('No ESLint configuration found'),
+      ]);
     },
     20000,
   );
