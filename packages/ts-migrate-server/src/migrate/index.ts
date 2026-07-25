@@ -302,9 +302,7 @@ export default async function migrate({
       }
       // Comparing this across passes is what tells a group that is settling
       // from one that is thrashing.
-      log.info(
-        `Pass ${pass + 1} of ${maxStablePasses} changed ${changedThisPass.size} file(s).`,
-      );
+      log.info(`Pass ${pass + 1} of ${maxStablePasses} changed ${changedThisPass.size} file(s).`);
       dirtyFiles = incrementalPasses
         ? computeDirtyFiles(
             project.getSourceFiles(),
