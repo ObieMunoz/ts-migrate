@@ -268,6 +268,7 @@ function findPinnedPackageManager(startDir: string): PinnedPackageManager | unde
 }
 
 interface LockfileChoice {
+  dir: string;
   file: string;
   packageManager: PackageManager;
   /** Said when mtime, the weakest of the signals, is what settled the choice. */
@@ -309,8 +310,8 @@ function lockfileCandidatesIn(dir: string): LockfileCandidate[] {
   return candidates;
 }
 
-function chosen({ file, packageManager }: LockfileCandidate): LockfileChoice {
-  return { file, packageManager };
+function chosen(dir: string, { file, packageManager }: LockfileCandidate): LockfileChoice {
+  return { dir, file, packageManager };
 }
 
 /**
@@ -324,21 +325,21 @@ function chooseLockfile(
   candidates: LockfileCandidate[],
   pinned: PackageManager | undefined,
 ): LockfileChoice {
-  if (candidates.length === 1) return chosen(candidates[0]);
+  if (candidates.length === 1) return chosen(dir, candidates[0]);
 
   const pinnedCandidate = candidates.find(({ packageManager }) => packageManager === pinned);
-  if (pinnedCandidate) return chosen(pinnedCandidate);
+  if (pinnedCandidate) return chosen(dir, pinnedCandidate);
 
   // Only pnpm reads it, so it decides for pnpm whatever the mtimes say.
   if (fs.existsSync(path.join(dir, 'pnpm-workspace.yaml'))) {
     const pnpm = candidates.find(({ packageManager }) => packageManager === 'pnpm');
-    if (pnpm) return chosen(pnpm);
+    if (pnpm) return chosen(dir, pnpm);
   }
 
   // Whichever tool ran last, as a proxy for the one the project is on.
   const [newest, ...rest] = [...candidates].sort((a, b) => b.mtimeMs - a.mtimeMs);
   return {
-    ...chosen(newest),
+    ...chosen(dir, newest),
     note:
       `more than one lockfile is present; the install command follows ${newest.file} as the ` +
       `most recently modified, over ${rest.map(({ file }) => file).join(' and ')}.`,
@@ -365,9 +366,73 @@ function findLockfile(
   );
 }
 
+/**
+ * Yarn v1 refuses to add a dependency to a workspace root without `-W`; berry
+ * dropped that check and rejects the unknown option, so the flag can only be
+ * offered once the major is known. The lockfile is the fallback source: berry
+ * opens with a `__metadata` block, v1 with a version header.
+ */
+function yarnGeneration(
+  pinnedVersion: string | undefined,
+  lockfile: LockfileChoice | undefined,
+): 'v1' | 'berry' | undefined {
+  const pinnedMajor = firstMajor(pinnedVersion);
+  if (pinnedMajor !== undefined) return pinnedMajor === 1 ? 'v1' : 'berry';
+  if (lockfile?.packageManager !== 'yarn') return undefined;
+  let text: string;
+  try {
+    text = fs.readFileSync(path.join(lockfile.dir, lockfile.file), 'utf-8');
+  } catch {
+    return undefined;
+  }
+  if (/^# yarn lockfile v1$/m.test(text)) return 'v1';
+  if (/^__metadata:$/m.test(text)) return 'berry';
+  return undefined;
+}
+
+/**
+ * The flag the manager needs to accept an install into a workspace root, or
+ * undefined when the directory is not one or the manager has no such check.
+ *
+ * Each manager gets the signal it actually reads. pnpm goes by
+ * `pnpm-workspace.yaml` alone — a `workspaces` field only earns a warning that
+ * pnpm does not support it, and the install proceeds. yarn v1 goes by the
+ * `workspaces` field. npm's `-w` selects a workspace by name rather than
+ * escaping a check, so it must not be added there, and bun has no check.
+ */
+function workspaceRootFlag(
+  packageManager: PackageManager,
+  installDir: string,
+  yarn: 'v1' | 'berry' | undefined,
+): string | undefined {
+  if (packageManager === 'pnpm') {
+    return fs.existsSync(path.join(installDir, 'pnpm-workspace.yaml')) ? '-w' : undefined;
+  }
+  if (packageManager === 'yarn' && yarn === 'v1') {
+    return readJson(path.join(installDir, 'package.json'))?.workspaces !== undefined
+      ? '-W'
+      : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Where the install command has to run, said relative to the working directory
+ * when it sits inside it. Undefined when they are the same directory, which is
+ * the case that needs no explaining.
+ */
+function installDirLabel(installDir: string): string | undefined {
+  const cwd = process.cwd();
+  if (path.resolve(installDir) === path.resolve(cwd)) return undefined;
+  const relative = path.relative(cwd, installDir);
+  return relative && !relative.startsWith('..') ? relative : installDir;
+}
+
 interface PackageManagerDetection extends PinnedPackageManager {
   /** Said when the sources disagreed and something had to break the tie. */
   note?: string;
+  /** The flag the manager needs to accept an install into a workspace root. */
+  workspaceRootFlag?: string;
 }
 
 /**
@@ -376,10 +441,18 @@ interface PackageManagerDetection extends PinnedPackageManager {
  * they disagree, which usually means a half finished switch between managers
  * and is worth saying out loud rather than resolving silently.
  */
-function detectPackageManager(startDir: string): PackageManagerDetection {
+function detectPackageManager(startDir: string, installDir: string): PackageManagerDetection {
   const pinned = findPinnedPackageManager(startDir);
   const lockfile = findLockfile(startDir, pinned?.packageManager);
-  if (!pinned) return { packageManager: lockfile?.packageManager ?? 'npm', note: lockfile?.note };
+  const packageManager = pinned?.packageManager ?? lockfile?.packageManager ?? 'npm';
+  const flag = workspaceRootFlag(
+    packageManager,
+    installDir,
+    yarnGeneration(pinned?.version, lockfile),
+  );
+  if (!pinned) {
+    return { packageManager, note: lockfile?.note, workspaceRootFlag: flag };
+  }
 
   // Any tie between lockfiles is moot here: the pin, not an mtime, is what the
   // install command follows.
@@ -389,7 +462,7 @@ function detectPackageManager(startDir: string): PackageManagerDetection {
       ? `package.json pins "packageManager": "${pin}" but a ${lockfile.file} was found; ` +
         'the install command follows the pinned field.'
       : undefined;
-  return { ...pinned, note };
+  return { ...pinned, note, workspaceRootFlag: flag };
 }
 
 const INSTALL_COMMANDS: { [key in PackageManager]: string } = {
@@ -467,6 +540,10 @@ export interface TypesPackageReport {
   packageManager: PackageManager;
   /** The version off the `packageManager` pin, when the project has one. */
   packageManagerVersion?: string;
+  /** The flag the install needs because its target directory is a workspace root. */
+  workspaceRootFlag?: string;
+  /** Where to run the install, when that is not the working directory of the run. */
+  installDir?: string;
   missing: TypesPackageRecommendation[];
   untyped: TypesPackageRecommendation[];
   notLoaded: { packageName: string; advice: string }[];
@@ -521,10 +598,16 @@ export function summarizeTypesEvidence(
   evidence: TypesEvidence,
   rootDir: string,
 ): TypesPackageReport {
-  const detected = detectPackageManager(rootDir);
+  const nearest = findNearestPackageJson(rootDir);
+  // The install lands in the package the migration root belongs to, which is
+  // the directory that decides both the workspace flag and the "run from" line.
+  const installDir = nearest?.dir ?? rootDir;
+  const detected = detectPackageManager(rootDir, installDir);
   const report: TypesPackageReport = {
     packageManager: detected.packageManager,
     packageManagerVersion: detected.version,
+    workspaceRootFlag: detected.workspaceRootFlag,
+    installDir: installDirLabel(installDir),
     missing: [],
     untyped: [],
     notLoaded: [],
@@ -534,7 +617,6 @@ export function summarizeTypesEvidence(
     typesPinned: evidence.compilerTypes !== undefined,
   };
 
-  const nearest = findNearestPackageJson(rootDir);
   const declaredDeps: { [name: string]: string } = {
     ...nearest?.packageJson.dependencies,
     ...nearest?.packageJson.devDependencies,
@@ -866,13 +948,18 @@ export function formatTypesPackageReport(
     report.untyped.forEach((rec) => lines.push(recommendationLine(rec)));
   }
 
-  const install = INSTALL_COMMANDS[report.packageManager];
+  const install =
+    INSTALL_COMMANDS[report.packageManager] +
+    (report.workspaceRootFlag ? ` ${report.workspaceRootFlag}` : '');
   if (report.missing.length > 0) {
     lines.push(`  Install: ${install} ${report.missing.map((rec) => rec.packageName).join(' ')}`);
   }
   if (report.untyped.length > 0) {
     const verb = report.missing.length > 0 ? 'Then try' : 'Try';
     lines.push(`  ${verb}: ${install} ${report.untyped.map((rec) => rec.packageName).join(' ')}`);
+  }
+  if (report.installDir && (report.missing.length > 0 || report.untyped.length > 0)) {
+    lines.push(`  Run from: ${report.installDir}`);
   }
   const declaredCount = report.declared?.moduleNames.length;
   if (declaredCount) {
