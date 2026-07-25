@@ -1,5 +1,15 @@
-import { mockDiagnostic, mockPluginParams } from '../test-utils';
+import ts from 'typescript';
+import { mockDiagnostic, mockPluginParams, realPluginParams } from '../test-utils';
 import declareMissingClassPropertiesPlugin from '../../src/plugins/declare-missing-class-properties';
+
+async function runReal(
+  text: string,
+  compilerOptions?: ts.CompilerOptions,
+): Promise<string | undefined> {
+  return declareMissingClassPropertiesPlugin.run(
+    await realPluginParams({ text, options: { anyAlias: '$TSFixMe' }, compilerOptions }),
+  );
+}
 
 describe('declare-missing-class-properties plugin', () => {
   it.each([2339, 2551])(
@@ -157,5 +167,201 @@ class Class2 {
     );
 
     expect(result).toBe(text);
+  });
+
+  describe('inferred property types', () => {
+    it('leaves a constructor initialized property for the checker to type', async () => {
+      const text = `class Counter {
+  constructor() {
+    this.count = 0;
+  }
+
+  bump() {
+    this.count += 1;
+  }
+}
+`;
+
+      expect(await runReal(text)).toBe(`class Counter {
+  count;
+  constructor() {
+    this.count = 0;
+  }
+
+  bump() {
+    this.count += 1;
+  }
+}
+`);
+    });
+
+    it('types a null initialized property with the alias', async () => {
+      const text = `class Box {
+  constructor() {
+    this.value = null;
+  }
+}
+`;
+
+      expect(await runReal(text)).toBe(`class Box {
+  value: $TSFixMe;
+  constructor() {
+    this.value = null;
+  }
+}
+`);
+    });
+
+    it('types a property only a method assigns with the alias', async () => {
+      const text = `class Store {
+  load() {
+    this.items = [];
+  }
+}
+`;
+
+      expect(await runReal(text)).toBe(`class Store {
+  items: $TSFixMe;
+  load() {
+    this.items = [];
+  }
+}
+`);
+    });
+
+    it('types a property a method reassigns incompatibly with the alias', async () => {
+      const text = `class Conflict {
+  constructor() {
+    this.total = 0;
+  }
+
+  reset() {
+    this.total = 'none';
+  }
+}
+`;
+
+      expect(await runReal(text)).toBe(`class Conflict {
+  total: $TSFixMe;
+  constructor() {
+    this.total = 0;
+  }
+
+  reset() {
+    this.total = 'none';
+  }
+}
+`);
+    });
+
+    it('types a property a later read contradicts with the alias', async () => {
+      const text = `class Options {
+  constructor() {
+    this.opts = { a: 1 };
+  }
+
+  read() {
+    return this.opts.b;
+  }
+}
+`;
+
+      expect(await runReal(text)).toBe(`class Options {
+  opts: $TSFixMe;
+  constructor() {
+    this.opts = { a: 1 };
+  }
+
+  read() {
+    return this.opts.b;
+  }
+}
+`);
+    });
+
+    it('falls back on the properties that fail and keeps the rest', async () => {
+      const text = `class Mixed {
+  constructor() {
+    this.count = 0;
+    this.value = null;
+  }
+}
+`;
+
+      expect(await runReal(text)).toBe(`class Mixed {
+  count;
+  value: $TSFixMe;
+  constructor() {
+    this.count = 0;
+    this.value = null;
+  }
+}
+`);
+    });
+
+    it('decides each class in a file on its own', async () => {
+      const text = `class Counter {
+  constructor() {
+    this.count = 0;
+  }
+}
+
+class Box {
+  constructor() {
+    this.value = null;
+  }
+}
+`;
+
+      expect(await runReal(text)).toBe(`class Counter {
+  count;
+  constructor() {
+    this.count = 0;
+  }
+}
+
+class Box {
+  value: $TSFixMe;
+  constructor() {
+    this.value = null;
+  }
+}
+`);
+    });
+
+    it('types every property with the alias when noImplicitAny is off', async () => {
+      const text = `class Counter {
+  constructor() {
+    this.count = 0;
+  }
+}
+`;
+
+      expect(await runReal(text, { strict: false })).toBe(`class Counter {
+  count: $TSFixMe;
+  constructor() {
+    this.count = 0;
+  }
+}
+`);
+    });
+
+    it('changes nothing on a second run', async () => {
+      const text = `class Counter {
+  constructor() {
+    this.count = 0;
+    this.value = null;
+  }
+
+  bump() {
+    this.count += 1;
+  }
+}
+`;
+
+      const once = await runReal(text);
+      expect(once).not.toBe(text);
+      expect(await runReal(once as string)).toBe(once);
+    });
   });
 });
