@@ -33,12 +33,14 @@ function getCompiledPlugin(): string {
   return compiledPlugin;
 }
 
-// Only fileName, rootDir, text, and options are read by the eslint-fix
-// plugin; the other PluginParams are unused. File names are resolved against
-// rootDir, which is where the runner's are. Files are dispatched together, as
-// the migrate runner does for independentFiles plugins. The workerData of
-// every spawn is recorded by wrapping worker_threads.Worker before the plugin
-// loads. Results go to a file so stdout carries only what the plugin logs.
+// Only fileName, rootDir, text, options, and reportFileNotice are read by the
+// eslint-fix plugin; the other PluginParams are unused. File names are
+// resolved against rootDir, which is where the runner's are. Files are
+// dispatched together, as the migrate runner does for independentFiles
+// plugins, and each one's notices are collected the way the runner collects
+// them. The workerData of every spawn is recorded by wrapping
+// worker_threads.Worker before the plugin loads. Results go to a file so
+// stdout carries only what the plugin logs.
 const driverSource = `
 const fs = require('fs');
 const path = require('path');
@@ -53,16 +55,24 @@ workerThreads.Worker = class extends RealWorker {
 };
 const plugin = require('./plugin/eslint-fix-plugin.cjs').default;
 const { files, rootDir, options } = JSON.parse(process.argv[2]);
+const notices = [];
 (async () => {
   const results = await Promise.all(
     files.map(({ fileName, text }) =>
-      plugin.run({ fileName: path.resolve(rootDir, fileName), rootDir, text, options }),
+      plugin.run({
+        fileName: path.resolve(rootDir, fileName),
+        rootDir,
+        text,
+        options,
+        reportFileNotice: (notice) => notices.push({ ...notice, file: fileName }),
+      }),
     ),
   );
   fs.writeFileSync(
     path.join(__dirname, 'result.json'),
     JSON.stringify({
       results,
+      notices,
       // The temp tree is gone by the time the test reads this.
       workerData: workerData.map((data) => ({
         ...data,
@@ -154,6 +164,8 @@ interface RunOptions {
 
 interface FixtureRun {
   results: (string | undefined)[];
+  /** What the plugin reported per file, as the runner would collect it. */
+  notices: { file: string; reason: string; ruleId?: string; hint?: string; recovered?: boolean }[];
   spawnedWorkers: number;
   workerData: {
     eslintPath: string;
@@ -245,18 +257,23 @@ describe('eslint-fix plugin', () => {
   );
 
   it(
-    'warns once, returns text unchanged, when the project ESLint cannot parse TypeScript',
+    'reports one cause, and returns text unchanged, when the project ESLint cannot parse TypeScript',
     () => {
       // The legacy fixture parses with espree, which rejects type annotations.
       const text = `const hello: any = 'world'`;
-      const { results, stderr } = runInFixture('eslint-legacy', [
+      const { results, notices, stderr } = runInFixture('eslint-legacy', [
         { fileName: 'Foo.tsx', text },
         { fileName: 'Bar.tsx', text },
       ]);
 
       expect(results).toEqual([text, text]);
-      expect(stderr.match(/ESLint could not parse/g)).toHaveLength(1);
-      expect(stderr).toContain('@typescript-eslint');
+      // One per file, with the same reason, so the runner reports them as one.
+      expect(notices.map(({ file }) => file).sort()).toEqual(['Bar.tsx', 'Foo.tsx']);
+      expect(new Set(notices.map(({ reason }) => reason)).size).toBe(1);
+      expect(notices[0].reason).toContain('ESLint could not parse the file');
+      expect(notices[0].hint).toContain('@typescript-eslint');
+      // Nothing is printed from inside the pass.
+      expect(stderr).not.toContain('could not parse');
     },
     15000,
   );
@@ -320,10 +337,10 @@ describe('eslint-fix plugin', () => {
   );
 
   it(
-    'still warns once about unparseable files when linting in workers',
+    'still reports unparseable files when linting in workers',
     () => {
       const text = `const hello: any = 'world'`;
-      const { results, stderr, spawnedWorkers } = runInFixture(
+      const { results, notices, spawnedWorkers } = runInFixture(
         'eslint-legacy',
         [
           { fileName: 'Foo.tsx', text },
@@ -334,7 +351,9 @@ describe('eslint-fix plugin', () => {
 
       expect(results).toEqual([text, text]);
       expect(spawnedWorkers).toBe(2);
-      expect(stderr.match(/ESLint could not parse/g)).toHaveLength(1);
+      expect(notices).toHaveLength(2);
+      expect(new Set(notices.map(({ reason }) => reason)).size).toBe(1);
+      expect(notices[0].reason).toContain('ESLint could not parse the file');
     },
     20000,
   );
@@ -464,17 +483,59 @@ describe('eslint-fix engine selection', () => {
   it(
     'leaves the same file unfixed under the bundled engine, which --no-projectEslint selects',
     () => {
-      const { results, stdout, stderr } = runInFixture(
+      const { results, notices, stdout, stderr } = runInFixture(
         'eslint-legacy-plugin',
-        [{ fileName: 'Foo.js', text: unfixed }],
+        [
+          { fileName: 'Foo.js', text: unfixed },
+          { fileName: 'Bar.js', text: unfixed },
+        ],
         { projectESLint: 'v8', pluginOptions: { projectEslint: false } },
       );
 
-      expect(results).toEqual([unfixed]);
+      expect(results).toEqual([unfixed, unfixed]);
       expect(stdout).toContain('bundled with ts-migrate; --no-projectEslint');
-      expect(stderr).toContain('context.getScope is not a function');
+      // One notice per file, all sharing the cause and the rule that threw, so
+      // the runner reports a rule broken by engine skew once for the project.
+      expect(notices).toHaveLength(2);
+      notices.forEach((notice) => {
+        expect(notice.reason).toBe('context.getScope is not a function');
+        expect(notice.ruleId).toBe('legacy/uses-old-api');
+        expect(notice.hint).toContain('removed in ESLint 9');
+        expect(notice.hint).toContain('bundled with it');
+      });
+      // The per-occurrence detail ESLint appends stays out of the cause.
+      expect(notices[0].reason).not.toContain('Occurred while linting');
+      expect(stderr).not.toContain('getScope');
     },
     20000,
+  );
+
+  it(
+    'reports the rule that threw for a file linted in a worker',
+    () => {
+      const { results, notices, spawnedWorkers } = runInFixture(
+        'eslint-legacy-plugin',
+        [
+          { fileName: 'Foo.js', text: unfixed },
+          { fileName: 'Bar.js', text: unfixed },
+        ],
+        {
+          projectESLint: 'v8',
+          pluginOptions: { projectEslint: false },
+          env: { TS_MIGRATE_ESLINT_FIX_WORKERS: '2' },
+        },
+      );
+
+      expect(results).toEqual([unfixed, unfixed]);
+      expect(spawnedWorkers).toBe(2);
+      // The rule id only reaches the main thread if the worker sends it: the
+      // error itself does not survive the structured clone.
+      expect(notices.map(({ ruleId }) => ruleId)).toEqual([
+        'legacy/uses-old-api',
+        'legacy/uses-old-api',
+      ]);
+    },
+    30000,
   );
 
   it(

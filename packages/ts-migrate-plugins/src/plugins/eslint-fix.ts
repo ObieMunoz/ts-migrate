@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { Worker } from 'worker_threads';
 import type { loadESLint } from 'eslint';
-import { Plugin } from '@obiemunoz/ts-migrate-server';
+import { fileNoticeReporter, Plugin, PluginFileNotice } from '@obiemunoz/ts-migrate-server';
 
 // Either the flat-config or legacy engine; both expose the `lintText` API.
 type AnyESLint = InstanceType<Awaited<ReturnType<typeof loadESLint>>>;
@@ -288,21 +288,25 @@ function getESLint(rootDir: string, useProjectESLint: boolean): Promise<AnyESLin
 // untouched instead of re-linting the whole project.
 const lastFixedText = new Map<string, string>();
 
-// Warned at most once per run: a project whose ESLint parser is not
-// TypeScript-aware fails the same way for every file.
-let warnedAboutParseErrors = false;
+type ReportNotice = (notice: PluginFileNotice) => void;
 
-function warnOnceAboutParseError(fileName: string, message: string): void {
-  if (warnedAboutParseErrors) return;
-  warnedAboutParseErrors = true;
-  console.warn(
-    `[eslint-fix] ESLint could not parse ${fileName} (${message}). ` +
-      'Lint fixes are skipped for files ESLint cannot parse. If this is a TypeScript ' +
-      'file, the project ESLint config likely needs the @typescript-eslint parser.',
-  );
+// A project whose ESLint parser is not TypeScript-aware fails this way for
+// every file it sees, so the cause is reported and the runner counts the files.
+function reportParseError(reportNotice: ReportNotice, message: string): void {
+  reportNotice({
+    reason: `ESLint could not parse the file (${message})`,
+    hint:
+      'Lint fixes are skipped for files ESLint cannot parse. If these are TypeScript ' +
+      'files, the project ESLint config likely needs the @typescript-eslint parser.',
+  });
 }
 
-async function fixToStable(cli: AnyESLint, fileName: string, text: string): Promise<string> {
+async function fixToStable(
+  cli: AnyESLint,
+  fileName: string,
+  text: string,
+  reportNotice: ReportNotice,
+): Promise<string> {
   let newText = text;
   while (true) {
     const [report] = await cli.lintText(newText, {
@@ -311,7 +315,7 @@ async function fixToStable(cli: AnyESLint, fileName: string, text: string): Prom
 
     const fatalMessage = report?.messages?.find((message) => message.fatal);
     if (fatalMessage) {
-      warnOnceAboutParseError(fileName, fatalMessage.message);
+      reportParseError(reportNotice, fatalMessage.message);
     }
 
     if (!report || !report.output || report.output === newText) {
@@ -416,9 +420,12 @@ parentPort.on('message', async ({ fileName, text }) => {
     }
     parentPort.postMessage({ ok: true, text: newText, fatalMessage });
   } catch (error) {
+    // ESLint hangs the failing rule's id on the error it throws; only the
+    // message survives the structured clone, so send it alongside.
     parentPort.postMessage({
       ok: false,
       error: error instanceof Error ? error.message : String(error),
+      ruleId: error && typeof error.ruleId === 'string' ? error.ruleId : undefined,
     });
   }
 });
@@ -426,7 +433,7 @@ parentPort.on('message', async ({ fileName, text }) => {
 
 type WorkerResult =
   | { ok: true; text: string; fatalMessage?: string }
-  | { ok: false; error: string };
+  | { ok: false; error: string; ruleId?: string };
 
 interface PoolJob {
   fileName: string;
@@ -584,32 +591,43 @@ function shouldEnablePool(): boolean {
   return poolEnabled;
 }
 
-// Warned at most once per run: once the pool breaks it stays disabled.
-let warnedAboutPoolFailure = false;
-
 async function routeToPool(cli: AnyESLint, fileName: string): Promise<boolean> {
   return shouldEnablePool() && shouldLintInWorker(cli, fileName);
 }
 
+/** A lint failure carries the id of the rule that threw; a pooled one too. */
+class LintError extends Error {
+  readonly ruleId?: string;
+
+  constructor(message: string, ruleId?: string) {
+    super(message);
+    this.ruleId = ruleId;
+  }
+}
+
 // Returns undefined when the pool infrastructure failed (the file still needs
 // linting in-process); lint-level errors throw, as they do in-process.
-async function tryPool(fileName: string, text: string): Promise<string | undefined> {
+async function tryPool(
+  fileName: string,
+  text: string,
+  reportNotice: ReportNotice,
+): Promise<string | undefined> {
   let result: WorkerResult;
   try {
     result = await runJobInPool(fileName, text);
   } catch (poolError) {
-    if (!warnedAboutPoolFailure) {
-      warnedAboutPoolFailure = true;
-      const message = poolError instanceof Error ? poolError.message : String(poolError);
-      console.warn(`[eslint-fix] Lint workers unavailable (${message}); linting in-process.`);
-    }
+    const message = poolError instanceof Error ? poolError.message : String(poolError);
+    reportNotice({
+      reason: `lint workers unavailable (${message}); linted in-process`,
+      recovered: true,
+    });
     return undefined;
   }
   if (!result.ok) {
-    throw new Error(result.error);
+    throw new LintError(result.error, result.ruleId);
   }
   if (result.fatalMessage !== undefined) {
-    warnOnceAboutParseError(fileName, result.fatalMessage);
+    reportParseError(reportNotice, result.fatalMessage);
   }
   return result.text;
 }
@@ -622,9 +640,14 @@ async function tryPool(fileName: string, text: string): Promise<string | undefin
 // backlog hands off to it mid-pass.
 let inProcessChain: Promise<unknown> = Promise.resolve();
 
-async function lintFile(cli: AnyESLint, fileName: string, text: string): Promise<string> {
+async function lintFile(
+  cli: AnyESLint,
+  fileName: string,
+  text: string,
+  reportNotice: ReportNotice,
+): Promise<string> {
   if (await routeToPool(cli, fileName)) {
-    const pooled = await tryPool(fileName, text);
+    const pooled = await tryPool(fileName, text, reportNotice);
     if (pooled !== undefined) return pooled;
     // Pool broke; take the in-process route below (the gate is now off).
   }
@@ -633,7 +656,7 @@ async function lintFile(cli: AnyESLint, fileName: string, text: string): Promise
       return { handoff: true };
     }
     const started = Date.now();
-    const fixed = await fixToStable(cli, fileName, text);
+    const fixed = await fixToStable(cli, fileName, text, reportNotice);
     serialLintsSeen += 1;
     // The first in-process lint pays the one-time engine + config load and
     // would skew the per-file average.
@@ -646,9 +669,67 @@ async function lintFile(cli: AnyESLint, fileName: string, text: string): Promise
   inProcessChain = outcome.catch(() => undefined);
   const result = await outcome;
   if (result.handoff) {
-    return lintFile(cli, fileName, text);
+    return lintFile(cli, fileName, text, reportNotice);
   }
   return result.fixed as string;
+}
+
+// Rule context methods ESLint 9 removed. A rule written against the ESLint 8
+// context throws one of these for every file it is asked to lint.
+const REMOVED_CONTEXT_METHODS = [
+  'getScope',
+  'getDeclaredVariables',
+  'getAncestors',
+  'markVariableAsUsed',
+  'getSourceCode',
+  'getFilename',
+  'getPhysicalFilename',
+];
+
+function removedContextApiHint(reason: string): string | undefined {
+  const removed = REMOVED_CONTEXT_METHODS.find((name) =>
+    reason.includes(`context.${name} is not a function`),
+  );
+  if (!removed) return undefined;
+  const written =
+    `context.${removed}() was removed in ESLint 9, so this rule was written for the ` +
+    'ESLint 8 rule context.';
+  if (resolvedEngine?.source === 'project') {
+    return (
+      `${written} The project's own ESLint ${resolvedEngine.version} is what ran it, so the ` +
+      "project's lint script fails the same way; updating the plugin that owns the rule fixes " +
+      'both.'
+    );
+  }
+  const bundled = resolvedEngine ? ` ${resolvedEngine.version}` : '';
+  return (
+    `${written} ts-migrate linted with the ESLint${bundled} bundled with it (see the engine ` +
+    'line at the start of the pass); an ESLint ts-migrate can load from the project would run ' +
+    'these rules the way the project does.'
+  );
+}
+
+/** ESLint hangs the id of the rule that threw on the error it throws. */
+function ruleIdOf(error: unknown): string | undefined {
+  const ruleId = (error as { ruleId?: unknown } | undefined)?.ruleId;
+  return typeof ruleId === 'string' ? ruleId : undefined;
+}
+
+/** What is worth keeping from a thrown lint failure, once per cause. */
+function lintFailureNotice(error: unknown): PluginFileNotice {
+  // ESLint appends "Occurred while linting <file>:<line>" and the rule id to
+  // the message; the first line is the cause, and the rest is per-occurrence
+  // detail the grouped report carries anyway.
+  const message = error instanceof Error ? error.message : String(error);
+  const reason = message.split('\n')[0].trim();
+  return {
+    reason,
+    ruleId: ruleIdOf(error),
+    hint:
+      removedContextApiHint(reason) ??
+      'If the project lint config cannot be fixed now, --exclude-plugin eslint-fix skips this ' +
+        'plugin.',
+  };
 }
 
 const eslintFixPlugin: Plugin<Options> = {
@@ -659,21 +740,23 @@ const eslintFixPlugin: Plugin<Options> = {
   // into parallel lint work.
   independentFiles: true,
 
-  async run({ fileName, rootDir, text, options }) {
+  async run(params) {
+    const { fileName, rootDir, text, options } = params;
     if (lastFixedText.get(fileName) === text) {
       return text;
     }
+    const reportNotice = fileNoticeReporter(params, '[eslint-fix]');
     pendingLintCalls += 1;
     try {
       // rootDir is the project: where its ESLint is searched for, and where
       // its config is resolved from. It is on every plugin's params; the
       // fallback is for a direct caller that omits it.
       const cli = await getESLint(rootDir ?? process.cwd(), options?.projectEslint !== false);
-      const newText = await lintFile(cli, fileName, text);
+      const newText = await lintFile(cli, fileName, text, reportNotice);
       lastFixedText.set(fileName, newText);
       return newText;
     } catch (e) {
-      console.error('Error occurred in eslint-fix plugin: ', e instanceof Error ? e.message : e);
+      reportNotice(lintFailureNotice(e));
       return text;
     } finally {
       pendingLintCalls -= 1;
