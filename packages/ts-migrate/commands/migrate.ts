@@ -1,6 +1,7 @@
 import {
   addConversionsPlugin,
   convertCommonjsPlugin,
+  declareEmptyObjectPropertiesPlugin,
   declareMissingClassPropertiesPlugin,
   eslintFixPlugin,
   explicitAnyPlugin,
@@ -32,6 +33,7 @@ import log from 'updatable-log';
 export const availablePlugins = [
   addConversionsPlugin,
   convertCommonjsPlugin,
+  declareEmptyObjectPropertiesPlugin,
   declareMissingClassPropertiesPlugin,
   eslintFixPlugin,
   explicitAnyPlugin,
@@ -110,6 +112,7 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
   const options = new Map<Plugin<any>, unknown>([
     entry(addConversionsPlugin, { anyAlias }),
     entry(convertCommonjsPlugin, {}),
+    entry(declareEmptyObjectPropertiesPlugin, { anyAlias }),
     entry(declareMissingClassPropertiesPlugin, { anyAlias }),
     entry(eslintFixPlugin, { projectEslint: params.projectEslint }),
     entry(explicitAnyPlugin, { anyAlias }),
@@ -257,6 +260,10 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
   }
   const typesPackageDetector = createTypesPackageDetector();
   config
+    // Reads the types the passes above settled on, and turns what is left of
+    // the accumulator idiom into one annotation instead of the casts
+    // add-conversions would write at every access site below.
+    .addPlugin(declareEmptyObjectPropertiesPlugin, optionsFor(declareEmptyObjectPropertiesPlugin))
     .addPlugin(addConversionsPlugin, optionsFor(addConversionsPlugin))
     // Absorbs the assignability errors an annotation can hold into the
     // annotation, so they reach neither the recommendations below nor

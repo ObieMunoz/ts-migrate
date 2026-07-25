@@ -20,6 +20,16 @@ describe('buildMigrateConfig', () => {
     expect(typesPackageDetector).toBeDefined();
   });
 
+  it('types empty object literals after inference and before add-conversions', () => {
+    const names = pluginNames(buildMigrateConfig({}).config);
+    expect(names.indexOf('declare-empty-object-properties')).toBeGreaterThan(
+      names.lastIndexOf('infer-types'),
+    );
+    expect(names.indexOf('declare-empty-object-properties')).toBe(
+      names.indexOf('add-conversions') - 1,
+    );
+  });
+
   it('removes every occurrence of an excluded plugin', () => {
     const defaultNames = pluginNames(buildMigrateConfig({}).config);
     const { config } = buildMigrateConfig({ excludePlugins: ['eslint-fix'] });

@@ -1,6 +1,7 @@
 import { Plugin as PluginType } from '@obiemunoz/ts-migrate-server';
 import addConversionsPlugin from './plugins/add-conversions';
 import convertCommonjsPlugin from './plugins/convert-commonjs';
+import declareEmptyObjectPropertiesPlugin from './plugins/declare-empty-object-properties';
 import declareMissingClassPropertiesPlugin from './plugins/declare-missing-class-properties';
 import eslintFixPlugin, { Options as EslintFixOptionsType } from './plugins/eslint-fix';
 import explicitAnyPlugin from './plugins/explicit-any';
@@ -64,6 +65,7 @@ export type TypePrintRefusal = TypePrintRefusalType;
 export {
   addConversionsPlugin,
   convertCommonjsPlugin,
+  declareEmptyObjectPropertiesPlugin,
   declareMissingClassPropertiesPlugin,
   eslintFixPlugin,
   explicitAnyPlugin,
