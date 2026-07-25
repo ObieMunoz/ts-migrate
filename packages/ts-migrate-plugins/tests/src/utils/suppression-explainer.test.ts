@@ -24,6 +24,27 @@ async function explain(
   return { report: explainer.summarize(ROOT_DIR), params };
 }
 
+/** One explainer over several files, as a run visits them. */
+async function explainAll(texts: { [fileName: string]: string }): Promise<SuppressionReport> {
+  const explainer = createSuppressionExplainer();
+  const fileNames = Object.keys(texts);
+  const paramsList = await Promise.all(
+    fileNames.map((fileName) =>
+      realPluginParams({
+        fileName,
+        text: texts[fileName],
+        extraFiles: Object.fromEntries(
+          fileNames.filter((other) => other !== fileName).map((other) => [other, texts[other]]),
+        ),
+      }),
+    ),
+  );
+  await Promise.all(
+    paramsList.map((params) => explainer.plugin.run({ ...params, rootDir: ROOT_DIR })),
+  );
+  return explainer.summarize(ROOT_DIR);
+}
+
 function siteFor(report: SuppressionReport, code: number): SuppressionSite {
   const site = report.sites.find((candidate) => candidate.code === code);
   if (!site) {
@@ -241,6 +262,130 @@ describe('checker evidence', () => {
   });
 });
 
+describe('type names that resolve to nothing', () => {
+  const documented = (name: string, count: number): string =>
+    Array.from({ length: count }, (_, index) => [
+      `/** @param {${name}} value */`,
+      `export function use${index}(value: ${name}) {}`,
+    ])
+      .flat()
+      .concat('')
+      .join('\n');
+
+  it('reports one entry per name, with the count and the files', async () => {
+    const report = await explainAll({
+      'a.ts': documented('ASTNode', 2),
+      'b.ts': documented('ASTNode', 1),
+    });
+
+    expect(report.unresolvedTypes).toEqual([
+      expect.objectContaining({
+        name: 'ASTNode',
+        count: 3,
+        fileCount: 2,
+        files: ['a.ts', 'b.ts'],
+        documented: 3,
+      }),
+    ]);
+  });
+
+  it('does not report a name that resolves', async () => {
+    const { report } = await explain(
+      [
+        'interface Resolves { a: string }',
+        '/** @param {Resolves} value */',
+        'export function use(value: Resolves) {}',
+        '',
+      ].join('\n'),
+    );
+
+    expect(report.unresolvedTypes).toEqual([]);
+  });
+
+  it('does not report an unresolved name written in an expression', async () => {
+    const { report } = await explain('export const x = missingName;\n');
+
+    expect(siteFor(report, 2304).evidence?.unresolved).toBe('missingName');
+    expect(report.unresolvedTypes).toEqual([]);
+  });
+
+  it('counts the sites a comment documents apart from the rest', async () => {
+    const { report } = await explain(
+      [
+        '/** @param {Documented} value */',
+        'export function documented(value: Documented) {}',
+        'export function annotated(value: Documented) {}',
+        '',
+      ].join('\n'),
+    );
+
+    expect(report.unresolvedTypes).toEqual([
+      expect.objectContaining({ name: 'Documented', count: 2, documented: 1 }),
+    ]);
+  });
+
+  it('names the file that declares a name nothing imported', async () => {
+    const { report } = await explain(documented('Declared', 1), {
+      'types.ts': 'export interface Declared { a: string }\n',
+    });
+
+    expect(report.unresolvedTypes[0]).toEqual(
+      expect.objectContaining({
+        name: 'Declared',
+        declaredAt: { file: 'types.ts', line: 1, column: 1 },
+        declarationKind: 'InterfaceDeclaration',
+        declaredInProject: true,
+      }),
+    );
+  });
+
+  it('finds a name a namespace declares, which no bare reference could reach', async () => {
+    const { report } = await explain(documented('Token', 1), {
+      'types.ts': 'export namespace AST {\n  export interface Token { type: string }\n}\n',
+    });
+
+    expect(report.unresolvedTypes[0]).toEqual(
+      expect.objectContaining({
+        name: 'Token',
+        declaredAt: { file: 'types.ts', line: 2, column: 3 },
+        declarationKind: 'InterfaceDeclaration',
+      }),
+    );
+  });
+
+  it('separates a declaration outside the project from one inside it', async () => {
+    const params = {
+      ...(await realPluginParams({
+        fileName: 'src/file.ts',
+        text: documented('Declared', 1),
+        extraFiles: { 'vendor/types.ts': 'export interface Declared { a: string }\n' },
+      })),
+      rootDir: '/src',
+    };
+    const explainer = createSuppressionExplainer();
+    await explainer.plugin.run(params);
+
+    expect(explainer.summarize('/src').unresolvedTypes[0]).toEqual(
+      expect.objectContaining({
+        name: 'Declared',
+        declaredAt: { file: '/vendor/types.ts', line: 1, column: 1 },
+        declaredInProject: false,
+      }),
+    );
+  });
+
+  it('says nothing declares a name no file writes', async () => {
+    const { report } = await explain(documented('ASTNode', 1));
+
+    expect(report.unresolvedTypes[0]).toEqual(
+      expect.objectContaining({ name: 'ASTNode', declaredAt: undefined }),
+    );
+    expect(report.codes[0].fixShapes).toEqual([
+      { shape: 'type name is declared nowhere', count: 1 },
+    ]);
+  });
+});
+
 describe('message preservation', () => {
   it('keeps the whole message chain and the related information', async () => {
     const { report } = await explain(
@@ -368,6 +513,32 @@ describe('formatSuppressionReport', () => {
     expect(formatted).toContain('expected type: number');
     expect(formatted).toContain('actual type: "str"');
   });
+
+  it('groups the unresolved type names by name, with the files that wrote them', async () => {
+    const { report } = await explain(
+      [
+        '/** @param {ASTNode} node */',
+        'export function first(node: ASTNode) {}',
+        '/** @param {ASTNode} node */',
+        'export function second(node: ASTNode) {}',
+        '/** @param {Declared} value */',
+        'export function third(value: Declared) {}',
+        '',
+      ].join('\n'),
+      { 'types.ts': 'export interface Declared { a: string }\n' },
+    );
+    const formatted = formatSuppressionReport(report);
+
+    expect(formatted).toContain('Type names that resolve to nothing:');
+    expect(formatted).toContain(
+      'ASTNode  2 diagnostics in 1 file, 2 written by a comment, nothing declares it',
+    );
+    expect(formatted).toContain(
+      'Declared  1 diagnostic in 1 file, 1 written by a comment, declared at types.ts:1:1 ' +
+        '(InterfaceDeclaration), not in scope here',
+    );
+    expect(formatted).toContain('written by a JSDoc tag over the declaration it annotates');
+  });
 });
 
 describe('formatSuppressionSummary', () => {
@@ -378,6 +549,7 @@ describe('formatSuppressionSummary', () => {
     sharedLine: 0,
     fileCount: 0,
     codes: [],
+    unresolvedTypes: [],
     sites: [],
   };
 
@@ -396,6 +568,29 @@ describe('formatSuppressionSummary', () => {
       'TS2554 x1 — 1 too few arguments, trailing parameters could be optional',
     );
     expect(summary).toContain('Pass --suppressionReportFile <path>');
+  });
+
+  it('names the type names that resolve to nothing, largest count first', async () => {
+    const { report } = await explain(
+      [
+        '/** @param {ASTNode} node */',
+        'export function first(node: ASTNode) {}',
+        '/** @param {ASTNode} node */',
+        'export function second(node: ASTNode) {}',
+        '/** @param {Declared} value */',
+        'export function third(value: Declared) {}',
+        '',
+      ].join('\n'),
+      { 'types.ts': 'export interface Declared { a: string }\n' },
+    );
+
+    const summary = formatSuppressionSummary(report)!;
+    expect(summary).toContain(
+      '2 type names in the annotations resolve to nothing, across 3 diagnostics; ' +
+        'the comments write 2 of them.',
+    );
+    expect(summary).toContain('ASTNode x2 in 1 file — nothing declares it');
+    expect(summary).toContain('Declared x1 in 1 file — declared at types.ts:1:1');
   });
 
   it('names the report file once one was written', async () => {
