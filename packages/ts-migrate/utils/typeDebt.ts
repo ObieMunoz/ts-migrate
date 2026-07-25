@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
+import isDeclarationFile from './declarationFiles';
 import { partitionGitignored } from './gitignore';
 
 export interface FileDebt {
@@ -15,7 +16,7 @@ export interface FileDebt {
 export interface TypeDebtReport {
   rootDir: string;
   filesScanned: number;
-  /** Global any-aliases declared by the project's .d.ts files, e.g. $TSFixMe. */
+  /** Global any-aliases declared by the project's declaration files, e.g. $TSFixMe. */
   aliasNames: string[];
   totals: FileDebt;
   /** Per-file counts keyed by rootDir-relative path, worst file first. Zero-debt files are omitted. */
@@ -67,10 +68,6 @@ function projectFileNames(rootDir: string): string[] {
   return fileNames;
 }
 
-function isDeclarationFile(fileName: string): boolean {
-  return /\.d\.[cm]?ts$/.test(fileName);
-}
-
 /** Reads from the in-memory contents when present, from disk otherwise. */
 function readFileText(
   fileName: string,
@@ -86,7 +83,7 @@ function readFileText(
 }
 
 /**
- * Global aliases for any, discovered from the .d.ts files the tsconfig
+ * Global aliases for any, discovered from the declaration files the tsconfig
  * includes rather than hardcoded: any type alias declared as `any` or as a
  * function type returning `any` counts (covers the generated
  * ts-migrate-aliases.d.ts and pre-existing project declarations alike).

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
+import isDeclarationFile from './declarationFiles';
 
 interface EnsureAliasDeclarationsParams {
   rootDir: string;
@@ -17,7 +18,7 @@ function escapeRegExp(text: string): string {
 }
 
 /**
- * The texts of the .d.ts files the project's tsconfig includes, where a
+ * The texts of the declaration files the project's tsconfig includes, where a
  * pre-existing global alias declaration would live (e.g. Airbnb's shared
  * reactTypes.d.ts, pulled in through an extended config).
  */
@@ -27,7 +28,7 @@ function declarationFileTexts(rootDir: string): string[] {
   if (error || !config) return [];
   return ts
     .parseJsonConfigFileContent(config, ts.sys, rootDir)
-    .fileNames.filter((fileName) => fileName.endsWith('.d.ts'))
+    .fileNames.filter(isDeclarationFile)
     .map((fileName) => {
       try {
         return fs.readFileSync(fileName, 'utf-8');
@@ -41,8 +42,8 @@ function declarationFileTexts(rootDir: string): string[] {
  * Writes an ambient declaration file for the requested aliases into rootDir,
  * where the tsconfig picks it up, so alias-annotated output compiles on
  * projects that don't declare the aliases themselves. Aliases some included
- * .d.ts file already declares are omitted (a second declaration would be a
- * duplicate identifier error), and an existing generated file is kept as is.
+ * declaration file already declares are omitted (a second declaration would be
+ * a duplicate identifier error), and an existing generated file is kept as is.
  * Returns the file written (with its contents, so a dry run can hold it in
  * memory instead), or null if nothing needed to be written.
  */

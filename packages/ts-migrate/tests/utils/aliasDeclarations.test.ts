@@ -57,6 +57,22 @@ describe('ensureAliasDeclarations', () => {
     expect(text).toContain('type $TSFixMeFunction = (...args: any[]) => any;');
   });
 
+  it('omits aliases an included .d.mts or .d.cts file already declares', () => {
+    fs.writeFileSync(path.resolve(rootDir, 'globals.d.mts'), 'declare type $TSFixMe = any;\n');
+    fs.writeFileSync(
+      path.resolve(rootDir, 'legacy.d.cts'),
+      'declare type $TSFixMeFunction = (...args: any[]) => any;\n',
+    );
+    expect(
+      ensureAliasDeclarations({
+        rootDir,
+        anyAlias: '$TSFixMe',
+        anyFunctionAlias: '$TSFixMeFunction',
+      }),
+    ).toBeNull();
+    expect(fs.existsSync(generatedFile())).toBe(false);
+  });
+
   it('does not treat a declared $TSFixMeFunction as covering $TSFixMe', () => {
     fs.writeFileSync(
       path.resolve(rootDir, 'globals.d.ts'),
