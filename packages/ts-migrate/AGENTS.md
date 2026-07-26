@@ -51,16 +51,19 @@ docs live in this package's README.md.
    TypeScript configs through ts-node or tsx. In `migrate` and `reignore`
    the flag only decides whether those files are loaded into the program;
    nothing there edits JavaScript.
-7. **Requirements:** Node >= 18.18. TypeScript 5.x or 6.x if the target
+7. **Requirements:** Node >= 22.18. TypeScript >= 5.7.3 and < 7 if the target
    project has TypeScript installed; if it has none, ts-migrate falls back to
-   its own bundled compiler and plain JS projects work out of the box.
+   its own bundled compiler and plain JS projects work out of the box. The
+   Node floor is about the machine running ts-migrate, not the project being
+   migrated: this is a codemod, and nothing it writes depends on the Node it
+   ran under.
 8. **The migration runs the project's own compiler.** `migrate`, `reignore`,
    and `check` load the `node_modules/typescript` found by searching from
    `<folder>` upward, not the one npx resolved for ts-migrate, because every
    suppression written is derived from what that compiler reports. The first
    line of a run names the copy in use, for example
    `TypeScript 5.7.3 (project: /repo/node_modules/typescript)`. A project with
-   no typescript, or one outside `>=5.0 <7`, falls back to the bundled
+   no typescript, or one outside `>=5.7.3 <7`, falls back to the bundled
    compiler with a warning. Pass `--typescript <path>` (the package directory
    or any file inside it) to name a compiler that is not under
    `node_modules`, or to force a specific one; `ts-migrate full` applies it to

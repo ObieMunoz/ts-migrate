@@ -260,7 +260,7 @@ in the banner and in a warning:
 - the project has no typescript installed (a plain JavaScript project, which
   is why no local install is required)
 - the project's typescript is outside the range ts-migrate supports
-  (`>=5.0 <7`)
+  (`>=5.7.3 <7`)
 
 `migrate`, `reignore`, and `check` accept `--typescript <path>` for a compiler
 that is not under `node_modules`, or to force a specific one. The path can be
@@ -980,7 +980,7 @@ Upstream has been unmaintained since 2022 and tops out at TypeScript 4. I needed
 
 > Which TypeScript versions are supported?
 
-5.x and 6.x (the peer range is `>=5.0 <7`). Support for the TypeScript 7 native port is in progress; the compiler API is moving around enough that I'd rather land it properly than rush it.
+5.7.3 and up, through 6.x (the peer range is `>=5.7.3 <7`). Support for the TypeScript 7 native port is in progress; the compiler API is moving around enough that I'd rather land it properly than rush it.
 
 > Why does the generated tsconfig pin a `types` array?
 

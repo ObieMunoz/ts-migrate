@@ -49,7 +49,7 @@ Standalone codemods each pay their own setup cost: parse the project, build a pr
 
 > Which TypeScript versions does it work with?
 
-The peer range is `>=5.0 <7`, same as the rest of the fork. The compiler is a peer dependency on purpose: the program it builds should be the one your project compiles with, not whatever happened to be bundled here. Version-skew between "the compiler that parses" and "the compiler that reads the AST" is a class of bug I've been bitten by once already, and once was plenty.
+The peer range is `>=5.7.3 <7`, same as the rest of the fork. The compiler is a peer dependency on purpose: the program it builds should be the one your project compiles with, not whatever happened to be bundled here. Version-skew between "the compiler that parses" and "the compiler that reads the AST" is a class of bug I've been bitten by once already, and once was plenty.
 
 > I have an issue, what should I do?
 

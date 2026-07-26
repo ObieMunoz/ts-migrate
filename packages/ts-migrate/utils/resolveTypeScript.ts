@@ -25,18 +25,27 @@ export interface TypeScriptDecision {
 }
 
 // The range the three packages declare as their typescript peer dependency.
-// A project compiler outside it is refused rather than loaded: the plugins
-// call compiler APIs this repo only tests within these majors.
-const SUPPORTED_MAJORS = { min: 5, maxExclusive: 7 };
-export const SUPPORTED_RANGE = `>=${SUPPORTED_MAJORS.min}.0 <${SUPPORTED_MAJORS.maxExclusive}`;
+// A project compiler outside it is refused rather than loaded: the plugins call
+// compiler APIs this repo only tests here. The floor is a minor and a patch,
+// not a major. TypeScript renumbers SyntaxKind between minor releases, which
+// makes a codemod misread the AST rather than fail, so "some 5.x" is not a
+// claim anything can stand behind; 5.7.3 is the oldest compiler CI builds.
+const SUPPORTED_MIN = { major: 5, minor: 7, patch: 3 };
+const SUPPORTED_MAX_EXCLUSIVE_MAJOR = 7;
+export const SUPPORTED_RANGE =
+  `>=${SUPPORTED_MIN.major}.${SUPPORTED_MIN.minor}.${SUPPORTED_MIN.patch} ` +
+  `<${SUPPORTED_MAX_EXCLUSIVE_MAJOR}`;
 
 function isSupportedVersion(version: string): boolean {
-  const major = Number.parseInt(version, 10);
-  return (
-    Number.isInteger(major) &&
-    major >= SUPPORTED_MAJORS.min &&
-    major < SUPPORTED_MAJORS.maxExclusive
-  );
+  // Leading-anchored so a prerelease suffix (`5.9.0-dev.20260101`) reads as the
+  // release it precedes rather than failing to parse.
+  const parsed = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
+  if (!parsed) return false;
+  const [major, minor, patch] = parsed.slice(1).map(Number);
+  if (major >= SUPPORTED_MAX_EXCLUSIVE_MAJOR) return false;
+  if (major !== SUPPORTED_MIN.major) return major > SUPPORTED_MIN.major;
+  if (minor !== SUPPORTED_MIN.minor) return minor > SUPPORTED_MIN.minor;
+  return patch >= SUPPORTED_MIN.patch;
 }
 
 /**

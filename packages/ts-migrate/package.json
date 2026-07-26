@@ -66,7 +66,7 @@
     "@obiemunoz/ts-migrate-server": "workspace:^",
     "json5": "^2.1.1",
     "updatable-log": "^0.2.0",
-    "yargs": "^17.7.3"
+    "yargs": "^18.0.0"
   },
   "devDependencies": {
     "@types/react": "^16.9.16",
@@ -76,12 +76,12 @@
   },
   "gitHead": "7acf6067f15c9bb367cda9c47fcfb4203dcc54f3",
   "peerDependencies": {
-    "typescript": ">=5.0 <7"
+    "typescript": ">=5.7.3 <7"
   },
   "publishConfig": {
     "access": "public"
   },
   "engines": {
-    "node": ">=18.18.0"
+    "node": ">=22.18.0"
   }
 }
