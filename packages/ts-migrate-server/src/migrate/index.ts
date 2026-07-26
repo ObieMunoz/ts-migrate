@@ -491,19 +491,46 @@ export default async function migrate({
   } else {
     const writeTimer = new PerfTimer();
     log.info(`Writing ${updatedSourceFiles.size} updated file(s)...`);
-    const writes = [];
+    const writes: Array<{ fileName: string; done: Promise<void> }> = [];
     for (const [fileName, text] of updatedFileTexts) {
-      writes.push(fs.promises.writeFile(fileName, text));
+      writes.push({ fileName, done: fs.promises.writeFile(fileName, text) });
     }
     for (const [fileName, text] of generatedFiles) {
-      writes.push(
-        fs.promises
+      writes.push({
+        fileName,
+        done: fs.promises
           .mkdir(path.dirname(fileName), { recursive: true })
           .then(() => fs.promises.writeFile(fileName, text)),
-      );
+      });
     }
-    await Promise.all(writes);
+    // A read-only file, a full disk or a permission the run does not have is a
+    // fact about the project, not a bug here, so each one is reported against
+    // the file it belongs to rather than thrown. Settled rather than raced:
+    // every write is already in flight, and Promise.all would name only the
+    // first of them to fail.
+    const results = await Promise.allSettled(writes.map((write) => write.done));
+    const writeFailures: Array<{ fileName: string; message: string }> = [];
+    results.forEach((result, i) => {
+      if (result.status !== 'rejected') return;
+      const { fileName } = writes[i];
+      writeFailures.push({ fileName, message: errorMessage(result.reason) });
+      // The file on disk does not hold what the plugins produced, so it is
+      // dropped from the result instead of being reported as migrated.
+      updatedSourceFiles.delete(fileName);
+      updatedFileTexts.delete(fileName);
+      generatedFiles.delete(fileName);
+    });
     log.info(`Wrote ${updatedSourceFiles.size} updated file(s) in ${writeTimer.elapsedStr()}.`);
+    if (writeFailures.length > 0) {
+      exitCode = -1;
+      log.error(
+        `${writeFailures.length} file(s) could not be written. The changes ts-migrate made to ` +
+          `them are lost; every other file was written, so re-run once these are writable:`,
+      );
+      writeFailures.forEach(({ fileName, message }) => {
+        log.error(`  ${path.relative(rootDir, fileName)}: ${message}`);
+      });
+    }
   }
 
   const pluginStats = config.plugins.map(({ plugin }, i) => ({
