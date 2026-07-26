@@ -51,9 +51,26 @@ function sortedFiles(files: Record<string, BaselineCounts>): Record<string, Base
   return sorted;
 }
 
-function writeBaseline(baselinePath: string, files: Record<string, BaselineCounts>): void {
+/**
+ * Writes the baseline, reporting a failure the way the read below it does
+ * rather than letting one reach the process. The path can come from
+ * --baselineFile, and a parent directory that does not exist or a checkout the
+ * job cannot write to is a bad argument, not a bug in ts-migrate. Returns the
+ * message to report, or undefined on success: the two callers that write to
+ * deliver the baseline treat a failure as fatal, and the one that lowers an
+ * existing baseline does not.
+ */
+function writeBaseline(
+  baselinePath: string,
+  files: Record<string, BaselineCounts>,
+): string | undefined {
   const baseline: Baseline = { version: BASELINE_VERSION, files: sortedFiles(files) };
-  fs.writeFileSync(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`);
+  try {
+    fs.writeFileSync(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`);
+    return undefined;
+  } catch (err) {
+    return `Could not write baseline ${baselinePath}: ${errorMessage(err)}`;
+  }
 }
 
 function readBaseline(baselinePath: string): Baseline {
@@ -105,13 +122,21 @@ export default function check({
   }
 
   if (updateBaseline) {
-    writeBaseline(baselinePath, current);
+    const writeError = writeBaseline(baselinePath, current);
+    if (writeError) {
+      log.error(writeError);
+      return -1;
+    }
     log.info(`Baseline updated: ${displayPath}. Commit it.`);
     return 0;
   }
 
   if (!fs.existsSync(baselinePath)) {
-    writeBaseline(baselinePath, current);
+    const writeError = writeBaseline(baselinePath, current);
+    if (writeError) {
+      log.error(writeError);
+      return -1;
+    }
     log.info(
       `No baseline found; wrote ${displayPath} (${Object.keys(current).length} files with debt). ` +
         `Commit it; later runs exit nonzero if any per-file count grows.`,
@@ -153,8 +178,15 @@ export default function check({
   const normalizedBaseline = JSON.stringify(sortedFiles(baseline.files));
   const normalizedCurrent = JSON.stringify(sortedFiles(current));
   if (normalizedBaseline !== normalizedCurrent) {
-    writeBaseline(baselinePath, current);
-    log.info(`Type debt improved; baseline lowered. Commit the updated ${displayPath}.`);
+    // The ratchet has already passed here: no per-file count grew. A baseline
+    // that could not be lowered is stale rather than wrong, and the next run
+    // still passes against it, so this does not fail the run.
+    const writeError = writeBaseline(baselinePath, current);
+    if (writeError) {
+      log.warn(`${writeError}. Type debt improved, so the baseline is now higher than the code.`);
+    } else {
+      log.info(`Type debt improved; baseline lowered. Commit the updated ${displayPath}.`);
+    }
   } else {
     log.info(
       `Type debt matches the baseline (${totalDebt} total across ${filesScanned} files scanned).`,
