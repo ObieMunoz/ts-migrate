@@ -1,0 +1,33 @@
+name: PR Title
+
+# PRs are squash-merged, so the PR title becomes the commit message on master.
+# Lerna's conventional-commits changelog keeps only feat, fix, and perf
+# entries; any other leading token is dropped, and a release built solely from
+# dropped commits gets "Version bump only" notes (see v0.12.1). The PR
+# template asks for this format; this check enforces it.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require a Conventional Commits title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|perf|refactor|docs|style|test|build|ci|chore|revert)(\([a-z0-9-]+\))?!?: .+'
+          if printf '%s\n' "${TITLE}" | grep -qE "${pattern}"; then
+            echo "PR title follows Conventional Commits: ${TITLE}"
+            exit 0
+          fi
+          echo "PR title does not follow Conventional Commits: ${TITLE}"
+          echo "Use type(scope): subject, for example: feat(cli): skip gitignored files by default"
+          echo "Allowed types: feat, fix, perf, refactor, docs, style, test, build, ci, chore, revert"
+          echo "Only feat, fix, and perf reach the release notes; bare area prefixes like cli: are dropped by lerna"
+          exit 1

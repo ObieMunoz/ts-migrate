@@ -4,6 +4,7 @@ import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { createValidate, Properties } from '../utils/validateOptions';
+import { isEsmFilePath } from '../utils/moduleFormat';
 
 /**
  * Updates relative module specifiers that still end in `.js`/`.jsx` after the
@@ -13,10 +14,14 @@ import { createValidate, Properties } from '../utils/validateOptions';
  * alone.
  *
  * By default the extension is dropped (`./foo.js` -> `./foo`). When the
- * importing file belongs to an ESM package (`"type": "module"`), where
- * extensionless relative imports are an error, the specifier keeps a `.js`
- * extension instead (`./foo.jsx` -> `./foo.js`). The `extension` option
- * overrides the detection.
+ * importing file is ESM, where extensionless relative imports are an error,
+ * the specifier keeps a `.js` extension instead (`./foo.jsx` -> `./foo.js`).
+ * A file is ESM either by its own `.mts`/`.mjs` extension or by belonging to a
+ * `"type": "module"` package, except that `.cts`/`.cjs` are CommonJS whatever
+ * the package says. The `extension` option overrides the detection.
+ *
+ * `.mjs`/`.cjs` specifiers are left alone: `.mts`/`.cts` emit those same
+ * extensions, so the specifier still names the file that ships.
  */
 type Options = {
   extension?: 'omit' | 'js';
@@ -31,7 +36,7 @@ const updateImportPathsPlugin: Plugin<Options> = {
 
   run({ fileName, sourceFile, text, options }) {
     const importerDir = path.dirname(fileName);
-    const extension = options.extension ?? (isEsmPackageDir(importerDir) ? 'js' : 'omit');
+    const extension = options.extension ?? (isEsmFilePath(fileName) ? 'js' : 'omit');
 
     const updates: SourceTextUpdate[] = [];
     collectModuleSpecifiers(sourceFile).forEach((literal) => {
@@ -108,7 +113,7 @@ function isModulePathCallee(expression: ts.LeftHandSideExpression): boolean {
   return false;
 }
 
-function collectModuleSpecifiers(sourceFile: ts.SourceFile): ts.StringLiteralLike[] {
+export function collectModuleSpecifiers(sourceFile: ts.SourceFile): ts.StringLiteralLike[] {
   const literals: ts.StringLiteralLike[] = [];
   const visit = (node: ts.Node) => {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
@@ -138,27 +143,4 @@ function collectModuleSpecifiers(sourceFile: ts.SourceFile): ts.StringLiteralLik
   };
   visit(sourceFile);
   return literals;
-}
-
-const esmPackageDirCache = new Map<string, boolean>();
-
-function isEsmPackageDir(dir: string): boolean {
-  const cached = esmPackageDirCache.get(dir);
-  if (cached !== undefined) return cached;
-
-  let result = false;
-  const packageJsonPath = path.join(dir, 'package.json');
-  if (fs.existsSync(packageJsonPath)) {
-    try {
-      result = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')).type === 'module';
-    } catch {
-      result = false;
-    }
-  } else {
-    const parent = path.dirname(dir);
-    result = parent !== dir && isEsmPackageDir(parent);
-  }
-
-  esmPackageDirCache.set(dir, result);
-  return result;
 }

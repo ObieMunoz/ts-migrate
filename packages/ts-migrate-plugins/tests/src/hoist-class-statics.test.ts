@@ -638,4 +638,82 @@ Config.mode = 'prod';
     expect(result).toContain("static mode = 'dev';");
     expect(result).toContain("Config.mode = 'prod';");
   });
+
+  it('hoists defaultProps containing undefined', async () => {
+    const text = `import React from 'react';
+
+class Foo extends React.Component {
+  render() {}
+}
+
+Foo.defaultProps = {
+  onChange: undefined,
+};
+`;
+
+    const result = await hoistClassStaticsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx' }),
+    );
+
+    expect(result).toBe(`import React from 'react';
+
+class Foo extends React.Component {
+  static defaultProps = {
+      onChange: undefined,
+  };
+
+  render() {}
+}
+`);
+  });
+
+  it('hoists statics following one that references standard globals', async () => {
+    const text = `import React from 'react';
+import PropTypes from 'prop-types';
+
+class Foo extends React.Component {
+  render() {}
+}
+
+Foo.defaultProps = {
+  pattern: new RegExp('^foo'),
+  limit: Math.max(10, 20),
+  onSelect: undefined,
+};
+
+Foo.propTypes = {
+  pattern: PropTypes.instanceOf(RegExp),
+  limit: PropTypes.number,
+  onSelect: PropTypes.func,
+};
+
+Foo.fragments = \`some graphql fragment\`;
+`;
+
+    const result = await hoistClassStaticsPlugin.run(
+      mockPluginParams({ text, fileName: 'file.tsx' }),
+    );
+
+    expect(result).toBe(`import React from 'react';
+import PropTypes from 'prop-types';
+
+class Foo extends React.Component {
+  static defaultProps = {
+      pattern: new RegExp('^foo'),
+      limit: Math.max(10, 20),
+      onSelect: undefined,
+  };
+
+  static propTypes = {
+      pattern: PropTypes.instanceOf(RegExp),
+      limit: PropTypes.number,
+      onSelect: PropTypes.func,
+  };
+
+  static fragments = \`some graphql fragment\`;
+
+  render() {}
+}
+`);
+  });
 });

@@ -1,7 +1,13 @@
-import path from 'path';
 import ts from 'typescript';
-import { Plugin } from '@obiemunoz/ts-migrate-server';
-import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
+import { errorMessage, fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
+import {
+  applyTextChanges,
+  createFileLanguageService,
+  findNewErrors,
+  getValidationOptions,
+  TextChange,
+  toOriginalPos,
+} from '../utils/candidateValidation';
 
 export interface LintConfig {
   useTabs: boolean;
@@ -25,12 +31,6 @@ const callArgumentErrorCodes = new Set([2345, 2554, 2555, 2559, 2769]);
 
 const bodyOnlySuffix = 'TsMigrateBodyOnly';
 
-interface TextChange {
-  start: number;
-  length: number;
-  text: string;
-}
-
 /**
  * Annotates implicit-any locations with types the TypeScript language
  * service can infer, so that only the truly undeterminable ones fall through
@@ -46,7 +46,8 @@ interface TextChange {
 const inferTypesPlugin: Plugin = {
   name: 'infer-types',
 
-  run({ fileName, text, getLanguageService }, lintConfig?: LintConfig) {
+  run(params, lintConfig?: LintConfig) {
+    const { fileName, text, getLanguageService } = params;
     const languageService = getLanguageService();
     const projectOptions = languageService.getProgram()?.getCompilerOptions() ?? {};
     // Under noImplicitAny every inferable location is a semantic error
@@ -76,7 +77,13 @@ const inferTypesPlugin: Plugin = {
     };
 
     try {
-      const changes = getInferenceChanges(languageService, fileName, formatSettings);
+      const changes = getInferenceChanges(languageService, fileName, formatSettings, (error) =>
+        fileNoticeReporter(params, '[infer-types]')({
+          reason: `Could not write every type it inferred: ${firstLine(error)}`,
+          hint: 'The rest were written; explicit-any fills in what is left.',
+          recovered: true,
+        }),
+      );
       if (changes.length === 0) {
         return undefined;
       }
@@ -84,11 +91,12 @@ const inferTypesPlugin: Plugin = {
       const program = languageService.getProgram();
       const compilerOptions = getValidationOptions(program ? program.getCompilerOptions() : {});
 
-      return withBodyWins(fileName, text, changes, compilerOptions, formatSettings);
+      return withBodyWins(fileName, text, changes, compilerOptions, formatSettings, program);
     } catch (e) {
-      if (e instanceof Error) {
-        console.error('Error occurred in infer-types plugin: ', e.message);
-      }
+      fileNoticeReporter(params, '[infer-types]')({
+        reason: firstLine(e),
+        hint: 'The file keeps the annotations it had; explicit-any fills the rest in with any.',
+      });
       return undefined;
     }
   },
@@ -96,16 +104,26 @@ const inferTypesPlugin: Plugin = {
 
 export default inferTypesPlugin;
 
+function firstLine(error: unknown): string {
+  return errorMessage(error).split('\n')[0].trim();
+}
+
 function withBodyWins(
   fileName: string,
   text: string,
   changes: TextChange[],
   compilerOptions: ts.CompilerOptions,
   formatSettings: ts.FormatCodeSettings,
+  projectProgram: ts.Program | undefined,
 ): string | undefined {
-  const baseline = createFileLanguageService(fileName, text, compilerOptions);
+  const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
   const candidateText = applyTextChanges(text, changes);
-  const candidate = createFileLanguageService(fileName, candidateText, compilerOptions);
+  const candidate = createFileLanguageService(
+    fileName,
+    candidateText,
+    compilerOptions,
+    projectProgram,
+  );
 
   const newErrors = findNewErrors(baseline, candidate, changes, fileName);
   if (newErrors.length === 0) {
@@ -145,6 +163,7 @@ function withBodyWins(
     compilerOptions,
     formatSettings,
     originalSource,
+    projectProgram,
   );
 
   const assemble = (dropped: Set<ts.Node | null>): TextChange[] => {
@@ -180,7 +199,7 @@ function withBodyWins(
   // parameter's annotation is dropped.
   let finalText = reassembled ? applyTextChanges(text, finalChanges) : candidateText;
   const finalService = reassembled
-    ? createFileLanguageService(fileName, finalText, compilerOptions)
+    ? createFileLanguageService(fileName, finalText, compilerOptions, projectProgram)
     : candidate;
   const finalErrors = reassembled
     ? findNewErrors(baseline, finalService, finalChanges, fileName)
@@ -282,17 +301,27 @@ function getInferenceChanges(
   languageService: ts.LanguageService,
   fileName: string,
   formatSettings: ts.FormatCodeSettings,
+  onPartial: (error: unknown) => void,
 ): TextChange[] {
-  let actions: ts.CombinedCodeActions;
+  let fileTextChanges: readonly ts.FileTextChanges[];
   try {
-    actions = languageService.getCombinedCodeFix(
+    fileTextChanges = languageService.getCombinedCodeFix(
       { type: 'file', fileName },
       'inferFromUsage',
       formatSettings,
       {},
-    );
-  } catch {
-    return [];
+    ).changes;
+  } catch (e) {
+    // One type the compiler cannot print takes every other type in the file
+    // down with it, since the combined fix prints them as one edit. Asking for
+    // them one position at a time keeps the ones it can print.
+    fileTextChanges = inferenceChangesPerPosition(languageService, fileName, formatSettings);
+    // Nothing came back either way: the file is no better off for the retry,
+    // so this reaches the plugin's own handler, which reports it and keeps the
+    // annotations the file had. Swallowing it would instead read as "this file
+    // had nothing to infer" and say nothing.
+    if (fileTextChanges.length === 0) throw e;
+    onPartial(e);
   }
 
   // Without strictNullChecks an empty array literal prints as `undefined[]`
@@ -303,7 +332,7 @@ function getInferenceChanges(
 
   const changes: TextChange[] = [];
   const seen = new Set<string>();
-  actions.changes
+  fileTextChanges
     .filter((fileChanges) => fileChanges.fileName === fileName)
     .forEach((fileChanges) => {
       fileChanges.textChanges.forEach(({ span, newText }) => {
@@ -318,6 +347,49 @@ function getInferenceChanges(
         changes.push({ start: span.start, length: span.length, text: annotation });
       });
     });
+  return changes;
+}
+
+/**
+ * The same fix, asked for one diagnostic at a time. Slower than the combined
+ * pass and only worth it once that has failed: a position the compiler cannot
+ * print a type for is skipped here rather than taking the file with it.
+ *
+ * Without noImplicitAny the fix is offered on suggestions rather than errors,
+ * which is the scan the combined pass does internally.
+ */
+function inferenceChangesPerPosition(
+  languageService: ts.LanguageService,
+  fileName: string,
+  formatSettings: ts.FormatCodeSettings,
+): ts.FileTextChanges[] {
+  const diagnostics = [
+    ...languageService.getSuggestionDiagnostics(fileName),
+    ...languageService.getSemanticDiagnostics(fileName),
+  ].filter(
+    (diagnostic) => diagnostic.start !== undefined && inferableDiagnosticCodes.has(diagnostic.code),
+  );
+
+  const changes: ts.FileTextChanges[] = [];
+  diagnostics.forEach((diagnostic) => {
+    const start = diagnostic.start as number;
+    try {
+      languageService
+        .getCodeFixesAtPosition(
+          fileName,
+          start,
+          start + (diagnostic.length ?? 0),
+          [diagnostic.code],
+          formatSettings,
+          {},
+        )
+        .filter((action) => action.fixName === 'inferFromUsage')
+        .forEach((action) => changes.push(...action.changes));
+    } catch {
+      // The position the combined pass choked on. The rest still stand, and
+      // the caller reports that the file got fewer types than it asked for.
+    }
+  });
   return changes;
 }
 
@@ -375,6 +447,7 @@ function inferBodyOnly(
   compilerOptions: ts.CompilerOptions,
   formatSettings: ts.FormatCodeSettings,
   originalSource: ts.SourceFile,
+  projectProgram: ts.Program | undefined,
 ): Map<ts.Node, TextChange[]> {
   const bodyOnlyChanges = new Map<ts.Node, TextChange[]>();
   if (contestedFunctions.length === 0) {
@@ -402,8 +475,19 @@ function inferBodyOnly(
   renames.sort((a, b) => a.start - b.start);
 
   const decoyText = applyTextChanges(text, renames);
-  const decoy = createFileLanguageService(fileName, decoyText, compilerOptions);
-  getInferenceChanges(decoy, fileName, formatSettings).forEach((change) => {
+  const decoy = createFileLanguageService(fileName, decoyText, compilerOptions, projectProgram);
+  let decoyChanges: TextChange[] = [];
+  try {
+    // Nothing to report from here: the decoy is an implementation detail of
+    // the attribution below, and the pass over the real service has already
+    // said whatever there was to say about this file.
+    decoyChanges = getInferenceChanges(decoy, fileName, formatSettings, () => {});
+  } catch {
+    // The decoy only refines which changes count as body evidence. Letting it
+    // throw would discard the inferences the real service already produced,
+    // which costs more than the attribution it buys.
+  }
+  decoyChanges.forEach((change) => {
     const originalStart = toOriginalPos(change.start, renames);
     const fn = enclosingFunctionLike(originalSource, originalStart);
     if (fn == null || !contestedFunctions.includes(fn)) return;
@@ -533,30 +617,6 @@ function nodeSpanning(source: ts.SourceFile, start: number, end: number): ts.Nod
   return result;
 }
 
-function findNewErrors(
-  baseline: ts.LanguageService,
-  candidate: ts.LanguageService,
-  changes: TextChange[],
-  fileName: string,
-): ts.Diagnostic[] {
-  const isError = (d: ts.Diagnostic) => d.category === ts.DiagnosticCategory.Error;
-  // Checked first: a clean candidate never type-checks the baseline (the
-  // baseline service stays lazy until its first query).
-  const candidateErrors = candidate.getSemanticDiagnostics(fileName).filter(isError);
-  if (candidateErrors.length === 0) {
-    return [];
-  }
-  const baselineKeys = new Set(
-    baseline
-      .getSemanticDiagnostics(fileName)
-      .filter(isError)
-      .map((d) => `${d.code}:${d.start == null ? '' : toCandidatePos(d.start, changes)}`),
-  );
-  return candidateErrors.filter(
-    (d) => !baselineKeys.has(`${d.code}:${d.start == null ? '' : d.start}`),
-  );
-}
-
 function bindingNameOf(fn: ts.Node): ts.Identifier | undefined {
   if (ts.isFunctionDeclaration(fn) && fn.name) {
     return fn.name;
@@ -640,34 +700,6 @@ function argumentNodeAt(source: ts.SourceFile, position: number): ts.Node | unde
   return undefined;
 }
 
-function toCandidatePos(originalPos: number, changes: TextChange[]): number {
-  let shift = 0;
-  changes.forEach((change) => {
-    if (change.start <= originalPos) {
-      shift += change.text.length - change.length;
-    }
-  });
-  return originalPos + shift;
-}
-
-function toOriginalPos(candidatePos: number, changes: TextChange[]): number {
-  let shift = 0;
-  for (const change of changes) {
-    if (change.start + shift >= candidatePos) break;
-    shift += change.text.length - change.length;
-  }
-  return candidatePos - shift;
-}
-
-function applyTextChanges(text: string, changes: TextChange[]): string {
-  const updates: SourceTextUpdate[] = changes.map((change) =>
-    change.length === 0
-      ? { kind: 'insert', index: change.start, text: change.text }
-      : { kind: 'replace', index: change.start, length: change.length, text: change.text },
-  );
-  return updateSourceText(text, updates);
-}
-
 function isNoOp(changes: TextChange[]): boolean {
   // Parenthesizing an arrow parameter whose annotation was dropped is not
   // worth a diff on its own.
@@ -681,201 +713,4 @@ function getSourceFileOrThrow(service: ts.LanguageService, fileName: string): ts
     throw new Error(`Failed to load source file: ${fileName}`);
   }
   return source;
-}
-
-// Parsed and bound dependency files (default libs, node_modules, the import
-// graph) and disk reads are shared across all validation services: disk
-// content is stable for the whole run because migrate persists overlay
-// changes only at the very end. Only the file under migration differs
-// between services, so it gets a fresh version and everything else stays
-// cached in the registry.
-const sharedDocumentRegistry = ts.createDocumentRegistry(
-  ts.sys.useCaseSensitiveFileNames,
-  ts.sys.getCurrentDirectory(),
-);
-const diskFileText = new Map<string, string | undefined>();
-const diskFilePresence = new Map<string, boolean>();
-const diskDirectoryPresence = new Map<string, boolean>();
-const diskDirectoryNames = new Map<string, string[]>();
-const diskRealpaths = new Map<string, string>();
-let overrideVersion = 0;
-
-function readFileCached(name: string): string | undefined {
-  if (!diskFileText.has(name)) {
-    diskFileText.set(name, ts.sys.readFile(name));
-  }
-  return diskFileText.get(name);
-}
-
-function fileExistsCached(name: string): boolean {
-  let exists = diskFilePresence.get(name);
-  if (exists === undefined) {
-    exists = ts.sys.fileExists(name);
-    diskFilePresence.set(name, exists);
-  }
-  return exists;
-}
-
-function directoryExistsCached(name: string): boolean {
-  let exists = diskDirectoryPresence.get(name);
-  if (exists === undefined) {
-    exists = ts.sys.directoryExists(name);
-    diskDirectoryPresence.set(name, exists);
-  }
-  return exists;
-}
-
-function getDirectoriesCached(name: string): string[] {
-  let directories = diskDirectoryNames.get(name);
-  if (directories === undefined) {
-    directories = ts.sys.getDirectories(name);
-    diskDirectoryNames.set(name, directories);
-  }
-  return directories;
-}
-
-const sysRealpath = ts.sys.realpath;
-const realpathCached =
-  sysRealpath &&
-  ((name: string): string => {
-    let real = diskRealpaths.get(name);
-    if (real === undefined) {
-      real = sysRealpath(name);
-      diskRealpaths.set(name, real);
-    }
-    return real;
-  });
-
-// A ModuleResolutionCache assumes every lookup uses the options it was
-// created with, so caches are keyed by options object; run() derives one
-// stable options object per program, giving one cache shared by all of a
-// run's validation services. Resolutions are as stable as the disk reads
-// above: renames happen in the earlier `rename` command.
-interface ResolutionCaches {
-  moduleResolutionCache: ts.ModuleResolutionCache;
-  typeReferenceDirectiveResolutionCache: ts.TypeReferenceDirectiveResolutionCache;
-}
-const resolutionCachesByOptions = new WeakMap<ts.CompilerOptions, ResolutionCaches>();
-
-function getResolutionCaches(compilerOptions: ts.CompilerOptions): ResolutionCaches {
-  let caches = resolutionCachesByOptions.get(compilerOptions);
-  if (!caches) {
-    const currentDirectory = ts.sys.getCurrentDirectory();
-    const getCanonicalFileName = ts.sys.useCaseSensitiveFileNames
-      ? (fileName: string) => fileName
-      : (fileName: string) => fileName.toLowerCase();
-    const moduleResolutionCache = ts.createModuleResolutionCache(
-      currentDirectory,
-      getCanonicalFileName,
-      compilerOptions,
-    );
-    caches = {
-      moduleResolutionCache,
-      typeReferenceDirectiveResolutionCache: ts.createTypeReferenceDirectiveResolutionCache(
-        currentDirectory,
-        getCanonicalFileName,
-        compilerOptions,
-        moduleResolutionCache.getPackageJsonInfoCache(),
-      ),
-    };
-    resolutionCachesByOptions.set(compilerOptions, caches);
-  }
-  return caches;
-}
-
-const validationOptionsByProgramOptions = new WeakMap<ts.CompilerOptions, ts.CompilerOptions>();
-
-function getValidationOptions(programOptions: ts.CompilerOptions): ts.CompilerOptions {
-  let options = validationOptionsByProgramOptions.get(programOptions);
-  if (!options) {
-    options = { ...programOptions, skipLibCheck: true };
-    validationOptionsByProgramOptions.set(programOptions, options);
-  }
-  return options;
-}
-
-// The language service reads host.getModuleResolutionCache at runtime (the
-// program reuses its packageJsonInfoCache), but the method is marked
-// @internal on ts.LanguageServiceHost and missing from the public type.
-interface LanguageServiceHostWithCache extends ts.LanguageServiceHost {
-  getModuleResolutionCache?(): ts.ModuleResolutionCache | undefined;
-}
-
-function createFileLanguageService(
-  fileName: string,
-  content: string,
-  compilerOptions: ts.CompilerOptions,
-): ts.LanguageService {
-  // Only the file under migration is overridden; imports and default libs
-  // resolve from disk. The shared registry reuses cached files purely by
-  // version, so the overridden file must never repeat one for different
-  // content.
-  overrideVersion += 1;
-  const version = String(overrideVersion);
-  const { moduleResolutionCache, typeReferenceDirectiveResolutionCache } =
-    getResolutionCaches(compilerOptions);
-  const getCurrentDirectory = () => path.dirname(fileName);
-  const resolutionHost: ts.ModuleResolutionHost = {
-    fileExists: fileExistsCached,
-    readFile: readFileCached,
-    directoryExists: directoryExistsCached,
-    getDirectories: getDirectoriesCached,
-    ...(realpathCached ? { realpath: realpathCached } : undefined),
-    getCurrentDirectory,
-    useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
-  };
-  const host: LanguageServiceHostWithCache = {
-    getCompilationSettings: () => compilerOptions,
-    getScriptFileNames: () => [fileName],
-    getScriptVersion: (name) => (name === fileName ? version : '0'),
-    getScriptSnapshot: (name) => {
-      const contents = name === fileName ? content : readFileCached(name);
-      return contents !== undefined ? ts.ScriptSnapshot.fromString(contents) : undefined;
-    },
-    getCurrentDirectory,
-    getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
-    fileExists: (name) => name === fileName || fileExistsCached(name),
-    readFile: (name) => (name === fileName ? content : readFileCached(name)),
-    directoryExists: directoryExistsCached,
-    getDirectories: getDirectoriesCached,
-    ...(realpathCached ? { realpath: realpathCached } : undefined),
-    resolveModuleNameLiterals: (
-      moduleLiterals,
-      containingFile,
-      redirectedReference,
-      options,
-      containingSourceFile,
-    ) =>
-      moduleLiterals.map((literal) =>
-        ts.resolveModuleName(
-          literal.text,
-          containingFile,
-          options,
-          resolutionHost,
-          moduleResolutionCache,
-          redirectedReference,
-          ts.getModeForUsageLocation(containingSourceFile, literal, options),
-        ),
-      ),
-    resolveTypeReferenceDirectiveReferences: (
-      typeDirectiveReferences,
-      containingFile,
-      redirectedReference,
-      options,
-      containingSourceFile,
-    ) =>
-      typeDirectiveReferences.map((reference) =>
-        ts.resolveTypeReferenceDirective(
-          typeof reference === 'string' ? reference : reference.fileName,
-          containingFile,
-          options,
-          resolutionHost,
-          redirectedReference,
-          typeReferenceDirectiveResolutionCache,
-          ts.getModeForFileReference(reference, containingSourceFile?.impliedNodeFormat),
-        ),
-      ),
-    getModuleResolutionCache: () => moduleResolutionCache,
-  };
-  return ts.createLanguageService(host, sharedDocumentRegistry);
 }

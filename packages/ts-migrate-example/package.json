@@ -1,7 +1,7 @@
 {
   "name": "@obiemunoz/ts-migrate-example",
-  "version": "0.10.4",
-  "private": "true",
+  "version": "0.15.0",
+  "private": true,
   "description": "Basic example of usage of the ts-migrate-server with writing a custom plugin",
   "license": "MIT",
   "scripts": {
@@ -13,6 +13,6 @@
     "ts-node": "^10.9.2"
   },
   "peerDependencies": {
-    "typescript": ">=5.0 <7"
+    "typescript": ">=5.7.3 <7"
   }
 }

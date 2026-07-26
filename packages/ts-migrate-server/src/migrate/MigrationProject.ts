@@ -73,6 +73,10 @@ const createCachedModuleResolutionHost = (currentDirectory: string): CachedModul
 export default class MigrationProject {
   private readonly compilerOptions: ts.CompilerOptions;
 
+  private readonly tsConfigFileNames: string[];
+
+  private readonly configDiagnostics: readonly ts.Diagnostic[];
+
   private readonly rootFileNames: Set<string>;
 
   private readonly overlays = new Map<string, FileOverlay>();
@@ -104,9 +108,9 @@ export default class MigrationProject {
     }
 
     this.compilerOptions = parsedConfig.options;
-    this.rootFileNames = new Set(
-      skipAddingFilesFromTsConfig ? [] : parsedConfig.fileNames.map(normalizeSlashes),
-    );
+    this.tsConfigFileNames = parsedConfig.fileNames.map(normalizeSlashes);
+    this.configDiagnostics = parsedConfig.errors;
+    this.rootFileNames = new Set(skipAddingFilesFromTsConfig ? [] : this.tsConfigFileNames);
 
     const currentDirectory = path.dirname(tsConfigFilePath);
     const getCanonicalFileName = ts.sys.useCaseSensitiveFileNames
@@ -214,6 +218,64 @@ export default class MigrationProject {
       }
     });
     this.projectVersion += 1;
+  }
+
+  /**
+   * Drop every root file the filter does not return. Only meaningful before
+   * the first program is created (dropped roots are then never parsed); a
+   * dropped file can still re-enter the program as a dependency of the
+   * remaining roots.
+   */
+  retainRootFiles(filter: (fileNames: string[]) => string[]): void {
+    const keep = new Set(filter(Array.from(this.rootFileNames)));
+    Array.from(this.rootFileNames).forEach((fileName) => {
+      if (!keep.has(fileName)) {
+        this.rootFileNames.delete(fileName);
+      }
+    });
+    this.projectVersion += 1;
+  }
+
+  /**
+   * Add a file that exists only in the overlay, as if it were on disk: it
+   * joins the program as a root file but is never persisted. Lets a dry run
+   * model a file the real run would create before the program starts, and a
+   * plugin add a declaration file the rest of the run then sees.
+   */
+  addVirtualSourceFile(fileName: string, text: string): void {
+    const normalized = normalizeSlashes(fileName);
+    const previousVersion = this.overlays.get(normalized)?.version ?? 0;
+    this.overlays.set(normalized, { text, version: previousVersion + 1 });
+    this.rootFileNames.add(normalized);
+    this.projectVersion += 1;
+  }
+
+  /** The text the project reads for a file: the overlay if it has one, otherwise the disk. */
+  getFileText(fileName: string): string | undefined {
+    return this.readFile(fileName);
+  }
+
+  hasRootFile(fileName: string): boolean {
+    return this.rootFileNames.has(normalizeSlashes(fileName));
+  }
+
+  /** File names matched by the tsconfig, whether or not they were added as root files. */
+  getTsConfigFileNames(): string[] {
+    return [...this.tsConfigFileNames];
+  }
+
+  /**
+   * What the compiler made of the tsconfig itself, short of the unrecoverable
+   * errors the constructor throws on. An `include` that matches no file is
+   * reported here as TS18003 and nowhere else.
+   */
+  getConfigDiagnostics(): readonly ts.Diagnostic[] {
+    return this.configDiagnostics;
+  }
+
+  /** The files the program starts from, as they stand after any filtering. */
+  getRootFileNames(): string[] {
+    return Array.from(this.rootFileNames);
   }
 
   getLanguageService(): ts.LanguageService {

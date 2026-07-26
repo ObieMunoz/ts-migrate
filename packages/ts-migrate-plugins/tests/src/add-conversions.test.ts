@@ -186,6 +186,137 @@ function buildList(allowed) {
 `);
   });
 
+  it('casts the key of a lookup table to keyof typeof', async () => {
+    const text = `\
+const colors = { red: '#f00', blue: '#00f' };
+
+export function pick(name: string) {
+  return colors[name].toUpperCase();
+}
+`;
+    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`\
+const colors = { red: '#f00', blue: '#00f' };
+
+export function pick(name: string) {
+  return colors[name as keyof typeof colors].toUpperCase();
+}
+`);
+  });
+
+  it('casts the key through a qualified object and a numeric index', async () => {
+    const text = `\
+const config = { theme: { dark: 1, light: 2 } };
+const byCode = { 0: 'a', 1: 'b' };
+
+export function read(key: string, code: number) {
+  config.theme[key] = 3;
+  return byCode[code];
+}
+`;
+    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`\
+const config = { theme: { dark: 1, light: 2 } };
+const byCode = { 0: 'a', 1: 'b' };
+
+export function read(key: string, code: number) {
+  config.theme[key as keyof typeof config.theme] = 3;
+  return byCode[code as keyof typeof byCode];
+}
+`);
+  });
+
+  it('falls back to the any cast for open-typed objects', async () => {
+    const text = `\
+const cache = {};
+const rows = [1, 2, 3];
+const mixed = { a: 1, b: 'x' };
+
+export function read(key: string) {
+  return [cache[key], rows[key], mixed[key], globalThis.myGlobal];
+}
+`;
+    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`\
+const cache = {};
+const rows = [1, 2, 3];
+const mixed = { a: 1, b: 'x' };
+
+export function read(key: string) {
+  return [(cache as any)[key], (rows as any)[key], (mixed as any)[key], (globalThis as any).myGlobal];
+}
+`);
+  });
+
+  it('falls back to the any cast when the key type cannot name a property', async () => {
+    const text = `\
+const colors = { red: 1, blue: 2 };
+
+export function pick(index: number, get: () => { a: number }, key: string) {
+  return [colors[index], get()[key]];
+}
+`;
+    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`\
+const colors = { red: 1, blue: 2 };
+
+export function pick(index: number, get: () => { a: number }, key: string) {
+  return [(colors as any)[index], (get() as any)[key]];
+}
+`);
+  });
+
+  it('uses the any alias for the index access fallback', async () => {
+    const text = `\
+const cache = {};
+
+export function read(key: string) {
+  return cache[key];
+}
+`;
+    const result = addConversionsPlugin.run(
+      await realPluginParams({ text, options: { anyAlias: '$TSFixMe' } }),
+    );
+
+    expect(result).toBe(`\
+const cache = {};
+
+export function read(key: string) {
+  return (cache as $TSFixMe)[key];
+}
+`);
+  });
+
+  it('leaves no diagnostics behind for either index access tier', async () => {
+    const text = `\
+const colors = { red: '#f00', blue: '#00f' };
+const cache = {};
+const rows = [1, 2, 3];
+const mixed = { a: 1, b: 'x' };
+
+export function read(key: string, index: number) {
+  mixed[key] = 1;
+  return [colors[key], cache[key], rows[key], colors[index], globalThis.myGlobal];
+}
+`;
+    const before = await realPluginParams({ text });
+    expect(
+      before
+        .getLanguageService()
+        .getSemanticDiagnostics(before.fileName)
+        .map((diag) => diag.code)
+        .sort(),
+    ).toEqual([7015, 7017, 7053, 7053, 7053, 7053]);
+
+    const result = addConversionsPlugin.run(before) as string;
+    const after = await realPluginParams({ text: result });
+    expect(after.getLanguageService().getSemanticDiagnostics(after.fileName)).toEqual([]);
+  });
+
   it('handles dollar amounts', async () => {
     const text = `\
 import customUtils from "custom-utils";

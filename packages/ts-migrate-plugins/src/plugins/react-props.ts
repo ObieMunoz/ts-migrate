@@ -6,6 +6,8 @@ import {
   isReactSfcFunctionDeclaration,
   isReactSfcArrowFunction,
   isReactForwardRefName,
+  isSfcFunctionExpression,
+  unwrapReactMemo,
 } from './utils/react';
 import isNotNull from '../utils/isNotNull';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
@@ -15,7 +17,9 @@ import getTypeFromPropTypesObjectLiteral, {
   getImportedEntityName,
   unpackInitializer,
 } from './utils/react-props';
+import { elementTypesByTag } from './utils/intrinsic-elements';
 import { getTextPreservingWhitespace } from './utils/text';
+import { isStatic } from './utils/modifiers';
 import { updateImports, DefaultImport, NamedImport } from './utils/imports';
 import {
   AnyAliasOptions,
@@ -237,22 +241,26 @@ function updatePropTypes(
           );
         }
         if (forwardRefComponent) {
+          const { expression } = forwardRefComponent;
+          const index = expression.getStart(sourceFile);
+          const refTypeName =
+            getForwardRefElementType(forwardRefComponent) || options.anyAlias || 'any';
           updates.push({
             kind: 'replace',
-            index: forwardRefComponent.expression.pos,
-            length: forwardRefComponent.expression.end - forwardRefComponent.expression.pos,
-            text: ` ${printer.printNode(
+            index,
+            length: expression.end - index,
+            text: printer.printNode(
               ts.EmitHint.Unspecified,
               ts.factory.updateExpressionWithTypeArguments(
                 forwardRefComponent as any,
-                forwardRefComponent.expression,
+                expression,
                 [
-                  ts.factory.createTypeReferenceNode(options.anyAlias || 'any', undefined),
+                  ts.factory.createTypeReferenceNode(refTypeName, undefined),
                   ts.factory.createTypeReferenceNode(propsTypeName, undefined),
                 ].filter(isNotNull) as any,
               ),
               sourceFile,
-            )}`,
+            ),
           });
         } else {
           let updateText = printer.printNode(
@@ -441,30 +449,125 @@ function getPropsParam(node: ReactSfcNode) {
 
   if (ts.isVariableStatement(node)) {
     const forwardRefComponent = getReactForwardRefFuncExpression(node);
-    const forwardRefArgument =
-      forwardRefComponent && forwardRefComponent.arguments && forwardRefComponent.arguments[0];
+    const forwardRefArgument = forwardRefComponent && forwardRefComponent.arguments[0];
     const forwardRefProps =
       forwardRefArgument &&
       ts.isFunctionLike(forwardRefArgument) &&
       forwardRefArgument.parameters[0];
-    const declaration = node.declarationList.declarations[0];
-    const init = declaration && declaration.initializer;
-    const arrowFunction = init && ts.isArrowFunction(init) ? init : undefined;
-    const arrowFunctionProps = arrowFunction && arrowFunction.parameters[0];
-    return forwardRefProps || arrowFunctionProps;
+    const funcExpression = getSfcFuncExpression(node);
+    return forwardRefProps || (funcExpression && funcExpression.parameters[0]);
   }
 
   return undefined;
 }
 
+function getComponentInitializer(node: ReactNode) {
+  if (!ts.isVariableStatement(node)) return undefined;
+
+  const initializer = node.declarationList.declarations[0]?.initializer;
+  return initializer && unwrapReactMemo(initializer);
+}
+
+function getSfcFuncExpression(node: ReactNode) {
+  const initializer = getComponentInitializer(node);
+  return initializer && isSfcFunctionExpression(initializer) ? initializer : undefined;
+}
+
 function getReactForwardRefFuncExpression(node: ReactNode) {
+  const initializer = getComponentInitializer(node);
+  return initializer && ts.isCallExpression(initializer) && isReactForwardRefName(initializer)
+    ? initializer
+    : undefined;
+}
+
+function isUseImperativeHandleCall(node: ts.CallExpression) {
+  const { expression } = node;
+  if (ts.isIdentifier(expression)) {
+    return expression.text === 'useImperativeHandle';
+  }
+  return ts.isPropertyAccessExpression(expression)
+    ? expression.name.text === 'useImperativeHandle'
+    : false;
+}
+
+function isRefAttribute(node: ts.Node, refName: string): node is ts.JsxAttribute {
+  if (!ts.isJsxAttribute(node) || !ts.isIdentifier(node.name) || node.name.text !== 'ref') {
+    return false;
+  }
+  const { initializer } = node;
   return (
-    !!ts.isVariableStatement(node) &&
-    !!node.declarationList?.declarations[0]?.initializer &&
-    ts.isCallExpression(node.declarationList?.declarations[0]?.initializer) &&
-    isReactForwardRefName(node.declarationList?.declarations[0]?.initializer) &&
-    node.declarationList?.declarations[0]?.initializer
+    initializer != null &&
+    ts.isJsxExpression(initializer) &&
+    initializer.expression != null &&
+    ts.isIdentifier(initializer.expression) &&
+    initializer.expression.text === refName
   );
+}
+
+function getRefAttachmentTag(attribute: ts.JsxAttribute): string | undefined {
+  const element = attribute.parent.parent;
+  if (!ts.isJsxOpeningElement(element) && !ts.isJsxSelfClosingElement(element)) {
+    return undefined;
+  }
+  const { tagName } = element;
+  return ts.isIdentifier(tagName) && /^[a-z]/.test(tagName.text) ? tagName.text : undefined;
+}
+
+function isNamePosition(identifier: ts.Identifier) {
+  const { parent } = identifier;
+  return (
+    (ts.isPropertyAccessExpression(parent) && parent.name === identifier) ||
+    (ts.isJsxAttribute(parent) && parent.name === identifier) ||
+    (ts.isPropertyAssignment(parent) && parent.name === identifier) ||
+    (ts.isBindingElement(parent) && parent.propertyName === identifier)
+  );
+}
+
+// Recovers the ref element type syntactically: the ref has to reach exactly one
+// kind of intrinsic tag and be used nowhere else, otherwise the caller writes any.
+function getForwardRefElementType(forwardRefCall: ts.CallExpression): string | undefined {
+  const [component] = forwardRefCall.arguments;
+  if (!component || !isSfcFunctionExpression(component)) {
+    return undefined;
+  }
+
+  const refParam = component.parameters[1];
+  if (!refParam || !ts.isIdentifier(refParam.name)) {
+    return undefined;
+  }
+  const refName = refParam.name.text;
+
+  let tag: string | undefined;
+  let unresolved = false;
+
+  const visit = (node: ts.Node): void => {
+    if (unresolved) return;
+
+    if (ts.isCallExpression(node) && isUseImperativeHandleCall(node)) {
+      unresolved = true;
+      return;
+    }
+
+    if (isRefAttribute(node, refName)) {
+      const attachmentTag = getRefAttachmentTag(node);
+      if (attachmentTag === undefined || (tag !== undefined && tag !== attachmentTag)) {
+        unresolved = true;
+      } else {
+        tag = attachmentTag;
+      }
+      return;
+    }
+
+    if (ts.isIdentifier(node) && node.text === refName && !isNamePosition(node)) {
+      unresolved = true;
+      return;
+    }
+
+    ts.forEachChild(node, visit);
+  };
+  visit(component.body);
+
+  return unresolved || tag === undefined ? undefined : elementTypesByTag[tag];
 }
 
 function getParentVariableStatement(
@@ -566,8 +669,7 @@ function deleteIdRef(idenifier: ts.Identifier, sourceFile: ts.SourceFile) {
 function isPropTypesStatic(member: ts.ClassElement): member is ts.PropertyDeclaration {
   return (
     ts.isPropertyDeclaration(member) &&
-    member.modifiers != null &&
-    member.modifiers.some((modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword) &&
+    isStatic(member) &&
     ts.isIdentifier(member.name) &&
     member.name.text === 'propTypes' &&
     member.initializer != null

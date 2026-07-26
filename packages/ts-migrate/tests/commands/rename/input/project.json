@@ -6,6 +6,8 @@
     "some-dir/**/*",
     "some-dir/**/*.js",
     "some-dir/*.jsx",
+    "some-dir/task.mjs",
+    "some-dir/helper.cjs",
   ],
   entry: "file-1.js",
   "layout": "./hyperloop/layout.jsx"

@@ -70,6 +70,17 @@ function withExplicitAny(
       case 7034:
         annotateVariable(sourceFile, diagnostic, anyType, insert);
         break;
+      // TS7005: "Variable '{0}' implicitly has an '{1}' type."
+      case 7005:
+        annotateImplicitAnyVariable(sourceFile, diagnostic, anyType, insert, getLanguageService);
+        break;
+      // TS7023: "'{0}' implicitly has return type 'any' because it does not have a return type
+      // annotation and is referenced directly or indirectly in one of its return expressions."
+      // TS7024: same message for functions with no name to report.
+      case 7023:
+      case 7024:
+        annotateCircularReturn(sourceFile, diagnostic, anyType, insert);
+        break;
       // TS2459: "Type '{0}' has no property '{1}' and no string index signature."
       case 2459:
         annotateEmptyObjectParameter(sourceFile, diagnostic, anyType, insert, getLanguageService);
@@ -240,6 +251,107 @@ function annotateVariable(
   if (ts.isVariableDeclaration(decl) && decl.name === node && decl.type == null) {
     insert(node.end, `: ${anyType}`);
   }
+}
+
+/**
+ * The implicit type named by the diagnostic ('any', 'any[]', ...) with `any`
+ * swapped for the alias, so array-ness survives the annotation.
+ */
+function implicitTypeFromMessage(diagnostic: ts.DiagnosticWithLocation, anyType: string): string {
+  const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ');
+  const match = /'(any(?:\[\])*)'/.exec(message.slice(message.indexOf('implicitly')));
+  return match ? match[1].replace('any', anyType) : anyType;
+}
+
+function annotateImplicitAnyVariable(
+  sourceFile: ts.SourceFile,
+  diagnostic: ts.DiagnosticWithLocation,
+  anyType: string,
+  insert: Insert,
+  getLanguageService: () => ts.LanguageService,
+) {
+  const node = findNodeAtSpan(sourceFile, diagnostic);
+  if (!node || !ts.isIdentifier(node)) return;
+
+  // Declaration-site report (e.g. an exported variable, which is exempt from
+  // evolving-type analysis and never gets a companion TS7034).
+  const parent = node.parent as ts.Node;
+  if (ts.isVariableDeclaration(parent) && parent.name === node) {
+    if (parent.type == null) {
+      insert(node.end, `: ${implicitTypeFromMessage(diagnostic, anyType)}`);
+    }
+    return;
+  }
+
+  // Use-site report: annotate the declaration it resolves to. Identifier
+  // declarations carry their own TS7034/TS7005 and are handled there;
+  // declarations in other files cannot be edited from this one.
+  const program = getLanguageService().getProgram?.();
+  if (!program) return;
+  const declaration = program.getTypeChecker().getSymbolAtLocation(node)?.valueDeclaration;
+  if (!declaration || declaration.getSourceFile() !== sourceFile) return;
+  if (ts.isBindingElement(declaration)) {
+    const pattern = getOutermostPattern(declaration);
+    if (pattern) annotatePattern(pattern, anyType, insert);
+  }
+}
+
+function annotateCircularReturn(
+  sourceFile: ts.SourceFile,
+  diagnostic: ts.DiagnosticWithLocation,
+  anyType: string,
+  insert: Insert,
+) {
+  const node = findNodeAtSpan(sourceFile, diagnostic);
+  if (!node) return;
+
+  // TS7024 reports the function itself; TS7023 reports the name of the
+  // function, or of the variable or property it is assigned to.
+  let fn: ts.Node | undefined;
+  if (ts.isFunctionExpression(node) || ts.isArrowFunction(node)) {
+    fn = node;
+  } else if (isNameOfParent(node)) {
+    const owner = node.parent;
+    if (
+      ts.isFunctionDeclaration(owner) ||
+      ts.isFunctionExpression(owner) ||
+      ts.isMethodDeclaration(owner) ||
+      ts.isGetAccessorDeclaration(owner)
+    ) {
+      fn = owner;
+    } else if (
+      (ts.isVariableDeclaration(owner) ||
+        ts.isPropertyAssignment(owner) ||
+        ts.isPropertyDeclaration(owner)) &&
+      owner.initializer != null &&
+      (ts.isFunctionExpression(owner.initializer) || ts.isArrowFunction(owner.initializer))
+    ) {
+      fn = owner.initializer;
+    }
+  }
+  if (!fn || (fn as ts.FunctionLikeDeclaration).type != null) return;
+
+  const closeParen = fn
+    .getChildren(sourceFile)
+    .find((c) => c.kind === ts.SyntaxKind.CloseParenToken);
+  if (closeParen) {
+    insert(closeParen.end, `: ${anyType}`);
+    return;
+  }
+
+  // An unparenthesized single-parameter arrow has no slot for a return
+  // annotation. Its parameter cannot be annotated either, so typing the
+  // declaration it is assigned to loses nothing.
+  const holder = fn.parent;
+  if (ts.isVariableDeclaration(holder) && holder.type == null) {
+    insert(holder.name.end, `: ${anyType}`);
+  } else if (ts.isPropertyDeclaration(holder) && holder.type == null) {
+    insert((holder.exclamationToken ?? holder.questionToken ?? holder.name).end, `: ${anyType}`);
+  }
+}
+
+function isNameOfParent(node: ts.Node): boolean {
+  return node.parent != null && (node.parent as { name?: ts.Node }).name === node;
 }
 
 function annotateEmptyObjectParameter(

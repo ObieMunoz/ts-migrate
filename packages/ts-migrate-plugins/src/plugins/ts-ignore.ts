@@ -1,7 +1,8 @@
 import ts, { isJsxFragment } from 'typescript';
-import { Plugin } from '@obiemunoz/ts-migrate-server';
+import { fileNoticeReporter, Plugin, PluginFileNotice } from '@obiemunoz/ts-migrate-server';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
+import createFollowUpMarkers from '../utils/followUpMarker';
 import { createValidate, Properties } from '../utils/validateOptions';
 
 type Options = {
@@ -23,11 +24,17 @@ const tsIgnorePlugin: Plugin<Options> = {
   // check every file against one warm program.
   mutationsPreserveTypes: true,
 
-  run({ getLanguageService, fileName, sourceFile, options }) {
+  run(params) {
+    const { getLanguageService, fileName, sourceFile, options } = params;
     const diagnostics = getLanguageService()
       .getSemanticDiagnostics(fileName)
       .filter(isDiagnosticWithLinePosition);
-    return getTextWithIgnores(sourceFile, diagnostics, options);
+    return getTextWithIgnores(
+      sourceFile,
+      diagnostics,
+      options,
+      fileNoticeReporter(params, '[ts-ignore]'),
+    );
   },
 
   validate: createValidate(optionProperties),
@@ -41,10 +48,12 @@ function getTextWithIgnores(
   sourceFile: ts.SourceFile,
   diagnostics: ts.DiagnosticWithLocation[],
   options: Options,
+  reportNotice: (notice: PluginFileNotice) => void,
 ): string {
   const { text } = sourceFile;
   const updates: SourceTextUpdate[] = [];
   const isIgnored: { [line: number]: boolean } = {};
+  const markers = createFollowUpMarkers(sourceFile);
 
   diagnostics.forEach((diagnostic) => {
     const { line: diagnosticLine } = ts.getLineAndCharacterOfPosition(sourceFile, diagnostic.start);
@@ -104,9 +113,21 @@ function getTextWithIgnores(
             }`,
           });
         } else {
-          throw new Error(
-            `Failed to add @${errorExpression} within multiline string, template, or comment.`,
-          );
+          // The directive only reaches the line directly below it, so hoisting
+          // the comment elsewhere cannot suppress this diagnostic; skip it and
+          // leave it for the post-migration compile check. The marker goes on
+          // the statement around the text, which is the nearest place a line
+          // comment is a comment rather than more of the string.
+          const reason =
+            `could not add @${errorExpression} inside a multiline string, template, or ` +
+            'comment, so those diagnostics are left unsuppressed';
+          const hint =
+            'The TypeScript compile check will report them; they need a source change.';
+          const enclosing = innermostNodeAt(diagnostic.start, sourceFile);
+          const { update, marked } = markers.add(enclosing, { hint, reason });
+          if (update) updates.push(update);
+          reportNotice({ reason, hint, recovered: true, marked });
+          return;
         }
       } else if (inJsxText(sourceFile, pos)) {
         updates.push({
@@ -133,6 +154,23 @@ function getTextWithIgnores(
   });
 
   return updateSourceText(text, updates);
+}
+
+/**
+ * The innermost node the position falls inside. For a diagnostic no node
+ * matches exactly, which is what puts one in a string, template, or comment.
+ * A position in trivia belongs to no node, so this returns the source file and
+ * the caller ends up with nowhere to mark, which is the honest answer.
+ */
+function innermostNodeAt(pos: number, sourceFile: ts.SourceFile): ts.Node {
+  let found: ts.Node = sourceFile;
+  const visit = (node: ts.Node) => {
+    if (pos < node.getStart(sourceFile) || pos >= node.end) return;
+    found = node;
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sourceFile, visit);
+  return found;
 }
 
 function findDiagnosticNode(

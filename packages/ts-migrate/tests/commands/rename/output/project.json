@@ -6,6 +6,8 @@
     "some-dir/**/*",
     "some-dir/**/*.ts",
     "some-dir/*.tsx",
+    "some-dir/task.mts",
+    "some-dir/helper.cts",
   ],
   entry: "file-1.js",
   "layout": "./hyperloop/layout.tsx"

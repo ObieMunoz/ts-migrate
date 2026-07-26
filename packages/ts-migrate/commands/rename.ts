@@ -3,17 +3,58 @@ import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 import ts from 'typescript';
+import {
+  BootstrapFile,
+  isKnownConfigName,
+  logApplicationEntries,
+  logSharedBootstrapImports,
+  partitionBootstrapFiles,
+} from '../utils/bootstrapFiles';
+import { logUnfilteredReason, partitionGitignored, sampleIgnoredPaths } from '../utils/gitignore';
+import { JS_EXTENSION_REGEX } from '../utils/jsExtensions';
+import {
+  PackageJsonNotice,
+  PackageJsonRewrite,
+  logPackageJsonReferences,
+  updatePackageJsonReferences,
+} from '../utils/packageJsonReferences';
 import { replaceJSON5Strings } from '../utils/updateJSON5';
 
 interface RenameParams {
   rootDir: string;
   sources?: string | string[];
+  /** Skip gitignored files (default). */
+  gitignore?: boolean;
+  /** Skip build system files (default). */
+  bootstrap?: boolean;
+  /** Print the rename mapping without touching any file. */
+  dryRun?: boolean;
+}
+
+export interface SkippedRename {
+  file: string;
+  /** Human-readable explanation of why the file kept its extension. */
+  reason: string;
+}
+
+export interface RenameResult {
+  renamedFiles: Array<{ oldFile: string; newFile: string }>;
+  skippedGitignoredFiles: number;
+  skippedBootstrapFiles: BootstrapFile[];
+  skippedModuleFiles: SkippedRename[];
+  /** package.json script paths and test globs repointed at the renamed files. */
+  packageJsonRewrites: PackageJsonRewrite[];
+  /** package.json entry points that name a renamed file and were left alone. */
+  packageJsonNotices: PackageJsonNotice[];
 }
 
 export default function rename({
   rootDir,
   sources,
-}: RenameParams): Array<{ oldFile: string; newFile: string }> | null {
+  gitignore = true,
+  bootstrap = true,
+  dryRun,
+}: RenameParams): RenameResult | null {
   const configFile = path.resolve(rootDir, 'tsconfig.json');
   if (!fs.existsSync(configFile)) {
     log.error('Could not find tsconfig.json at', configFile);
@@ -28,11 +69,55 @@ export default function rename({
     return null;
   }
 
-  if (jsFiles.length === 0) {
-    log.info('No JS/JSX files to rename.');
-    return [];
+  let skippedGitignoredFiles = 0;
+  if (gitignore) {
+    const partition = partitionGitignored(rootDir, jsFiles);
+    logUnfilteredReason(rootDir, partition);
+    if (partition.ignored.length > 0) {
+      skippedGitignoredFiles = partition.ignored.length;
+      log.info(
+        `Skipping ${partition.ignored.length} gitignored JS/JSX file(s) ` +
+          `(${sampleIgnoredPaths(rootDir, partition.ignored)}); they will not be renamed. ` +
+          `Pass --gitignore=false to rename them.`,
+      );
+      jsFiles = partition.kept;
+    }
   }
 
+  let skippedBootstrapFiles: BootstrapFile[] = [];
+  if (bootstrap) {
+    const partition = partitionBootstrapFiles(rootDir, jsFiles, { detectSharedImporters: true });
+    logApplicationEntries(rootDir, partition.applicationEntries);
+    if (partition.bootstrap.length > 0) {
+      skippedBootstrapFiles = partition.bootstrap;
+      const lines = partition.bootstrap.map(
+        ({ file, reason }) =>
+          `  ${path.relative(rootDir, file).split(path.sep).join('/')} (${reason})`,
+      );
+      log.info(
+        `Keeping ${partition.bootstrap.length} build system file(s) as JavaScript so the ` +
+          `build still boots under plain Node:\n${lines.join('\n')}\n` +
+          `Pass --bootstrap=false to rename them too, or add a file to the tsconfig "exclude" ` +
+          `to keep it out of every run.`,
+      );
+      jsFiles = partition.kept;
+    }
+    logSharedBootstrapImports(rootDir, partition.shared);
+  }
+
+  if (jsFiles.length === 0) {
+    log.info('No JS/JSX files to rename.');
+    return {
+      renamedFiles: [],
+      skippedGitignoredFiles,
+      skippedBootstrapFiles,
+      skippedModuleFiles: [],
+      packageJsonRewrites: [],
+      packageJsonNotices: [],
+    };
+  }
+
+  const skippedModuleFiles: SkippedRename[] = [];
   const toRename = jsFiles
     .map((oldFile) => {
       let newFile: string | undefined;
@@ -42,11 +127,53 @@ export default function rename({
         newFile = oldFile.replace(/\.js$/, '.tsx');
       } else if (oldFile.endsWith('.js')) {
         newFile = oldFile.replace(/\.js$/, '.ts');
+      } else if (path.extname(oldFile) in moduleExtensions) {
+        const target = moduleRenameTarget(oldFile);
+        if ('newFile' in target) {
+          newFile = target.newFile;
+        } else {
+          skippedModuleFiles.push({ file: oldFile, reason: target.reason });
+        }
       }
 
       return { oldFile, newFile };
     })
     .filter((result): result is { oldFile: string; newFile: string } => !!result.newFile);
+
+  if (skippedModuleFiles.length > 0) {
+    const lines = skippedModuleFiles.map(
+      ({ file, reason }) =>
+        `  ${path.relative(rootDir, file).split(path.sep).join('/')} (${reason})`,
+    );
+    log.info(
+      `Keeping ${skippedModuleFiles.length} .mjs/.cjs file(s) at their current extension:\n` +
+        `${lines.join('\n')}`,
+    );
+  }
+
+  if (dryRun) {
+    const mapping = toRename
+      .map(
+        ({ oldFile, newFile }) =>
+          `  ${path.relative(rootDir, oldFile)} -> ${path.relative(rootDir, newFile)}`,
+      )
+      .join('\n');
+    log.info(
+      `Dry run: ${toRename.length} JS/JSX file(s) would be renamed in ${rootDir} ` +
+        `(nothing was written):\n${mapping}`,
+    );
+    updateProjectJson(rootDir, dryRun);
+    const references = updatePackageJsonReferences(rootDir, toRename, { dryRun });
+    logPackageJsonReferences(references, dryRun);
+    return {
+      renamedFiles: toRename,
+      skippedGitignoredFiles,
+      skippedBootstrapFiles,
+      skippedModuleFiles,
+      packageJsonRewrites: references.rewrites,
+      packageJsonNotices: references.notices,
+    };
+  }
 
   log.info(`Renaming ${toRename.length} JS/JSX files in ${rootDir}...`);
 
@@ -55,9 +182,21 @@ export default function rename({
   });
 
   updateProjectJson(rootDir);
+  // The mapping is final here: the gitignore, bootstrap, and .mjs/.cjs
+  // partitions have all run, so a file that kept its .js extension is absent
+  // from it and every reference to it is left alone.
+  const references = updatePackageJsonReferences(rootDir, toRename);
+  logPackageJsonReferences(references);
 
   log.info('Done.');
-  return toRename;
+  return {
+    renamedFiles: toRename,
+    skippedGitignoredFiles,
+    skippedBootstrapFiles,
+    skippedModuleFiles,
+    packageJsonRewrites: references.rewrites,
+    packageJsonNotices: references.notices,
+  };
 }
 
 function findJSFiles(rootDir: string, configFile: string, sources?: string | string[]) {
@@ -109,7 +248,26 @@ function findJSFiles(rootDir: string, configFile: string, sources?: string | str
     );
   }
 
-  return fileNames.filter((fileName) => /\.jsx?$/.test(fileName));
+  return fileNames.filter((fileName) => JS_EXTENSION_REGEX.test(fileName));
+}
+
+const moduleExtensions: Record<string, string> = { '.mjs': '.mts', '.cjs': '.cts' };
+
+/**
+ * The TypeScript extension a .mjs/.cjs file renames to, or the reason it keeps
+ * the one it has: build tools load config files by their exact name, and
+ * neither .mts nor .cts is a JSX-enabled extension.
+ */
+function moduleRenameTarget(oldFile: string): { newFile: string } | { reason: string } {
+  const oldExtension = path.extname(oldFile);
+  const newExtension = moduleExtensions[oldExtension];
+  if (isKnownConfigName(oldFile)) {
+    return { reason: `config file loaded by name, which ${newExtension} would break` };
+  }
+  if (jsFileContainsJsx(oldFile)) {
+    return { reason: `contains JSX, which ${newExtension} cannot hold` };
+  }
+  return { newFile: oldFile.slice(0, -oldExtension.length) + newExtension };
 }
 
 /**
@@ -123,7 +281,7 @@ function jsFileContainsJsx(jsFileName: string): boolean {
   );
 }
 
-function updateProjectJson(rootDir: string) {
+function updateProjectJson(rootDir: string, dryRun?: boolean) {
   const projectJsonFile = path.resolve(rootDir, 'project.json');
   if (!fs.existsSync(projectJsonFile)) {
     return;
@@ -134,11 +292,18 @@ function updateProjectJson(rootDir: string) {
     const isAllowedImport =
       keyPath.length === 2 && keyPath[0] === 'allowedImports' && typeof keyPath[1] === 'number';
     const isLayout = keyPath.length === 1 && keyPath[0] === 'layout';
-    if ((isAllowedImport || isLayout) && /\.jsx?$/.test(value)) {
-      return value.replace(/\.js(x?)$/, '.ts$1');
+    if ((isAllowedImport || isLayout) && JS_EXTENSION_REGEX.test(value)) {
+      return value.replace(/\.([cm]?)js(x?)$/, '.$1ts$2');
     }
     return undefined;
   });
+
+  if (dryRun) {
+    if (updatedText !== projectJsonText) {
+      log.info(`Dry run: would update allowedImports in ${projectJsonFile}`);
+    }
+    return;
+  }
 
   fs.writeFileSync(projectJsonFile, updatedText, 'utf-8');
   log.info(`Updated allowedImports in ${projectJsonFile}`);

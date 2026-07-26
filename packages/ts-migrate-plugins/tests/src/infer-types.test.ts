@@ -1,4 +1,8 @@
-import { realPluginParams } from '../test-utils';
+import fs from 'fs';
+import ts from 'typescript';
+import type { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
+import { createTmpDir } from '@obiemunoz/ts-migrate-test-utils';
+import { midRunProject, realPluginParams } from '../test-utils';
 import inferTypesPlugin from '../../src/plugins/infer-types';
 import explicitAnyPlugin from '../../src/plugins/explicit-any';
 
@@ -509,5 +513,213 @@ getItem('abc');
   return mystery;
 }
 `);
+  });
+
+  it('asks one position at a time when the combined fix throws', async () => {
+    const text = `function add(a, b) {
+  return a + b;
+}
+add(1, 2);
+`;
+    const params = await realPluginParams({ text });
+    const failing: ts.LanguageService = {
+      ...params.getLanguageService(),
+      getCombinedCodeFix: () => {
+        throw new Error('Debug Failure. False expression.\nOccurred while inferring /file.ts');
+      },
+    };
+    const notices: PluginFileNotice[] = [];
+
+    const result = await inferTypesPlugin.run({
+      ...params,
+      getLanguageService: () => failing,
+      reportFileNotice: (notice) => notices.push(notice),
+    });
+
+    expect(result).toBe(`function add(a: number, b: number) {
+  return a + b;
+}
+add(1, 2);
+`);
+    expect(notices).toEqual([
+      {
+        reason: 'Could not write every type it inferred: Debug Failure. False expression.',
+        hint: 'The rest were written; explicit-any fills in what is left.',
+        recovered: true,
+      },
+    ]);
+  });
+
+  it('keeps the functions the compiler can print, and skips the one it cannot', async () => {
+    const text = `function add(a, b) {
+  return a + b;
+}
+add(1, 2);
+function greet(name) {
+  return 'hello ' + name.toUpperCase();
+}
+`;
+    const params = await realPluginParams({ text });
+    const service = params.getLanguageService();
+    // The parameter the compiler cannot print a type for, whichever diagnostic
+    // sends it there.
+    const unprintable = text.indexOf('(name)') + 1;
+    const failing: ts.LanguageService = {
+      ...service,
+      getCombinedCodeFix: () => {
+        throw new Error('Debug Failure. False expression.');
+      },
+      getCodeFixesAtPosition: (...args) => {
+        if (args[1] === unprintable) throw new Error('Debug Failure. False expression.');
+        return service.getCodeFixesAtPosition(...args);
+      },
+    };
+
+    const result = await inferTypesPlugin.run({ ...params, getLanguageService: () => failing });
+
+    expect(result).toBe(`function add(a: number, b: number) {
+  return a + b;
+}
+add(1, 2);
+function greet(name) {
+  return 'hello ' + name.toUpperCase();
+}
+`);
+  });
+
+  it('reports a language service failure rather than reading as nothing to infer', async () => {
+    const text = `function add(a, b) {
+  return a + b;
+}
+add(1, 2);
+`;
+    const params = await realPluginParams({ text });
+    const failing: ts.LanguageService = {
+      ...params.getLanguageService(),
+      getCombinedCodeFix: () => {
+        throw new Error('Debug Failure. False expression.\nOccurred while inferring /file.ts');
+      },
+      getCodeFixesAtPosition: () => {
+        throw new Error('Debug Failure. False expression.');
+      },
+    };
+    const notices: PluginFileNotice[] = [];
+
+    const result = await inferTypesPlugin.run({
+      ...params,
+      getLanguageService: () => failing,
+      reportFileNotice: (notice) => notices.push(notice),
+    });
+
+    expect(result).toBeUndefined();
+    expect(notices).toEqual([
+      {
+        reason: 'Debug Failure. False expression.',
+        hint: 'The file keeps the annotations it had; explicit-any fills the rest in with any.',
+      },
+    ]);
+  });
+
+  describe('mid-run dependencies', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = createTmpDir('ts-migrate-infer-');
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('keeps an annotation the dependency text the run will write agrees with', async () => {
+      const project = midRunProject(tmpDir, {
+        'dep.ts': {
+          onDisk: `export const sink = { write( s: number ) { return s; } };
+`,
+          inRun: `export const sink = { write( s: string ) { return s; } };
+`,
+        },
+        'main.ts': {
+          onDisk: `import { sink } from './dep';
+
+export function forward( value ) {
+  sink.write( value );
+  return value.toUpperCase();
+}
+`,
+        },
+      });
+
+      expect(await inferTypesPlugin.run(project.paramsFor('main.ts')))
+        .toBe(`import { sink } from './dep';
+
+export function forward( value: string ) {
+  sink.write( value );
+  return value.toUpperCase();
+}
+`);
+    });
+
+    it('recomputes an annotation the dependency text the run will write contradicts', async () => {
+      const project = midRunProject(tmpDir, {
+        'dep.ts': {
+          onDisk: `export function send( value: string | number ) { return value; }
+`,
+          inRun: `export function send( value: string ) { return value; }
+`,
+        },
+        'main.ts': {
+          onDisk: `import { send } from './dep';
+
+export function relay( value ) {
+  send( value );
+}
+relay( 1 );
+relay( 'a' );
+`,
+        },
+      });
+
+      expect(await inferTypesPlugin.run(project.paramsFor('main.ts')))
+        .toBe(`import { send } from './dep';
+
+export function relay( value: string ) {
+  send( value );
+}
+relay( 1 );
+relay( 'a' );
+`);
+    });
+
+    it('reads a dependency rewritten between two files at its new text', async () => {
+      const consumer = (name: string) => `import { sink } from './dep';
+
+export function ${name}( value ) {
+  sink.write( value );
+  return value.toUpperCase();
+}
+`;
+      const project = midRunProject(tmpDir, {
+        'dep.ts': { onDisk: `export const sink = { write( s: number ) { return s; } };\n` },
+        'first.ts': { onDisk: consumer('first') },
+        'second.ts': { onDisk: consumer('second') },
+      });
+
+      // The dependency still takes a number, so string contradicts it.
+      expect(await inferTypesPlugin.run(project.paramsFor('first.ts'))).toBeUndefined();
+
+      project.rewrite('dep.ts', `export const sink = { write( s: string ) { return s; } };\n`);
+
+      // Serving the earlier parse from the shared document registry would drop
+      // this annotation the same way.
+      expect(await inferTypesPlugin.run(project.paramsFor('second.ts')))
+        .toBe(`import { sink } from './dep';
+
+export function second( value: string ) {
+  sink.write( value );
+  return value.toUpperCase();
+}
+`);
+    });
   });
 });

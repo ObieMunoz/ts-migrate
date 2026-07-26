@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      provenance:
+        description: Publish with provenance attestations (uncheck to bypass a Sigstore outage)
+        type: boolean
+        default: true
 
 concurrency:
   group: release
@@ -51,5 +56,46 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # A partial publish is recovered by dispatching a fresh run: the version
+      # step no-ops when HEAD is already tagged, and from-package only publishes
+      # versions missing from the registry. Do not use "re-run failed jobs",
+      # which checks out the pre-release commit and would version again.
       - name: Publish to npm
-        run: pnpm exec lerna publish from-package --yes
+        env:
+          NPM_CONFIG_PROVENANCE: ${{ inputs.provenance && 'true' || 'false' }}
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm exec lerna publish from-package --yes; then
+              exit 0
+            fi
+            echo "Publish attempt ${attempt} failed"
+            # A crashed attempt leaves lerna's publish-time manifest edits in
+            # the working tree, and the next attempt would refuse to run with
+            # EUNCOMMIT until they are reset.
+            git checkout -- .
+            if [ "${attempt}" -lt 3 ]; then
+              sleep 30
+            fi
+          done
+          exit 1
+
+      # Each package is checked at its own manifest version, not the lerna.json
+      # version: a bump driven only by private-package changes moves lerna.json
+      # ahead of the public manifests.
+      - name: Verify published versions
+        run: |
+          for manifest in packages/*/package.json; do
+            target=$(node -p "const p = require('./${manifest}'); p.private ? '' : p.name + '@' + p.version")
+            if [ -z "${target}" ]; then
+              continue
+            fi
+            for attempt in 1 2 3; do
+              if npm view "${target}" version > /dev/null; then
+                echo "${target} is on the registry"
+                continue 2
+              fi
+              sleep 10
+            done
+            echo "${target} is missing from the registry"
+            exit 1
+          done

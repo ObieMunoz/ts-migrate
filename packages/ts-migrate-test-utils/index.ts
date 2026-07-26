@@ -1,5 +1,7 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import glob from 'glob';
+import os from 'os';
 import path from 'path';
 import log from 'updatable-log';
 
@@ -9,11 +11,30 @@ function assertDirExists(dir: string) {
   }
 }
 
+// The scratch root every package's suites share. The `tests/tmp` shape is what
+// .gitignore, the root eslint ignore list and scripts/jest-global-teardown.js
+// all key on, so it stays even though this package holds no tests of its own.
+const scratchRoot = path.resolve(__dirname, 'tests', 'tmp');
+
 export function createDir() {
-  if (!fs.existsSync(path.resolve(__dirname, 'tmp'))) {
-    fs.mkdirSync(path.resolve(__dirname, 'tmp'));
-  }
-  return fs.mkdtempSync(path.resolve(__dirname, 'tmp/ts-migrate-'));
+  // Every suite in the repository shares the scratch root and jest runs them in
+  // parallel workers, so the mkdir has to be idempotent.
+  fs.mkdirSync(scratchRoot, { recursive: true });
+  return fs.mkdtempSync(path.join(scratchRoot, 'ts-migrate-'));
+}
+
+/**
+ * A scratch directory outside the repository, for a suite whose subject walks
+ * up from the directory it is given. Under `createDir` such a walk reaches this
+ * repository's own node_modules and tsconfig, which is the wrong answer for a
+ * suite asking what a standalone project resolves.
+ *
+ * The realpath matters on macOS, where os.tmpdir() is a symlink: TypeScript and
+ * ESLint both report canonical paths, so a caller comparing against this one
+ * has to hold the canonical form too.
+ */
+export function createTmpDir(prefix: string) {
+  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 }
 
 export function copyDir(srcDir: string, destDir: string) {
@@ -45,6 +66,25 @@ export function copyDir(srcDir: string, destDir: string) {
 export function deleteDir(dir: string) {
   assertDirExists(dir);
   fs.rmSync(dir, { recursive: true, force: true });
+}
+
+/**
+ * A digest over every file's path and raw bytes under dir, for asserting that
+ * a dry run left the tree byte-identical.
+ */
+export function hashDir(dir: string): string {
+  assertDirExists(dir);
+  const hash = crypto.createHash('sha256');
+  glob
+    .sync(`${dir}/**/*`, { nodir: true, dot: true })
+    .sort()
+    .forEach((file) => {
+      hash.update(path.relative(dir, file));
+      hash.update('\0');
+      hash.update(fs.readFileSync(file));
+      hash.update('\0');
+    });
+  return hash.digest('hex');
 }
 
 export function getDirData(dir1: string, dir2: string) {
@@ -95,6 +135,29 @@ export const mockUpdatableLog: () => typeof log = () => ({
   quiet: false,
 });
 /* eslint-enable no-console */
+
+/**
+ * What a run printed, for a suite that asserts on the transcript rather than on
+ * the files. Shared module state, so a suite using it clears it per test.
+ */
+export const transcriptLines: string[] = [];
+
+export const collectingUpdatableLog: () => typeof log = () => {
+  const push =
+    (prefix: string) =>
+    (...msg: unknown[]) => {
+      transcriptLines.push(`${prefix}${msg.map(String).join(' ')}`);
+    };
+  return {
+    error: push('Error: '),
+    important: push(''),
+    info: push(''),
+    warn: push('Warning: '),
+    update: () => {},
+    clear: () => {},
+    quiet: false,
+  };
+};
 
 export const noopUpdatableLog: () => typeof log = () => ({
   error: () => {},

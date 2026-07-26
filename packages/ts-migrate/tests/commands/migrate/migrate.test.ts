@@ -1,6 +1,9 @@
+import { execFileSync } from 'child_process';
+import os from 'os';
 import path from 'path';
 import fs from 'fs';
 import {
+  createTypesPackageDetector,
   tsIgnorePlugin,
   eslintFixPlugin,
   explicitAnyPlugin,
@@ -8,13 +11,17 @@ import {
   updateImportPathsPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
+  TypesPackageDetector,
 } from '@obiemunoz/ts-migrate-plugins';
 import { migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
-import { createDir, copyDir, deleteDir, getDirData } from '../../test-utils';
+import init from '../../../commands/init';
+import buildMigrateConfig from '../../../commands/migrate';
+import { createGitignoreMigrationFilter } from '../../../utils/gitignore';
+import { createDir, copyDir, deleteDir, getDirData } from '@obiemunoz/ts-migrate-test-utils';
 
 jest.mock('updatable-log', () => {
   // eslint-disable-next-line global-require
-  const { mockUpdatableLog } = require('../../test-utils');
+  const { mockUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
   return mockUpdatableLog();
 });
 
@@ -41,7 +48,7 @@ describe('migrate command', () => {
     const [rootData, outputData] = getDirData(rootDir, outputDir);
     expect(rootData).toEqual(outputData);
     expect(exitCode).toBe(0);
-  }, 10000);
+  });
 
   it('annotates implicit anys that only surface after an earlier annotation', async () => {
     const inputDir = path.resolve(__dirname, 'input');
@@ -68,7 +75,7 @@ handlers.map((h: { onReady: any; }) => h.onReady);
 `,
     );
     expect(exitCode).toBe(0);
-  }, 10000);
+  });
 
   it('re-points imports of renamed files', async () => {
     const inputDir = path.resolve(__dirname, 'input');
@@ -92,7 +99,49 @@ export const value = util;
 `,
     );
     expect(exitCode).toBe(0);
-  }, 10000);
+  });
+
+  describe('sources-scoped migration with ambient declaration files', () => {
+    const sourceText = 'export const version: string = __APP_VERSION__;\n';
+
+    beforeEach(() => {
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({ compilerOptions: { strict: true, noEmit: true, types: [] } }),
+      );
+      fs.writeFileSync(
+        path.resolve(rootDir, 'vite-env.d.ts'),
+        'declare const __APP_VERSION__: string;\n',
+      );
+      fs.mkdirSync(path.resolve(rootDir, 'feature'));
+      fs.writeFileSync(path.resolve(rootDir, 'feature/index.ts'), sourceText);
+    });
+
+    it('adds no suppressions for globals the retained ambient files declare', async () => {
+      const config = new MigrateConfig().addPlugin(tsIgnorePlugin, { messagePrefix: 'FIXME' });
+
+      const { exitCode } = await migrate({ rootDir, config, sources: 'feature/**/*' });
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(path.resolve(rootDir, 'feature/index.ts'), 'utf8')).toBe(sourceText);
+    });
+
+    it('suppresses the now-unresolvable global with ambientSources disabled', async () => {
+      const config = new MigrateConfig().addPlugin(tsIgnorePlugin, { messagePrefix: 'FIXME' });
+
+      const { exitCode } = await migrate({
+        rootDir,
+        config,
+        sources: 'feature/**/*',
+        ambientSources: false,
+      });
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(path.resolve(rootDir, 'feature/index.ts'), 'utf8')).toMatch(
+        /@ts-expect-error TS\(2304\) FIXME/,
+      );
+    });
+  });
 
   it('converts imported propTypes to a structural props type', async () => {
     const inputDir = path.resolve(__dirname, 'input');
@@ -178,5 +227,270 @@ export const messagePropTypes = {
 `,
     );
     expect(exitCode).toBe(0);
-  }, 10000);
+  });
+
+  it('skips gitignored files via the gitignore migration filter', async () => {
+    execFileSync('git', ['init'], { cwd: rootDir, stdio: 'ignore' });
+    fs.writeFileSync(
+      path.resolve(rootDir, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { noEmit: true, strict: true }, include: ['.'] }),
+    );
+    fs.writeFileSync(path.resolve(rootDir, '.gitignore'), 'dist/\n');
+    fs.writeFileSync(path.resolve(rootDir, 'app.ts'), "const broken: number = 'oops';\n");
+    fs.mkdirSync(path.resolve(rootDir, 'dist'));
+    const bundleText = "const bundled: number = 'oops';\n";
+    fs.writeFileSync(path.resolve(rootDir, 'dist/bundle.ts'), bundleText);
+
+    // Composed the same way the migrate command wires it up.
+    const gitignoreFilter = createGitignoreMigrationFilter(rootDir);
+    const config = new MigrateConfig().addPlugin(tsIgnorePlugin, { messagePrefix: 'FIXME' });
+    const { exitCode, updatedSourceFiles } = await migrate({
+      rootDir,
+      config,
+      filterMigrationFiles: gitignoreFilter.filterMigrationFiles,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(gitignoreFilter.skippedFiles()).toEqual([path.resolve(rootDir, 'dist/bundle.ts')]);
+    expect([...updatedSourceFiles]).toEqual([path.resolve(rootDir, 'app.ts')]);
+    expect(fs.readFileSync(path.resolve(rootDir, 'app.ts'), 'utf8')).toMatch(
+      /@ts-expect-error TS\(2322\) FIXME/,
+    );
+    expect(fs.readFileSync(path.resolve(rootDir, 'dist/bundle.ts'), 'utf8')).toBe(bundleText);
+  });
+
+  describe('imports of a package that ships no type definitions', () => {
+    const sourceText = "import untyped from 'untyped-lib';\n\nexport const value = untyped;\n";
+    const declarationsFile = 'types/ts-migrate-modules.d.ts';
+
+    beforeEach(() => {
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            module: 'commonjs',
+            noEmit: true,
+            strict: true,
+            esModuleInterop: true,
+            types: [],
+          },
+          include: ['.'],
+        }),
+      );
+      fs.mkdirSync(path.resolve(rootDir, 'node_modules/untyped-lib'), { recursive: true });
+      fs.writeFileSync(
+        path.resolve(rootDir, 'node_modules/untyped-lib/package.json'),
+        JSON.stringify({ name: 'untyped-lib', version: '1.0.0', main: 'index.js' }),
+      );
+      fs.writeFileSync(
+        path.resolve(rootDir, 'node_modules/untyped-lib/index.js'),
+        'module.exports = {};\n',
+      );
+      fs.writeFileSync(path.resolve(rootDir, 'app.ts'), sourceText);
+    });
+
+    // Composed the way the migrate command wires the detector up.
+    const configWith = (detector: TypesPackageDetector, declare: boolean) => {
+      const config = new MigrateConfig().addPlugin(detector.plugin, {});
+      if (declare) config.addPlugin(detector.declarationsPlugin, {});
+      return config.addPlugin(tsIgnorePlugin, { messagePrefix: 'FIXME' });
+    };
+
+    it('declares the module instead of suppressing its imports', async () => {
+      const detector = createTypesPackageDetector();
+
+      const { exitCode, generatedFiles } = await migrate({
+        rootDir,
+        config: configWith(detector, true),
+      });
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(path.resolve(rootDir, declarationsFile), 'utf8')).toContain(
+        "declare module 'untyped-lib';",
+      );
+      expect([...generatedFiles.keys()]).toEqual([path.resolve(rootDir, declarationsFile)]);
+      expect(fs.readFileSync(path.resolve(rootDir, 'app.ts'), 'utf8')).toBe(sourceText);
+      expect(detector.summarize(rootDir).declared?.moduleNames).toEqual(['untyped-lib']);
+    });
+
+    it('suppresses the import when the declarations are turned off', async () => {
+      const detector = createTypesPackageDetector();
+
+      const { exitCode, generatedFiles } = await migrate({
+        rootDir,
+        config: configWith(detector, false),
+      });
+
+      expect(exitCode).toBe(0);
+      expect(generatedFiles.size).toBe(0);
+      expect(fs.existsSync(path.resolve(rootDir, declarationsFile))).toBe(false);
+      expect(fs.readFileSync(path.resolve(rootDir, 'app.ts'), 'utf8')).toMatch(
+        /@ts-expect-error TS\(7016\) FIXME/,
+      );
+    });
+  });
+
+  describe('a project whose tsconfig sets allowJs', () => {
+    const shapesText = `import PropTypes from 'prop-types';
+
+export const itemShape = PropTypes.shape({
+  id: PropTypes.number.isRequired,
+  label: PropTypes.string,
+});
+`;
+    const featureText = `import { itemShape } from '../legacy/shapes';
+
+export const shape = itemShape;
+`;
+
+    beforeEach(() => {
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            allowJs: true,
+            allowSyntheticDefaultImports: true,
+            module: 'commonjs',
+            target: 'es2019',
+            noEmit: true,
+            strict: true,
+            types: [],
+          },
+          include: ['.'],
+        }),
+      );
+      fs.mkdirSync(path.resolve(rootDir, 'legacy'));
+      fs.writeFileSync(path.resolve(rootDir, 'legacy/shapes.js'), shapesText);
+      fs.mkdirSync(path.resolve(rootDir, 'feature'));
+      fs.writeFileSync(path.resolve(rootDir, 'feature/index.ts'), featureText);
+    });
+
+    it('runs the default pipeline without writing TypeScript into the .js file', async () => {
+      const { config } = buildMigrateConfig({ inferTypes: false });
+
+      const { exitCode, updatedSourceFiles } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(path.resolve(rootDir, 'legacy/shapes.js'), 'utf8')).toBe(shapesText);
+      expect([...updatedSourceFiles]).not.toContain(path.resolve(rootDir, 'legacy/shapes.js'));
+    }, 30000);
+  });
+
+  describe('a project whose tsconfig includes .d.mts and .d.cts files', () => {
+    // Implicit anys and an unresolvable type: the annotation and suppression
+    // plugins both have something to write here.
+    const declarationFiles = {
+      'types/globals.d.mts': 'declare function widen(value): void;\n',
+      'types/legacy.d.cts': 'declare function narrow(value): Unresolvable;\n',
+    };
+    const appText = 'export function app(value: string) {\n  return value;\n}\n';
+
+    beforeEach(() => {
+      fs.writeFileSync(
+        path.resolve(rootDir, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            module: 'commonjs',
+            target: 'es2019',
+            noEmit: true,
+            strict: true,
+            types: [],
+          },
+          include: ['.'],
+        }),
+      );
+      fs.writeFileSync(path.resolve(rootDir, 'app.ts'), appText);
+      fs.mkdirSync(path.resolve(rootDir, 'types'));
+      Object.entries(declarationFiles).forEach(([relPath, text]) => {
+        fs.writeFileSync(path.resolve(rootDir, relPath), text);
+      });
+    });
+
+    it('runs the default pipeline without writing into the declaration files', async () => {
+      const { config } = buildMigrateConfig({ inferTypes: false });
+
+      const { exitCode, updatedSourceFiles } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      Object.entries(declarationFiles).forEach(([relPath, text]) => {
+        const fileName = path.resolve(rootDir, relPath);
+        expect(fs.readFileSync(fileName, 'utf8')).toBe(text);
+        expect([...updatedSourceFiles]).not.toContain(fileName);
+      });
+    }, 30000);
+  });
+
+  describe('under the tsconfig init generates', () => {
+    // An OS temp dir rather than one inside this repo: init scans the project
+    // directory and its ancestors for node_modules/@types, and the workspace's
+    // own @types packages would leak into the generated config.
+    let projectDir: string;
+
+    beforeEach(() => {
+      projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ts-migrate-generated-'));
+    });
+
+    afterEach(() => {
+      deleteDir(projectDir);
+    });
+
+    it('types a JSON import instead of suppressing it', async () => {
+      fs.writeFileSync(
+        path.resolve(projectDir, 'config.json'),
+        JSON.stringify({ retries: 3 }, null, 2),
+      );
+      const sourceText = `import config from './config.json';
+
+export const retries: number = config.retries;
+`;
+      fs.writeFileSync(path.resolve(projectDir, 'app.ts'), sourceText);
+      init({ rootDir: projectDir, isExtendedConfig: false });
+
+      const config = new MigrateConfig().addPlugin(tsIgnorePlugin, { messagePrefix: 'FIXME' });
+      const { exitCode } = await migrate({ rootDir: projectDir, config });
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(path.resolve(projectDir, 'app.ts'), 'utf8')).toBe(sourceText);
+    });
+
+    describe('with JavaScript the migration has not reached yet', () => {
+      const utilText = 'export const util = { n: 1 };\n';
+      const featureText = `import { util } from '../legacy/util';
+
+export const n: number = util.n;
+`;
+
+      beforeEach(() => {
+        fs.mkdirSync(path.resolve(projectDir, 'legacy'));
+        fs.writeFileSync(path.resolve(projectDir, 'legacy/util.js'), utilText);
+        fs.mkdirSync(path.resolve(projectDir, 'feature'));
+        fs.writeFileSync(path.resolve(projectDir, 'feature/index.ts'), featureText);
+        init({ rootDir: projectDir, isExtendedConfig: false });
+      });
+
+      it('resolves a staged migration\'s imports into it instead of suppressing them', async () => {
+        const config = new MigrateConfig().addPlugin(tsIgnorePlugin, { messagePrefix: 'FIXME' });
+
+        const { exitCode } = await migrate({
+          rootDir: projectDir,
+          config,
+          sources: 'feature/**/*',
+        });
+
+        expect(exitCode).toBe(0);
+        expect(fs.readFileSync(path.resolve(projectDir, 'feature/index.ts'), 'utf8')).toBe(
+          featureText,
+        );
+      });
+
+      it('leaves it untouched on a full run', async () => {
+        const { config } = buildMigrateConfig({ inferTypes: false });
+
+        const { exitCode } = await migrate({ rootDir: projectDir, config });
+
+        expect(exitCode).toBe(0);
+        expect(fs.readFileSync(path.resolve(projectDir, 'legacy/util.js'), 'utf8')).toBe(utilText);
+      }, 30000);
+    });
+  });
 });

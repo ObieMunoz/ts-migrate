@@ -24,11 +24,14 @@ Check out Airbnb's original [blog post](https://medium.com/airbnb-engineering/ts
 
 # What's different in this fork
 
-* TypeScript 5.x and 6.x support (upstream tops out at TypeScript 4)
+* TypeScript 5.7.3 and up, through 6.x (upstream tops out at TypeScript 4)
 * Plugin internals migrated to the TypeScript 5 node factory API
 * ESLint 9 flat config support (with legacy fallback)
+* Lints with the project's own ESLint (`node_modules/eslint`, searched from the migration folder upward) rather than the bundled one, so rules and plugins run on the engine they were written for instead of throwing on removed APIs; `--no-projectEslint` opts out
 * Works on plain JS projects out of the box: no local TypeScript install required, and `init` writes a migration-friendly tsconfig instead of shelling out to `tsc --init`
-* Agent-ready: `ts-migrate agents` prints a usage playbook for AI coding agents, and `ts-migrate-full --yes --no-commit` runs the whole pipeline non-interactively without touching git
+* Migrates with the project's own TypeScript (`node_modules/typescript`, searched from the migration folder upward) rather than the version npx happens to resolve, so the suppressions it writes match what the project's `tsc` reports; `--typescript <path>` overrides it
+* Honors `.gitignore`: build output inside the source tree (bundles, `dist`, coverage) is neither renamed, migrated, nor type-checked, and `init` excludes it in the generated tsconfig (`--no-gitignore` opts out)
+* Agent-ready: `ts-migrate agents` prints a usage playbook for AI coding agents, `ts-migrate full --yes --no-commit` runs the whole pipeline non-interactively without touching git, `--dry-run` previews what a run would touch without writing anything, and `--jsonSummary` writes a machine-readable summary of what a run changed
 * Updated toolchain (Jest 29, modern dependencies)
 
 Upstream airbnb/ts-migrate has been unmaintained since 2022; this fork exists to keep the tool working on current TypeScript.

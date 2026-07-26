@@ -34,7 +34,30 @@ function canHoistIdentifier(
   hoistToPos: number,
   knownDefinitions: KnownDefinitionMap,
 ): boolean {
-  const globalWhitelist = ['Number', 'String', 'Object', 'Date', 'window', 'global'];
+  const globalWhitelist = [
+    'Array',
+    'Boolean',
+    'Date',
+    'Error',
+    'Function',
+    'Infinity',
+    'JSON',
+    'Map',
+    'Math',
+    'NaN',
+    'Number',
+    'Object',
+    'Promise',
+    'RegExp',
+    'Set',
+    'String',
+    'Symbol',
+    'document',
+    'global',
+    'globalThis',
+    'undefined',
+    'window',
+  ];
   const id = identifier.text;
   const isDefined = knownDefinitions[id] && knownDefinitions[id].end <= hoistToPos;
   const isGlobal = globalWhitelist.includes(id);

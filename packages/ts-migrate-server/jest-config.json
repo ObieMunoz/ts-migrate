@@ -7,10 +7,10 @@
         "js",
         "json"
     ],
-    "bail": false,
     "testEnvironment": "node",
     "testRegex": "(/__tests__/.*|(\\.|/)(test|spec))\\.(ts|js)$",
     "testPathIgnorePatterns": [
-        "<rootDir>/node_modules/"
+        "<rootDir>/node_modules/",
+        "<rootDir>/tests/tmp/"
     ]
 }

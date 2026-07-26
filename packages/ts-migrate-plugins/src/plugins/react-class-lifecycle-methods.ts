@@ -1,6 +1,7 @@
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import { getReactComponentHeritageType, isReactClassComponent } from './utils/react';
+import { isStatic } from './utils/modifiers';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { createValidate, Properties } from '../utils/validateOptions';
 
@@ -40,9 +41,43 @@ const reactLifecycleMethodAnnotations: { [method: string]: AnnotationKind[] } = 
   // componentWillReceiveProps?(nextProps: Readonly<P>, nextContext: any): void;
   componentWillReceiveProps: [AnnotationKind.Props, AnnotationKind.Context],
 
+  // UNSAFE_componentWillReceiveProps?(nextProps: Readonly<P>, nextContext: any): void;
+  UNSAFE_componentWillReceiveProps: [AnnotationKind.Props, AnnotationKind.Context],
+
   // componentWillUpdate?(nextProps: Readonly<P>, nextState: Readonly<S>, nextContext: any): void;
   componentWillUpdate: [AnnotationKind.Props, AnnotationKind.State, AnnotationKind.Context],
+
+  // UNSAFE_componentWillUpdate?(nextProps: Readonly<P>, nextState: Readonly<S>, nextContext: any): void;
+  UNSAFE_componentWillUpdate: [AnnotationKind.Props, AnnotationKind.State, AnnotationKind.Context],
+
+  // getSnapshotBeforeUpdate?(prevProps: Readonly<P>, prevState: Readonly<S>): SS | null;
+  getSnapshotBeforeUpdate: [AnnotationKind.Props, AnnotationKind.State],
+
+  // static getDerivedStateFromProps?(nextProps: Readonly<P>, prevState: S): Partial<S> | null;
+  getDerivedStateFromProps: [AnnotationKind.Props, AnnotationKind.State],
 };
+
+// Static members cannot reference class type parameters (TS2302).
+function referencesTypeParameter(type: ts.TypeNode, typeParameterNames: Set<string>) {
+  if (typeParameterNames.size === 0) return false;
+
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (found) return;
+    if (
+      ts.isTypeReferenceNode(node) &&
+      ts.isIdentifier(node.typeName) &&
+      typeParameterNames.has(node.typeName.text)
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(type);
+
+  return found;
+}
 
 function updateParameterType(parameter: ts.ParameterDeclaration, type: ts.TypeNode | undefined) {
   return ts.factory.updateParameterDeclaration(
@@ -77,6 +112,9 @@ function annotateReactComponentLifecycleMethods(
         [AnnotationKind.State]: stateType,
         [AnnotationKind.Context]: ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
       };
+      const typeParameterNames = new Set(
+        (statement.typeParameters || []).map((typeParameter) => typeParameter.name.text),
+      );
 
       statement.members.forEach((member) => {
         if (
@@ -98,6 +136,7 @@ function annotateReactComponentLifecycleMethods(
           reactLifecycleMethodAnnotations[member.name.text] != null
         ) {
           const annotations = reactLifecycleMethodAnnotations[member.name.text];
+          const skipTypeParameters = isStatic(member);
 
           let didUpdateParameters = false;
           const parametersToPrint: ts.ParameterDeclaration[] = [...member.parameters];
@@ -105,7 +144,11 @@ function annotateReactComponentLifecycleMethods(
           for (let i = 0; i < member.parameters.length; i += 1) {
             const parameter = member.parameters[i];
             const annotation = annotationToType[annotations[i]];
-            if (annotation != null && (parameter.type == null || force)) {
+            if (
+              annotation != null &&
+              (parameter.type == null || force) &&
+              !(skipTypeParameters && referencesTypeParameter(annotation, typeParameterNames))
+            ) {
               const updatedParameter = updateParameterType(parameter, annotation);
               parametersToPrint[i] = updatedParameter;
               didUpdateParameters = true;

@@ -38,17 +38,38 @@ export function isReactSfcFunctionDeclaration(
   );
 }
 
+export type ReactSfcFunctionExpression = ts.ArrowFunction | ts.FunctionExpression;
+
+export function isSfcFunctionExpression(
+  expression: ts.Expression,
+): expression is ReactSfcFunctionExpression {
+  return (
+    (ts.isArrowFunction(expression) || ts.isFunctionExpression(expression)) &&
+    expression.parameters.length <= 2
+  );
+}
+
 export function isReactSfcArrowFunction(variableStatement: ts.VariableStatement): boolean {
-  return variableStatement.declarationList.declarations.length === 1 &&
-    ts.isIdentifier(variableStatement.declarationList.declarations[0].name) &&
-    /^[A-Z]\w*$/.test(variableStatement.declarationList.declarations[0].name.text) &&
-    variableStatement.declarationList.declarations[0].initializer != null &&
-    ts.isCallExpression(variableStatement.declarationList.declarations[0].initializer) &&
-    isReactForwardRefName(variableStatement.declarationList.declarations[0].initializer)
-    ? true
-    : variableStatement.declarationList.declarations[0].initializer != null &&
-        ts.isArrowFunction(variableStatement.declarationList.declarations[0].initializer) &&
-        variableStatement.declarationList.declarations[0].initializer.parameters.length <= 2;
+  const { declarations } = variableStatement.declarationList;
+  if (declarations.length !== 1) {
+    return false;
+  }
+
+  const [declaration] = declarations;
+  if (
+    !ts.isIdentifier(declaration.name) ||
+    !/^[A-Z]\w*$/.test(declaration.name.text) ||
+    declaration.initializer == null
+  ) {
+    return false;
+  }
+
+  const initializer = unwrapReactMemo(declaration.initializer);
+  if (ts.isCallExpression(initializer) && isReactForwardRefName(initializer)) {
+    return true;
+  }
+
+  return isSfcFunctionExpression(initializer);
 }
 
 export function isReactForwardRefName(initializer: ts.CallExpression) {
@@ -63,6 +84,34 @@ export function isReactForwardRefName(initializer: ts.CallExpression) {
   }
 
   return false;
+}
+
+export function isReactMemoName(initializer: ts.CallExpression) {
+  const { expression } = initializer;
+
+  if (ts.isIdentifier(expression)) {
+    return expression.text === 'memo';
+  }
+
+  if (ts.isPropertyAccessExpression(expression)) {
+    return expression.name.text === 'memo';
+  }
+
+  return false;
+}
+
+// memo(forwardRef(fn)) and memo(fn) describe the same component as their
+// argument, so detection looks through any number of memo calls.
+export function unwrapReactMemo(expression: ts.Expression): ts.Expression {
+  if (
+    ts.isCallExpression(expression) &&
+    isReactMemoName(expression) &&
+    expression.arguments.length > 0
+  ) {
+    return unwrapReactMemo(expression.arguments[0]);
+  }
+
+  return expression;
 }
 
 export function getReactComponentHeritageType(

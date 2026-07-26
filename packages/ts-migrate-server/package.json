@@ -1,6 +1,6 @@
 {
   "name": "@obiemunoz/ts-migrate-server",
-  "version": "0.10.4",
+  "version": "0.15.0",
   "description": "A package that contains the main migration runner, built on the TypeScript language service. Maintained fork of airbnb/ts-migrate, updated for TypeScript 5+.",
   "main": "build/src/index.js",
   "directories": {
@@ -65,13 +65,13 @@
   },
   "gitHead": "7acf6067f15c9bb367cda9c47fcfb4203dcc54f3",
   "peerDependencies": {
-    "typescript": ">=5.0 <7"
+    "typescript": ">=5.7.3 <7"
   },
   "publishConfig": {
     "access": "public"
   },
   "engines": {
-    "node": ">=18.18.0"
+    "node": ">=22.18.0"
   },
   "devDependencies": {
     "typescript6": "npm:typescript@6.0.3"

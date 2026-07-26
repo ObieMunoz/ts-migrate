@@ -6,6 +6,8 @@ so use a Conventional Commits title with the package as the scope, e.g.:
   fix(ts-migrate): handle spaces in tsconfig paths
   feat(ts-migrate-plugins): add update-import-paths plugin
   docs: clarify reignore usage
+
+The PR Title workflow rejects titles that do not match this format.
 -->
 
 ## Summary

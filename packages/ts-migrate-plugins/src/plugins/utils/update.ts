@@ -26,14 +26,23 @@ class UpdateTracker {
   /**
    * Adds a return type annotation to a function.
    * replaceNode would require reprinting the entire function body, losing all whitespace details.
+   *
+   * Set parenthesizedParameters when the parameter list is being replaced with
+   * a parenthesized one, so the parentheses are not written twice.
    */
-  public addReturnAnnotation(node: ts.SignatureDeclaration, type: ts.TypeNode): void {
+  public addReturnAnnotation(
+    node: ts.SignatureDeclaration,
+    type: ts.TypeNode,
+    parenthesizedParameters = false,
+  ): void {
     const paren = node
       .getChildren(this.sourceFile)
       .find((node) => node.kind === ts.SyntaxKind.CloseParenToken);
     let pos;
     if (paren) {
       pos = paren.pos + 1;
+    } else if (parenthesizedParameters) {
+      pos = node.parameters.end;
     } else {
       // Must be an arrow function with single parameter and no parentheses.
       // Add parentheses.
@@ -46,9 +55,17 @@ class UpdateTracker {
     this.insert(pos, `: ${text}`);
   }
 
-  public insertNodes<T extends ts.Node>(pos: number, nodes: ts.NodeArray<T>): void {
-    const text = this.printer.printList(ts.ListFormat.SpaceAfterList, nodes, this.sourceFile);
-    this.insert(pos, text);
+  /**
+   * Splices text over [pos, end). An empty range inserts.
+   * For text a printed node cannot express on its own, such as a declaration
+   * that takes the place of the comment that declared it.
+   */
+  public replaceText(pos: number, end: number, text: string): void {
+    if (end > pos) {
+      this.replace(pos, end - pos, text);
+    } else {
+      this.insert(pos, text);
+    }
   }
 
   private replace(pos: number, length: number, text: string): void {

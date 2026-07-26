@@ -1,0 +1,5 @@
+{
+  "name": "flat-above-root",
+  "private": true,
+  "workspaces": ["packages/*"]
+}
