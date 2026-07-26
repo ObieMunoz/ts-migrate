@@ -93,21 +93,27 @@ jobs:
       fail-fast: false
       matrix:
         # SyntaxKind numbering differs between TypeScript 5.8 and 5.9; 6.0 deprecates
-        # legacy module resolution and ships a new lib. Test the 5.x floor, 5.9, and
-        # 6.x on one Node line, plus each other supported Node line on the default
-        # TypeScript — the axes are independent, so skip the full cross product.
+        # legacy module resolution and ships a new lib. That axis has caught real
+        # breakage, so it keeps three versions: the peer floor, 5.9, and 6.x.
+        #
+        # The Node axis is two jobs and neither of them is a "line": the engines
+        # floor, and the newest Node there is. No CI run has failed on one Node
+        # version while passing the others, and 22.18 through 26 were identical on
+        # every check of the yargs 18 move, so the versions in between carry no
+        # information and 24 is deliberately absent. What does vary is either side
+        # of the supported range, which is what these two cover.
         node-version: ['22']
         typescript-version: ['5.7.3', '5.9.3', '6.0.3']
         include:
-          # The floor is pinned to a patch rather than left as '22', which
-          # resolves to the newest 22 and so never builds what the engines
-          # field actually claims. 22.18.0 is where `process.exit()` stopped
-          # truncating a pending stderr write at 8192 bytes; below it the CLI
-          # loses the tail of any error longer than that, which is most of a
-          # rejected flag on `full` or `migrate`.
+          # The one Node-specific job, and it is about the floor rather than the
+          # line: a bare '22' resolves to the newest 22, so it never builds what
+          # engines claims. 22.18.0 is where `process.exit()` stopped truncating a
+          # pending stderr write at 8192 bytes; below it the CLI loses the tail of
+          # any error longer than that, which is most of a rejected flag on `full`
+          # or `migrate`.
           - node-version: '22.18'
             typescript-version: '5.9.3'
-          - node-version: '24'
+          - node-version: '26'
             typescript-version: '5.9.3'
 
     steps:
