@@ -43,11 +43,13 @@ const visit = (node) => {
       if (name === 'text') {
         textExpr = ts.isShorthandPropertyAssignment(prop) ? 'text' : prop.initializer.getText(sf);
       } else if (name === 'fileName') {
-        fileNameOk =
+        const matches =
           ts.isPropertyAssignment(prop) &&
           ts.isStringLiteral(prop.initializer) &&
           prop.initializer.text === boundFileName;
-        if (!fileNameOk) bail = true;
+        fileNameOk = true;
+        // A file name the runner is not bound to becomes an override.
+        if (!matches) rest.push(prop.getText(sf));
       } else {
         rest.push(prop.getText(sf));
       }
