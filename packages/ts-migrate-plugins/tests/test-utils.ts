@@ -1,9 +1,35 @@
 import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
-import { PluginFileNotice, PluginParams } from '@obiemunoz/ts-migrate-server';
+import { Plugin, PluginFileNotice, PluginParams } from '@obiemunoz/ts-migrate-server';
 
 type WithoutFile<T> = Omit<T, 'file'>;
+
+/** A map of file name to contents, for the helpers that build a program. */
+export type FileMap = { [fileName: string]: string };
+
+/**
+ * Reads a suite's case files, the inputs and expected outputs too long to sit
+ * inside the test that uses them. See the README beside this file for where
+ * the line is and why most cases stay inline.
+ *
+ * The text is what the file holds, byte for byte. The files therefore carry no
+ * trailing newline they were not written with, and an editor that adds one
+ * fails the test that reads it.
+ */
+export function caseReader(plugin: string) {
+  const dir = path.resolve(__dirname, 'fixtures', 'cases', plugin);
+  return (name: string) => fs.readFileSync(path.join(dir, name), 'utf8');
+}
+
+/**
+ * Reads a driver program a suite writes into a scratch directory and runs in a
+ * child process. These are programs rather than cases, so they are kept where
+ * an editor treats them as the language they are written in.
+ */
+export function readDriver(name: string) {
+  return fs.readFileSync(path.resolve(__dirname, 'fixtures', 'drivers', name), 'utf8');
+}
 
 /**
  * Output without the follow-up markers, for asserting what a plugin did to the
@@ -28,7 +54,7 @@ export function withoutMarkers(text: string | undefined): string | undefined {
     .join('\n');
 }
 
-export function mockPluginParams<TOptions = unknown>(params: {
+export interface MockParams<TOptions = unknown> {
   fileName?: string;
   text?: string;
   semanticDiagnostics?: WithoutFile<ts.Diagnostic>[];
@@ -37,7 +63,11 @@ export function mockPluginParams<TOptions = unknown>(params: {
   options?: TOptions;
   /** Set to collect what the plugin reports, as the runner does. */
   reportFileNotice?: (notice: PluginFileNotice) => void;
-}): PluginParams<TOptions> {
+}
+
+export function mockPluginParams<TOptions = unknown>(
+  params: MockParams<TOptions>,
+): PluginParams<TOptions> {
   const {
     fileName = 'file.ts',
     text = '',
@@ -74,6 +104,42 @@ export function mockPluginParams<TOptions = unknown>(params: {
         getSyntacticDiagnostics: () => syntacticDiagnostics.map(withFile),
         getSuggestionDiagnostics: () => suggestionDiagnostics.map(withFile),
       } as any),
+  };
+}
+
+/**
+ * A plugin bound to the params a file's tests all pass, so a test reads as the
+ * text in and the text out and each `it` states only what it is about. The
+ * overrides replace the bound values rather than merging into them, so a test
+ * that passes `options: {}` is a test run with no options.
+ */
+export function pluginRunner<TOptions = unknown>(
+  plugin: Plugin<TOptions>,
+  defaults: MockParams<TOptions> = {},
+) {
+  return (text: string, overrides: MockParams<TOptions> = {}) =>
+    plugin.run(mockPluginParams<TOptions>({ ...defaults, ...overrides, text }));
+}
+
+/**
+ * The same, for a test that asserts on what the plugin reported as well as on
+ * what it wrote.
+ */
+export function pluginRunnerWithNotices<TOptions = unknown>(
+  plugin: Plugin<TOptions>,
+  defaults: MockParams<TOptions> = {},
+) {
+  return async (text: string, overrides: MockParams<TOptions> = {}) => {
+    const notices: PluginFileNotice[] = [];
+    const result = await plugin.run(
+      mockPluginParams<TOptions>({
+        ...defaults,
+        ...overrides,
+        text,
+        reportFileNotice: (notice) => notices.push(notice),
+      }),
+    );
+    return { result, notices };
   };
 }
 
@@ -154,40 +220,159 @@ export async function realPluginParams<TOptions = unknown>(params: {
   };
 }
 
-/** Compiles the given text in memory, resolving the lib files from disk. */
-export function typeCheck(text: string, compilerOptions?: ts.CompilerOptions): string[] {
-  const fileName = '/checked.ts';
-  const files: { [name: string]: string } = { [fileName]: text };
-  const options: ts.CompilerOptions = {
-    strict: true,
-    noEmit: true,
-    target: ts.ScriptTarget.ES2020,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-    ...compilerOptions,
-  };
-  const host: ts.CompilerHost = {
-    getSourceFile: (name, languageVersion) => {
-      const contents = files[name] ?? ts.sys.readFile(name);
-      return contents === undefined
-        ? undefined
-        : ts.createSourceFile(name, contents, languageVersion, true);
+const defaultCompilerOptions: ts.CompilerOptions = {
+  strict: true,
+  noEmit: true,
+  target: ts.ScriptTarget.ES2020,
+  module: ts.ModuleKind.ESNext,
+  moduleResolution: ts.ModuleResolutionKind.Bundler,
+};
+
+/**
+ * Params rooted in a real directory, for a plugin whose validation programs
+ * read every file but the one under migration from disk. `realPluginParams`
+ * roots at `/`, where nothing outside the map it is given resolves, which is
+ * the wrong answer for a plugin that has to see `react` or a sibling module
+ * resolve the way it would in a project.
+ */
+export function fixturePluginParams<TOptions = unknown>(params: {
+  /** The directory the program is rooted in. Its files resolve from disk. */
+  rootDir: string;
+  /** The file under migration, inside rootDir. Only ever read from memory. */
+  fileName: string;
+  text: string;
+  options?: TOptions;
+  /** Merged over the defaults, for the jsx and resolution a suite needs. */
+  compilerOptions?: ts.CompilerOptions;
+  /** More in-memory files, named relative to rootDir. */
+  extraFiles?: FileMap;
+  /** Pass one to share parsed source files across a suite's calls. */
+  documentRegistry?: ts.DocumentRegistry;
+}): PluginParams<TOptions> {
+  const { rootDir, fileName, text, options, compilerOptions, extraFiles = {} } = params;
+
+  const files = new Map<string, string>([
+    [fileName, text],
+    ...Object.entries(extraFiles).map(
+      ([name, contents]) => [path.resolve(rootDir, name), contents] as const,
+    ),
+  ]);
+  const resolvedOptions = { ...defaultCompilerOptions, ...compilerOptions };
+
+  const host: ts.LanguageServiceHost = {
+    getCompilationSettings: () => resolvedOptions,
+    getScriptFileNames: () => Array.from(files.keys()),
+    // Derived from the contents, so a shared document registry never hands
+    // back the source file of a previous test under the same name.
+    getScriptVersion: (name) => files.get(name) ?? '0',
+    getScriptSnapshot: (name) => {
+      const contents = files.get(name) ?? ts.sys.readFile(name);
+      return contents !== undefined ? ts.ScriptSnapshot.fromString(contents) : undefined;
     },
+    getCurrentDirectory: () => rootDir,
     getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
-    writeFile: () => {},
-    getCurrentDirectory: () => '/',
-    getCanonicalFileName: (name) => name,
-    useCaseSensitiveFileNames: () => true,
-    getNewLine: () => '\n',
-    fileExists: (name) => name in files || ts.sys.fileExists(name),
-    readFile: (name) => files[name] ?? ts.sys.readFile(name),
+    fileExists: (name) => files.has(name) || ts.sys.fileExists(name),
+    readFile: (name) => files.get(name) ?? ts.sys.readFile(name),
+    directoryExists: (name) => ts.sys.directoryExists(name),
+    getDirectories: (name) => ts.sys.getDirectories(name),
   };
-  const program = ts.createProgram([fileName], options, host);
-  return [...program.getSyntacticDiagnostics(), ...program.getSemanticDiagnostics()].map(
-    (diagnostic) =>
-      `TS${diagnostic.code}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`,
-  );
+
+  const languageService = ts.createLanguageService(host, params.documentRegistry);
+  const sourceFile = languageService.getProgram()?.getSourceFile(fileName);
+  if (!sourceFile) throw new Error(`Failed to create source file: ${fileName}`);
+
+  return {
+    options: (options ?? {}) as TOptions,
+    fileName,
+    rootDir,
+    text,
+    sourceFile,
+    getLanguageService: () => languageService,
+  };
 }
+
+/** Parsed once: every check pulls in the same lib files. */
+const libSourceFiles = new Map<string, ts.SourceFile | undefined>();
+
+export interface TypeCheckerDefaults {
+  /** The directory the program is rooted in. Defaults to `/`, nothing on disk. */
+  rootDir?: string;
+  /** The name the single-file form gives its text. */
+  fileName?: string;
+  /** Merged over the defaults shared with `fixturePluginParams`. */
+  compilerOptions?: ts.CompilerOptions;
+  /** Files every check needs, such as a module stub the input imports. */
+  sharedFiles?: FileMap;
+  /**
+   * Drops the diagnostics of files read from disk, for a suite whose input
+   * imports a real dependency it is not asserting on.
+   */
+  ownFilesOnly?: boolean;
+}
+
+/**
+ * A type checker bound to the root, options and shared files a suite's checks
+ * have in common. The returned function takes either the text of the one file
+ * under test or a map of file names to text, and returns the diagnostics as
+ * `TS<code>: <message>` strings.
+ */
+export function createTypeChecker(defaults: TypeCheckerDefaults = {}) {
+  const { rootDir = '/', fileName = '/checked.ts', sharedFiles = {}, ownFilesOnly } = defaults;
+  const options: ts.CompilerOptions = {
+    ...defaultCompilerOptions,
+    // A check asserts on the text it is given. Without this the program pulls
+    // in every @types package this repository installs, and reports their
+    // problems as the input's.
+    types: [],
+    ...defaults.compilerOptions,
+  };
+
+  return (input: string | FileMap): string[] => {
+    const files: FileMap = {
+      ...sharedFiles,
+      ...(typeof input === 'string' ? { [fileName]: input } : input),
+    };
+    const host: ts.CompilerHost = {
+      getSourceFile: (name, languageVersion) => {
+        if (!(name in files)) {
+          // A lib or a dependency read from disk, so its text cannot change
+          // between checks the way the files under test do.
+          if (!libSourceFiles.has(name)) {
+            const libText = ts.sys.readFile(name);
+            libSourceFiles.set(
+              name,
+              libText === undefined
+                ? undefined
+                : ts.createSourceFile(name, libText, languageVersion, true),
+            );
+          }
+          return libSourceFiles.get(name);
+        }
+        return ts.createSourceFile(name, files[name], languageVersion, true);
+      },
+      getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
+      writeFile: () => {},
+      getCurrentDirectory: () => rootDir,
+      getCanonicalFileName: (name) => name,
+      useCaseSensitiveFileNames: () => ts.sys.useCaseSensitiveFileNames,
+      getNewLine: () => '\n',
+      fileExists: (name) => name in files || ts.sys.fileExists(name),
+      readFile: (name) => files[name] ?? ts.sys.readFile(name),
+      directoryExists: (name) => ts.sys.directoryExists(name),
+      getDirectories: (name) => ts.sys.getDirectories(name),
+    };
+    const program = ts.createProgram(Object.keys(files), options, host);
+    return [...program.getSyntacticDiagnostics(), ...program.getSemanticDiagnostics()]
+      .filter((diagnostic) => !ownFilesOnly || (diagnostic.file?.fileName ?? '') in files)
+      .map(
+        (diagnostic) =>
+          `TS${diagnostic.code}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`,
+      );
+  };
+}
+
+/** Compiles the given text in memory, resolving the lib files from disk. */
+export const typeCheck = createTypeChecker();
 
 export interface MidRunFile {
   onDisk: string;

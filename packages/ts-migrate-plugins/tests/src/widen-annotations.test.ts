@@ -1,82 +1,19 @@
 import path from 'path';
-import ts from 'typescript';
-import { PluginParams } from '@obiemunoz/ts-migrate-server';
-import { mockPluginParams } from '../test-utils';
+import { createTypeChecker, fixturePluginParams, mockPluginParams } from '../test-utils';
 import widenAnnotationsPlugin, { Options } from '../../src/plugins/widen-annotations';
 
-const fixturesDir = path.resolve(__dirname, '../fixtures/widen-annotations');
-const entryFile = path.join(fixturesDir, 'entry.ts');
-
-const compilerOptions: ts.CompilerOptions = {
-  strict: true,
-  noEmit: true,
-  target: ts.ScriptTarget.ES2020,
-  module: ts.ModuleKind.ESNext,
-  moduleResolution: ts.ModuleResolutionKind.Bundler,
-};
-
-/**
- * Params rooted in the fixture directory, so the imports of the file under
- * migration resolve the same way in the warm program and in the validation
- * programs the plugin builds, which read every file but this one from disk.
- */
-function pluginParams(text: string, options: Options = {}): PluginParams<Options> {
-  const host: ts.LanguageServiceHost = {
-    getCompilationSettings: () => compilerOptions,
-    getScriptFileNames: () => [entryFile],
-    getScriptVersion: () => '0',
-    getScriptSnapshot: (name) => {
-      const contents = name === entryFile ? text : ts.sys.readFile(name);
-      return contents !== undefined ? ts.ScriptSnapshot.fromString(contents) : undefined;
-    },
-    getCurrentDirectory: () => fixturesDir,
-    getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
-    fileExists: (name) => name === entryFile || ts.sys.fileExists(name),
-    readFile: (name) => (name === entryFile ? text : ts.sys.readFile(name)),
-  };
-  const languageService = ts.createLanguageService(host);
-  const sourceFile = languageService.getProgram()?.getSourceFile(entryFile);
-  if (!sourceFile) throw new Error(`Failed to create source file: ${entryFile}`);
-
-  return {
-    options,
-    fileName: entryFile,
-    rootDir: fixturesDir,
-    text,
-    sourceFile,
-    getLanguageService: () => languageService,
-  };
-}
+const rootDir = path.resolve(__dirname, '../fixtures/widen-annotations');
+const entryFile = path.join(rootDir, 'entry.ts');
 
 function run(text: string, options?: Options): string | undefined {
-  const result = widenAnnotationsPlugin.run(pluginParams(text, options));
+  const result = widenAnnotationsPlugin.run(
+    fixturePluginParams<Options>({ rootDir, fileName: entryFile, text, options }),
+  );
   return result as string | undefined;
 }
 
 /** Compiles the widened file against the fixture directory. */
-function typeCheck(text: string): string[] {
-  const host: ts.CompilerHost = {
-    getSourceFile: (fileName, languageVersion) => {
-      const contents = fileName === entryFile ? text : ts.sys.readFile(fileName);
-      return contents === undefined
-        ? undefined
-        : ts.createSourceFile(fileName, contents, languageVersion, true);
-    },
-    getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
-    writeFile: () => {},
-    getCurrentDirectory: () => fixturesDir,
-    getCanonicalFileName: (fileName) => fileName,
-    useCaseSensitiveFileNames: () => true,
-    getNewLine: () => '\n',
-    fileExists: (fileName) => fileName === entryFile || ts.sys.fileExists(fileName),
-    readFile: (fileName) => (fileName === entryFile ? text : ts.sys.readFile(fileName)),
-  };
-  const program = ts.createProgram([entryFile], compilerOptions, host);
-  return [...program.getSyntacticDiagnostics(), ...program.getSemanticDiagnostics()].map(
-    (diagnostic) =>
-      `TS${diagnostic.code}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`,
-  );
-}
+const typeCheck = createTypeChecker({ rootDir, fileName: entryFile });
 
 /** The widened text, asserted to compile with no diagnostics at all. */
 function widen(text: string, options?: Options): string {

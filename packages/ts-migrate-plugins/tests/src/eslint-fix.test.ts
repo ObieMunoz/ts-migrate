@@ -4,6 +4,7 @@ import path from 'path';
 import ts from 'typescript';
 import { PluginOptionsError } from '@obiemunoz/ts-migrate-server';
 import { createTmpDir } from '@obiemunoz/ts-migrate-test-utils';
+import { readDriver } from '../test-utils';
 import eslintFixPlugin from '../../src/plugins/eslint-fix';
 
 const packageRoot = path.join(__dirname, '..', '..');
@@ -90,51 +91,10 @@ function getCompiledPlugin(): CompiledModule[] {
 // them. The workerData of every spawn is recorded by wrapping
 // worker_threads.Worker before the plugin loads. Results go to a file so
 // stdout carries only what the plugin logs.
-const driverSource = `
-const fs = require('fs');
-const path = require('path');
-const workerThreads = require('worker_threads');
-const RealWorker = workerThreads.Worker;
-const workerData = [];
-workerThreads.Worker = class extends RealWorker {
-  constructor(source, options) {
-    workerData.push(options && options.workerData);
-    super(source, options);
-  }
-};
-const plugin = require('./plugin/${pluginEntryInTree}').default;
-const { files, rootDir, options } = JSON.parse(process.argv[2]);
-const notices = [];
-(async () => {
-  const results = await Promise.all(
-    files.map(({ fileName, text }) =>
-      plugin.run({
-        fileName: path.resolve(rootDir, fileName),
-        rootDir,
-        text,
-        options,
-        reportFileNotice: (notice) => notices.push({ ...notice, file: fileName }),
-      }),
-    ),
-  );
-  fs.writeFileSync(
-    path.join(__dirname, 'result.json'),
-    JSON.stringify({
-      results,
-      notices,
-      // The temp tree is gone by the time the test reads this.
-      workerData: workerData.map((data) => ({
-        ...data,
-        eslintRealPath: fs.realpathSync(data.eslintPath),
-      })),
-      spawnedWorkers: workerData.length,
-    }),
-  );
-})().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
-`;
+const driverSource = readDriver('eslint-fix-worker-pool.cjs').replace(
+  'PLUGIN_ENTRY',
+  JSON.stringify(pluginEntryInTree),
+);
 
 /** A stand-in for a project ESLint, to pin an export shape a test needs. */
 const STUB_ENGINE_SOURCE = `

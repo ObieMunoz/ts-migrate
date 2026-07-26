@@ -1,110 +1,41 @@
 import path from 'path';
 import ts from 'typescript';
-import { PluginParams } from '@obiemunoz/ts-migrate-server';
-import { mockPluginParams } from '../test-utils';
+import {
+  createTypeChecker,
+  fixturePluginParams,
+  FileMap,
+  mockPluginParams,
+} from '../test-utils';
 import reactDestructuredPropsPlugin from '../../src/plugins/react-destructured-props';
 import reactDefaultPropsPlugin from '../../src/plugins/react-default-props';
 
 // A real directory, so `react` resolves through the repo's node_modules both
 // here and in the single-file programs the plugin validates against.
-const fixtureDir = __dirname;
-const fixtureFile = path.join(fixtureDir, 'react-destructured-props-fixture.tsx');
+const rootDir = __dirname;
+const fixtureFile = path.join(rootDir, 'react-destructured-props-fixture.tsx');
 
 const compilerOptions: ts.CompilerOptions = {
-  strict: true,
-  noEmit: true,
   jsx: ts.JsxEmit.React,
-  target: ts.ScriptTarget.ES2020,
-  module: ts.ModuleKind.ESNext,
-  moduleResolution: ts.ModuleResolutionKind.Bundler,
   esModuleInterop: true,
   skipLibCheck: true,
 };
 
-function fileMap(text: string, extraFiles: { [fileName: string]: string } = {}) {
-  return new Map<string, string>([
-    [fixtureFile, text],
-    ...Object.entries(extraFiles).map(
-      ([name, contents]) => [path.join(fixtureDir, name), contents] as const,
-    ),
-  ]);
-}
-
-function pluginParams(
-  text: string,
-  options: { anyAlias?: string } = {},
-  extraFiles: { [fileName: string]: string } = {},
-  overrides: ts.CompilerOptions = {},
-): PluginParams<{ anyAlias?: string }> {
-  const files = fileMap(text, extraFiles);
-  const resolvedOptions = { ...compilerOptions, ...overrides };
-  const host: ts.LanguageServiceHost = {
-    getCompilationSettings: () => resolvedOptions,
-    getScriptFileNames: () => Array.from(files.keys()),
-    getScriptVersion: () => '0',
-    getScriptSnapshot: (name) => {
-      const contents = files.get(name) ?? ts.sys.readFile(name);
-      return contents !== undefined ? ts.ScriptSnapshot.fromString(contents) : undefined;
-    },
-    getCurrentDirectory: () => fixtureDir,
-    getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
-    fileExists: (name) => files.has(name) || ts.sys.fileExists(name),
-    readFile: (name) => files.get(name) ?? ts.sys.readFile(name),
-    directoryExists: (name) => ts.sys.directoryExists(name),
-    getDirectories: (name) => ts.sys.getDirectories(name),
-  };
-
-  const languageService = ts.createLanguageService(host);
-  const sourceFile = languageService.getProgram()?.getSourceFile(fixtureFile);
-  if (!sourceFile) throw new Error('Failed to create the fixture source file');
-
-  return {
-    options,
-    fileName: fixtureFile,
-    rootDir: fixtureDir,
-    text,
-    sourceFile,
-    getLanguageService: () => languageService,
-  };
-}
-
-function run(
-  text: string,
-  options?: { anyAlias?: string },
-  extraFiles?: { [fileName: string]: string },
-): string {
-  const result = reactDestructuredPropsPlugin.run(pluginParams(text, options, extraFiles));
+function run(text: string, options?: { anyAlias?: string }, extraFiles?: FileMap): string {
+  const result = reactDestructuredPropsPlugin.run(
+    fixturePluginParams<{ anyAlias?: string }>({
+      rootDir,
+      fileName: fixtureFile,
+      text,
+      options,
+      compilerOptions,
+      extraFiles,
+    }),
+  );
   return typeof result === 'string' ? result : text;
 }
 
 /** Compiles the converted file for real, so a wrong prop type fails here. */
-function typeCheck(text: string, extraFiles: { [fileName: string]: string } = {}): string[] {
-  const files = fileMap(text, extraFiles);
-  const host: ts.CompilerHost = {
-    getSourceFile: (name, languageVersion) => {
-      const contents = files.get(name) ?? ts.sys.readFile(name);
-      return contents === undefined
-        ? undefined
-        : ts.createSourceFile(name, contents, languageVersion, true);
-    },
-    getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
-    writeFile: () => {},
-    getCurrentDirectory: () => fixtureDir,
-    getCanonicalFileName: (name) => name,
-    useCaseSensitiveFileNames: () => ts.sys.useCaseSensitiveFileNames,
-    getNewLine: () => '\n',
-    fileExists: (name) => files.has(name) || ts.sys.fileExists(name),
-    readFile: (name) => files.get(name) ?? ts.sys.readFile(name),
-    directoryExists: (name) => ts.sys.directoryExists(name),
-    getDirectories: (name) => ts.sys.getDirectories(name),
-  };
-
-  const program = ts.createProgram(Array.from(files.keys()), compilerOptions, host);
-  return [...program.getSyntacticDiagnostics(), ...program.getSemanticDiagnostics()].map(
-    (diagnostic) =>
-      `TS${diagnostic.code}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`,
-  );
-}
+const typeCheck = createTypeChecker({ rootDir, fileName: fixtureFile, compilerOptions });
 
 describe('react-destructured-props plugin', () => {
   it('names the props of an exported function component', () => {
@@ -515,7 +446,12 @@ export default function Greeting({ title }) {
 }
 `;
 
-    const params = pluginParams(text, {}, {}, { strict: false, noImplicitAny: false });
+    const params = fixturePluginParams({
+      rootDir,
+      fileName: fixtureFile,
+      text,
+      compilerOptions: { ...compilerOptions, strict: false, noImplicitAny: false },
+    });
     expect(reactDestructuredPropsPlugin.run(params)).toBeUndefined();
   });
 
@@ -546,7 +482,12 @@ Greeting.defaultProps = { title: 'hi' };
   });
 
   it('leaves files that are not .tsx alone', () => {
-    const params = pluginParams('export default function Greeting({ title }) {}');
+    const params = fixturePluginParams({
+      rootDir,
+      fileName: fixtureFile,
+      text: 'export default function Greeting({ title }) {}',
+      compilerOptions,
+    });
     const result = reactDestructuredPropsPlugin.run({ ...params, fileName: 'file.ts' });
     expect(result).toBeUndefined();
   });
