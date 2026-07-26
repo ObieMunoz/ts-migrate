@@ -1,14 +1,32 @@
 import ts from 'typescript';
 
-// Split a type string on `sep` only at depth 0 (not inside < > ( ) [ ] { }).
+// Split a type string on `sep` only at depth 0 (not inside < > ( ) [ ] { } or a
+// string literal). The `>` of an arrow closes nothing, and a separator inside a
+// literal is part of the literal's text.
 export function splitTopLevel(str: string, sep: string): string[] {
   const result: string[] = [];
   let depth = 0;
   let current = '';
+  let quote: string | undefined;
   for (let i = 0; i < str.length; i++) {
     const ch = str[i];
+    if (quote != null) {
+      current += ch;
+      if (ch === '\\' && i + 1 < str.length) {
+        current += str[i + 1];
+        i += 1;
+      } else if (ch === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      quote = ch;
+      current += ch;
+      continue;
+    }
     if (ch === '<' || ch === '(' || ch === '[' || ch === '{') depth++;
-    else if (ch === '>' || ch === ')' || ch === ']' || ch === '}') depth--;
+    else if ((ch === '>' && str[i - 1] !== '=') || ch === ')' || ch === ']' || ch === '}') depth--;
     if (depth === 0 && str.startsWith(sep, i)) {
       result.push(current.trim());
       current = '';
@@ -19,6 +37,12 @@ export function splitTopLevel(str: string, sep: string): string[] {
   }
   result.push(current.trim());
   return result;
+}
+
+// True when a type string is a function signature, whose parameter and return
+// types buildTypeNode does not reconstruct.
+export function isFunctionTypeStr(typeStr: string): boolean {
+  return splitTopLevel(typeStr.trim(), ' => ').length > 1;
 }
 
 // Convert a type string (as produced by checker.typeToString or our own
