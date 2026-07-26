@@ -9,6 +9,8 @@ jest.mock('updatable-log', () => {
   return mockUpdatableLog();
 });
 
+const fixturesDir = path.resolve(__dirname, '../../fixtures');
+
 /**
  * Plugins inspect source files with their own `typescript` import, so the
  * server must hand them ASTs produced by that same instance — SyntaxKind
@@ -25,8 +27,8 @@ describe('AST / TypeScript instance consistency', () => {
   });
 
   it('hands plugins source files produced by the host typescript instance', async () => {
-    copyDir(path.resolve(__dirname, 'ast-input'), rootDir);
-    copyDir(path.resolve(__dirname, 'config'), rootDir);
+    copyDir(path.resolve(fixturesDir, 'ast-consistency/input'), rootDir);
+    copyDir(path.resolve(fixturesDir, 'tsconfig'), rootDir);
 
     const visitedFiles: string[] = [];
     const config = new MigrateConfig().addPlugin(

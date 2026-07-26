@@ -25,6 +25,8 @@ jest.mock('updatable-log', () => {
   return mockUpdatableLog();
 });
 
+const fixturesDir = path.resolve(__dirname, '../../fixtures');
+
 describe('migrate command', () => {
   let rootDir: string;
   beforeEach(() => {
@@ -36,8 +38,8 @@ describe('migrate command', () => {
   });
 
   it('Migrates project', async () => {
-    const inputDir = path.resolve(__dirname, 'input');
-    const outputDir = path.resolve(__dirname, 'output');
+    const inputDir = path.resolve(fixturesDir, 'migrate/input');
+    const outputDir = path.resolve(fixturesDir, 'migrate/output');
     copyDir(inputDir, rootDir);
     const config = new MigrateConfig()
       .addPlugin(explicitAnyPlugin, { anyAlias: '$TSFixMe' })
@@ -51,7 +53,7 @@ describe('migrate command', () => {
   });
 
   it('annotates implicit anys that only surface after an earlier annotation', async () => {
-    const inputDir = path.resolve(__dirname, 'input');
+    const inputDir = path.resolve(fixturesDir, 'migrate/input');
     copyDir(inputDir, rootDir);
     // `h` only becomes an implicit any once `handlers` is annotated `any`, so
     // a single pass would leave it for ts-ignore to suppress.
@@ -78,7 +80,7 @@ handlers.map((h: { onReady: any; }) => h.onReady);
   });
 
   it('re-points imports of renamed files', async () => {
-    const inputDir = path.resolve(__dirname, 'input');
+    const inputDir = path.resolve(fixturesDir, 'migrate/input');
     copyDir(inputDir, rootDir);
     fs.writeFileSync(path.resolve(rootDir, 'util.ts'), `export const util = 1;\n`);
     fs.writeFileSync(
@@ -144,7 +146,7 @@ export const value = util;
   });
 
   it('converts imported propTypes to a structural props type', async () => {
-    const inputDir = path.resolve(__dirname, 'input');
+    const inputDir = path.resolve(fixturesDir, 'migrate/input');
     copyDir(inputDir, rootDir);
     fs.unlinkSync(path.resolve(rootDir, 'Foo.tsx'));
     fs.unlinkSync(path.resolve(rootDir, 'file-1.ts'));

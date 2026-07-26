@@ -11,6 +11,8 @@ jest.mock('updatable-log', () => {
   return mockUpdatableLog();
 });
 
+const fixturesDir = path.resolve(__dirname, '../../fixtures');
+
 describe('migrate command', () => {
   let rootDir: string;
   beforeEach(() => {
@@ -22,9 +24,9 @@ describe('migrate command', () => {
   });
 
   it('Migrates project', async () => {
-    const inputDir = path.resolve(__dirname, 'input');
-    const outputDir = path.resolve(__dirname, 'output');
-    const configDir = path.resolve(__dirname, 'config');
+    const inputDir = path.resolve(fixturesDir, 'migrate/input');
+    const outputDir = path.resolve(fixturesDir, 'migrate/output');
+    const configDir = path.resolve(fixturesDir, 'tsconfig');
 
     copyDir(inputDir, rootDir);
     copyDir(configDir, rootDir);
@@ -54,8 +56,8 @@ describe('migrate command', () => {
 
   describe('dryRun', () => {
     it('leaves the tree byte-identical and returns the would-be contents', async () => {
-      const inputDir = path.resolve(__dirname, 'input');
-      const configDir = path.resolve(__dirname, 'config');
+      const inputDir = path.resolve(fixturesDir, 'migrate/input');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
       copyDir(inputDir, rootDir);
       copyDir(configDir, rootDir);
       const hashBefore = hashDir(rootDir);
@@ -231,9 +233,9 @@ describe('migrate command', () => {
 
   describe('sources', () => {
     it('Migrates project by using `sources`', async () => {
-      const inputDir = path.resolve(__dirname, 'input');
-      const outputDir = path.resolve(__dirname, 'output');
-      const configDir = path.resolve(__dirname, 'config');
+      const inputDir = path.resolve(fixturesDir, 'migrate/input');
+      const outputDir = path.resolve(fixturesDir, 'migrate/output');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
 
       copyDir(inputDir, rootDir);
       copyDir(configDir, rootDir);
@@ -261,9 +263,9 @@ describe('migrate command', () => {
     });
 
     it('Migrates project by using `sources` with an absolute path', async () => {
-      const inputDir = path.resolve(__dirname, 'input');
-      const outputDir = path.resolve(__dirname, 'output');
-      const configDir = path.resolve(__dirname, 'config');
+      const inputDir = path.resolve(fixturesDir, 'migrate/input');
+      const outputDir = path.resolve(fixturesDir, 'migrate/output');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
 
       copyDir(inputDir, rootDir);
       copyDir(configDir, rootDir);
@@ -369,7 +371,7 @@ describe('migrate command', () => {
   });
 
   it('exits non-zero when a file still has syntax errors after all plugins', async () => {
-    const configDir = path.resolve(__dirname, 'config');
+    const configDir = path.resolve(fixturesDir, 'tsconfig');
     copyDir(configDir, rootDir);
     // Valid sloppy-mode JS (octal escape) that TypeScript cannot parse; no
     // plugin can repair it, so migrate must not report success.
@@ -393,7 +395,7 @@ describe('migrate command', () => {
 
   describe('plugin exceptions', () => {
     beforeEach(() => {
-      copyDir(path.resolve(__dirname, 'config'), rootDir);
+      copyDir(path.resolve(fixturesDir, 'tsconfig'), rootDir);
       fs.writeFileSync(path.resolve(rootDir, 'a.ts'), 'export const a = 1;\n');
       fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 2;\n');
     });
@@ -497,7 +499,7 @@ describe('migrate command', () => {
 
   describe('repeatUntilStable', () => {
     it('re-runs the plugin group until a pass changes nothing', async () => {
-      const configDir = path.resolve(__dirname, 'config');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
       copyDir(configDir, rootDir);
       fs.writeFileSync(path.resolve(rootDir, 'index.ts'), '8');
 
@@ -531,7 +533,7 @@ describe('migrate command', () => {
     });
 
     it('caps the number of passes for a group that never stabilizes', async () => {
-      const configDir = path.resolve(__dirname, 'config');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
       copyDir(configDir, rootDir);
       fs.writeFileSync(path.resolve(rootDir, 'index.ts'), 'x');
 
@@ -552,7 +554,7 @@ describe('migrate command', () => {
     });
 
     it('revisits only files affected by the previous pass', async () => {
-      const configDir = path.resolve(__dirname, 'config');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
       copyDir(configDir, rootDir);
       fs.writeFileSync(
         path.resolve(rootDir, 'a.ts'),
@@ -581,7 +583,7 @@ describe('migrate command', () => {
     });
 
     it('revisits transitive importers through re-exports', async () => {
-      const configDir = path.resolve(__dirname, 'config');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
       copyDir(configDir, rootDir);
       fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 1; // CHANGE_ME\n');
       fs.writeFileSync(path.resolve(rootDir, 'barrel.ts'), "export * from './b';\n");
@@ -610,7 +612,7 @@ describe('migrate command', () => {
     });
 
     it('revisits every file when a changed file affects the global scope', async () => {
-      const configDir = path.resolve(__dirname, 'config');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
       copyDir(configDir, rootDir);
       // No import/export makes b.ts a script contributing to the global scope.
       fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'const b = 1; // CHANGE_ME\n');
@@ -635,7 +637,7 @@ describe('migrate command', () => {
     });
 
     it('revisits every file with incrementalPasses disabled', async () => {
-      const configDir = path.resolve(__dirname, 'config');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
       copyDir(configDir, rootDir);
       fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 1; // CHANGE_ME\n');
       fs.writeFileSync(path.resolve(rootDir, 'c.ts'), 'export const c = 3;\n');
@@ -659,7 +661,7 @@ describe('migrate command', () => {
     });
 
     it('honors a custom maxStablePasses cap', async () => {
-      const configDir = path.resolve(__dirname, 'config');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
       copyDir(configDir, rootDir);
       fs.writeFileSync(path.resolve(rootDir, 'index.ts'), 'x');
 
@@ -680,7 +682,7 @@ describe('migrate command', () => {
     });
 
     it('runs unmarked plugins a single pass', async () => {
-      const configDir = path.resolve(__dirname, 'config');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
       copyDir(configDir, rootDir);
       fs.writeFileSync(path.resolve(rootDir, 'index.ts'), '8');
 
@@ -736,7 +738,7 @@ describe('migrate command', () => {
     };
 
     beforeEach(() => {
-      const configDir = path.resolve(__dirname, 'config');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
       copyDir(configDir, rootDir);
       fs.writeFileSync(path.resolve(rootDir, 'a.ts'), 'export const a = 1;\n');
       fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 2;\n');
@@ -795,7 +797,7 @@ describe('migrate command', () => {
     };
 
     beforeEach(() => {
-      const configDir = path.resolve(__dirname, 'config');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
       copyDir(configDir, rootDir);
       fs.writeFileSync(path.resolve(rootDir, 'a.ts'), 'export const a = 1;\n');
       fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 2;\n');
@@ -844,7 +846,7 @@ describe('migrate command', () => {
 
   describe('pass progress', () => {
     it('logs occasional counter lines during a slow non-TTY pass', async () => {
-      const configDir = path.resolve(__dirname, 'config');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
       copyDir(configDir, rootDir);
       fs.writeFileSync(path.resolve(rootDir, 'a.ts'), 'export const a = 1;\n');
       fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 2;\n');
@@ -889,7 +891,7 @@ describe('migrate command', () => {
     });
 
     it('reports a repeated pass without moving the pipeline ordinal backwards', async () => {
-      const configDir = path.resolve(__dirname, 'config');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
       copyDir(configDir, rootDir);
       fs.writeFileSync(path.resolve(rootDir, 'index.ts'), 'x');
 
@@ -955,7 +957,7 @@ describe('migrate command', () => {
       );
 
     it('reports the count before the first plugin banner', async () => {
-      copyDir(path.resolve(__dirname, 'config'), rootDir);
+      copyDir(path.resolve(fixturesDir, 'tsconfig'), rootDir);
       fs.writeFileSync(path.resolve(rootDir, 'a.ts'), 'export const a = 1;\n');
       fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 2;\n');
 
@@ -1064,7 +1066,7 @@ describe('migrate command', () => {
 
   describe('pluginStats', () => {
     it('counts distinct changed files per plugin in pipeline order', async () => {
-      const configDir = path.resolve(__dirname, 'config');
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
       copyDir(configDir, rootDir);
       fs.writeFileSync(path.resolve(rootDir, 'a.ts'), 'x');
       fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 1;\n');
@@ -1102,9 +1104,9 @@ describe('migrate command', () => {
   });
 
   it('Migrates project with two plugins', async () => {
-    const inputDir = path.resolve(__dirname, 'input');
-    const outputDir = path.resolve(__dirname, 'output_two');
-    const configDir = path.resolve(__dirname, 'config');
+    const inputDir = path.resolve(fixturesDir, 'migrate/input');
+    const outputDir = path.resolve(fixturesDir, 'migrate/output-two-plugins');
+    const configDir = path.resolve(fixturesDir, 'tsconfig');
 
     copyDir(inputDir, rootDir);
     copyDir(configDir, rootDir);

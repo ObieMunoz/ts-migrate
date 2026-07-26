@@ -7,7 +7,10 @@ module.exports = tseslint.config(
   {
     ignores: [
       '**/build/',
-      '**/tests/commands/migrate/ast-input/',
+      // Every checked-in fixture tree lives here. They are inputs and expected
+      // outputs of the migrations under test: intentionally broken code,
+      // carrying eslint-disable comments as data.
+      '**/tests/fixtures/',
       '**/tests/tmp/',
       // Linted by its own eslint.config.js.
       'packages/ts-migrate-plugins/',
@@ -31,23 +34,6 @@ module.exports = tseslint.config(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/no-useless-constructor': 'error',
-    },
-  },
-  {
-    // Command fixtures are test data: unused identifiers and `{}` types are
-    // the inputs and expected outputs of the migrations under test.
-    files: ['**/tests/commands/*/input/**', '**/tests/commands/*/output/**'],
-    rules: {
-      '@typescript-eslint/no-empty-object-type': 'off',
-      '@typescript-eslint/no-unused-vars': 'off',
-    },
-  },
-  {
-    // Flat config only lints extensions matched by a `files` pattern; keep
-    // the .jsx rename fixtures covered.
-    files: ['**/*.jsx'],
-    languageOptions: {
-      parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },
 );

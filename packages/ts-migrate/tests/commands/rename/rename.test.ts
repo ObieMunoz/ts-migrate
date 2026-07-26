@@ -11,6 +11,8 @@ jest.mock('updatable-log', () => {
   return mockUpdatableLog();
 });
 
+const fixturesDir = path.resolve(__dirname, '../../fixtures');
+
 const expectedRenames = [
   { oldFile: 'dir-a/file-2.js', newFile: 'dir-a/file-2.ts' },
   { oldFile: 'dir-a/file-3.jsx', newFile: 'dir-a/file-3.tsx' },
@@ -45,8 +47,8 @@ describe('rename command', () => {
   });
 
   it('Renames JS/JSX/MJS/CJS files to their TypeScript extension', () => {
-    const inputDir = path.resolve(__dirname, 'input');
-    const outputDir = path.resolve(__dirname, 'output');
+    const inputDir = path.resolve(fixturesDir, 'rename/input');
+    const outputDir = path.resolve(fixturesDir, 'rename/output');
     copyDir(inputDir, rootDir);
 
     const result = rename({ rootDir });
@@ -58,7 +60,7 @@ describe('rename command', () => {
   });
 
   it('Dry run prints the mapping and leaves the tree byte-identical', () => {
-    const inputDir = path.resolve(__dirname, 'input');
+    const inputDir = path.resolve(fixturesDir, 'rename/input');
     copyDir(inputDir, rootDir);
     const hashBefore = hashDir(rootDir);
     const infoSpy = jest.spyOn(log, 'info');
