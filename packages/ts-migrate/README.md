@@ -40,7 +40,7 @@ Commit or stash the folder you are migrating before you start. The run lists any
 
 A failing step names itself and exits with that step's exit code, leaving the partial result in the working tree. It also prints the type definition recommendations the run had gathered by then, and names the file they were written to so they survive the failure.
 
-A successful run ends with the SHAs of the commits it created and guidance for recording them in a repo-root [`.git-blame-ignore-revs`](https://git-scm.com/docs/git-blame#Documentation/git-blame.txt---ignore-revs-fileltfilegt) file, so `git blame` (locally and on github.com) can skip the mechanical rewrite commits. If your team merges PRs with merge commits, pass `--blame-ignore-revs` to have the file written for you; with squash or rebase merges those SHAs never reach the main branch, so add the merged commit's SHA to the file after the merge instead.
+A successful run ends with the SHAs of the commits it created and guidance for recording them in a repo-root [`.git-blame-ignore-revs`](https://git-scm.com/docs/git-blame#Documentation/git-blame.txt---ignore-revs-fileltfilegt) file, so `git blame` (locally and on github.com) can skip the mechanical rewrite commits. If your team merges PRs with merge commits, pass `--blameIgnoreRevs` to have the file written for you; with squash or rebase merges those SHAs never reach the main branch, so add the merged commit's SHA to the file after the merge instead.
 
 Please note that it may take a long time to do a full migration.
 You can also migrate individual parts of a project by specifying a subset of sources:
@@ -51,6 +51,26 @@ You can also migrate individual parts of a project by specifying a subset of sou
 npx -p @obiemunoz/ts-migrate ts-migrate full <folder> \
   --sources="relative/path/to/subset/**/*"
 ```
+
+A run configured by more than a flag or two belongs in a
+`ts-migrate.config.json` next to the folder rather than in shell history. Put
+the settings your project keeps in the file and the invocation stays the
+command and the folder:
+
+```json
+{
+  "sources": "app/**/*",
+  "excludePlugin": ["eslint-fix"],
+  "maxStablePasses": 3
+}
+```
+
+```sh
+npx -p @obiemunoz/ts-migrate ts-migrate full <folder>
+```
+
+See [Configuration file](#configuration-file) for where the file is looked for
+and how a section per command works.
 
 Or, you can run individual CLI commands (the help text lists them by bin name —
 prefix with your runner: `npx ts-migrate ...` or `pnpm ts-migrate ...`):
@@ -117,6 +137,12 @@ migration that ignored it. `ts-migrate full` forwards one argument list to both
 `rename` and `migrate`, and declares the union of what the two accept, so every
 flag either step takes is one it recognizes.
 
+Flags are spelled in camelCase, which is what `--help` prints and what a
+config file key is reported as. The dashed spelling of any of them parses too,
+so `--dry-run`, `--exclude-plugin`, `--update-baseline` and
+`--blame-ignore-revs` keep working wherever they are already written; they are
+just no longer what the help text shows.
+
 Every command above takes a `<folder>`, and every one of them exits 255 before
 reading or writing anything when that folder does not exist or is a file rather
 than a directory. The message names the absolute path the argument resolved to,
@@ -169,7 +195,7 @@ Requires and exports that are not statically analyzable top level statements,
 including a require inside a function or a branch and a file that mixes
 `module.exports = x` with `exports.foo = y`, are left for ts-ignore; the run
 reports each file it left alone and why. Pass
-`--exclude-plugin convert-commonjs` to keep the CommonJS syntax as it is.
+`--excludePlugin convert-commonjs` to keep the CommonJS syntax as it is.
 
 The `migrate` command also accepts flags controlling the type-inference stage,
 the most expensive part of a migration:
@@ -186,7 +212,7 @@ the most expensive part of a migration:
   import graph).
 
 Individual steps of the default pipeline can be skipped with
-`--exclude-plugin <name>` (repeatable, validated against the same plugin names
+`--excludePlugin <name>` (repeatable, validated against the same plugin names
 as `--plugin`; see `migrate --help` for the list). Every occurrence of the name
 is removed: excluding `eslint-fix` drops both the lint pass before `ts-ignore`
 and the one after it. Common uses:
@@ -195,10 +221,10 @@ and the one after it. Common uses:
 # Staged migration: leave residual compiler errors visible for manual fixing
 # instead of suppressing them with @ts-expect-error comments.
 npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> \
-  --exclude-plugin ts-ignore --exclude-plugin strip-ts-ignore
+  --excludePlugin ts-ignore --excludePlugin strip-ts-ignore
 
 # Keep lint-autofix churn out of the migration diff (and skip two lint passes).
-npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --exclude-plugin eslint-fix
+npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --excludePlugin eslint-fix
 ```
 
 An unknown plugin name errors and lists the valid names. Excluding
@@ -207,10 +233,10 @@ the flag to the migrate step, like any other migrate option.
 
 `--plugin <name>` runs one plugin on its own instead of the pipeline. It takes
 a single name; to run the pipeline without some of its plugins, use
-`--exclude-plugin`. It is a `migrate` flag only: `ts-migrate full` rejects it,
+`--excludePlugin`. It is a `migrate` flag only: `ts-migrate full` rejects it,
 because one plugin leaves the errors the rest of the pipeline would have
 resolved and the `tsc --noEmit` check that closes a full run would then fail by
-construction. `--exclude-plugin` is accepted on both. The plugin receives the same options it would receive in
+construction. `--excludePlugin` is accepted on both. The plugin receives the same options it would receive in
 the pipeline, so a plugin flag applies the same way in both:
 
 ```sh
@@ -235,6 +261,64 @@ plugin, which runs in the default pipeline as well as under `--plugin`:
   members private and leaves every other member alone.
 
 A member that already declares an accessibility modifier is never rewritten.
+
+# Configuration file
+
+A migration is configured by twenty-odd flags, which is more than fits on a
+line worth retyping, and most of them are settings a project keeps rather than
+picks per run. `ts-migrate.config.json` holds them:
+
+```json
+{
+  // The keys are flag names, minus the leading dashes. Comments and a
+  // trailing comma are allowed: the file is read as JSON5.
+  "sources": "app/**/*",
+  "gitignore": false,
+  "maxStablePasses": 3,
+
+  // A section named after a command applies to that command only, over the
+  // shared keys above.
+  "migrate": { "plugin": "jsdoc" },
+  "check": { "baselineFile": "config/type-debt.json" },
+}
+```
+
+The file is looked for in `<folder>` and then in each directory above it, the
+way the project's own TypeScript and ESLint already are; the first one found
+wins. `--config <path>` names one directly and skips the search. Either way
+the run prints the file it read before it starts, so a file found by searching
+upward is never applied silently.
+
+Precedence is flags, then the command's section, then the shared keys: a flag
+on the command line always wins, so a config file never keeps you from
+overriding it for one run. `--no-gitignore` overrides `"gitignore": true` in
+the file, the same as it overrides the built-in default.
+
+`full`, `rename`, `migrate`, `reignore`, `report` and `check` read the file.
+`init`, `init:extended` and `agents` take no flags, so there is nothing for
+them to read.
+
+One file serves every command, so a shared key that the running command has no
+flag for is left out rather than refused: `"inferTypes": false` configures
+`migrate` and `full` and is ignored by `rename`, which has no such flag. A key
+that no command anywhere takes is a typo, and fails the run naming the file and
+the key — silently ignoring a mistyped flag costs a whole migration run to
+notice, which is why the command line rejects one and why the file is held to
+the same standard. Inside a section there is no other command the key could
+have been meant for, so a key that command does not take fails there too.
+
+Keys accept either spelling, like the flags themselves, and are reported in
+camelCase. `folder`, `config`, `help` and `version` cannot be set from the
+file.
+
+A repeatable flag takes an array, which is the same as passing it once per
+entry: `"excludePlugin": ["eslint-fix", "ts-ignore"]` is
+`--excludePlugin eslint-fix --excludePlugin ts-ignore`.
+
+A path in the file means what the same path means on the command line: it is
+resolved against the working directory, not against the config file or
+`<folder>`. Use an absolute path for a value that has to survive being run
+from somewhere else.
 
 # Which TypeScript ts-migrate runs
 
@@ -790,23 +874,23 @@ is the enforcement mode, meant for CI. The first run writes a per-file
 baseline to `.ts-migrate-baseline.json` in `<folder>`; commit it. Later runs
 exit nonzero if any per-file count exceeds the baseline and lower the
 baseline automatically when counts improve, so the debt can only ratchet
-down. Accept an intentional increase with `--update-baseline`; relocate the
+down. Accept an intentional increase with `--updateBaseline`; relocate the
 file with `--baselineFile <path>`.
 
-# Previewing a run (`--dry-run`)
+# Previewing a run (`--dryRun`)
 
-`rename`, `migrate`, and `reignore` accept `--dry-run` to show what a run
+`rename`, `migrate`, and `reignore` accept `--dryRun` to show what a run
 would touch before anything hits disk:
 
 ```sh
-npx -p @obiemunoz/ts-migrate ts-migrate rename <folder> --dry-run
+npx -p @obiemunoz/ts-migrate ts-migrate rename <folder> --dryRun
 ```
 
 ```sh
-npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --dry-run
+npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --dryRun
 ```
 
-`rename --dry-run` prints the full old-to-new mapping, which also surfaces
+`rename --dryRun` prints the full old-to-new mapping, which also surfaces
 the `.ts` vs `.tsx` decision made for each `.js` file, together with the
 package.json references a real run would rewrite. `migrate` and
 `reignore` print each file a real run would update, with the suppression and
@@ -816,7 +900,7 @@ package.json references a real run would rewrite. `migrate` and
 Dry run: 2 file(s) would be updated in frontend/foo (nothing was written):
   src/util.ts (2 any-alias)
   src/widget.tsx (2 @ts-expect-error)
-For full diffs, run without --dry-run on a clean git tree and use git diff.
+For full diffs, run without --dryRun on a clean git tree and use git diff.
 ```
 
 Every plugin pass still executes against the in-memory project; only the
@@ -826,12 +910,12 @@ declaration file the real run would generate is modeled in memory too).
 Per-file diffs are deliberately not printed: at migration scale they are
 enormous, and git shows them better after a real run.
 
-`--dry-run` combines with `--jsonSummary` (below) for a machine-readable
+`--dryRun` combines with `--jsonSummary` (below) for a machine-readable
 preview; the summary file is still written, with `"dryRun": true`.
-`ts-migrate full --dry-run` previews the tsconfig it would create and the full
+`ts-migrate full --dryRun` previews the tsconfig it would create and the full
 rename mapping, then stops: its remaining two steps read the files the rename
 would have written, and a dry run wrote none of them. Preview those with
-`ts-migrate migrate <folder> --dry-run` once the rename has really happened.
+`ts-migrate migrate <folder> --dryRun` once the rename has really happened.
 
 # Machine-readable run summaries
 
@@ -914,7 +998,7 @@ jsdoc, convert-commonjs and ts-ignore all write those, and
 `changedFilesTypeDebt` counts only the files this run
 changed, so a scoped or incremental run reports its own debt; the `report`
 command measures the whole project. `dryRun` is true when the run was a
-`--dry-run` preview: the summary then describes what a real run would have
+`--dryRun` preview: the summary then describes what a real run would have
 changed, scanned from the would-be contents rather than the disk.
 
 The file is written whenever the command runs to completion, so its
