@@ -140,7 +140,7 @@ export default class GuestRequirements extends React.Component<Props> {
 
     expect(await run(text, { options })).toBe(`import React from 'react';
 
-type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
+type WithDefaultProps<P, D> = 0 extends (1 & D) ? P & D : ([P & D] extends [never] ? (Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>) : P & D);
 
 type OwnProps = {
     instantBookingAllowedCategory: string;
@@ -200,7 +200,7 @@ export default ExampleComponent;`;
 
     expect(await run(text, { options })).toBe(`import React from 'react';
 
-type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
+type WithDefaultProps<P, D> = 0 extends (1 & D) ? P & D : ([P & D] extends [never] ? (Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>) : P & D);
 
 export type Props = {
     test: string;
@@ -241,7 +241,7 @@ export default Foo;`;
 
     expect(await run(text, { options })).toBe(`import React from 'react';
 
-type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
+type WithDefaultProps<P, D> = 0 extends (1 & D) ? P & D : ([P & D] extends [never] ? (Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>) : P & D);
 
 export type MyProps = {
     message: string;
@@ -476,7 +476,7 @@ declare module 'react' {
   it('do not emit the helper again when the file already declares it', async () => {
     const text = `import React from 'react';
 
-type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
+type WithDefaultProps<P, D> = 0 extends (1 & D) ? P & D : ([P & D] extends [never] ? (Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>) : P & D);
 
 type Props = {
   test: string;
@@ -498,7 +498,7 @@ export default ExampleComponent;`;
     expect(result.match(/type WithDefaultProps</g)).toHaveLength(1);
     expect(result).toBe(`import React from 'react';
 
-type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
+type WithDefaultProps<P, D> = 0 extends (1 & D) ? P & D : ([P & D] extends [never] ? (Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>) : P & D);
 
 type OwnProps = {
     test: string;

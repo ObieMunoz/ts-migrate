@@ -1,6 +1,6 @@
 import React from 'react';
 
-type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
+type WithDefaultProps<P, D> = 0 extends (1 & D) ? P & D : ([P & D] extends [never] ? (Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>) : P & D);
 
 const SIZES = {
   LARGE: 'large',
