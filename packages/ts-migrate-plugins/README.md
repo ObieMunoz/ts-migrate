@@ -65,6 +65,7 @@ process.exit(exitCode);
 | [react-hook-types](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-hook-types.ts) | Write the type argument a React hook call needs when its initializer infers nothing useful: `useState(null)`, `useState(undefined)`, `useState([])`, `useState({})`, `useRef(null)`, and `createContext` called with `null`, with `undefined` or with no argument at all. Only calls an existing error blames are touched. `useState` reads the arguments its setter is called with in the same file, `useRef` reads the intrinsic tag its ref is attached to, `createContext` reads the `value` prop of the Providers in the same file; an argument the checker types `any` is not evidence. A `createContext` type argument keeps the default value in the union, and a call written with no argument takes the `undefined` it already passes at runtime. The proposed argument is written only when re-checking the file with it in place reports no new error, and everything else takes `any` (`$TSFixMe`). |
 | [react-inline-imported-prop-types](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-inline-imported-prop-types.ts) | Copy propTypes objects imported from other modules into the file that assigns them (including spreads of them), carrying over the imports the copied text needs, so react-props converts them structurally like colocated propTypes. Runs before the other React plugins. |
 | [react-props](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-props.ts) | Convert React prop types to TypeScript type. Imported propTypes objects that react-inline-imported-prop-types could not copy (non-relative modules, non-literal exports, references to module-local values) are typed with `InferProps<typeof importedPropTypes>` instead. |
+| [react-props-from-usage](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-props-from-usage.ts) | Infer a class component's `Props` type from usage when it has no `propTypes` to convert. Gathers evidence from JSX call sites across the project (via `findReferences`) and from `this.props` reads in the class body, then emits a generated props type. Best-effort — review the output. Runs right after react-props to fill the components it left untyped. See ["react-props-from-usage: inferring props from usage"](#react-props-from-usage-inferring-props-from-usage) below. |
 | [react-shape](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/react-shape.ts) | Convert prop types shapes to TypeScript type. |
 | [retry-conversions](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/retry-conversions.ts) | Reconsider the `as any` assertions add-conversions inserted, once `@types` have landed or a neighboring directory has been migrated. Each one is dropped and the file re-checked; the ones the file still needs are then retyped to the tightest type the checker can name for them, so `f(raw as any)` reads `f(raw as Opts)`. Only the tool's own output is in scope: `as any`, and an assertion to a type alias declared as `any`. See "What retry-conversions will and will not write" below. |
 | [strip-ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/strip-ts-ignore.ts) | Strip `// @ts-ignore`. comments |
@@ -324,6 +325,54 @@ file it is migrating proves:
   and nothing is written that the file does not then still check clean. The
   props an error blames drop to the alias, and a file that fails even with
   every prop aliased is left as it was.
+
+
+## react-props-from-usage: inferring props from usage
+
+`react-props` can only convert a component that has a `propTypes` static. When
+a class component has none, it is left with a missing/`any`/empty props type.
+`react-props-from-usage` fills that gap by inferring the `Props` type from how
+the component is actually used, and runs immediately after `react-props` in the
+`reactProps` pipeline so it only touches the components `react-props` left
+untyped.
+
+It gathers evidence from two sources and merges them into a generated
+`type <Name>Props = { ... }` alias (named `Props` for a single component, or
+`${ComponentName}Props` when a file has several):
+
+- **JSX call sites** across the project, discovered with the language service's
+  `findReferences`. Attribute values contribute types: `name="x"` → `string`,
+  `count={expr}` → the checker's type of `expr`, boolean shorthand
+  `<Foo disabled />` → `boolean`. A prop present at every call site is
+  required; one present at only some is optional (`?`).
+- **`this.props` reads** in the class body (`this.props.x`,
+  `const { a, b } = this.props`). These register prop names the component
+  relies on even when no visible call site passes them, and optional-access
+  patterns (`this.props.x?.`, default destructuring `{ x = 5 }`) hint at
+  optionality.
+
+Observed literals are always widened to their base type (`"sm"` → `string`,
+`42` → `number`, `true` → `boolean`), and genuinely differing base types are
+unioned (`string | number`). When no usable type can be resolved, the prop
+falls back to `any` (honoring `anyAlias`). Missing imports for referenced prop
+types are injected automatically.
+
+Options:
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `includeChildren` | `true` | Add `children?: React.ReactNode` when children are used. |
+| `defaultOptional` | `false` | Treat all inferred props as optional. |
+| `skipOnSpread` | `true` | Bail out of a component whose call sites use `{...spread}` attributes (props can't be enumerated). |
+| `useThisPropsUsage` | `true` | Include `this.props` body analysis as an evidence source. |
+| `anyAlias` / `anyFunctionAlias` | — | Shared alias handling for `any` fallbacks. |
+
+This is **best-effort inference — review the output.** Because it reasons from
+observed usage rather than a declared contract, it can only see call sites in
+the analyzed source set (consumers in other repos contribute nothing), it skips
+components used only through spreads or HOC wrappers, and a prop the component
+reads dynamically (`this.props[key]`) can't be enumerated. A component with no
+usages and no `this.props` reads is left untouched.
 
 
 # Type of plugins

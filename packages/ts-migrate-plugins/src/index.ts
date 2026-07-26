@@ -18,6 +18,7 @@ import reactDestructuredPropsPlugin from './plugins/react-destructured-props';
 import reactHookTypesPlugin from './plugins/react-hook-types';
 import reactInlineImportedPropTypesPlugin from './plugins/react-inline-imported-prop-types';
 import reactPropsPlugin from './plugins/react-props';
+import reactPropsFromUsagePlugin from './plugins/react-props-from-usage';
 import reactShapePlugin from './plugins/react-shape';
 import retryConversionsPlugin from './plugins/retry-conversions';
 import stripTSIgnorePlugin from './plugins/strip-ts-ignore';
@@ -102,6 +103,7 @@ export {
   reactHookTypesPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
+  reactPropsFromUsagePlugin,
   reactShapePlugin,
   retryConversionsPlugin,
   stripTSIgnorePlugin,

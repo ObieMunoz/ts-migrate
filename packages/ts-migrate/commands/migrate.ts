@@ -18,6 +18,7 @@ import {
   reactHookTypesPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
+  reactPropsFromUsagePlugin,
   reactShapePlugin,
   stripTSIgnorePlugin,
   tsIgnorePlugin,
@@ -53,6 +54,7 @@ export const availablePlugins = [
   reactHookTypesPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
+  reactPropsFromUsagePlugin,
   reactShapePlugin,
   stripTSIgnorePlugin,
   tsIgnorePlugin,
@@ -144,6 +146,7 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
     entry(reactHookTypesPlugin, { anyAlias }),
     entry(reactInlineImportedPropTypesPlugin, {}),
     entry(reactPropsPlugin, { anyAlias, anyFunctionAlias, shouldUpdateAirbnbImports: true }),
+    entry(reactPropsFromUsagePlugin, { anyAlias, anyFunctionAlias }),
     entry(reactShapePlugin, { anyAlias, anyFunctionAlias }),
     entry(stripTSIgnorePlugin, {}),
     entry(tsIgnorePlugin, {}),
@@ -270,6 +273,10 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     // Runs after react-props so the propTypes path wins wherever there are
     // propTypes, and picks up only the components it left untyped.
     .addPlugin(reactDestructuredPropsPlugin, optionsFor(reactDestructuredPropsPlugin))
+    // The class-component half of the same idea, from call sites and this.props
+    // reads. Before react-class-state, which names its State alias after the
+    // props type argument and otherwise writes `object` into that slot.
+    .addPlugin(reactPropsFromUsagePlugin, optionsFor(reactPropsFromUsagePlugin))
     .addPlugin(reactClassStatePlugin, optionsFor(reactClassStatePlugin))
     .addPlugin(reactClassLifecycleMethodsPlugin, optionsFor(reactClassLifecycleMethodsPlugin))
     .addPlugin(reactDefaultPropsPlugin, optionsFor(reactDefaultPropsPlugin))
