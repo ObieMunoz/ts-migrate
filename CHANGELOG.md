@@ -3,6 +3,27 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.15.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.14.0...v0.15.0) (2026-07-26)
+
+
+### Bug Fixes
+
+* **ts-migrate-plugins:** collapse the typescript-estree version banner to one line ([#296](https://github.com/ObieMunoz/ts-migrate/issues/296)) ([3797238](https://github.com/ObieMunoz/ts-migrate/commit/3797238c9ff164b035416bd9397d6d8b91b70575))
+* **ts-migrate-plugins:** keep the types infer-types can write when one cannot be printed ([#287](https://github.com/ObieMunoz/ts-migrate/issues/287)) ([d824b92](https://github.com/ObieMunoz/ts-migrate/commit/d824b92d05c9237c0f3a198962929d56eaab5fb6))
+* **ts-migrate-plugins:** reject overlapping source text updates ([#286](https://github.com/ObieMunoz/ts-migrate/issues/286)) ([f6c1ae0](https://github.com/ObieMunoz/ts-migrate/commit/f6c1ae092305a453f1eff60e5bbdcba79b0b100d))
+* **ts-migrate-server:** skip files a plugin already failed on in later passes ([#285](https://github.com/ObieMunoz/ts-migrate/issues/285)) ([ab9e5f6](https://github.com/ObieMunoz/ts-migrate/commit/ab9e5f61d513516a0836ab1dd535fa5c5119df4c))
+
+
+### Features
+
+* **cli:** keep the generated declarations in the project tsconfig ([#284](https://github.com/ObieMunoz/ts-migrate/issues/284)) ([fb2dbc1](https://github.com/ObieMunoz/ts-migrate/commit/fb2dbc151e42b4ef413c61f192c3f64001ecc5b6))
+* **cli:** make ts-migrate full a first-class command instead of a shell script ([#288](https://github.com/ObieMunoz/ts-migrate/issues/288)) ([bd9a9c2](https://github.com/ObieMunoz/ts-migrate/commit/bd9a9c26e7a000adbabc5b70881a189fe0c3b331))
+* **ts-migrate-plugins:** mark the sites plugins leave for a person, and report them at the end of the run ([#283](https://github.com/ObieMunoz/ts-migrate/issues/283)) ([bf5a98f](https://github.com/ObieMunoz/ts-migrate/commit/bf5a98fb8feec76e533d063524d3aaf2ec0087a0))
+
+
+
+
+
 # [0.14.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.13.0...v0.14.0) (2026-07-25)
 
 

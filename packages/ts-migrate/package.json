@@ -1,6 +1,6 @@
 {
   "name": "@obiemunoz/ts-migrate",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "A tool for migrating frontend application from JavaScript to TypeScript. Maintained fork of airbnb/ts-migrate, updated for TypeScript 5+.",
   "directories": {
     "test": "tests"
