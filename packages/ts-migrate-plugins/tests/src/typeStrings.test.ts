@@ -88,4 +88,8 @@ describe('widenTypes', () => {
   it('unions differing base types', () => {
     expect(widenTypes(['"sm"', '42'])).toBe('string | number');
   });
+
+  it('collapses differing signatures rather than unioning two anys', () => {
+    expect(widenTypes(['(id: any) => any', '(...args: any[]) => any'])).toBe('any');
+  });
 });

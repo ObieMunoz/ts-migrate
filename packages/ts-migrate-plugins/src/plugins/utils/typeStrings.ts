@@ -196,6 +196,11 @@ export function widenTypes(
     ...new Set(observedTypes.flatMap((t) => splitTopLevel(t, ' | ').map((p) => p.trim()))),
   ];
 
+  // An observation that cannot be reconstructed as anything better than `any`
+  // carries what `any` carries, and keeping its text unions two spellings of
+  // the same nothing (`any | any` for two differing callback signatures).
+  unique = [...new Set(unique.map((t) => (typeStrDegradesToAny(t) ? anyType : t)))];
+
   if (dropAny) {
     const concrete = unique.filter((t) => !isAny(t));
     // If concrete evidence exists, ignore the `any` observations entirely;
