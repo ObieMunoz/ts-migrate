@@ -806,6 +806,12 @@ come from `report --json`.
   for the files that are not the point of the step, and still exit `0`: `init`
   for the generated asset declarations, `rename` for the `package.json` and
   `project.json` references, which by then name files that have already moved.
+- `migrate` and `reignore` exit 255 when they cannot write a file they migrated.
+  Every other file in the run is written first, and each failure is named with
+  its reason, so a read-only file does not cost the rest of the run. The
+  changes to a file that could not be written are lost; re-run once it is
+  writable. Those files are left out of the updated files `--jsonSummary`
+  lists, so a summary never names a change the file does not hold.
 - `ts-migrate full` stops at the first failing step, naming it and exiting with
   that step's code, and prints the type definition recommendations it had
   gathered along with the file they stay in; the final `tsc` check
