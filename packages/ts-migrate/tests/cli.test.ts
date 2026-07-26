@@ -242,6 +242,220 @@ describe('help output off a terminal', () => {
   }, 30000);
 });
 
+describe('flag spelling', () => {
+  /**
+   * The flag names out of a help screen's option column. Description text
+   * wraps to a deeper indent than any flag is printed at, so the column is
+   * what separates a declared flag from a `--no-foo` named in a description.
+   */
+  function flagNames(help: string): string[] {
+    return help
+      .split('\n')
+      .map((line) => /^ {2,6}(?:-\w, )?--([A-Za-z][\w-]*)/.exec(line))
+      .filter((match): match is RegExpExecArray => match !== null)
+      .map((match) => match[1]);
+  }
+
+  it.each([
+    ['ts-migrate', []],
+    ['full', ['full']],
+    ['rename', ['rename']],
+    ['migrate', ['migrate']],
+    ['reignore', ['reignore']],
+    ['report', ['report']],
+    ['check', ['check']],
+  ])('prints every flag of %s in camelCase', (_name, args) => {
+    const { output } = runCli([...(args as string[]), '--help']);
+
+    const names = flagNames(output);
+    expect(names.length).toBeGreaterThan(0);
+    expect(names.filter((name) => name.includes('-'))).toEqual([]);
+  }, 30000);
+
+  // These four were the canonical spelling before camelCase was settled on,
+  // so they are the ones already written into scripts and CI jobs. yargs
+  // expands a dashed flag onto its camelCase key, and this is what holds it
+  // to that: each still has to reach the handler, not merely parse.
+  it('still renames nothing under the dashed --dry-run', () => {
+    const dryRunDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-dashed-'));
+
+    try {
+      fs.writeFileSync(path.join(dryRunDir, 'tsconfig.json'), '{ "include": ["."] }\n');
+      fs.writeFileSync(path.join(dryRunDir, 'a.js'), 'export const a = 1;\n');
+
+      const { status, output } = runCli(['rename', dryRunDir, '--dry-run']);
+
+      expect(output).toContain('a.js -> a.ts');
+      expect(fs.existsSync(path.join(dryRunDir, 'a.js'))).toBe(true);
+      expect(status).toBe(0);
+    } finally {
+      fs.rmSync(dryRunDir, { recursive: true, force: true });
+    }
+  }, 30000);
+
+  it('still writes a baseline under the dashed --update-baseline', () => {
+    const baselineFile = path.join(projectDir, 'dashed-baseline.json');
+
+    const { status, output } = runCli([
+      'check',
+      projectDir,
+      '--update-baseline',
+      '--baselineFile',
+      baselineFile,
+    ]);
+
+    expect(output).not.toContain('Unknown argument');
+    expect(fs.existsSync(baselineFile)).toBe(true);
+    expect(status).toBe(0);
+  }, 30000);
+
+  // The conflict is declared against the camelCase key, so reporting it is
+  // proof the dashed spelling landed there rather than on a key of its own.
+  it('still reaches excludePlugin from the dashed --exclude-plugin', () => {
+    const { status, output } = runCli([
+      'migrate',
+      projectDir,
+      '--exclude-plugin',
+      'ts-ignore',
+      '--plugin',
+      'jsdoc',
+    ]);
+
+    expect(output).toContain('Arguments plugin and excludePlugin are mutually exclusive');
+    expect(status).not.toBe(0);
+  }, 30000);
+
+  it('still accepts the dashed --blame-ignore-revs on full', () => {
+    const { status, output } = runCli([
+      'full',
+      projectDir,
+      '--blame-ignore-revs',
+      '--yes',
+      '--dry-run',
+    ]);
+
+    expect(output).not.toContain('Unknown argument');
+    expect(status).toBe(0);
+  }, 60000);
+});
+
+describe('the config file', () => {
+  const CONFIG_FILE_NAME = 'ts-migrate.config.json';
+
+  let configDir: string;
+
+  /** A project the fast commands can read, outside every other suite's tree. */
+  function writeProject(dir: string): void {
+    fs.writeFileSync(path.join(dir, 'tsconfig.json'), '{ "include": ["."] }\n');
+    fs.writeFileSync(path.join(dir, 'a.ts'), 'export const a: any = 1;\n');
+  }
+
+  function writeConfig(text: string, dir = configDir): string {
+    const configPath = path.join(dir, CONFIG_FILE_NAME);
+    fs.writeFileSync(configPath, text);
+    return configPath;
+  }
+
+  beforeEach(() => {
+    configDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-config-'));
+    writeProject(configDir);
+  });
+
+  afterEach(() => {
+    fs.rmSync(configDir, { recursive: true, force: true });
+  });
+
+  it('takes flags from a file next to the folder, and says which file', () => {
+    const baselineFile = path.join(configDir, 'from-config.json');
+    const configPath = writeConfig(
+      JSON.stringify({ updateBaseline: true, check: { baselineFile } }),
+    );
+
+    const { status, output } = runCli(['check', configDir]);
+
+    expect(output).toContain(`Flags from ${configPath}`);
+    expect(fs.existsSync(baselineFile)).toBe(true);
+    expect(status).toBe(0);
+  }, 30000);
+
+  it('finds one above the folder', () => {
+    const nested = path.join(configDir, 'packages', 'app');
+    fs.mkdirSync(nested, { recursive: true });
+    writeProject(nested);
+    const baselineFile = path.join(configDir, 'from-above.json');
+    writeConfig(JSON.stringify({ updateBaseline: true, check: { baselineFile } }));
+
+    const { status } = runCli(['check', nested]);
+
+    expect(fs.existsSync(baselineFile)).toBe(true);
+    expect(status).toBe(0);
+  }, 30000);
+
+  it('lets a flag on the command line override the file', () => {
+    const fromFile = path.join(configDir, 'from-config.json');
+    const fromFlag = path.join(configDir, 'from-flag.json');
+    writeConfig(JSON.stringify({ updateBaseline: true, check: { baselineFile: fromFile } }));
+
+    const { status } = runCli(['check', configDir, '--baselineFile', fromFlag]);
+
+    expect(fs.existsSync(fromFlag)).toBe(true);
+    expect(fs.existsSync(fromFile)).toBe(false);
+    expect(status).toBe(0);
+  }, 30000);
+
+  it('reads the file --config names instead of searching', () => {
+    const elsewhere = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-cfg-'));
+
+    try {
+      const baselineFile = path.join(configDir, 'from-named.json');
+      const configPath = path.join(elsewhere, 'named.json');
+      fs.writeFileSync(
+        configPath,
+        JSON.stringify({ updateBaseline: true, check: { baselineFile } }),
+      );
+
+      const { status, output } = runCli(['check', configDir, '--config', configPath]);
+
+      expect(output).toContain(`Flags from ${configPath}`);
+      expect(fs.existsSync(baselineFile)).toBe(true);
+      expect(status).toBe(0);
+    } finally {
+      fs.rmSync(elsewhere, { recursive: true, force: true });
+    }
+  }, 30000);
+
+  // Silently ignoring a mistyped flag costs a whole migration run to notice,
+  // which is why the command line rejects one; the file is held to the same.
+  it('exits nonzero naming a key that is not a flag', () => {
+    const configPath = writeConfig(JSON.stringify({ infrTypes: false }));
+
+    const { status, output } = runCli(['check', configDir]);
+
+    expect(output).toContain(`${configPath}: "infrTypes" is not a ts-migrate flag`);
+    expect(status).not.toBe(0);
+  }, 30000);
+
+  // One file serves the whole project, and `check` takes a fraction of the
+  // flags a migration does.
+  it('ignores a flag meant for another command', () => {
+    writeConfig(JSON.stringify({ inferTypes: false, sources: 'app/**/*' }));
+
+    const { status, output } = runCli(['check', configDir]);
+
+    expect(output).not.toContain('Unknown argument');
+    expect(status).toBe(0);
+  }, 30000);
+
+  it('leaves report --json machine-readable', () => {
+    writeConfig(JSON.stringify({ gitignore: false }));
+
+    const { status, output } = runCli(['report', configDir, '--json']);
+
+    expect(() => JSON.parse(output)).not.toThrow();
+    expect(status).toBe(0);
+  }, 30000);
+});
+
 describe('the type package preflight', () => {
   const PREFLIGHT_HEADING = 'Type packages worth installing before the migration:';
   const PINNED_TYPES_REMINDER = 'Then add each one to the "types" array';
