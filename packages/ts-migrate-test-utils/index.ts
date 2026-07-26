@@ -114,7 +114,6 @@ export function getDirData(dir1: string, dir2: string) {
   return results;
 }
 
-/* eslint-disable no-console */
 export const mockUpdatableLog: () => typeof log = () => ({
   error: (...msg: unknown[]) => {
     console.log('log.error:', ...msg);
@@ -134,7 +133,6 @@ export const mockUpdatableLog: () => typeof log = () => ({
   clear: () => {},
   quiet: false,
 });
-/* eslint-enable no-console */
 
 /**
  * What a run printed, for a suite that asserts on the transcript rather than on

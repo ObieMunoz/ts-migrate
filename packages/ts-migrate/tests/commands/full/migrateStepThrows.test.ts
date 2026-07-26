@@ -14,7 +14,6 @@ import { deleteDir, transcriptLines } from '@obiemunoz/ts-migrate-test-utils';
  * every other case in this directory needs to run for real.
  */
 jest.mock('updatable-log', () => {
-  // eslint-disable-next-line global-require
   const { collectingUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
   return collectingUpdatableLog();
 });

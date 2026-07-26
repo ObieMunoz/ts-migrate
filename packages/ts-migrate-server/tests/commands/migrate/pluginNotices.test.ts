@@ -14,6 +14,8 @@ jest.mock('updatable-log', () => ({
   quiet: false,
 }));
 
+const fixturesDir = path.resolve(__dirname, '../../fixtures');
+
 const mockedLog = jest.mocked(log);
 const warnings = () => mockedLog.warn.mock.calls.map(([message]) => message);
 
@@ -22,7 +24,7 @@ describe('plugin file notices', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     rootDir = createDir();
-    copyDir(path.resolve(__dirname, 'config'), rootDir);
+    copyDir(path.resolve(fixturesDir, 'tsconfig'), rootDir);
   });
 
   afterEach(() => {

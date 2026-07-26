@@ -1,4 +1,3 @@
-/* eslint-disable no-await-in-loop, no-restricted-syntax */
 import ts from 'typescript';
 import fs from 'fs';
 import path from 'path';
@@ -326,7 +325,6 @@ export default async function migrate({
         const deferWrites = plugin.mutationsPreserveTypes === true;
         const deferredWrites: { fileName: string; text: string }[] = [];
 
-        // eslint-disable-next-line no-loop-func
         const runPluginOnFile = async (sourceFile: ts.SourceFile) => {
           const { fileName } = sourceFile;
           const relFile = path.relative(rootDir, sourceFile.fileName);
@@ -484,7 +482,6 @@ export default async function migrate({
   }
 
   const updatedFileTexts = new Map<string, string>();
-  // eslint-disable-next-line no-restricted-syntax
   for (const fileName of updatedSourceFiles) {
     updatedFileTexts.set(fileName, project.getSourceFileOrThrow(fileName).text);
   }
@@ -495,11 +492,9 @@ export default async function migrate({
     const writeTimer = new PerfTimer();
     log.info(`Writing ${updatedSourceFiles.size} updated file(s)...`);
     const writes = [];
-    // eslint-disable-next-line no-restricted-syntax
     for (const [fileName, text] of updatedFileTexts) {
       writes.push(fs.promises.writeFile(fileName, text));
     }
-    // eslint-disable-next-line no-restricted-syntax
     for (const [fileName, text] of generatedFiles) {
       writes.push(
         fs.promises

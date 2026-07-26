@@ -6,7 +6,6 @@ import { partitionGitignored, sampleIgnoredPaths } from '../../utils/gitignore';
 import { createDir, deleteDir } from '@obiemunoz/ts-migrate-test-utils';
 
 jest.mock('updatable-log', () => {
-  // eslint-disable-next-line global-require
   const { mockUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
   return mockUpdatableLog();
 });

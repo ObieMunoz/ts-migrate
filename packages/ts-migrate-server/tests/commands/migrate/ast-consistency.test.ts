@@ -4,10 +4,11 @@ import { createDir, copyDir, deleteDir } from '@obiemunoz/ts-migrate-test-utils'
 import migrate, { MigrateConfig } from '../../../src/migrate';
 
 jest.mock('updatable-log', () => {
-  // eslint-disable-next-line global-require
   const { mockUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
   return mockUpdatableLog();
 });
+
+const fixturesDir = path.resolve(__dirname, '../../fixtures');
 
 /**
  * Plugins inspect source files with their own `typescript` import, so the
@@ -25,8 +26,8 @@ describe('AST / TypeScript instance consistency', () => {
   });
 
   it('hands plugins source files produced by the host typescript instance', async () => {
-    copyDir(path.resolve(__dirname, 'ast-input'), rootDir);
-    copyDir(path.resolve(__dirname, 'config'), rootDir);
+    copyDir(path.resolve(fixturesDir, 'ast-consistency/input'), rootDir);
+    copyDir(path.resolve(fixturesDir, 'tsconfig'), rootDir);
 
     const visitedFiles: string[] = [];
     const config = new MigrateConfig().addPlugin(

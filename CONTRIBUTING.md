@@ -73,6 +73,27 @@ pnpm run lint
 The repo pins its pnpm version via the `packageManager` field in `package.json`;
 any pnpm >= 9.7 will automatically fetch and run the pinned version.
 
+## Test fixtures
+
+A checked-in fixture tree, meaning a directory of real files copied into a
+scratch project and run against, lives at
+`packages/<package>/tests/fixtures/<name>/`. Where a fixture has both a
+starting tree and an expected result, they are `<name>/input/` and
+`<name>/output/`; a fixture shared by several suites is named for what it
+holds, as `ts-migrate-server`'s `fixtures/tsconfig/` is. Nothing else in the
+repository holds one, and every ESLint config ignores exactly that path: the
+trees are intentionally broken code and carry `eslint-disable` comments as
+data, so linting them reports noise and their directives are not this
+repository's. Keeping them in one place is what lets
+`reportUnusedDisableDirectives` stay on for everything else.
+
+A test that needs a tree specific to itself writes it inline with
+`fs.writeFileSync` in the test body instead, which reads better next to the
+assertion. Both appear in
+`packages/ts-migrate-server/tests/commands/migrate/migrate.test.ts`: a
+checked-in tree for the shared base project, inline writes for the per-test
+variation.
+
 ## Test scratch projects
 
 The command tests copy a fixture project into

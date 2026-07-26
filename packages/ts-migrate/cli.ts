@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-/* eslint-disable no-await-in-loop, no-restricted-syntax */
 // Points the process at the project's TypeScript. Must stay the first import:
 // the packages below load a compiler at module scope, and the redirect only
 // reaches a `require('typescript')` that has not happened yet.
