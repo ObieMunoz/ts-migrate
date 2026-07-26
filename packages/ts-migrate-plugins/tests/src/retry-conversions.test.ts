@@ -1,59 +1,17 @@
 import path from 'path';
 import ts from 'typescript';
-import { PluginParams } from '@obiemunoz/ts-migrate-server';
-import { mockPluginParams, realPluginParams } from '../test-utils';
+import { fixturePluginParams, mockPluginParams, realPluginParams } from '../test-utils';
 import retryConversionsPlugin from '../../src/plugins/retry-conversions';
 
 async function run(text: string, compilerOptions?: ts.CompilerOptions): Promise<string | void> {
   return retryConversionsPlugin.run(await realPluginParams({ text, compilerOptions }));
 }
 
-const fixturesDir = path.resolve(__dirname, '../fixtures/retry-conversions');
-const entryFile = path.join(fixturesDir, 'entry.ts');
-
-const fixtureCompilerOptions: ts.CompilerOptions = {
-  strict: true,
-  noEmit: true,
-  target: ts.ScriptTarget.ES2020,
-  module: ts.ModuleKind.ESNext,
-  moduleResolution: ts.ModuleResolutionKind.Bundler,
-};
-
-/**
- * Params rooted in the fixture directory, so the imports of the file under
- * migration resolve the same way in the warm program and in the validation
- * programs the plugin builds, which read every file but this one from disk.
- */
-function fixtureParams(text: string): PluginParams<unknown> {
-  const host: ts.LanguageServiceHost = {
-    getCompilationSettings: () => fixtureCompilerOptions,
-    getScriptFileNames: () => [entryFile],
-    getScriptVersion: () => '0',
-    getScriptSnapshot: (name) => {
-      const contents = name === entryFile ? text : ts.sys.readFile(name);
-      return contents !== undefined ? ts.ScriptSnapshot.fromString(contents) : undefined;
-    },
-    getCurrentDirectory: () => fixturesDir,
-    getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
-    fileExists: (name) => name === entryFile || ts.sys.fileExists(name),
-    readFile: (name) => (name === entryFile ? text : ts.sys.readFile(name)),
-  };
-  const languageService = ts.createLanguageService(host);
-  const sourceFile = languageService.getProgram()?.getSourceFile(entryFile);
-  if (!sourceFile) throw new Error(`Failed to create source file: ${entryFile}`);
-
-  return {
-    options: {},
-    fileName: entryFile,
-    rootDir: fixturesDir,
-    text,
-    sourceFile,
-    getLanguageService: () => languageService,
-  };
-}
+const rootDir = path.resolve(__dirname, '../fixtures/retry-conversions');
+const entryFile = path.join(rootDir, 'entry.ts');
 
 function runInFixture(text: string): string | void {
-  return retryConversionsPlugin.run(fixtureParams(text));
+  return retryConversionsPlugin.run(fixturePluginParams({ rootDir, fileName: entryFile, text }));
 }
 
 describe('retry-conversions plugin', () => {

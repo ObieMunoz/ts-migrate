@@ -1,7 +1,7 @@
 import ts from 'typescript';
 import { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
 import reactDefaultPropsPlugin from '../../src/plugins/react-default-props';
-import { mockPluginParams, realPluginParams } from '../test-utils';
+import { createTypeChecker, mockPluginParams, realPluginParams, withoutMarkers } from '../test-utils';
 
 const REACT_STUB = `declare namespace JSX {
   interface Element {}
@@ -17,72 +17,11 @@ declare module 'react' {
 /** Enough of the hint to recognize the marker without restating its wording. */
 const REACT_19_HINT_START = 'React 19 ignores defaultProps on function components.';
 
-/**
- * The output without the follow-up markers, to compare against the typing path.
- * A marker is a TODO line plus the wrapped comment lines that continue it.
- */
-const withoutMarkers = (text: string | undefined) => {
-  if (text === undefined) return undefined;
-  let inMarker = false;
-  return text
-    .split('\n')
-    .filter((line) => {
-      if (line.trim().startsWith('// TODO(ts-migrate):')) {
-        inMarker = true;
-        return false;
-      }
-      if (inMarker && line.trim().startsWith('//')) return false;
-      inMarker = false;
-      return true;
-    })
-    .join('\n');
-};
-
-/** Parsed once: every typeCheck call below pulls in the same lib files. */
-const libSourceFiles = new Map<string, ts.SourceFile | undefined>();
-
-/** Compiles the given files in memory, resolving the lib files from disk. */
-function typeCheck(files: { [fileName: string]: string }): string[] {
-  const allFiles = { '/react-stub.d.ts': REACT_STUB, ...files };
-  const options: ts.CompilerOptions = {
-    strict: true,
-    noEmit: true,
-    target: ts.ScriptTarget.ES2020,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-    jsx: ts.JsxEmit.React,
-  };
-  const host: ts.CompilerHost = {
-    getSourceFile: (fileName, languageVersion) => {
-      if (!(fileName in allFiles)) {
-        if (!libSourceFiles.has(fileName)) {
-          const libText = ts.sys.readFile(fileName);
-          libSourceFiles.set(
-            fileName,
-            libText === undefined
-              ? undefined
-              : ts.createSourceFile(fileName, libText, languageVersion, true),
-          );
-        }
-        return libSourceFiles.get(fileName);
-      }
-      return ts.createSourceFile(fileName, allFiles[fileName], languageVersion, true);
-    },
-    getDefaultLibFileName: (compilerOptions) => ts.getDefaultLibFilePath(compilerOptions),
-    writeFile: () => {},
-    getCurrentDirectory: () => '/',
-    getCanonicalFileName: (fileName) => fileName,
-    useCaseSensitiveFileNames: () => true,
-    getNewLine: () => '\n',
-    fileExists: (fileName) => fileName in allFiles || ts.sys.fileExists(fileName),
-    readFile: (fileName) => allFiles[fileName] ?? ts.sys.readFile(fileName),
-  };
-  const program = ts.createProgram(Object.keys(allFiles), options, host);
-  return [...program.getSyntacticDiagnostics(), ...program.getSemanticDiagnostics()].map(
-    (diagnostic) =>
-      `TS${diagnostic.code}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`,
-  );
-}
+/** Compiles the given files in memory, against the react stub above. */
+const typeCheck = createTypeChecker({
+  sharedFiles: { '/react-stub.d.ts': REACT_STUB },
+  compilerOptions: { jsx: ts.JsxEmit.React },
+});
 
 describe('react-default-props plugin', () => {
   const options = { useDefaultPropsHelper: true };

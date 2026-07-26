@@ -1,101 +1,31 @@
 import path from 'path';
 import ts from 'typescript';
-import { PluginParams } from '@obiemunoz/ts-migrate-server';
+import { createTypeChecker, fixturePluginParams } from '../test-utils';
 import reactHookTypesPlugin from '../../src/plugins/react-hook-types';
 
 // A path inside the repo, so `react` and its types resolve the way they do in
 // a project. Nothing is written to disk.
-const fileName = path.join(__dirname, 'react-hook-types-fixture.tsx');
+const rootDir = __dirname;
+const fileName = path.join(rootDir, 'react-hook-types-fixture.tsx');
 
 const compilerOptions: ts.CompilerOptions = {
-  strict: true,
-  noEmit: true,
-  target: ts.ScriptTarget.ES2020,
-  module: ts.ModuleKind.ESNext,
   moduleResolution: ts.ModuleResolutionKind.Node10,
   jsx: ts.JsxEmit.React,
   esModuleInterop: true,
   skipLibCheck: true,
 };
 
+// Shared across the suite: every test pulls in the same react type declarations.
 const documentRegistry = ts.createDocumentRegistry();
-const diskSourceFiles = new Map<string, ts.SourceFile | undefined>();
-
-function pluginParams(text: string, options: unknown): PluginParams<unknown> {
-  const host: ts.LanguageServiceHost = {
-    getCompilationSettings: () => compilerOptions,
-    getScriptFileNames: () => [fileName],
-    getScriptVersion: () => text,
-    getScriptSnapshot: (name) => {
-      const contents = name === fileName ? text : ts.sys.readFile(name);
-      return contents === undefined ? undefined : ts.ScriptSnapshot.fromString(contents);
-    },
-    getCurrentDirectory: () => path.dirname(fileName),
-    getDefaultLibFileName: (options_) => ts.getDefaultLibFilePath(options_),
-    fileExists: (name) => name === fileName || ts.sys.fileExists(name),
-    readFile: (name) => (name === fileName ? text : ts.sys.readFile(name)),
-    directoryExists: (name) => ts.sys.directoryExists(name),
-    getDirectories: (name) => ts.sys.getDirectories(name),
-  };
-
-  const languageService = ts.createLanguageService(host, documentRegistry);
-  const sourceFile = languageService.getProgram()?.getSourceFile(fileName);
-  if (!sourceFile) {
-    throw new Error(`Failed to create source file: ${fileName}`);
-  }
-
-  return {
-    options,
-    fileName,
-    rootDir: __dirname,
-    text,
-    sourceFile,
-    getLanguageService: () => languageService,
-  };
-}
 
 function run(text: string, options: unknown = {}): string {
-  return reactHookTypesPlugin.run(pluginParams(text, options)) as string;
+  return reactHookTypesPlugin.run(
+    fixturePluginParams({ rootDir, fileName, text, options, compilerOptions, documentRegistry }),
+  ) as string;
 }
 
 /** Compiles the text as the fixture file, resolving everything else from disk. */
-function errorsIn(text: string): string[] {
-  const host: ts.CompilerHost = {
-    getSourceFile: (name, languageVersion) => {
-      if (name === fileName) {
-        return ts.createSourceFile(name, text, languageVersion, true);
-      }
-      if (!diskSourceFiles.has(name)) {
-        const contents = ts.sys.readFile(name);
-        diskSourceFiles.set(
-          name,
-          contents === undefined
-            ? undefined
-            : ts.createSourceFile(name, contents, languageVersion, true),
-        );
-      }
-      return diskSourceFiles.get(name);
-    },
-    getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
-    writeFile: () => {},
-    getCurrentDirectory: () => path.dirname(fileName),
-    getCanonicalFileName: (name) => name,
-    useCaseSensitiveFileNames: () => ts.sys.useCaseSensitiveFileNames,
-    getNewLine: () => '\n',
-    fileExists: (name) => name === fileName || ts.sys.fileExists(name),
-    readFile: (name) => (name === fileName ? text : ts.sys.readFile(name)),
-    directoryExists: (name) => ts.sys.directoryExists(name),
-    getDirectories: (name) => ts.sys.getDirectories(name),
-  };
-
-  const program = ts.createProgram([fileName], compilerOptions, host);
-  return [...program.getSyntacticDiagnostics(), ...program.getSemanticDiagnostics()]
-    .filter((diagnostic) => diagnostic.file?.fileName === fileName)
-    .map(
-      (diagnostic) =>
-        `TS${diagnostic.code}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`,
-    );
-}
+const errorsIn = createTypeChecker({ rootDir, fileName, compilerOptions, ownFilesOnly: true });
 
 describe('react-hook-types plugin', () => {
   it('types useState(null) from the setter arguments', () => {

@@ -1,39 +1,6 @@
-import ts from 'typescript';
 import { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
-import { mockPluginParams, withoutMarkers } from '../test-utils';
+import { mockPluginParams, typeCheck, withoutMarkers } from '../test-utils';
 import jsDocPlugin from '../../src/plugins/jsdoc';
-
-/** Compiles the given files in memory, resolving the lib files from disk. */
-function typeCheck(files: { [fileName: string]: string }): string[] {
-  const options: ts.CompilerOptions = {
-    strict: true,
-    noEmit: true,
-    target: ts.ScriptTarget.ES2020,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-  };
-  const host: ts.CompilerHost = {
-    getSourceFile: (fileName, languageVersion) => {
-      const text = files[fileName] ?? ts.sys.readFile(fileName);
-      return text === undefined
-        ? undefined
-        : ts.createSourceFile(fileName, text, languageVersion, true);
-    },
-    getDefaultLibFileName: (compilerOptions) => ts.getDefaultLibFilePath(compilerOptions),
-    writeFile: () => {},
-    getCurrentDirectory: () => '/',
-    getCanonicalFileName: (fileName) => fileName,
-    useCaseSensitiveFileNames: () => true,
-    getNewLine: () => '\n',
-    fileExists: (fileName) => fileName in files || ts.sys.fileExists(fileName),
-    readFile: (fileName) => files[fileName] ?? ts.sys.readFile(fileName),
-  };
-  const program = ts.createProgram(Object.keys(files), options, host);
-  return [...program.getSyntacticDiagnostics(), ...program.getSemanticDiagnostics()].map(
-    (diagnostic) =>
-      `TS${diagnostic.code}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`,
-  );
-}
 
 describe('jsdoc plugin', () => {
   it('annotates unknown types', () => {
