@@ -91,10 +91,11 @@ docs live in this package's README.md.
     `[eslint-fix] flat config: /repo/packages/app/eslint.config.js`. If that
     line names no file, or names one you did not expect, the lint pass is
     running against the wrong rules.
-11. **Flags are camelCase.** `--dryRun`, `--excludePlugin`, `--updateBaseline`,
-    `--blameIgnoreRevs`. That is the one spelling `--help` prints, so write
-    flags that way. The dashed spelling of any flag parses too, so an older
-    script passing `--dry-run` still works and does not need changing.
+11. **Flags are camelCase**, matching `tsc` and `tsconfig.json`: `--dryRun`,
+    `--inferTypes`, `--maxStablePasses`, `--jsonSummary`. That is the one
+    spelling `--help` prints, so write flags that way. The dashed spelling of
+    any flag parses too, so an older script passing `--dry-run` still works and
+    does not need changing.
 12. **A `ts-migrate.config.json` supplies flags**, so a long invocation does
     not have to be reconstructed each run. It is looked for in `<folder>` and
     then upward, or named with `--config <path>`; the run prints the file it

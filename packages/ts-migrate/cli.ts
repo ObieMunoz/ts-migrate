@@ -631,11 +631,19 @@ cli
   .scriptName('ts-migrate')
   .version(version)
   .usage(`ts-migrate v${version}\n\nUsage: $0 <command> [options]`)
-  // Every flag is spelled in camelCase, and the dashed spelling of one parses
-  // too, so a script written against either keeps working. `strip-dashed`
-  // keeps the dashed spelling out of the parsed arguments, so a handler reads
-  // each flag under the single name `--help` prints.
-  .parserConfiguration({ 'strip-dashed': true })
+  // Every flag is spelled in camelCase, matching tsc and the tsconfig.json
+  // these users already work in, and the dashed spelling of one parses too,
+  // so `--dry-run` and `--exclude-plugin` keep working wherever they are
+  // already written. Set rather than left to the default because that second
+  // half is what makes them work, and it is not a default worth inheriting
+  // by accident.
+  //
+  // Its companion `strip-dashed` is deliberately absent. It drops the key a
+  // flag was declared under, which is the one `choices` validates against, so
+  // it turns a flag declared in kebab-case into one that accepts any value in
+  // silence. Nothing here is declared that way today, and leaving the setting
+  // off means nothing has to stay that way to keep the validation.
+  .parserConfiguration({ 'camel-case-expansion': true })
   .command(
     'full <folder>',
     'Run the whole pipeline: init, rename, migrate, then verify with tsc --noEmit',

@@ -69,6 +69,8 @@ describe('readConfigFile', () => {
     expect(read(configPath, 'migrate')).toEqual({ sources: 'app/**/*', inferTypes: false });
   });
 
+  // Handed back under the name the command declared it with, which is what
+  // yargs matches the value against.
   it('accepts either spelling of a flag, and reports the camelCase one', () => {
     const configPath = writeConfig('{ "infer-types": false, "dry-run": true }');
 

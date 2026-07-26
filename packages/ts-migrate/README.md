@@ -137,11 +137,12 @@ migration that ignored it. `ts-migrate full` forwards one argument list to both
 `rename` and `migrate`, and declares the union of what the two accept, so every
 flag either step takes is one it recognizes.
 
-Flags are spelled in camelCase, which is what `--help` prints and what a
-config file key is reported as. The dashed spelling of any of them parses too,
-so `--dry-run`, `--exclude-plugin`, `--update-baseline` and
-`--blame-ignore-revs` keep working wherever they are already written; they are
-just no longer what the help text shows.
+Flags are spelled in camelCase, matching `tsc` and the `tsconfig.json` you
+already keep, and that is what `--help` prints and what a config file key is
+reported as. The dashed spelling of any of them parses too, so `--dry-run`,
+`--exclude-plugin`, `--update-baseline` and `--blame-ignore-revs` keep working
+wherever they are already written; they are just no longer what the help text
+shows.
 
 Every command above takes a `<folder>`, and every one of them exits 255 before
 reading or writing anything when that folder does not exist or is a file rather

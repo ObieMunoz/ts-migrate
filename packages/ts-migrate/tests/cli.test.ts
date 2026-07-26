@@ -272,10 +272,10 @@ describe('flag spelling', () => {
     expect(names.filter((name) => name.includes('-'))).toEqual([]);
   }, 30000);
 
-  // These four were the canonical spelling before camelCase was settled on,
-  // so they are the ones already written into scripts and CI jobs. yargs
-  // expands a dashed flag onto its camelCase key, and this is what holds it
-  // to that: each still has to reach the handler, not merely parse.
+  // These four were the canonical spelling before camelCase was settled on, so
+  // they are the ones already written into scripts and CI jobs. yargs expands
+  // a dashed flag onto its camelCase key, and this is what holds it to that:
+  // each still has to reach the handler, not merely parse.
   it('still renames nothing under the dashed --dry-run', () => {
     const dryRunDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-dashed-'));
 
@@ -309,6 +309,22 @@ describe('flag spelling', () => {
     expect(status).toBe(0);
   }, 30000);
 
+  // choices is validated against the key a flag was declared under, which
+  // `strip-dashed` drops. That setting is off, and both spellings being
+  // rejected here is what says so: with it on and a dashed declaration, an
+  // unknown plugin name goes through in silence.
+  it.each([['--exclude-plugin'], ['--excludePlugin']])(
+    'rejects an unknown plugin name given to %s',
+    (spelling) => {
+      const { status, output } = runCli(['migrate', projectDir, spelling, 'no-such-plugin']);
+
+      expect(output).toContain('Invalid values');
+      expect(output).toContain('Argument: excludePlugin');
+      expect(status).not.toBe(0);
+    },
+    30000,
+  );
+
   // The conflict is declared against the camelCase key, so reporting it is
   // proof the dashed spelling landed there rather than on a key of its own.
   it('still reaches excludePlugin from the dashed --exclude-plugin', () => {
@@ -325,11 +341,14 @@ describe('flag spelling', () => {
     expect(status).not.toBe(0);
   }, 30000);
 
-  it('still accepts the dashed --blame-ignore-revs on full', () => {
+  it('still accepts the dashed --blame-ignore-revs and --no-infer-types on full', () => {
     const { status, output } = runCli([
       'full',
       projectDir,
       '--blame-ignore-revs',
+      '--no-infer-types',
+      '--max-stable-passes',
+      '2',
       '--yes',
       '--dry-run',
     ]);
@@ -422,6 +441,20 @@ describe('the config file', () => {
     } finally {
       fs.rmSync(elsewhere, { recursive: true, force: true });
     }
+  }, 30000);
+
+  // Keys take either spelling, for the same reason the flags do.
+  it('takes a dashed key as readily as a camelCase one', () => {
+    const baselineFile = path.join(configDir, 'from-dashed-key.json');
+    writeConfig(
+      JSON.stringify({ 'update-baseline': true, check: { 'baseline-file': baselineFile } }),
+    );
+
+    const { status, output } = runCli(['check', configDir]);
+
+    expect(output).not.toContain('is not a ts-migrate flag');
+    expect(fs.existsSync(baselineFile)).toBe(true);
+    expect(status).toBe(0);
   }, 30000);
 
   // Silently ignoring a mistyped flag costs a whole migration run to notice,

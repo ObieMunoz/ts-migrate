@@ -36,8 +36,10 @@ export const CONFIG_FLAG_DESCRIPTION =
 const RESERVED_KEYS = new Set(['_', '$0', 'config', 'folder', 'help', 'h', 'version', 'v']);
 
 /**
- * The camelCase spelling of a flag name. The CLI accepts both spellings of
- * every flag, so the file does too, and everything downstream sees one name.
+ * The camelCase spelling of a flag name, which is the one the commands declare
+ * and so the one their flag sets are keyed by. The CLI accepts both spellings
+ * of every flag, so the file does too, and what it hands back to yargs is
+ * spelled the way the flag was declared.
  */
 function camelCase(key: string): string {
   return key.replace(/-+(.)/g, (_match, char: string) => char.toUpperCase());
