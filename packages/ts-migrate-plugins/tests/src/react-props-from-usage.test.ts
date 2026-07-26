@@ -71,14 +71,45 @@ class Foo extends React.Component {
     expect(result).toContain('class Foo extends React.Component<Props>');
   });
 
-  it('marks a prop optional when accessed with optional chaining', async () => {
+  it('marks a prop optional when the prop itself is optionally chained', async () => {
+    const text = `import React from 'react';
+class Foo extends React.Component {
+  render() { return <div>{this.props.label?.length}</div>; }
+}
+`;
+    const result = await run(text);
+    expect(result).toContain('label?: any');
+  });
+
+  it('marks a prop optional when it is optionally called', async () => {
+    const text = `import React from 'react';
+class Foo extends React.Component {
+  render() { return <div>{this.props.onRender?.()}</div>; }
+}
+`;
+    const result = await run(text);
+    expect(result).toContain('onRender?: any');
+  });
+
+  it('leaves a prop required when only props itself is optionally chained', async () => {
     const text = `import React from 'react';
 class Foo extends React.Component {
   render() { return <div>{this.props?.label}</div>; }
 }
 `;
     const result = await run(text);
-    expect(result).toContain('label?: any');
+    expect(result).toContain('label: any');
+    expect(result).not.toContain('label?: any');
+  });
+
+  it('infers a prop read through element access', async () => {
+    const text = `import React from 'react';
+class Foo extends React.Component {
+  render() { return <div>{this.props['data-id']}</div>; }
+}
+`;
+    const result = await run(text);
+    expect(result).toContain('"data-id": any');
   });
 
   it('marks a prop optional when it has a default in destructuring', async () => {
@@ -301,6 +332,108 @@ const el = <Header name="Alice" count={42} />;
     expect(result).toContain('count: number');
     // The class heritage line itself must not change.
     expect(result).toContain('React.Component<Props, State>');
+  });
+
+  it('keeps the arity of a generic prop type whose argument is a function', async () => {
+    const text = `import React from 'react';
+class Foo extends React.Component {
+  render() { return null; }
+}
+export default Foo;
+`;
+    const caller = `import React from 'react';
+import Foo from '/Foo';
+declare const m: Map<() => void, string>;
+const el = <Foo lookup={m} />;
+`;
+    const result = await run(text, { 'caller.tsx': caller });
+    expect(result).toContain('lookup: Map<any, string>');
+  });
+
+  it('widens a string literal prop that contains a union separator', async () => {
+    const text = `import React from 'react';
+class Foo extends React.Component {
+  render() { return null; }
+}
+export default Foo;
+`;
+    const caller = `import React from 'react';
+import Foo from '/Foo';
+const el = <Foo label="a | b" />;
+`;
+    const result = await run(text, { 'caller.tsx': caller });
+    expect(result).toContain('label: string');
+  });
+
+  it('uses anyFunctionAlias for a signature it cannot reconstruct', async () => {
+    const text = `import React from 'react';
+class Foo extends React.Component {
+  render() { return null; }
+}
+export default Foo;
+`;
+    const caller = `import React from 'react';
+import Foo from '/Foo';
+const el = <Foo onClick={(e: string) => e.length} />;
+`;
+    const result = await run(
+      text,
+      { 'caller.tsx': caller },
+      { anyFunctionAlias: '$TSFixMeFunction' },
+    );
+    expect(result).toContain('onClick: $TSFixMeFunction');
+  });
+
+  it('imports a type under one specifier when the call site and the symbol disagree', async () => {
+    // ButtonSize is declared without `export` and re-exported, so the symbol
+    // resolves to the package root while the call site imports the subpath.
+    const typesDts = `
+interface ButtonSize { px: number }
+export { type ButtonSize };
+export declare const size: ButtonSize;
+`;
+    const text = `import React from 'react';
+class Foo extends React.Component {
+  render() { return null; }
+}
+export default Foo;
+`;
+    const caller = `import React from 'react';
+import Foo from '/Foo';
+import { size, type ButtonSize } from 'ui-kit/types';
+const el = <Foo size={size} />;
+`;
+    const result = await run(text, {
+      'node_modules/ui-kit/types.d.ts': typesDts,
+      'node_modules/ui-kit/index.d.ts': `export * from './types';`,
+      'caller.tsx': caller,
+    });
+    expect(result).toContain('ButtonSize');
+    const importLines = (result as string)
+      .split('\n')
+      .filter((line) => line.startsWith('import') && line.includes('ButtonSize'));
+    expect(importLines).toHaveLength(1);
+  });
+
+  it('patches a Props alias shared by two components from the evidence of both', async () => {
+    const text = `import React from 'react';
+type Props = { name: any };
+export class A extends React.Component<Props> {
+  render() { return null; }
+}
+export class B extends React.Component<Props> {
+  render() { return null; }
+}
+`;
+    const caller = `import React from 'react';
+import { A, B } from '/Foo';
+const a = <A name="x" />;
+const b = <B name={42} />;
+`;
+    const result = await run(text, { 'caller.tsx': caller });
+    // One replacement carrying both observations, not two that concatenate.
+    expect(result).toContain('name: string | number');
+    expect(result).not.toContain('stringnumber');
   });
 
   it('leaves already-typed members untouched when patching', async () => {

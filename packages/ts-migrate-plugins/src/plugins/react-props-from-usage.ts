@@ -10,7 +10,12 @@ import { collectIdentifiers } from './utils/identifiers';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { updateImports, NamedImport } from './utils/imports';
 import { collectImportSpecs, resolveSymbolImport } from './utils/importSpecs';
-import { buildTypeNode, widenTypes, typeStrDegradesToAny } from './utils/typeStrings';
+import {
+  buildTypeNode,
+  widenTypes,
+  isFunctionTypeStr,
+  typeStrDegradesToAny,
+} from './utils/typeStrings';
 import {
   AnyAliasOptions,
   AnyFunctionAliasOptions,
@@ -131,6 +136,69 @@ function findPatchablePropsAlias(
   return undefined;
 }
 
+// A prop name that is not a valid identifier (`data-id`, `aria-label`) has to
+// be quoted, which createPropertySignature does not do for a plain string name.
+function createPropName(name: string): ts.PropertyName {
+  return ts.isIdentifierText(name, ts.ScriptTarget.Latest)
+    ? ts.factory.createIdentifier(name)
+    : ts.factory.createStringLiteral(name);
+}
+
+// Folds `source` into `target`, keeping every observation so that a prop seen
+// from more than one component or call site is typed from all of them.
+function mergePropMaps(target: Map<string, PropInfo>, source: Map<string, PropInfo>) {
+  for (const [propName, info] of source) {
+    const existing = target.get(propName);
+    if (existing) {
+      existing.observedTypes.push(...info.observedTypes);
+      existing.observedTsTypes.push(...info.observedTsTypes);
+      existing.presentCount += info.presentCount;
+      if (info.optionalHint) existing.optionalHint = true;
+      if (!info.thisPropsOnly) existing.thisPropsOnly = false;
+    } else {
+      target.set(propName, info);
+    }
+  }
+}
+
+// updateImports dedupes per (module, name), so one name arriving with two
+// specifiers emits both and the file gets a duplicate identifier. Keep the
+// first specifier for each name, taking the earlier list in preference.
+function dedupeImportsByName(...lists: NamedImport[][]): NamedImport[] {
+  const byName = new Map<string, NamedImport>();
+  for (const list of lists) {
+    for (const spec of list) {
+      if (!byName.has(spec.namedImport)) byName.set(spec.namedImport, spec);
+    }
+  }
+  return [...byName.values()];
+}
+
+function isThisPropsAccess(node: ts.Node): boolean {
+  return (
+    ts.isPropertyAccessExpression(node) &&
+    node.expression.kind === ts.SyntaxKind.ThisKeyword &&
+    node.name.text === 'props'
+  );
+}
+
+// What marks a prop optional is a `?.` on the access *below* the prop read
+// (`this.props.x?.y`), whose token belongs to the outer node. A `?.` directly
+// after `this.props` says only that props itself may be absent.
+function isOptionallyChainedFrom(node: ts.Node): boolean {
+  const { parent } = node;
+  if (parent == null) return false;
+  if (
+    (ts.isPropertyAccessExpression(parent) ||
+      ts.isElementAccessExpression(parent) ||
+      ts.isCallExpression(parent)) &&
+    parent.expression === node
+  ) {
+    return parent.questionDotToken != null;
+  }
+  return false;
+}
+
 function collectThisPropsUsage(
   classDeclaration: ts.ClassDeclaration,
 ): Map<string, { optionalHint: boolean }> {
@@ -146,17 +214,18 @@ function collectThisPropsUsage(
   }
 
   function visit(node: ts.Node) {
-    // this.props.x  or  this.props?.x  (element-access covered separately)
-    if (ts.isPropertyAccessExpression(node)) {
-      const inner = node.expression;
-      if (
-        ts.isPropertyAccessExpression(inner) &&
-        inner.expression.kind === ts.SyntaxKind.ThisKeyword &&
-        inner.name.text === 'props'
-      ) {
-        const optional = node.questionDotToken != null;
-        markProp(node.name.text, optional);
-      }
+    // this.props.x
+    if (ts.isPropertyAccessExpression(node) && isThisPropsAccess(node.expression)) {
+      markProp(node.name.text, isOptionallyChainedFrom(node));
+    }
+
+    // this.props['x']
+    if (
+      ts.isElementAccessExpression(node) &&
+      isThisPropsAccess(node.expression) &&
+      ts.isStringLiteralLike(node.argumentExpression)
+    ) {
+      markProp(node.argumentExpression.text, isOptionallyChainedFrom(node));
     }
 
     // const { a, b = defaultVal } = this.props
@@ -294,12 +363,13 @@ function collectCallSiteProps(
   checker: ts.TypeChecker,
   options: {
     anyAlias?: string;
+    anyFunctionAlias?: string;
     includeChildren: boolean;
     skipOnSpread: boolean;
   },
   program: ts.Program,
 ): CallSiteResult {
-  const { anyAlias, includeChildren, skipOnSpread } = options;
+  const { anyAlias, anyFunctionAlias, includeChildren, skipOnSpread } = options;
   const propMap = new Map<string, PropInfo>();
   const neededImports: NamedImport[] = [];
   let totalCallSites = 0;
@@ -398,6 +468,11 @@ function collectCallSiteProps(
               // The import is handled here; don't let collectImportSpecs run on
               // the raw function type later (it would re-add the same import).
               tsType = null;
+            } else if (anyFunctionAlias != null && isFunctionTypeStr(typeStr)) {
+              // A signature that cannot be reconstructed, and no exported value
+              // to name it after, is what the function alias is for.
+              typeStr = anyFunctionAlias;
+              tsType = null;
             }
           } else {
             // Fallback: scan the call-site's own import declarations for the
@@ -458,6 +533,7 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
 
     const {
       anyAlias,
+      anyFunctionAlias,
       includeChildren = true,
       defaultOptional = false,
       skipOnSpread = true,
@@ -481,33 +557,61 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
 
     const updates: SourceTextUpdate[] = [];
     const printer = ts.createPrinter();
-    // Collects import specs for all type references used across all emitted Props types.
-    const neededImports: NamedImport[] = [];
+    // Import specs mirrored from a call site's own import declarations, which
+    // are known to resolve, and specs resolved from a type's own symbol. Kept
+    // apart so that a name reaching both keeps one specifier, deterministically.
+    const callSiteImports: NamedImport[] = [];
+    const resolvedImports: NamedImport[] = [];
     const importSeen = new Set<ts.Symbol>();
+
+    // A Props alias shared by more than one component in the file is patched
+    // once, from the evidence of every component that extends it: two passes
+    // over the same member span would collide.
+    const patchTargets = new Map<ts.TypeAliasDeclaration, ts.ClassDeclaration[]>();
+    const generateTargets: ts.ClassDeclaration[] = [];
 
     for (const classDeclaration of reactClassDeclarations) {
       const heritageType = getReactComponentHeritageType(classDeclaration);
       if (!heritageType) continue;
       if (!classDeclaration.name) continue;
 
-      // --- Patch path: existing named Props alias with `any` members ---
-      const patchableAlias = !needsPropsType(heritageType)
-        ? findPatchablePropsAlias(heritageType, sourceFile)
-        : undefined;
+      if (needsPropsType(heritageType)) {
+        generateTargets.push(classDeclaration);
+        continue;
+      }
 
-      if (patchableAlias != null) {
-        const { propMap, shouldSkip, neededImports: callNeededImports } = collectCallSiteProps(
+      const patchableAlias = findPatchablePropsAlias(heritageType, sourceFile);
+      if (!patchableAlias) continue;
+      const sharing = patchTargets.get(patchableAlias);
+      if (sharing) sharing.push(classDeclaration);
+      else patchTargets.set(patchableAlias, [classDeclaration]);
+    }
+
+    // --- Patch path: existing named Props alias with `any` members ---
+    for (const [patchableAlias, classDeclarations] of patchTargets) {
+      const propMap = new Map<string, PropInfo>();
+      const callNeededImports: NamedImport[] = [];
+      let shouldSkip = false;
+
+      for (const classDeclaration of classDeclarations) {
+        const result = collectCallSiteProps(
           classDeclaration,
           sourceFile,
           fileName,
           languageService,
           checker,
-          { anyAlias, includeChildren, skipOnSpread },
+          { anyAlias, anyFunctionAlias, includeChildren, skipOnSpread },
           program,
         );
+        if (result.shouldSkip) {
+          shouldSkip = true;
+          break;
+        }
+        mergePropMaps(propMap, result.propMap);
+        callNeededImports.push(...result.neededImports);
+      }
 
-        if (shouldSkip) continue;
-
+      if (!shouldSkip) {
         const typeLiteral = patchableAlias.type as ts.TypeLiteralNode;
         let patched = false;
         for (const member of typeLiteral.members) {
@@ -534,7 +638,7 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
           // Collect imports for surviving non-primitive types.
           for (const tsType of info.observedTsTypes) {
             if (tsType != null) {
-              collectImportSpecs(tsType, checker, fileName, importSeen, neededImports);
+              collectImportSpecs(tsType, checker, fileName, importSeen, resolvedImports);
             }
           }
 
@@ -548,14 +652,14 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
         }
         // callNeededImports holds `typeof`-import specs for the entire call-site
         // scan (not per-member), so push them once after the member loop.
-        if (patched) neededImports.push(...callNeededImports);
-        if (!patched) continue;
-        continue;
+        if (patched) callSiteImports.push(...callNeededImports);
       }
+    }
 
-      if (!needsPropsType(heritageType)) continue;
-
-      const componentName = classDeclaration.name.text;
+    // --- Generate path: components with no usable props type argument ---
+    for (const classDeclaration of generateTargets) {
+      const heritageType = getReactComponentHeritageType(classDeclaration)!;
+      const componentName = classDeclaration.name!.text;
 
       // Determine a unique props type name.
       let baseName = numComponentsInFile > 1 ? `${componentName}Props` : 'Props';
@@ -596,23 +700,13 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
         fileName,
         languageService,
         checker,
-        { anyAlias, includeChildren, skipOnSpread },
+        { anyAlias, anyFunctionAlias, includeChildren, skipOnSpread },
         program,
       );
-      neededImports.push(...callNeededImports);
+      callSiteImports.push(...callNeededImports);
 
       // Merge call-site evidence into the propMap (seeded from this.props).
-      for (const [propName, info] of callSitePropMap) {
-        const existing = propMap.get(propName);
-        if (existing) {
-          existing.observedTypes.push(...info.observedTypes);
-          existing.observedTsTypes.push(...info.observedTsTypes);
-          existing.presentCount += info.presentCount;
-          if (!info.thisPropsOnly) existing.thisPropsOnly = false;
-        } else {
-          propMap.set(propName, info);
-        }
-      }
+      mergePropMaps(propMap, callSitePropMap);
 
       if (shouldSkip) continue;
       if (propMap.size === 0) continue;
@@ -671,7 +765,7 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
         if (!degradesToAny) {
           for (const tsType of info.observedTsTypes) {
             if (tsType != null) {
-              collectImportSpecs(tsType, checker, fileName, importSeen, neededImports);
+              collectImportSpecs(tsType, checker, fileName, importSeen, resolvedImports);
             }
           }
         }
@@ -679,7 +773,7 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
         members.push(
           ts.factory.createPropertySignature(
             undefined,
-            propName,
+            createPropName(propName),
             isOptional ? ts.factory.createToken(ts.SyntaxKind.QuestionToken) : undefined,
             typeNode,
           ),
@@ -732,7 +826,7 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
       updatedText,
       sourceFile.languageVersion,
     );
-    const importUpdates = updateImports(updatedSourceFile, neededImports, []);
+    const importUpdates = updateImports(updatedSourceFile, dedupeImportsByName(callSiteImports, resolvedImports), []);
     return importUpdates.length > 0
       ? updateSourceText(updatedText, importUpdates)
       : updatedText;
