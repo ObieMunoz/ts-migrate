@@ -14,7 +14,6 @@ import { deleteDir, hashDir, transcriptLines } from '@obiemunoz/ts-migrate-test-
  * of a test is to choose what it reports.
  */
 jest.mock('updatable-log', () => {
-  // eslint-disable-next-line global-require
   const { collectingUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
   return collectingUpdatableLog();
 });

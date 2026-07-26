@@ -142,7 +142,6 @@ function collectScope(sourceFile: ts.SourceFile, dirname: string): EvalScope {
     }
     if (!ts.isVariableStatement(statement)) return;
     // let and var can be reassigned, so only const says what a name holds.
-    // eslint-disable-next-line no-bitwise
     if ((statement.declarationList.flags & ts.NodeFlags.Const) === 0) return;
     statement.declarationList.declarations.forEach((declaration) => {
       if (!ts.isIdentifier(declaration.name) || !declaration.initializer) return;

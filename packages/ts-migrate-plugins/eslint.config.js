@@ -6,6 +6,9 @@ module.exports = tseslint.config(
   },
   tseslint.configs.recommended,
   {
+    linterOptions: {
+      reportUnusedDisableDirectives: 'error',
+    },
     rules: {
       // This package's plugins generate `any` types by design.
       '@typescript-eslint/no-explicit-any': 'off',

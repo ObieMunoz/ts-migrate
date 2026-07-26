@@ -20,7 +20,6 @@ import { createGitignoreMigrationFilter } from '../../../utils/gitignore';
 import { createDir, copyDir, deleteDir, getDirData } from '@obiemunoz/ts-migrate-test-utils';
 
 jest.mock('updatable-log', () => {
-  // eslint-disable-next-line global-require
   const { mockUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
   return mockUpdatableLog();
 });

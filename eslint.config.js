@@ -22,8 +22,7 @@ module.exports = tseslint.config(
   tseslint.configs.recommended,
   {
     linterOptions: {
-      // Migration test fixtures carry eslint-disable comments as data.
-      reportUnusedDisableDirectives: 'off',
+      reportUnusedDisableDirectives: 'error',
     },
     rules: {
       // This repo's tooling generates and manipulates `any` types by design.

@@ -4,7 +4,6 @@ import check, { DEFAULT_BASELINE_FILE } from '../../../commands/check';
 import { createDir, deleteDir } from '@obiemunoz/ts-migrate-test-utils';
 
 jest.mock('updatable-log', () => {
-  // eslint-disable-next-line global-require
   const { noopUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
   return noopUpdatableLog();
 });

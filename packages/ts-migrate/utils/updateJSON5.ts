@@ -1,4 +1,3 @@
-/* eslint-disable no-use-before-define, @typescript-eslint/no-use-before-define */
 import json5 from 'json5';
 
 /**
