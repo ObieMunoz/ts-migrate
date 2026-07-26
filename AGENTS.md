@@ -47,6 +47,13 @@ The root build and lint scripts are `pnpm -r`. lerna is release-only: only
 `release.yml` invokes it, and `ci.yml` never does. Do not reach for it to verify
 a change, and note that it misresolves the workspace from a nested git worktree.
 
+`--filter` matches a package by `name`, scope optional, so `--filter ts-migrate`
+selects `@obiemunoz/ts-migrate`. The workspace root is named
+`ts-migrate-monorepo` to stay out of the way of that. While the root was itself
+named `ts-migrate` that filter selected the root, whose `build` script is
+`pnpm -r run build`, so the run nested a second recursive build inside the first
+and two `tsc` processes wrote the same `build` directories at once.
+
 ## Pull requests
 
 Titles are Conventional Commits, `type(scope): subject`. `pr-title.yml` enforces
