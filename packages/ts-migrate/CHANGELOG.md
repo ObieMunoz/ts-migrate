@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.16.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.15.0...v0.16.0) (2026-07-26)
+
+
+### Features
+
+* **cli:** settle the flag casing on camelCase and add a config file ([#299](https://github.com/ObieMunoz/ts-migrate/issues/299)) ([0e59302](https://github.com/ObieMunoz/ts-migrate/commit/0e59302686b9c65252f064809354030890f1c2bc))
+
+
+
+
+
 # [0.15.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.14.0...v0.15.0) (2026-07-26)
 
 
