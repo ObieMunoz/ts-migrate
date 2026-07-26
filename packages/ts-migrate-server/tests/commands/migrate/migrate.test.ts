@@ -230,6 +230,99 @@ describe('migrate command', () => {
     });
   });
 
+  /**
+   * A read-only file, a full disk or a directory the run may not write is a
+   * fact about the project. The write used to reject out of `migrate` and past
+   * the command into yargs, which answered it with the help screen and the raw
+   * Node error. Rejected rather than chmodded: the tests run as root often
+   * enough that a mode change is not a reliable way to make a write fail.
+   */
+  describe('a file the run cannot write', () => {
+    const readOnly = (fileName: string) =>
+      Object.assign(new Error(`EACCES: permission denied, open '${fileName}'`), {
+        code: 'EACCES',
+      });
+
+    /** Rejects the write of `blocked` and lets every other one through. */
+    function blockWrite(blocked: string) {
+      const { writeFile } = fs.promises;
+      return jest
+        .spyOn(fs.promises, 'writeFile')
+        .mockImplementation((file, ...rest) =>
+          file === blocked ? Promise.reject(readOnly(blocked)) : writeFile(file, ...rest),
+        );
+    }
+
+    const renamingPlugin = new MigrateConfig().addPlugin(
+      {
+        name: 'test-plugin',
+        run: ({ text }) => text.replace('test string', 'updated string'),
+      },
+      {},
+    );
+
+    beforeEach(() => {
+      copyDir(path.resolve(fixturesDir, 'tsconfig'), rootDir);
+      fs.writeFileSync(path.resolve(rootDir, 'blocked.ts'), "console.log('test string');\n");
+      fs.writeFileSync(path.resolve(rootDir, 'writable.ts'), "console.log('test string');\n");
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('reports it, writes the rest of the run, and fails', async () => {
+      const blocked = path.resolve(rootDir, 'blocked.ts');
+      blockWrite(blocked);
+      const error = jest.spyOn(log, 'error');
+
+      const { exitCode, updatedSourceFiles, updatedFileTexts } = await migrate({
+        rootDir,
+        config: renamingPlugin,
+      });
+
+      expect(exitCode).not.toBe(0);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('blocked.ts'));
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('EACCES'));
+      // A file that never reached the disk is not a file the run migrated, so
+      // it is out of the result the summary and the reports are built from.
+      expect([...updatedSourceFiles]).toEqual([path.resolve(rootDir, 'writable.ts')]);
+      expect([...updatedFileTexts.keys()]).toEqual([path.resolve(rootDir, 'writable.ts')]);
+      // The one write that could land still did.
+      expect(fs.readFileSync(path.resolve(rootDir, 'writable.ts'), 'utf8')).toContain(
+        'updated string',
+      );
+      expect(fs.readFileSync(blocked, 'utf8')).toContain('test string');
+    });
+
+    it('reports a generated declaration file it cannot write', async () => {
+      const generated = path.resolve(rootDir, 'types/generated.d.ts');
+      blockWrite(generated);
+      const error = jest.spyOn(log, 'error');
+
+      const { exitCode, generatedFiles } = await migrate({
+        rootDir,
+        config: new MigrateConfig().addPlugin(
+          {
+            name: 'generate-declarations',
+            run({ addGeneratedFile }) {
+              addGeneratedFile?.(generated, "declare module 'untyped-lib';\n");
+              return undefined;
+            },
+          },
+          {},
+        ),
+      });
+
+      expect(exitCode).not.toBe(0);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('generated.d.ts'));
+      // Nothing may report the declarations as generated: no file declares
+      // those modules, so the next tsc run would contradict it.
+      expect([...generatedFiles]).toEqual([]);
+      expect(fs.existsSync(generated)).toBe(false);
+    });
+  });
+
   describe('sources', () => {
     it('Migrates project by using `sources`', async () => {
       const inputDir = path.resolve(fixturesDir, 'migrate/input');

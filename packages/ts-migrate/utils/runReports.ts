@@ -102,7 +102,7 @@ export function printTypesPackagePreflight(rootDir: string): void {
     );
     if (preflightText) log.warn(preflightText);
   } catch (err) {
-    log.warn('Skipped the type package preflight:', err);
+    log.warn(`Skipped the type package preflight: ${errorMessage(err)}`);
   }
 }
 

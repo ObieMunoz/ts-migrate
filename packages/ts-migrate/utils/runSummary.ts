@@ -260,7 +260,7 @@ export function writeRunSummary(filePath: string, summary: RunSummary): number {
     fs.writeFileSync(filePath, `${JSON.stringify(summary, null, 2)}\n`);
     return summary.exitCode;
   } catch (err) {
-    log.error(`Failed to write the --jsonSummary file ${filePath}:`, err);
+    log.error(`Failed to write the --jsonSummary file ${filePath}: ${errorMessage(err)}`);
     return summary.exitCode || 1;
   }
 }

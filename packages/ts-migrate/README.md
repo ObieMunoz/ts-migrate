@@ -891,6 +891,13 @@ moves before that one stand, and re-running `rename` once the files can be
 written finishes the job, since what already moved no longer has a JavaScript
 extension.
 
+`migrate` and `reignore` write every file they could at the end of the run and
+then name the ones they could not, with the reason, and exit nonzero. The
+changes to those files are lost, so re-run once they are writable; everything
+else in the run is already on disk. A file that never reached the disk is left
+out of the updated files `--jsonSummary` lists, so the summary does not report
+a change the file does not hold.
+
 Files that are not the point of the step only warn, and the command still
 succeeds: the asset declarations `init` generates, and the `package.json` and
 `project.json` references `rename` repoints. Those references are rewritten

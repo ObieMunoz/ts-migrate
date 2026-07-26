@@ -912,6 +912,23 @@ cli
     'AI coding agents: run `npx -p @obiemunoz/ts-migrate ts-migrate agents` for the full ' +
       'non-interactive usage playbook.',
   )
+  // yargs catches a rejection from an async command handler itself, so the
+  // handlers registered above never see one, and answers it here with the
+  // whole help screen followed by the raw error object. That reads as a usage
+  // mistake for something that is not one, and buries the run's own output. A
+  // validation problem keeps the screen; a throw out of a command is a crash,
+  // and goes where an uncaught one already goes. The two are told apart by the
+  // message: yargs raises a rejected handler with the error and no message,
+  // and everything else it reports carries one.
+  .fail((msg, err, command) => {
+    if (msg == null && err) reportCrash('error', err);
+    command.showHelp('error');
+    // console rather than log.error, to keep the wording of a usage failure
+    // exactly what yargs prints for one today, blank separator line included.
+    console.error();
+    console.error(msg ?? errorMessage(err));
+    process.exit(1);
+  })
   .demandCommand(1, 'Must provide a command.')
   // demandCommand only counts positionals, so a name that matches no command
   // reaches here, and so does an option no command declares. Options went

@@ -157,6 +157,17 @@ declare module 'yargs' {
       describe(key: string, description: string): Argv<T>;
       epilogue(msg: string): Argv<T>;
       example(command: string, description: string): Argv<T>;
+      /**
+       * Replaces everything yargs prints for a failed run. `msg` is the
+       * message it would have printed and `err` the error behind it, and the
+       * two say which kind of failure this is: a rejected command handler
+       * arrives with the error alone, and every failure yargs raises itself
+       * carries a message. Nothing exits afterwards, so a handler that means
+       * to stop the run has to do it.
+       */
+      fail(
+        handler: (msg: string | null, err: Error | undefined, command: Argv<T>) => void,
+      ): Argv<T>;
       /** The flag names registered so far, which a command builder reports. */
       getOptions(): RegisteredOptions;
       help(option?: string): Argv<T>;
@@ -173,6 +184,8 @@ declare module 'yargs' {
       recommendCommands(): Argv<T>;
       require<K extends keyof T>(keys: readonly K[], msg?: string): Argv<Defined<T, K>>;
       scriptName(name: string): Argv<T>;
+      /** Writes the help screen to stdout, or to stderr with `'error'`. */
+      showHelp(consoleLevel?: 'log' | 'error'): Argv<T>;
       strictCommands(enabled?: boolean): Argv<T>;
       strictOptions(enabled?: boolean): Argv<T>;
       string<K extends string>(key: K): Argv<T & { [key in CamelCase<K>]: string | undefined }>;
