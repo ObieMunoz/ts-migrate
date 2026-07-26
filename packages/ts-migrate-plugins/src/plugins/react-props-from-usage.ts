@@ -136,10 +136,12 @@ function findPatchablePropsAlias(
   return undefined;
 }
 
+const identifierNamePattern = /^[A-Za-z_$][\w$]*$/;
+
 // A prop name that is not a valid identifier (`data-id`, `aria-label`) has to
 // be quoted, which createPropertySignature does not do for a plain string name.
 function createPropName(name: string): ts.PropertyName {
-  return ts.isIdentifierText(name, ts.ScriptTarget.Latest)
+  return identifierNamePattern.test(name)
     ? ts.factory.createIdentifier(name)
     : ts.factory.createStringLiteral(name);
 }
