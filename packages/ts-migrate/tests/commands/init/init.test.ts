@@ -807,4 +807,75 @@ describe('init command', () => {
     const raw = fs.readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf-8');
     expect(raw).toContain('"extends": "../typescript/tsconfig.base.json"');
   });
+
+  describe('a config that cannot be written', () => {
+    // A read-only checkout is the case. Mocking the write rather than
+    // chmodding keeps the test off its own permissions, and off a directory
+    // afterEach still has to delete.
+    const denyWrites = (deny: (filePath: string) => boolean) => {
+      const realWriteFileSync = fs.writeFileSync;
+      return jest.spyOn(fs, 'writeFileSync').mockImplementation(((
+        filePath: fs.PathOrFileDescriptor,
+        ...rest: unknown[]
+      ) => {
+        if (deny(String(filePath))) {
+          throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+        }
+        return (realWriteFileSync as (...args: unknown[]) => void)(filePath, ...rest);
+      }) as typeof fs.writeFileSync);
+    };
+
+    it('reports the failure instead of throwing past the command', () => {
+      const error = jest.spyOn(log, 'error');
+      const writeFileSync = denyWrites(() => true);
+
+      try {
+        expect(init({ rootDir, isExtendedConfig: false })).toBe(false);
+      } finally {
+        writeFileSync.mockRestore();
+      }
+      expect(error.mock.calls.map((call) => call.join(' ')).join('\n')).toContain(
+        'EACCES: permission denied',
+      );
+      expect(fs.existsSync(path.join(rootDir, 'tsconfig.json'))).toBe(false);
+      error.mockRestore();
+    });
+
+    it('reports the failure for the extended config too', () => {
+      const writeFileSync = denyWrites(() => true);
+
+      try {
+        expect(init({ rootDir, isExtendedConfig: true })).toBe(false);
+      } finally {
+        writeFileSync.mockRestore();
+      }
+      expect(fs.existsSync(path.join(rootDir, 'tsconfig.json'))).toBe(false);
+    });
+
+    // The tsconfig is what the rest of the run reads; the asset declarations
+    // only give the asset imports types, so losing them warns and the init
+    // still counts as done.
+    it('warns but succeeds when only the asset declarations cannot be written', () => {
+      fs.writeFileSync(
+        path.join(rootDir, 'package.json'),
+        JSON.stringify({ devDependencies: { webpack: '^5.90.0' } }),
+      );
+      fs.mkdirSync(path.join(rootDir, 'src'), { recursive: true });
+      fs.writeFileSync(path.join(rootDir, 'src/app.jsx'), "import logo from './logo.svg';\n");
+      fs.writeFileSync(path.join(rootDir, 'src/logo.svg'), '<svg />\n');
+      const warn = jest.spyOn(log, 'warn');
+      const writeFileSync = denyWrites((filePath) => filePath.endsWith('.d.ts'));
+
+      try {
+        expect(init({ rootDir, isExtendedConfig: false })).toBe(true);
+      } finally {
+        writeFileSync.mockRestore();
+      }
+      expect(fs.existsSync(path.join(rootDir, 'tsconfig.json'))).toBe(true);
+      expect(warn.mock.calls.map((call) => call.join(' ')).join('\n')).toContain(
+        'EACCES: permission denied',
+      );
+      warn.mockRestore();
+    });
+  });
 });

@@ -431,13 +431,14 @@ ${warning}
     // migrate step says it instead whenever a tsconfig already exists and
     // Step 1 has nothing to do.
     this.initSaidTypesPreflight = true;
+    let wroteConfig: boolean;
     try {
-      init({ rootDir, isExtendedConfig: false });
+      wroteConfig = init({ rootDir, isExtendedConfig: false });
     } catch (err) {
       log.error(errorMessage(err));
-      return this.failStep('init', `Step 1 of ${STEP_COUNT} (init)`, 1);
+      wroteConfig = false;
     }
-    if (!fs.existsSync(path.join(rootDir, 'tsconfig.json'))) {
+    if (!wroteConfig || !fs.existsSync(path.join(rootDir, 'tsconfig.json'))) {
       return this.failStep('init', `Step 1 of ${STEP_COUNT} (init)`, 1);
     }
     return this.finishStep(

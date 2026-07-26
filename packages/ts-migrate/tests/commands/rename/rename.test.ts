@@ -478,4 +478,73 @@ describe('rename command', () => {
       expect(JSON.parse(readPackageJson()).scripts.test).toBe('mocha "test/**/*.js"');
     });
   });
+
+  describe('files that cannot be written', () => {
+    const writeFile = (relPath: string, text: string) => {
+      const filePath = path.resolve(rootDir, relPath);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, text);
+    };
+
+    // A read-only checkout is the case. Mocking the write rather than
+    // chmodding keeps the test off its own permissions, and off a directory
+    // afterEach still has to delete.
+    const deny = () => {
+      throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+    };
+
+    const writeProject = () => {
+      writeFile('tsconfig.json', JSON.stringify({ include: ['src/**/*'] }));
+      writeFile('package.json', JSON.stringify({ jest: { setupFiles: ['src/setup.js'] } }));
+      writeFile('project.json', JSON.stringify({ allowedImports: ['src/setup.js'] }));
+      writeFile('src/setup.js', 'const a = 1;\n');
+    };
+
+    it('reports a move it cannot make instead of throwing past the command', () => {
+      writeProject();
+      const error = jest.spyOn(log, 'error');
+      const renameSync = jest.spyOn(fs, 'renameSync').mockImplementation(deny);
+
+      let result;
+      try {
+        result = rename({ rootDir });
+      } finally {
+        renameSync.mockRestore();
+      }
+
+      expect(result).toBeNull();
+      const messages = error.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(messages).toContain('Could not rename src/setup.js to src/setup.ts');
+      expect(messages).toContain('EACCES: permission denied');
+      // The references still name the file that never moved.
+      expect(JSON.parse(fs.readFileSync(path.resolve(rootDir, 'package.json'), 'utf-8'))).toEqual({
+        jest: { setupFiles: ['src/setup.js'] },
+      });
+      error.mockRestore();
+    });
+
+    // The files have already moved by then, so failing the whole rename would
+    // misreport what is on disk. The stale references are named instead.
+    it('warns but keeps the rename when only the reference files cannot be written', () => {
+      writeProject();
+      const warn = jest.spyOn(log, 'warn');
+      const writeFileSync = jest.spyOn(fs, 'writeFileSync').mockImplementation(deny);
+
+      let result;
+      try {
+        result = rename({ rootDir });
+      } finally {
+        writeFileSync.mockRestore();
+      }
+
+      expect(result?.renamedFiles).toHaveLength(1);
+      expect(fs.existsSync(path.resolve(rootDir, 'src/setup.ts'))).toBe(true);
+      // A rewrite that never reached disk is not reported as one.
+      expect(result?.packageJsonRewrites).toEqual([]);
+      const messages = warn.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(messages).toContain('Could not update allowedImports');
+      expect(messages).toContain('Could not update the references in package.json');
+      warn.mockRestore();
+    });
+  });
 });

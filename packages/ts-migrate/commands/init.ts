@@ -5,6 +5,7 @@ import {
   formatTypesPackagePreflight,
   preflightTypesPackages,
 } from '@obiemunoz/ts-migrate-plugins';
+import { errorMessage } from '@obiemunoz/ts-migrate-server';
 import {
   AssetDeclarations,
   buildAssetDeclarations,
@@ -279,30 +280,54 @@ function defaultConfig(rootDir: string): DefaultConfig {
   return { text, assetDeclarations };
 }
 
-export default function init({ rootDir, isExtendedConfig = false }: InitParams): void {
+/**
+ * Writes the tsconfig, reporting a failure rather than letting one reach the
+ * process. A checkout the run cannot write to is the environment, not a bug in
+ * ts-migrate, and the crash handler would say otherwise over a stack trace.
+ */
+function writeConfigFile(configFile: string, text: string): boolean {
+  try {
+    fs.writeFileSync(configFile, text);
+  } catch (err) {
+    log.error(`Could not write ${configFile}: ${errorMessage(err)}`);
+    return false;
+  }
+  log.info(`Config file created at ${configFile}`);
+  return true;
+}
+
+/** Whether the tsconfig was written. False is reported, never thrown. */
+export default function init({ rootDir, isExtendedConfig = false }: InitParams): boolean {
   if (!fs.existsSync(rootDir)) {
     log.error(`${rootDir} does not exist`);
-    return;
+    return false;
   }
 
   const configFile = path.resolve(rootDir, 'tsconfig.json');
   if (fs.existsSync(configFile)) {
     log.info(`Config file already exists at ${configFile}`);
-    return;
+    return true;
   }
 
   if (isExtendedConfig) {
-    fs.writeFileSync(configFile, extendedConfig);
-    log.info(`Config file created at ${configFile}`);
-    return;
+    return writeConfigFile(configFile, extendedConfig);
   }
 
   const { text, assetDeclarations } = defaultConfig(rootDir);
-  fs.writeFileSync(configFile, text);
-  log.info(`Config file created at ${configFile}`);
+  if (!writeConfigFile(configFile, text)) return false;
 
-  if (!assetDeclarations) return;
-  writeAssetDeclarations(assetDeclarations);
+  if (!assetDeclarations) return true;
+  // The tsconfig is already written, so a declarations file that cannot be
+  // written costs the asset imports their types and nothing else.
+  try {
+    writeAssetDeclarations(assetDeclarations);
+  } catch (err) {
+    log.warn(
+      `Could not write ${assetDeclarations.filePath}: ${errorMessage(err)}. Asset imports will ` +
+        'collect a suppression instead of typing.',
+    );
+    return true;
+  }
   if (fs.existsSync(assetDeclarations.filePath) && !isIncludedByTsConfig(rootDir, assetDeclarations.filePath)) {
     log.warn(
       `${assetDeclarations.filePath} is not matched by the generated tsconfig, so the ` +
@@ -310,4 +335,5 @@ export default function init({ rootDir, isExtendedConfig = false }: InitParams):
         'excluded directory.',
     );
   }
+  return true;
 }

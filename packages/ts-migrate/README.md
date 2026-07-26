@@ -882,6 +882,22 @@ A baseline that cannot be written is reported as an error and exits nonzero,
 except on the run that would only have lowered it: there the ratchet has
 already held, so the run passes and the baseline is left higher than the code.
 
+# Files a run cannot write
+
+A read-only checkout, or a file owned by someone else, is reported as an error
+naming the file rather than as a crash. `init` exits nonzero when it cannot
+write the tsconfig, and `rename` exits nonzero when it cannot move a file: the
+moves before that one stand, and re-running `rename` once the files can be
+written finishes the job, since what already moved no longer has a JavaScript
+extension.
+
+Files that are not the point of the step only warn, and the command still
+succeeds: the asset declarations `init` generates, and the `package.json` and
+`project.json` references `rename` repoints. Those references are rewritten
+after the files have already moved, so a failure there leaves entries naming
+the old paths to fix by hand rather than an unfinished rename. A reference the
+run could not write is left out of the rewrites `--jsonSummary` reports.
+
 # Previewing a run (`--dryRun`)
 
 `rename`, `migrate`, and `reignore` accept `--dryRun` to show what a run
