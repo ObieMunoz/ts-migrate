@@ -701,3 +701,58 @@ describe('a migrate run that fails', () => {
     }
   }, 180000);
 });
+
+/**
+ * yargs answers a rejected async command handler the same way it answers a
+ * mistyped flag: the whole help screen, then the failure. `migrate`, `full`
+ * and `reignore` are the async ones, so anything they could not write used to
+ * end a run in a screen of usage text followed by a raw Node error object.
+ */
+describe('a run that cannot write a file it was asked for', () => {
+  let outputDir: string;
+
+  beforeAll(() => {
+    outputDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-output-'));
+    fs.writeFileSync(
+      path.join(outputDir, 'tsconfig.json'),
+      '{ "compilerOptions": { "types": [] }, "include": ["**/*.ts"] }\n',
+    );
+    fs.writeFileSync(path.join(outputDir, 'ok.ts'), 'export const ok = 1;\n');
+  });
+
+  afterAll(() => {
+    fs.rmSync(outputDir, { recursive: true, force: true });
+  });
+
+  it('names the file it could not write, without the help screen', () => {
+    const unreachable = path.join(outputDir, 'no-such-directory', 'summary.json');
+
+    const { output } = runCliInOrder(['migrate', outputDir, '--jsonSummary', unreachable]);
+
+    expect(output).toContain(`Failed to write the --jsonSummary file ${unreachable}`);
+    expect(output).toContain('ENOENT');
+    // The message carries the cause; the Node error object behind it does not
+    // reach the user, and neither does a usage screen for a run that parsed.
+    expect(output).not.toContain('syscall');
+    expect(output).not.toContain('at Object.writeFileSync');
+    expect(output).not.toContain('Show help');
+  }, 180000);
+
+  // The crash report is for a ts-migrate bug. yargs raises a config file's own
+  // error with a message as well as an error, which is what tells it apart
+  // from a handler that threw, and answering one with "report this as a bug"
+  // would send a typo in a config file to the issue tracker.
+  it('still reports a config file error as one, not as a crash', () => {
+    const configFile = path.join(outputDir, 'ts-migrate.config.json');
+    fs.writeFileSync(configFile, JSON.stringify({ notAFlag: true }));
+    try {
+      const { status, output } = runCli(['report', outputDir]);
+
+      expect(output).toContain(`${configFile}: "notAFlag" is not a ts-migrate flag or command.`);
+      expect(output).not.toContain('This is a bug in ts-migrate');
+      expect(status).toBe(1);
+    } finally {
+      fs.rmSync(configFile, { force: true });
+    }
+  }, 30000);
+});
