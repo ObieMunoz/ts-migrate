@@ -28,9 +28,20 @@ origin/master` runs the CI check locally.
 `pnpm run build`, `pnpm run test`, and `pnpm run lint` from the repo root, all
 three, before opening a pull request. Tests live in `packages/*/tests/`.
 
-The command tests write scratch projects under `packages/*/tests/tmp`, and a
-`globalTeardown` removes them after every run. Run with
-`TS_MIGRATE_KEEP_TEST_TMP=1` to keep them while debugging a run that died.
+The command tests write scratch projects under
+`packages/ts-migrate-test-utils/tests/tmp`, and a `globalTeardown` removes them
+after every run. Run with `TS_MIGRATE_KEEP_TEST_TMP=1` to keep them while
+debugging a run that died.
+
+The filesystem and logging helpers the suites share live in
+`packages/ts-migrate-test-utils`, a private package that is never published.
+Import them by name, not by reaching across packages with a relative path. Each
+package's own `tests/test-utils.ts` is for helpers only that package needs.
+
+It is a devDependency of the root `package.json` and of no other manifest, the
+way the test suites already resolve `glob`. A package that declared it would
+carry it into its published `devDependencies`, pointing at a version no registry
+will ever have.
 
 The root build and lint scripts are `pnpm -r`. lerna is release-only: only
 `release.yml` invokes it, and `ci.yml` never does. Do not reach for it to verify

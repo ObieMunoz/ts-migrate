@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import log from 'updatable-log';
-import { createDir, copyDir, deleteDir } from '../../test-utils';
+import { createDir, copyDir, deleteDir } from '@obiemunoz/ts-migrate-test-utils';
 import migrate, { MigrateConfig } from '../../../src/migrate';
 
 jest.mock('updatable-log', () => ({

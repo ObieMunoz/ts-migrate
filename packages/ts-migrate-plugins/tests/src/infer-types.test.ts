@@ -1,8 +1,7 @@
 import fs from 'fs';
-import os from 'os';
-import path from 'path';
 import ts from 'typescript';
 import type { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
+import { createTmpDir } from '@obiemunoz/ts-migrate-test-utils';
 import { midRunProject, realPluginParams } from '../test-utils';
 import inferTypesPlugin from '../../src/plugins/infer-types';
 import explicitAnyPlugin from '../../src/plugins/explicit-any';
@@ -625,7 +624,7 @@ add(1, 2);
     let tmpDir: string;
 
     beforeEach(() => {
-      tmpDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ts-migrate-infer-')));
+      tmpDir = createTmpDir('ts-migrate-infer-');
     });
 
     afterEach(() => {

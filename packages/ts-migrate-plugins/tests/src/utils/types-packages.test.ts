@@ -1,6 +1,6 @@
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
+import { createTmpDir } from '@obiemunoz/ts-migrate-test-utils';
 import {
   buildModuleDeclarations,
   collectTypesEvidence,
@@ -20,7 +20,7 @@ import { realPluginParams } from '../../test-utils';
 const fixtureDirs: string[] = [];
 
 function makeFixture(files: { [filePath: string]: string }): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'types-packages-'));
+  const dir = createTmpDir('types-packages-');
   fixtureDirs.push(dir);
   Object.entries(files).forEach(([filePath, contents]) => {
     const fullPath = path.join(dir, filePath);

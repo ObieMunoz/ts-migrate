@@ -1,7 +1,6 @@
 import fs from 'fs';
-import os from 'os';
-import path from 'path';
 import ts from 'typescript';
+import { createTmpDir } from '@obiemunoz/ts-migrate-test-utils';
 import {
   midRunProject,
   mockDiagnostic,
@@ -632,7 +631,7 @@ class C {
     let tmpDir: string;
 
     beforeEach(() => {
-      tmpDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ts-migrate-declare-')));
+      tmpDir = createTmpDir('ts-migrate-declare-');
     });
 
     afterEach(() => {

@@ -5,11 +5,11 @@ import {
   buildRenameRunSummary,
   writeRunSummary,
 } from '../../utils/runSummary';
-import { createDir, deleteDir } from '../test-utils';
+import { createDir, deleteDir } from '@obiemunoz/ts-migrate-test-utils';
 
 jest.mock('updatable-log', () => {
   // eslint-disable-next-line global-require
-  const { noopUpdatableLog } = require('../test-utils');
+  const { noopUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
   return noopUpdatableLog();
 });
 

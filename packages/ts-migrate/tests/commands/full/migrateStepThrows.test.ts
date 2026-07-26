@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import full from '../../../commands/full';
-import { deleteDir, transcriptLines } from '../../test-utils';
+import { deleteDir, transcriptLines } from '@obiemunoz/ts-migrate-test-utils';
 
 /**
  * A plugin that throws is the one failure the migrate step cannot report on its
@@ -15,7 +15,7 @@ import { deleteDir, transcriptLines } from '../../test-utils';
  */
 jest.mock('updatable-log', () => {
   // eslint-disable-next-line global-require
-  const { collectingUpdatableLog } = require('../../test-utils');
+  const { collectingUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
   return collectingUpdatableLog();
 });
 

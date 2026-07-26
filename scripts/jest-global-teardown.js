@@ -1,14 +1,17 @@
 const fs = require('fs');
 const path = require('path');
 
-// Removes the scratch projects `createDir` in packages/*/tests/test-utils.ts
+// Removes the scratch projects `createDir` in packages/ts-migrate-test-utils
 // leaves under packages/*/tests/tmp. Each suite deletes its own project in
 // afterEach; a suite killed by a timeout never gets there.
 //
-// This is a globalTeardown rather than an afterAll because a tmp root is shared
-// by every suite in the package and jest runs those suites in parallel workers:
-// the first suite to finish would delete projects the others are still using.
-// globalTeardown runs once, after every worker is done.
+// This is a globalTeardown rather than an afterAll because the tmp root is
+// shared by every suite in the repository and jest runs those suites in
+// parallel workers: the first suite to finish would delete projects the others
+// are still using. globalTeardown runs once, after every worker is done.
+//
+// The glob still covers every package: the helpers moved to one package, and a
+// stale root under another is exactly what this should sweep.
 //
 // Set TS_MIGRATE_KEEP_TEST_TMP=1 to keep the projects, which is what a run that
 // died leaves as evidence of what it had written.

@@ -6,7 +6,7 @@ import {
   AssetPackageJson,
   buildAssetDeclarations,
 } from '../../utils/assetModules';
-import { deleteDir } from '../test-utils';
+import { deleteDir } from '@obiemunoz/ts-migrate-test-utils';
 
 describe('buildAssetDeclarations', () => {
   let rootDir: string;

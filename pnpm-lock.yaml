@@ -25,6 +25,9 @@ importers:
 
   .:
     devDependencies:
+      '@obiemunoz/ts-migrate-test-utils':
+        specifier: workspace:^
+        version: link:packages/ts-migrate-test-utils
       '@types/jest':
         specifier: ^29.5.0
         version: 29.5.14
@@ -166,6 +169,15 @@ importers:
       typescript6:
         specifier: npm:typescript@6.0.3
         version: typescript@6.0.3
+
+  packages/ts-migrate-test-utils:
+    dependencies:
+      glob:
+        specifier: ^7.1.6
+        version: 7.2.3
+      updatable-log:
+        specifier: ^0.2.0
+        version: 0.2.0
 
 packages:
 

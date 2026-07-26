@@ -4,7 +4,7 @@ import isIncludedByTsConfig, {
   canKeepGeneratedDeclarations,
   ensureIncludedByTsConfig,
 } from '../../utils/tsConfigIncludes';
-import { createDir, deleteDir } from '../test-utils';
+import { createDir, deleteDir } from '@obiemunoz/ts-migrate-test-utils';
 
 describe('tsConfigIncludes', () => {
   let rootDir: string;

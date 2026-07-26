@@ -1,8 +1,8 @@
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import ts from 'typescript';
 import { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
+import { createTmpDir } from '@obiemunoz/ts-migrate-test-utils';
 import {
   buildGlobalDeclarations,
   collectGlobalAssignments,
@@ -20,7 +20,7 @@ import { mockPluginParams } from '../../test-utils';
 const fixtureDirs: string[] = [];
 
 function makeFixture(files: { [filePath: string]: string } = {}): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'global-declarations-'));
+  const dir = createTmpDir('global-declarations-');
   fixtureDirs.push(dir);
   Object.entries(files).forEach(([filePath, contents]) => {
     const fullPath = path.join(dir, filePath);

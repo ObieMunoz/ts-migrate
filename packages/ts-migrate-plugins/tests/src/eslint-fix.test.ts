@@ -1,9 +1,9 @@
 import { spawnSync } from 'child_process';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import ts from 'typescript';
 import { PluginOptionsError } from '@obiemunoz/ts-migrate-server';
+import { createTmpDir } from '@obiemunoz/ts-migrate-test-utils';
 import eslintFixPlugin from '../../src/plugins/eslint-fix';
 
 const packageRoot = path.join(__dirname, '..', '..');
@@ -275,7 +275,7 @@ function runInFixture(
     workingDir,
   }: RunOptions = {},
 ): FixtureRun {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ts-migrate-eslint-fix-'));
+  const tmpDir = createTmpDir('ts-migrate-eslint-fix-');
   try {
     fs.cpSync(path.join(__dirname, '..', 'fixtures', fixture), tmpDir, { recursive: true });
     installProjectDependencies(tmpDir, projectESLint);
