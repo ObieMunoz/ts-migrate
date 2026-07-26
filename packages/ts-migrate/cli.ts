@@ -11,6 +11,7 @@ import path from 'path';
 import readline from 'readline';
 import log from 'updatable-log';
 import yargs, { Argv } from 'yargs';
+import { hideBin } from 'yargs/helpers';
 
 import { errorMessage } from '@obiemunoz/ts-migrate-server';
 import check from './commands/check';
@@ -341,8 +342,12 @@ function createPrompter(): Prompter {
 
 const version = packageVersion();
 
+// yargs 18 removed the singleton, so the chain below runs against an instance
+// and `hideBin` drops the two argv entries the singleton used to skip itself.
+const cli = yargs(hideBin(process.argv));
+
 // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-yargs
+cli
   .scriptName('ts-migrate')
   .version(version)
   .usage(`ts-migrate v${version}\n\nUsage: $0 <command> [options]`)
@@ -837,4 +842,4 @@ yargs
   .alias('v', 'version')
   // terminalWidth() is null when stdout is not a TTY, and yargs does not wrap
   // at all on a falsy width, so piped and redirected help falls back to 100.
-  .wrap(Math.min(yargs.terminalWidth() || 100, 100)).argv;
+  .wrap(Math.min(cli.terminalWidth() || 100, 100)).argv;
