@@ -108,7 +108,7 @@ describe('buildMigrateConfig', () => {
   it('names the real problem when --plugin is repeated', () => {
     expect(() => buildMigrateConfig({ plugin: ['explicit-any', 'ts-ignore'] })).toThrow(
       '--plugin takes a single plugin name, but was given explicit-any, ts-ignore. ' +
-        'To run the default pipeline without some of its plugins, use --exclude-plugin instead.',
+        'To run the default pipeline without some of its plugins, use --excludePlugin instead.',
     );
   });
 

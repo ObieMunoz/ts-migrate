@@ -83,6 +83,24 @@ declare module 'yargs' {
       [key in K]-?: Exclude<T[key], undefined>;
     };
 
+    /** Only the parser settings this CLI chooses; yargs-parser has many more. */
+    interface ParserConfiguration {
+      /**
+       * Leave the dashed spelling of a camelCase flag out of the parsed
+       * arguments, so each flag arrives under one name. Both spellings still
+       * parse: this is about the result, not the input.
+       */
+      'strip-dashed'?: boolean;
+    }
+
+    /**
+     * The options registered on an instance so far. Only the flag names are
+     * declared, which is what the config file is validated against.
+     */
+    interface RegisteredOptions {
+      key: Record<string, boolean>;
+    }
+
     /** `T` is the flags declared so far; the chain adds to it as it goes. */
     interface Argv<T = object> {
       /** A Promise when any command handler is async, which `full` and `migrate` are. */
@@ -105,6 +123,17 @@ declare module 'yargs' {
         builder: (args: Argv<T>) => Argv<U>,
         handler: (args: Arguments<U>) => void | Promise<void>,
       ): Argv<T>;
+      /**
+       * Reads flags from the file `key` names. `parseFn` receives the path and
+       * returns the flags to apply; anything it throws is reported as a parse
+       * failure. Values from the file are defaults, so a flag on the command
+       * line wins. One overload only: the key is always new to the chain.
+       */
+      config<K extends string>(
+        key: K,
+        description: string,
+        parseFn: (configPath: string) => object,
+      ): Argv<T & { [key in K]: string | undefined }>;
       conflicts(key: string, value: string): Argv<T>;
       default<K extends keyof T, V>(key: K, value: V): Argv<Omit<T, K> & { [key in K]: V }>;
       default<K extends string, V>(key: K, value: V): Argv<T & { [key in K]: V }>;
@@ -112,9 +141,12 @@ declare module 'yargs' {
       describe(key: string, description: string): Argv<T>;
       epilogue(msg: string): Argv<T>;
       example(command: string, description: string): Argv<T>;
+      /** The flag names registered so far, which a command builder reports. */
+      getOptions(): RegisteredOptions;
       help(option?: string): Argv<T>;
       number<K extends keyof T>(key: K): Argv<Omit<T, K> & { [key in K]: number | undefined }>;
       number<K extends string>(key: K): Argv<T & { [key in K]: number | undefined }>;
+      parserConfiguration(configuration: ParserConfiguration): Argv<T>;
       option<K extends keyof T, O extends Options>(
         key: K,
         options: O,

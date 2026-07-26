@@ -684,7 +684,7 @@ The TypeScript check failed. What these errors mean:
 Dry run: the preview stops here. Steps 3 and 4 read the files Step 2 would have
 renamed, and a dry run wrote none of them. Preview the migration itself once the
 rename has really happened:
-  ts-migrate migrate ${folder} --dry-run
+  ts-migrate migrate ${folder} --dryRun
 `);
     return 0;
   }
@@ -877,7 +877,7 @@ Remaining cleanup — the rest of your tooling doesn't know about the rename yet
     } else {
       log.info(`   If your team merges PRs with merge commits, add those full SHAs to a
    .git-blame-ignore-revs file at the repository root; re-running with
-   --blame-ignore-revs writes it for you. If your team squash-merges or
+   --blameIgnoreRevs writes it for you. If your team squash-merges or
    rebases, these SHAs will not exist on the main branch: add the SHA of the
    merged commit to the file after the merge instead.`);
     }

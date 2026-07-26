@@ -48,6 +48,14 @@ export function logTypeScriptWarning(decision: TypeScriptDecision): void {
 }
 
 /**
+ * The config file the flags came from, when there was one. A file found by
+ * searching upward is otherwise invisible, and it decides what the run does.
+ */
+export function logConfigFile(configPath?: string): void {
+  if (configPath) log.info(`Flags from ${configPath}`);
+}
+
+/**
  * Which compiler this run reasoned with, reported from the loaded instance so
  * the banner is what happened rather than what was asked for.
  */
@@ -344,6 +352,6 @@ export function printDryRunSummary(
       const debt = debtByFile[file];
       lines.push(debt ? `  ${file} (${formatFileDebtCounts(debt)})` : `  ${file}`);
     });
-  lines.push('For full diffs, run without --dry-run on a clean git tree and use git diff.');
+  lines.push('For full diffs, run without --dryRun on a clean git tree and use git diff.');
   log.info(lines.join('\n'));
 }

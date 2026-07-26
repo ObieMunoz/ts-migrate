@@ -756,7 +756,7 @@ function lintFailureNotice(error: unknown): PluginFileNotice {
     ruleId: ruleIdOf(error),
     hint:
       removedContextApiHint(reason) ??
-      'If the project lint config cannot be fixed now, --exclude-plugin eslint-fix skips this ' +
+      'If the project lint config cannot be fixed now, --excludePlugin eslint-fix skips this ' +
         'plugin.',
   };
 }

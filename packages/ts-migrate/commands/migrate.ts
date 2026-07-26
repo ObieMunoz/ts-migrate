@@ -190,7 +190,7 @@ function inapplicableFlags(params: BuildMigrateConfigParams, options: unknown): 
 
 /**
  * Builds the MigrateConfig for the migrate command: either a single plugin
- * (`--plugin`) or the default pipeline, minus any `--exclude-plugin` names.
+ * (`--plugin`) or the default pipeline, minus any `--excludePlugin` names.
  * Throws on plugin names that don't exist.
  */
 export default function buildMigrateConfig(params: BuildMigrateConfigParams): MigrateCommandConfig {
@@ -211,7 +211,7 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     if (Array.isArray(params.plugin)) {
       throw new Error(
         `--plugin takes a single plugin name, but was given ${params.plugin.join(', ')}. ` +
-          'To run the default pipeline without some of its plugins, use --exclude-plugin instead.',
+          'To run the default pipeline without some of its plugins, use --excludePlugin instead.',
       );
     }
     const plugin = availablePlugins.find((cur) => cur.name === params.plugin);

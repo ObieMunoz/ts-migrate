@@ -17,7 +17,7 @@ interface RunSummaryBase {
   tsMigrateVersion: string;
   rootDir: string;
   exitCode: number;
-  /** True when the run was a --dry-run: the summary describes what a real run would change. */
+  /** True when the run was a --dryRun: the summary describes what a real run would change. */
   dryRun: boolean;
 }
 
