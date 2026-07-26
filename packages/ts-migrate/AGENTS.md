@@ -798,6 +798,14 @@ come from `report --json`.
   under a directory that does not exist is the usual cause of. A run whose
   counts improved on a baseline it cannot rewrite still exits `0`: the ratchet
   held, and the baseline is left higher than the code.
+- `init` exits 255 when it cannot write the tsconfig, and `rename` exits 255
+  when it cannot move a file; a read-only checkout is the usual cause. The
+  moves `rename` made before the failing one stand, and re-running it once the
+  files can be written finishes the job: what already moved no longer has a
+  JavaScript extension and drops out of the mapping. Both commands only warn
+  for the files that are not the point of the step, and still exit `0`: `init`
+  for the generated asset declarations, `rename` for the `package.json` and
+  `project.json` references, which by then name files that have already moved.
 - `ts-migrate full` stops at the first failing step, naming it and exiting with
   that step's code, and prints the type definition recommendations it had
   gathered along with the file they stay in; the final `tsc` check
