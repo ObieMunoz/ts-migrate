@@ -793,7 +793,11 @@ come from `report --json`.
   first plugin banner, so a scoped run that selected less than intended is
   visible from the first screen rather than from a diff that never appeared.
 - `check` exits `1` when a per-file count exceeds the baseline; `report` and
-  `check` exit nonzero (255) if the tsconfig cannot be read.
+  `check` exit nonzero (255) if the tsconfig cannot be read. `check` also exits
+  255 when it has to write the baseline and cannot, which a `--baselineFile`
+  under a directory that does not exist is the usual cause of. A run whose
+  counts improved on a baseline it cannot rewrite still exits `0`: the ratchet
+  held, and the baseline is left higher than the code.
 - `ts-migrate full` stops at the first failing step, naming it and exiting with
   that step's code, and prints the type definition recommendations it had
   gathered along with the file they stay in; the final `tsc` check

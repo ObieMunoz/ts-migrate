@@ -109,4 +109,50 @@ describe('check command', () => {
     expect(fs.existsSync(baselineFile)).toBe(true);
     expect(fs.existsSync(path.join(rootDir, DEFAULT_BASELINE_FILE))).toBe(false);
   });
+
+  describe('a baseline that cannot be written', () => {
+    // A --baselineFile under a directory that does not exist. Every other
+    // output path the CLI takes reports this; this one used to reach the
+    // process, where the crash handler names a mistyped path a ts-migrate bug.
+    const unwritable = (dir: string) => path.join(dir, 'missing', 'baseline.json');
+
+    it('errors instead of throwing when there is no baseline yet', () => {
+      const baselineFile = unwritable(rootDir);
+
+      expect(check({ rootDir, folder: 'foo', baselineFile })).toBe(-1);
+      expect(fs.existsSync(baselineFile)).toBe(false);
+    });
+
+    it('errors instead of throwing with --updateBaseline', () => {
+      const baselineFile = unwritable(rootDir);
+
+      expect(check({ rootDir, folder: 'foo', baselineFile, updateBaseline: true })).toBe(-1);
+      expect(fs.existsSync(baselineFile)).toBe(false);
+    });
+
+    it('still passes when the ratchet held and only lowering the baseline failed', () => {
+      expect(check({ rootDir, folder: 'foo' })).toBe(0);
+      const baselinePath = path.join(rootDir, DEFAULT_BASELINE_FILE);
+      const baselineText = fs.readFileSync(baselinePath, 'utf-8');
+
+      // Debt drops, so the run wants to lower the baseline. The baseline still
+      // has to read back for the comparison to get that far, so the write is
+      // what fails here and not the file: a read-only checkout is the case,
+      // and mocking it keeps that off the test's own permissions.
+      fs.writeFileSync(
+        path.join(rootDir, 'a.ts'),
+        "// @ts-expect-error TS(2304) FIXME: Cannot find name 'foo'.\nfoo();\nexport default 1;\n",
+      );
+      const writeFileSync = jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {
+        throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+      });
+
+      try {
+        expect(check({ rootDir, folder: 'foo' })).toBe(0);
+      } finally {
+        writeFileSync.mockRestore();
+      }
+      expect(fs.readFileSync(baselinePath, 'utf-8')).toBe(baselineText);
+    });
+  });
 });
