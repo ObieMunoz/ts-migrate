@@ -1,44 +1,54 @@
 name: CI
 
-# Docs and repo meta that no CI job reads. Neither AGENTS.md is listed:
-# agentsPlaybook.test.ts asserts on packages/ts-migrate/AGENTS.md, and the root
-# AGENTS.md carries the conventions the lockfile job below enforces.
+# Docs and repo meta that no CI job reads. This is a `paths` allowlist with
+# exclusions rather than `paths-ignore` because some of the skips need an
+# exception and `paths-ignore` has no way to spell one. The last pattern that
+# matches a file decides, so every re-include sits at the bottom.
+#
+# Both AGENTS.md files are re-included: agentsPlaybook.test.ts asserts on the
+# packaged packages/ts-migrate/AGENTS.md, and the root AGENTS.md carries the
+# conventions the lockfile job below enforces. ci.yml is re-included because it
+# is what these jobs run from; release.yml and pr-title.yml are not, since one
+# is workflow_dispatch-only and the other reads nothing a CI job builds. The
+# tests trees are re-included wholesale because a fixture may legitimately be
+# named like documentation, and a fixture edit has to reach the suites.
+#
 # lerna.json and .nxignore are release-only config; ci.yml never invokes lerna.
 on:
   push:
     branches: [master]
-    paths-ignore:
-      - 'README.md'
-      - 'CHANGELOG.md'
-      - 'CONTRIBUTING.md'
-      - 'LICENSE'
-      - 'packages/*/README.md'
-      - 'packages/*/CHANGELOG.md'
-      - 'packages/*/LICENSE'
-      - '.gitattributes'
-      - '.gitignore'
-      - '.vscode/**'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE.md'
-      - 'lerna.json'
-      - '.nxignore'
+    paths:
+      - '**'
+      - '!**.md'
+      - '!LICENSE'
+      - '!packages/*/LICENSE'
+      - '!.gitattributes'
+      - '!.gitignore'
+      - '!.vscode/**'
+      - '!.github/**'
+      - '!lerna.json'
+      - '!.nxignore'
+      - 'AGENTS.md'
+      - 'packages/ts-migrate/AGENTS.md'
+      - '.github/workflows/ci.yml'
+      - 'packages/*/tests/**'
   pull_request:
     branches: [master]
-    paths-ignore:
-      - 'README.md'
-      - 'CHANGELOG.md'
-      - 'CONTRIBUTING.md'
-      - 'LICENSE'
-      - 'packages/*/README.md'
-      - 'packages/*/CHANGELOG.md'
-      - 'packages/*/LICENSE'
-      - '.gitattributes'
-      - '.gitignore'
-      - '.vscode/**'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE.md'
-      - 'lerna.json'
-      - '.nxignore'
+    paths:
+      - '**'
+      - '!**.md'
+      - '!LICENSE'
+      - '!packages/*/LICENSE'
+      - '!.gitattributes'
+      - '!.gitignore'
+      - '!.vscode/**'
+      - '!.github/**'
+      - '!lerna.json'
+      - '!.nxignore'
+      - 'AGENTS.md'
+      - 'packages/ts-migrate/AGENTS.md'
+      - '.github/workflows/ci.yml'
+      - 'packages/*/tests/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -68,7 +78,7 @@ jobs:
       - name: Lint
         run: pnpm run lint
 
-  # pnpm-lock.yaml is not in the paths-ignore lists above, so every pull
+  # pnpm-lock.yaml is not excluded by the paths lists above, so every pull
   # request that can flip a resolution reaches this job. It reads committed
   # refs only: the build matrix below runs `pnpm add` to swap the compiler on
   # its own runner, and that mutation never reaches a diff.
