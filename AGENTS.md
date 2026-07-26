@@ -33,6 +33,13 @@ The command tests write scratch projects under
 after every run. Run with `TS_MIGRATE_KEEP_TEST_TMP=1` to keep them while
 debugging a run that died.
 
+A checked-in tree that a test copies into one of those scratch projects belongs
+at `packages/<package>/tests/fixtures/<name>/`, as `<name>/input/` and
+`<name>/output/` where it has both. That path is the one every ESLint config
+ignores, so a fixture anywhere else gets linted as source and its
+`eslint-disable` comments are read as this repository's. A tree specific to a
+single test is written inline with `fs.writeFileSync` in the test body instead.
+
 The filesystem and logging helpers the suites share live in
 `packages/ts-migrate-test-utils`, a private package that is never published.
 Import them by name, not by reaching across packages with a relative path. Each

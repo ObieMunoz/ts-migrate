@@ -38,9 +38,9 @@ one on save fails the test that reads it.
 runs in a child process. Those are code, not data, and they are kept in files
 so an editor treats them as the language they are written in.
 
-Where the checked-in fixture trees under `fixtures/` should live is a separate
-question, tracked in #294. This directory follows the convention that already
-existed rather than settling it.
+Everything under `fixtures/` follows the repository-wide rule for checked-in
+fixture trees, described in the root CONTRIBUTING.md: every package keeps them
+at `tests/fixtures/<name>/`, and every ESLint config ignores exactly that path.
 
 ## Shared helpers
 
