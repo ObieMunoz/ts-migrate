@@ -347,7 +347,7 @@ function globToRegExp(pattern: string): RegExp {
     } else if (ch === ',' && braceDepth > 0) {
       source += '|';
     } else {
-      source += ch.replace(/[.*+?^${}()|[\]\\]/, '\\$&');
+      source += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
   }
   return new RegExp(`^${source}$`);
