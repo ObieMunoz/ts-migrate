@@ -876,7 +876,11 @@ baseline to `.ts-migrate-baseline.json` in `<folder>`; commit it. Later runs
 exit nonzero if any per-file count exceeds the baseline and lower the
 baseline automatically when counts improve, so the debt can only ratchet
 down. Accept an intentional increase with `--updateBaseline`; relocate the
-file with `--baselineFile <path>`.
+file with `--baselineFile <path>`, whose directory has to exist already.
+
+A baseline that cannot be written is reported as an error and exits nonzero,
+except on the run that would only have lowered it: there the ratchet has
+already held, so the run passes and the baseline is left higher than the code.
 
 # Previewing a run (`--dryRun`)
 
