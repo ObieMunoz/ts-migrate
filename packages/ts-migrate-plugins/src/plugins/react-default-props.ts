@@ -32,9 +32,22 @@ const REACT_19_HINT =
   'React 19 ignores defaultProps on function components. Convert to destructured parameter ' +
   'defaults by hand.';
 
+// `P & D` is what a hand-written defaultProps type would say, and it keeps the
+// declared prop type where the two disagree, so it is the first choice. It is
+// unusable when it is uninhabited: a `null` default against a declared type
+// that does not admit null gives that key `never`, and since `typeof
+// defaultProps` makes every key required and `null` is a unit type, TypeScript
+// reduces the whole object to `never`. Falling back to a union of the declared
+// type and the default's keeps the type inhabited and describes what the
+// component actually receives.
+//
+// The compiler decides per component, so a codebase that never defaults to
+// null gets `P & D` unchanged. `0 extends (1 & D)` is the standard `is D any`
+// test: an `any` defaultProps must stay `P & D`, which is `any`, rather than
+// resolve to a structural type the call sites then fail against.
 // defaulted keys stay required, typed as the declared prop type or the default's type;
 // defaults without a declared prop are added as-is
-const WITH_DEFAULT_PROPS_DECLARATION = `type ${WITH_DEFAULT_PROPS_HELPER}<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;`;
+const WITH_DEFAULT_PROPS_DECLARATION = `type ${WITH_DEFAULT_PROPS_HELPER}<P, D> = 0 extends (1 & D) ? P & D : ([P & D] extends [never] ? (Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>) : P & D);`;
 
 const reactDefaultPropsPlugin: Plugin<Options> = {
   name: 'react-default-props',

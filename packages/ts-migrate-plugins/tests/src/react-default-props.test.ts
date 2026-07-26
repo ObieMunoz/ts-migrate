@@ -24,7 +24,7 @@ export default ExampleComponent;`;
 
     expect(await run(text, { options })).toBe(`import React from 'react';
 
-type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
+type WithDefaultProps<P, D> = 0 extends (1 & D) ? P & D : ([P & D] extends [never] ? (Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>) : P & D);
 
 type OwnProps = {
     test: string;
@@ -102,7 +102,7 @@ export default ExampleComponent;`;
 
     expect(await run(text, { options })).toBe(`import React from 'react';
 
-type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
+type WithDefaultProps<P, D> = 0 extends (1 & D) ? P & D : ([P & D] extends [never] ? (Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>) : P & D);
 
 type OwnProps = {
     test: string;
@@ -140,7 +140,7 @@ export default ExampleComponent;`;
 
     expect(await run(text, { options })).toBe(`import React from 'react';
 
-type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
+type WithDefaultProps<P, D> = 0 extends (1 & D) ? P & D : ([P & D] extends [never] ? (Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>) : P & D);
 
 type OwnProps = {
     test: string;
@@ -408,7 +408,7 @@ export default withStyles(() => ({
     expect(await run(text, { options })).toBe(`import React from 'react';
 import { withStyles, WithStylesProps } from ':dls-themes/withStyles';
 
-type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
+type WithDefaultProps<P, D> = 0 extends (1 & D) ? P & D : ([P & D] extends [never] ? (Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>) : P & D);
 
 type OwnProps = {
     message?: string;
@@ -456,7 +456,7 @@ export default withStyles(() => ({
     expect(await run(text, { options })).toBe(`import React from 'react';
 import { withStyles, WithStylesProps } from ':dls-themes/withStyles';
 
-type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
+type WithDefaultProps<P, D> = 0 extends (1 & D) ? P & D : ([P & D] extends [never] ? (Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>) : P & D);
 
 const defaultProps = { message: '' };
 
@@ -503,7 +503,7 @@ export default Foo;`;
 
     expect(await run(text, { options })).toBe(`import React from 'react';
 
-type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
+type WithDefaultProps<P, D> = 0 extends (1 & D) ? P & D : ([P & D] extends [never] ? (Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>) : P & D);
 
 type OwnMyProps = {
     message: string;
@@ -547,7 +547,7 @@ export default Foo;`;
 
     expect(await run(text, { options })).toBe(`import React from 'react';
 
-type WithDefaultProps<P, D> = Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>;
+type WithDefaultProps<P, D> = 0 extends (1 & D) ? P & D : ([P & D] extends [never] ? (Omit<P, keyof D> & { [K in keyof D & keyof P]: Exclude<P[K], undefined> | D[K] } & Omit<D, keyof P>) : P & D);
 
 type OwnMyProps = {
     message: string;
