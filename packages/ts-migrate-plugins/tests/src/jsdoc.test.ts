@@ -1,8 +1,9 @@
-import { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
-import { mockPluginParams, typeCheck, withoutMarkers } from '../test-utils';
+import { pluginRunner } from '../test-utils';
 import jsDocPlugin from '../../src/plugins/jsdoc';
 
-describe('jsdoc plugin', () => {
+const run = pluginRunner(jsDocPlugin, { fileName: 'file.tsx' });
+
+describe('jsdoc plugin, annotating from tags', () => {
   it('annotates unknown types', () => {
     const text = `\
 /** @param a {?} */
@@ -11,9 +12,7 @@ function A(a) {}
 function B(b) {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /** @param a {?} */
 function A(a: any) {}
 /** @param b {*} */
@@ -29,9 +28,7 @@ function A(a) {}
 function B(b) {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /** @arg a {Number} */
 function A(a: number) {}
 /** @argument b {Number} */
@@ -53,9 +50,7 @@ function D(d) {}
 function E(e) {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /** @param a {Number} */
 function A(a: number) {}
 /** @param b {String} */
@@ -81,9 +76,7 @@ function C(c) {}
 function D(d) {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /** @param a {Number<string>} */
 function A(a: number) {}
 /** @param b {String<string>} */
@@ -101,9 +94,7 @@ function D(d: object) {}
 function A(a) {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /** @param a {?Number} */
 function A(a: number | null) {}
 `);
@@ -115,9 +106,7 @@ function A(a: number | null) {}
 function A(a) {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /** @param a {!Number} */
 function A(a: number) {}
 `);
@@ -135,9 +124,7 @@ function C({ c }) {}
 function D(d = 1) {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /** @param a {Number=} */
 function A(a?: number) {}
 /** @param [b] {Number} */
@@ -161,9 +148,7 @@ function C(c) {}
 function D(d) {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /** @param a {Array} */
 function A(a: Array<any>) {}
 /** @param b {Array<String>} */
@@ -183,9 +168,7 @@ function A(a) {}
 function B(b) {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /** @param a {Object<number, any>} */
 function A(a: { [n: number]: any; }) {}
 /** @param b {Object<string, any>} */
@@ -205,9 +188,7 @@ function C(c) {}
 function D(d) {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /** @param a {function(number)} */
 function A(a: (arg0: number) => any) {}
 /** @param b {function(): number} */
@@ -247,9 +228,7 @@ function DeepNesting(employee) {}
 function Destructured({ a, b }) {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /**
  * @param {Object} employee
  * @param {string} employee.name
@@ -296,9 +275,7 @@ function Destructured({ a, b }: {
 function A(a) {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /** @param a {Undeclared} */
 function A(a: Undeclared) {}
 `);
@@ -313,9 +290,7 @@ function A(a: Undeclared) {}
 function A(a, b, c) {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /**
  * @param a {number}
  * @param b {string}
@@ -330,9 +305,7 @@ function A(a: number, b: string, c) {}
 function A(a) {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /** @param b {number} */
 function A(a) {}
 `);
@@ -344,11 +317,7 @@ function A(a) {}
 function A() {}
 `;
 
-    const result = jsDocPlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { annotateReturns: true } }),
-    );
-
-    expect(result).toBe(`\
+    expect(run(text, { options: { annotateReturns: true } })).toBe(`\
 /** @return {number} */
 function A(): number {}
 `);
@@ -362,9 +331,7 @@ function A(a: string) {}
 function B(): string {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /** @param a {number} */
 function A(a: string) {}
 /** @return {number} */
@@ -380,9 +347,7 @@ class C {
 }
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 class C {
   /** @param a {number} */
   A(a: number) {}
@@ -410,9 +375,7 @@ class C {
 }
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 class C {
   /** @private */
   private A() {}
@@ -448,9 +411,7 @@ class C {
 }
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(result).toBe(`\
+    expect(run(text, { fileName: 'file.ts' })).toBe(`\
 class C {
   /**
    * @param {Number} a
@@ -482,11 +443,7 @@ const O = {
 };
 `;
 
-    const result = jsDocPlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { annotateReturns: true } }),
-    );
-
-    expect(result).toBe(`\
+    expect(run(text, { options: { annotateReturns: true } })).toBe(`\
 const O = {
   /** @param a {number} */
   A(a: number) {},
@@ -512,11 +469,7 @@ const B = function() {};
 window.c = function(c) {};
 `;
 
-    const result = jsDocPlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { annotateReturns: true } }),
-    );
-
-    expect(result).toBe(`\
+    expect(run(text, { options: { annotateReturns: true } })).toBe(`\
 /** @param a {number} */
 const A = function(a: number) {};
 /** @return {string} */
@@ -540,11 +493,7 @@ const D = d => null;
 window.e = (e) => null;
 `;
 
-    const result = jsDocPlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { annotateReturns: true } }),
-    );
-
-    expect(result).toBe(`\
+    expect(run(text, { options: { annotateReturns: true } })).toBe(`\
 /** @param a {number} */
 const A = (a: number) => null;
 /** @return {string} */
@@ -567,11 +516,7 @@ window.e = (e: number) => null;
 const A = a => String(a);
 `;
 
-    const result = jsDocPlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { annotateReturns: true } }),
-    );
-
-    expect(result).toBe(`\
+    expect(run(text, { options: { annotateReturns: true } })).toBe(`\
 /**
  * @param a {number}
  * @return {string}
@@ -588,9 +533,7 @@ function() {
 }
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 function() {
     /** @param a {number} */
     function A(a: number) {}
@@ -604,9 +547,7 @@ function() {
 function A($1) {}
 `;
 
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }));
-
-    expect(result).toBe(`\
+    expect(run(text)).toBe(`\
 /** @param $1 {number} */
 function A($1: number) {}
 `);
@@ -618,1055 +559,13 @@ function A($1: number) {}
 function A() {}
 `;
 
-    expect(jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }))).toBe(text);
+    expect(run(text)).toBe(text);
 
     expect(
-      jsDocPlugin.run(
-        mockPluginParams({ text, fileName: 'file.tsx', options: { annotateReturns: true } }),
-      ),
+      run(text, { options: { annotateReturns: true } }),
     ).toBe(`\
 /** @return {number} */
 function A(): number {}
 `);
-  });
-
-  it('keeps the return type a signature already declares while annotating its parameters', () => {
-    const text = `\
-/**
- * @param {number} [d=1] - the default
- * @returns {number} out
- */
-export function f(d = 1): number {
-  return d;
-}
-
-/** @param {string} [s=''] - the default */
-export const g = (s = ''): void => {
-  void s;
-};
-
-export class C {
-  /** @param {string} [s=''] - the default */
-  public m(s = ''): this {
-    void s;
-    return this;
-  }
-}
-`;
-
-    const expected = `\
-/**
- * @param {number} [d=1] - the default
- * @returns {number} out
- */
-export function f(d: number = 1): number {
-  return d;
-}
-
-/** @param {string} [s=''] - the default */
-export const g = (s: string = ''): void => {
-  void s;
-};
-
-export class C {
-  /** @param {string} [s=''] - the default */
-  public m(s: string = ''): this {
-    void s;
-    return this;
-  }
-}
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: '/file.ts' }));
-    expect(result).toBe(expected);
-    expect(typeCheck({ '/file.ts': result })).toEqual([]);
-
-    // The option only decides whether an undeclared return type is written.
-    expect(
-      jsDocPlugin.run(
-        mockPluginParams({ text, fileName: '/file.ts', options: { annotateReturns: true } }),
-      ),
-    ).toBe(expected);
-  });
-
-  it('converts a typedef into a type alias and keeps the description', () => {
-    const text = `\
-/**
- * Options for the thing.
- * @typedef {Object} Opts
- * @property {string} a
- * @property {number} [b]
- */
-
-/** @param opts {Opts} */
-function run(opts) {}
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(result).toBe(`\
-/**
- * Options for the thing.
- */
-type Opts = {
-    a: string;
-    b?: number;
-};
-
-/** @param opts {Opts} */
-function run(opts: Opts) {}
-`);
-  });
-
-  it('drops a comment that only declares a typedef', () => {
-    const text = `\
-/** @typedef {string | number} Key */
-/** @param k {Key} */
-function f(k) {}
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(result).toBe(`\
-type Key = string | number;
-/** @param k {Key} */
-function f(k: Key) {}
-`);
-  });
-
-  it('keeps a comment that also documents its host', () => {
-    const text = `\
-/**
- * @typedef {string} Key
- * @param k {Key}
- */
-function f(k) {}
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(result).toBe(`\
-type Key = string;
-/**
- * @typedef {string} Key
- * @param k {Key}
- */
-function f(k: Key) {}
-`);
-  });
-
-  it('converts a callback into a function type alias', () => {
-    const text = `\
-/**
- * @callback Handler
- * @param {string} key
- * @param {number} [count]
- * @param {...boolean} rest
- * @returns {boolean}
- */
-
-/** @param h {Handler} */
-function on(h) {}
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(result).toBe(`\
-type Handler = (key: string, count?: number, ...rest: boolean[]) => boolean;
-
-/** @param h {Handler} */
-function on(h: Handler) {}
-`);
-  });
-
-  it('converts templates into type parameters', () => {
-    const text = `\
-/**
- * @template T
- * @typedef {Object} Box
- * @property {T} value
- */
-
-/**
- * @template {string} K
- * @param {K} key
- * @returns {Box<K>}
- */
-function box(key) {
-  return { value: key };
-}
-`;
-
-    const result = jsDocPlugin.run(
-      mockPluginParams({ text, fileName: 'file.ts', options: { annotateReturns: true } }),
-    );
-
-    expect(result).toBe(`\
-type Box<T = any> = {
-    value: T;
-};
-
-/**
- * @template {string} K
- * @param {K} key
- * @returns {Box<K>}
- */
-function box<K extends string>(key: K): Box<K> {
-  return { value: key };
-}
-`);
-  });
-
-  it('converts templates on a class into type parameters', () => {
-    const text = `\
-/**
- * @template T
- * @template {string} K
- * @template [D=number]
- */
-export class Box extends Base {
-  /**
-   * @param {T} value
-   * @param {K} key
-   * @param {D} depth
-   */
-  add(value, key, depth) {}
-}
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(result).toBe(`\
-/**
- * @template T
- * @template {string} K
- * @template [D=number]
- */
-export class Box<T = any, K extends string = any, D = number> extends Base {
-  /**
-   * @param {T} value
-   * @param {K} key
-   * @param {D} depth
-   */
-  add(value: T, key: K, depth: D) {}
-}
-`);
-  });
-
-  it('writes the any alias as the type parameter default', () => {
-    const text = `\
-/**
- * @template T
- */
-const Box = class Inner {
-  /** @param {T} v */
-  add(v) {}
-};
-`;
-
-    const result = jsDocPlugin.run(
-      mockPluginParams({ text, fileName: 'file.ts', options: { anyAlias: '$TSFixMe' } }),
-    );
-
-    expect(result).toBe(`\
-/**
- * @template T
- */
-const Box = class Inner<T = $TSFixMe> {
-  /** @param {T} v */
-  add(v: T) {}
-};
-`);
-  });
-
-  it('leaves a class that declares its own type parameters', () => {
-    const text = `\
-/**
- * @template T
- */
-class Box<U> {
-  /** @param {U} v */
-  add(v) {}
-}
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(result).toBe(`\
-/**
- * @template T
- */
-class Box<U> {
-  /** @param {U} v */
-  add(v: U) {}
-}
-`);
-  });
-
-  it('reports a template on a class with no name', () => {
-    const text = `\
-/**
- * @template T
- */
-export default class {
-  /** @param {T} v */
-  add(v) {}
-}
-`;
-    const notices: PluginFileNotice[] = [];
-
-    const result = jsDocPlugin.run(
-      mockPluginParams({
-        text,
-        fileName: 'file.ts',
-        reportFileNotice: (notice) => notices.push(notice),
-      }),
-    );
-
-    expect(result).toBe(`\
-// TODO(ts-migrate): Name the class so the type parameters can be written on it; members that
-// reference them keep the name the comment declared.
-// @template T stays a comment because the class has no name
-/**
- * @template T
- */
-export default class {
-  /** @param {T} v */
-  add(v: T) {}
-}
-`);
-    expect(notices).toEqual([
-      {
-        reason: '@template T stays a comment because the class has no name',
-        hint:
-          'Name the class so the type parameters can be written on it; members that reference ' +
-          'them keep the name the comment declared.',
-        recovered: true,
-        marked: true,
-      },
-    ]);
-  });
-
-  it('leaves a template that belongs to a typedef off the class it documents', () => {
-    const text = `\
-/**
- * @template T
- * @typedef {Object} Wrap
- * @property {T} value
- */
-class Box {}
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(result).toBe(`\
-type Wrap<T = any> = {
-    value: T;
-};
-class Box {}
-`);
-  });
-
-  it('keeps the default a template tag writes on an alias', () => {
-    const text = `\
-/**
- * @template [T=string]
- * @template U
- * @typedef {Object} Wrap
- * @property {T} value
- * @property {U} extra
- */
-`;
-
-    const result = jsDocPlugin.run(
-      mockPluginParams({ text, fileName: 'file.ts', options: { anyAlias: '$TSFixMe' } }),
-    );
-
-    expect(result).toBe(`\
-type Wrap<T = string, U = $TSFixMe> = {
-    value: T;
-    extra: U;
-};
-`);
-  });
-
-  it('adds a trailing comma to type parameters of an arrow function in a tsx file', () => {
-    const text = `\
-/**
- * @template T
- * @param {T} v
- */
-const identity = (v) => v;
-`;
-
-    expect(jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.tsx' }))).toBe(`\
-/**
- * @template T
- * @param {T} v
- */
-const identity = <T,>(v: T) => v;
-`);
-
-    expect(jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }))).toBe(`\
-/**
- * @template T
- * @param {T} v
- */
-const identity = <T>(v: T) => v;
-`);
-  });
-
-  it('exports the aliases of a module', () => {
-    const text = `\
-import { helper } from './helper';
-
-/** @typedef {string} Key */
-
-/** @param k {Key} */
-export function f(k) {
-  helper(k);
-}
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(result).toBe(`\
-import { helper } from './helper';
-
-export type Key = string;
-
-/** @param k {Key} */
-export function f(k: Key) {
-  helper(k);
-}
-`);
-  });
-
-  it('hoists a typedef declared in a nested scope', () => {
-    const text = `\
-function outer() {
-  /**
-   * @typedef {Object} Inner
-   * @property {boolean} z
-   */
-  /** @param i {Inner} */
-  function inner(i) {}
-  return inner;
-}
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(result).toBe(`\
-type Inner = {
-    z: boolean;
-};
-function outer() {
-  /**
-   * @typedef {Object} Inner
-   * @property {boolean} z
-   */
-  /** @param i {Inner} */
-  function inner(i: Inner) {}
-  return inner;
-}
-`);
-  });
-
-  it('falls back to the any alias for a typedef it cannot convert', () => {
-    const text = `\
-class Key {}
-
-/** @typedef {string} Key */
-
-/** @param k {Key} */
-function f(k) {}
-`;
-    const notices: PluginFileNotice[] = [];
-
-    const result = jsDocPlugin.run(
-      mockPluginParams({
-        text,
-        fileName: 'file.ts',
-        options: { anyAlias: '$TSFixMe' },
-        reportFileNotice: (notice) => notices.push(notice),
-      }),
-    );
-
-    expect(withoutMarkers(result as string)).toBe(`\
-class Key {}
-
-/** @typedef {string} Key */
-
-/** @param k {Key} */
-function f(k: $TSFixMe) {}
-`);
-    expect(notices).toEqual([
-      {
-        reason: '@typedef Key stays a comment because the file already declares that name',
-        hint: 'Declare it as a type of its own; references to it are annotated with any.',
-        recovered: true,
-        marked: true,
-      },
-    ]);
-  });
-
-  it('falls back to any for a typedef with a qualified name', () => {
-    const text = `\
-/** @typedef {string} NS.Key */
-
-/** @param k {NS.Key} */
-function f(k) {}
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(withoutMarkers(result as string)).toBe(`\
-/** @typedef {string} NS.Key */
-
-/** @param k {NS.Key} */
-function f(k: any) {}
-`);
-  });
-
-  it('converts a file that only declares typedefs', () => {
-    const text = `\
-/**
- * @typedef {Object} Row
- * @property {string} id
- * @property {Object} meta
- * @property {number} meta.size
- */
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(result).toBe(`\
-type Row = {
-    id: string;
-    meta: {
-        size: number;
-    };
-};
-`);
-  });
-
-  it('annotates variables and class properties from @type', () => {
-    const text = `\
-/** @type {number} */
-const a = 1;
-/** @type {string} */
-let b;
-
-class C {
-  /** @type {string[]} */
-  s;
-
-  /** @type {number} */
-  n = 0;
-
-  /** @type {boolean} */
-  t: boolean = false;
-}
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(result).toBe(`\
-/** @type {number} */
-const a: number = 1;
-/** @type {string} */
-let b: string;
-
-class C {
-  /** @type {string[]} */
-  s: string[];
-
-  /** @type {number} */
-  n: number = 0;
-
-  /** @type {boolean} */
-  t: boolean = false;
-}
-`);
-  });
-
-  it('converts an inline type cast into an as expression', () => {
-    const text = `\
-const a = /** @type {Row} */ (json);
-const o = { row: /** @type {Row} */ (json) };
-take(/** @type {Row} */ (json));
-
-function pick() {
-  return /** @type {Row} */ (json);
-}
-
-const nested = /** @type {Row} */ (/** @type {string} */ (json));
-
-const multiline =
-  /** @type {Row} */
-  (json);
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(result).toBe(`\
-const a = (json as Row);
-const o = { row: (json as Row) };
-take((json as Row));
-
-function pick() {
-  return (json as Row);
-}
-
-const nested = ((json as string) as Row);
-
-const multiline =
-  (json as Row);
-`);
-  });
-
-  it('parenthesizes a cast operand that binds less tightly than as', () => {
-    const text = `\
-const a = /** @type {number} */ (x || y);
-const b = /** @type {number} */ (x ? y : z);
-const c = /** @type {number} */ (x + y);
-const d = /** @type {number} */ (x.y);
-const e = /** @type {Fn} */ (() => x);
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(result).toBe(`\
-const a = ((x || y) as number);
-const b = ((x ? y : z) as number);
-const c = (x + y as number);
-const d = (x.y as number);
-const e = ((() => x) as Fn);
-`);
-  });
-
-  it('leaves a cast that is assigned to or deleted', () => {
-    const text = `\
-/** @type {Row} */ (obj.row) = value;
-delete /** @type {Row} */ (obj.row);
-[/** @type {Row} */ (obj.row)] = rows;
-/** @type {Row} */ (obj.row)++;
-`;
-    const notices: PluginFileNotice[] = [];
-
-    const result = jsDocPlugin.run(
-      mockPluginParams({ text, fileName: 'file.ts', reportFileNotice: (n) => notices.push(n) }),
-    );
-
-    expect(withoutMarkers(result as string)).toBe(text);
-    expect(notices).toEqual([
-      {
-        reason: '@type {Row} stays a comment because the cast is an assignment target',
-        hint:
-          'Write the cast as an as expression by hand; the expression keeps the type it has ' +
-          'without the comment.',
-        recovered: true,
-        marked: true,
-      },
-      {
-        reason:
-          '@type {Row} stays a comment because delete takes a property reference and not an assertion',
-        hint:
-          'Write the cast as an as expression by hand; the expression keeps the type it has ' +
-          'without the comment.',
-        recovered: true,
-        marked: true,
-      },
-      {
-        reason: '@type {Row} stays a comment because the cast is an assignment target',
-        hint:
-          'Write the cast as an as expression by hand; the expression keeps the type it has ' +
-          'without the comment.',
-        recovered: true,
-        marked: true,
-      },
-      {
-        reason: '@type {Row} stays a comment because the cast is an assignment target',
-        hint:
-          'Write the cast as an as expression by hand; the expression keeps the type it has ' +
-          'without the comment.',
-        recovered: true,
-        marked: true,
-      },
-    ]);
-  });
-
-  it('leaves an expression whose only comment annotates the statement', () => {
-    const text = `\
-/** @type {Row | undefined} */
-let a = (obj.row = undefined);
-
-/** @type {Ids} */
-const b = (map[
-  /** @type {Id} */
-  (chunk.id)
-] = []);
-
-const o = {
-  /** @type {Row} */
-  row: (json),
-};
-
-/** @type {Row} */
-function f() {
-  return (json);
-}
-`;
-
-    const result = jsDocPlugin.run(mockPluginParams({ text, fileName: 'file.ts' }));
-
-    expect(result).toBe(`\
-/** @type {Row | undefined} */
-let a: Row | undefined = (obj.row = undefined);
-
-/** @type {Ids} */
-const b: Ids = (map[
-  (chunk.id as Id)
-] = []);
-
-const o = {
-  /** @type {Row} */
-  row: (json),
-};
-
-/** @type {Row} */
-function f() {
-  return (json);
-}
-`);
-  });
-
-  it('leaves a cast in a parameter list the tags rewrite', () => {
-    const text = `\
-/** @param {Row} a */
-function f(a = /** @type {Row} */ (json)) {}
-
-/** @param {Row} a */
-const g = (a = /** @type {Row} */ (json)) => a;
-
-function h(a = /** @type {Row} */ (json)) {}
-
-/** @returns {Row} */
-function i(a = /** @type {Row} */ (json)) {
-  return a;
-}
-`;
-    const notices: PluginFileNotice[] = [];
-
-    const result = jsDocPlugin.run(
-      mockPluginParams({
-        text,
-        fileName: 'file.ts',
-        options: { annotateReturns: true },
-        reportFileNotice: (n) => notices.push(n),
-      }),
-    );
-
-    expect(withoutMarkers(result as string)).toBe(`\
-/** @param {Row} a */
-function f(a: Row = (json)) {}
-
-/** @param {Row} a */
-const g = (a: Row = (json)) => a;
-
-function h(a = (json as Row)) {}
-
-/** @returns {Row} */
-function i(a = (json as Row)): Row {
-  return a;
-}
-`);
-    expect(notices).toEqual([
-      {
-        reason:
-          '@type {Row} stays a comment because the parameter list it sits in is written out again from its own tags',
-        hint:
-          'Write the cast as an as expression by hand; the expression keeps the type it has ' +
-          'without the comment.',
-        recovered: true,
-        marked: true,
-      },
-      {
-        reason:
-          '@type {Row} stays a comment because the parameter list it sits in is written out again from its own tags',
-        hint:
-          'Write the cast as an as expression by hand; the expression keeps the type it has ' +
-          'without the comment.',
-        recovered: true,
-        marked: true,
-      },
-    ]);
-  });
-
-  it('leaves an as expression the comment already documents', () => {
-    const text = `\
-const a = /** @type {Row} */ (json);
-const b = /** @type {Row} */ (json as Row);
-const c = /** @type {Row} */ (<Row>json);
-`;
-    const params = { fileName: 'file.ts' };
-
-    const once = jsDocPlugin.run(mockPluginParams({ ...params, text })) as string;
-    const twice = jsDocPlugin.run(mockPluginParams({ ...params, text: once }));
-
-    expect(once).toBe(`\
-const a = (json as Row);
-const b = /** @type {Row} */ (json as Row);
-const c = /** @type {Row} */ (<Row>json);
-`);
-    expect(twice).toBe(once);
-  });
-
-  it('applies the type map and the any alias to a cast', () => {
-    const text = `\
-/** @typedef {string} Key */
-class Key {}
-
-const a = /** @type {Number} */ (json);
-const b = /** @type {promise} */ (json);
-const c = /** @type {Key} */ (json);
-const d = /** @type {*} */ (json);
-`;
-
-    const result = jsDocPlugin.run(
-      mockPluginParams({ text, fileName: 'file.ts', options: { anyAlias: '$TSFixMe' } }),
-    );
-
-    expect(withoutMarkers(result as string)).toBe(`\
-/** @typedef {string} Key */
-class Key {}
-
-const a = (json as number);
-const b = (json as Promise<$TSFixMe>);
-const c = (json as $TSFixMe);
-const d = (json as $TSFixMe);
-`);
-  });
-
-  it('type-checks the casts it converts', () => {
-    const text = `\
-/**
- * @typedef {Object} Row
- * @property {string} id
- */
-
-/** @param {unknown} json */
-export function read(json) {
-  const row = /** @type {Row} */ (json);
-  const rows = [/** @type {Row} */ (json)];
-  const pair = /** @type {Row} */ (/** @type {Row} */ (json));
-  const chosen = /** @type {Row} */ (json ? json : json);
-  const fallback = /** @type {Row} */ (json || json);
-  const made = /** @type {Row} */ (make());
-  take(row);
-  take(rows[0]);
-  take(pair);
-  take(chosen);
-  take(fallback);
-  take(made);
-  take(/** @type {Row} */ (json));
-  return row.id;
-}
-
-/** @param {Row} row */
-function take(row) {
-  return row.id;
-}
-
-/** @returns {unknown} */
-function make() {
-  return null;
-}
-`;
-
-    const result = jsDocPlugin.run(
-      mockPluginParams({ text, fileName: '/file.ts', options: { annotateReturns: true } }),
-    ) as string;
-
-    expect(result).toContain('const row = (json as Row);');
-    expect(result).toContain('const pair = ((json as Row) as Row);');
-    expect(result).toContain('const chosen = ((json ? json : json) as Row);');
-    expect(result).toContain('const fallback = ((json || json) as Row);');
-    expect(typeCheck({ '/file.ts': result })).toEqual([]);
-  });
-
-  it('type-checks the code it converts', () => {
-    const text = `\
-import { helper } from './helper';
-
-/**
- * @typedef {Object} Opts
- * @property {string} name
- * @property {number} [size]
- */
-
-/**
- * @callback Format
- * @param {Opts} opts
- * @returns {string}
- */
-
-/**
- * @template T
- * @typedef {Object} Box
- * @property {T} value
- */
-
-/**
- * @template T
- * @param {T} value
- * @param {Format} format
- * @param {Opts} opts
- * @returns {Box<T>}
- */
-export function box(value, format, opts) {
-  helper(format(opts));
-  return { value };
-}
-`;
-    const consumer = `\
-import { box } from './file';
-
-/** @param opts {import('./file').Opts} */
-export function use(opts) {
-  return box(1, (o) => o.name, opts);
-}
-`;
-
-    const options = { annotateReturns: true };
-    const files = {
-      '/file.ts': jsDocPlugin.run(
-        mockPluginParams({ text, fileName: '/file.ts', options }),
-      ) as string,
-      '/consumer.ts': jsDocPlugin.run(
-        mockPluginParams({ text: consumer, fileName: '/consumer.ts', options }),
-      ) as string,
-      '/helper.ts': 'export function helper(s: string): void {}\n',
-    };
-
-    expect(files['/consumer.ts']).toContain('export function use(opts: import(\'./file\').Opts)');
-    expect(typeCheck(files)).toEqual([]);
-  });
-
-  it('type-checks the generic class it converts and every reference to it', () => {
-    const text = `\
-/**
- * @template T
- */
-export class Box {
-  /** @type {T} */
-  value;
-
-  /** @param {T} value */
-  constructor(value) {
-    this.value = value;
-  }
-
-  /** @returns {T} */
-  get() {
-    return this.value;
-  }
-}
-
-/** @param {Box} b */
-export function unwrap(b) {
-  return b.get();
-}
-`;
-    const consumer = `\
-import { Box } from './file';
-
-/** @param {Box} b */
-export function bare(b) {
-  return b.get();
-}
-
-/** @param {Box<string>} b */
-export function typed(b) {
-  /** @type {string} */
-  const s = b.get();
-  return s;
-}
-
-export class Crate extends Box {}
-
-export const crate = new Crate(1);
-`;
-
-    const options = { annotateReturns: true };
-    const files = {
-      '/file.ts': jsDocPlugin.run(
-        mockPluginParams({ text, fileName: '/file.ts', options }),
-      ) as string,
-      '/consumer.ts': jsDocPlugin.run(
-        mockPluginParams({ text: consumer, fileName: '/consumer.ts', options }),
-      ) as string,
-    };
-
-    expect(files['/file.ts']).toContain('export class Box<T = any> {');
-    expect(files['/file.ts']).toContain('get(): T {');
-    expect(typeCheck(files)).toEqual([]);
-  });
-
-  it('type-checks the generic alias it converts and every reference to it', () => {
-    const text = `\
-/**
- * @template T
- * @typedef {Object} Wrap
- * @property {T} value
- */
-
-/**
- * @template T
- * @callback Read
- * @param {Wrap<T>} w
- * @returns {T}
- */
-
-/** @param {Wrap} w */
-export function unwrap(w) {
-  return w.value;
-}
-`;
-    const consumer = `\
-/** @param {import('./file').Wrap} w */
-export function bare(w) {
-  return w.value;
-}
-
-/** @param {import('./file').Wrap<string>} w */
-export function typed(w) {
-  /** @type {string} */
-  const s = w.value;
-  return s;
-}
-
-/** @param {import('./file').Read} r */
-export function read(r) {
-  return r({ value: 1 });
-}
-`;
-
-    const options = { annotateReturns: true };
-    const files = {
-      '/file.ts': jsDocPlugin.run(
-        mockPluginParams({ text, fileName: '/file.ts', options }),
-      ) as string,
-      '/consumer.ts': jsDocPlugin.run(
-        mockPluginParams({ text: consumer, fileName: '/consumer.ts', options }),
-      ) as string,
-    };
-
-    expect(files['/file.ts']).toContain('export type Wrap<T = any> = {');
-    expect(files['/file.ts']).toContain('export type Read<T = any> = (w: Wrap<T>) => T;');
-    expect(files['/file.ts']).toContain('export function unwrap(w: Wrap) {');
-    expect(files['/consumer.ts']).toContain("w: import('./file').Wrap<string>");
-    expect(typeCheck(files)).toEqual([]);
   });
 });
