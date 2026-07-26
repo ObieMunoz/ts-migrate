@@ -9,6 +9,29 @@ type WithoutFile<T> = Omit<T, 'file'>;
 export type FileMap = { [fileName: string]: string };
 
 /**
+ * Reads a suite's case files, the inputs and expected outputs too long to sit
+ * inside the test that uses them. See the README beside this file for where
+ * the line is and why most cases stay inline.
+ *
+ * The text is what the file holds, byte for byte. The files therefore carry no
+ * trailing newline they were not written with, and an editor that adds one
+ * fails the test that reads it.
+ */
+export function caseReader(plugin: string) {
+  const dir = path.resolve(__dirname, 'fixtures', 'cases', plugin);
+  return (name: string) => fs.readFileSync(path.join(dir, name), 'utf8');
+}
+
+/**
+ * Reads a driver program a suite writes into a scratch directory and runs in a
+ * child process. These are programs rather than cases, so they are kept where
+ * an editor treats them as the language they are written in.
+ */
+export function readDriver(name: string) {
+  return fs.readFileSync(path.resolve(__dirname, 'fixtures', 'drivers', name), 'utf8');
+}
+
+/**
  * Output without the follow-up markers, for asserting what a plugin did to the
  * code itself. A marker is a TODO line plus the comment lines that continue it.
  */
