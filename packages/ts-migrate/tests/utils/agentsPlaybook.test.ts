@@ -7,7 +7,7 @@ describe('readAgentsPlaybook', () => {
     // The facts agents most commonly get wrong must stay documented.
     expect(playbook).toContain('-p @obiemunoz/ts-migrate');
     expect(playbook).toContain('--yes');
-    expect(playbook).toContain('--no-commit');
+    expect(playbook).toContain('--commit=false');
     expect(playbook).toContain('--blameIgnoreRevs');
     expect(playbook).toContain('reignore');
     expect(playbook).toContain('ts-migrate report <folder>');

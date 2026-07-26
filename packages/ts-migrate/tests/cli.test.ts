@@ -341,6 +341,34 @@ describe('flag spelling', () => {
     expect(status).not.toBe(0);
   }, 30000);
 
+  // The documented way to switch a boolean off, and the reason the help text
+  // does not have to print `--no-inferTypes`: a dashed prefix on a camelCase
+  // name is neither spelling. `--flag=false` is what tsc takes.
+  it('switches a boolean off with =false, on every kind of flag', () => {
+    const off = runCli(['migrate', projectDir, '--inferTypes=false', '--dry-run']);
+    expect(off.output).not.toContain('Unknown argument');
+    expect(off.status).toBe(0);
+
+    // A plugin dropped is one fewer pass, which is the flag having landed
+    // rather than merely parsed.
+    const passes = (output: string) => /Plugin 1 of (\d+)/.exec(output)?.[1];
+    const on = runCli(['migrate', projectDir, '--dry-run']);
+    expect(passes(off.output)).not.toEqual(passes(on.output));
+
+    // Single-word flags and the ones only `full` declares take it too.
+    const fullRun = runCli([
+      'full',
+      projectDir,
+      '--commit=false',
+      '--gitignore=false',
+      '--yes',
+      '--dry-run',
+    ]);
+    expect(fullRun.output).not.toContain('Unknown argument');
+    expect(fullRun.status).toBe(0);
+  }, 120000);
+
+  // Still the yargs-native form, and still what older scripts pass.
   it('still accepts the dashed --blame-ignore-revs and --no-infer-types on full', () => {
     const { status, output } = runCli([
       'full',

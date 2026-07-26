@@ -237,7 +237,7 @@ describe('the full pipeline git tree preflight', () => {
     expect(output()).toContain('git stash -u');
   }, 120000);
 
-  it('warns under --no-commit, where nothing holds a copy of an untracked file', async () => {
+  it('warns under --commit=false, where nothing holds a copy of an untracked file', async () => {
     initGitRepo();
     fs.writeFileSync(path.join(rootDir, 'wip.js'), 'module.exports = 1;\n');
 
@@ -492,7 +492,7 @@ describe('a full pipeline check that fails', () => {
     });
 
     expect(output()).toContain(
-      'ts-migrate reignore "my-app" --sources "src/**/*" --no-projectEslint --typescript "/opt/ts"',
+      'ts-migrate reignore "my-app" --sources "src/**/*" --projectEslint=false --typescript "/opt/ts"',
     );
   }, 120000);
 });

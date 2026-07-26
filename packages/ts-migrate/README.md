@@ -34,7 +34,7 @@ Migrate an entire project like this:
 ```sh
 npx -p @obiemunoz/ts-migrate ts-migrate full <folder>
 ```
-The `full` command runs `init`, `rename`, `migrate` and a closing `tsc --noEmit` check in that order, in one process against one compiler, so it reports exactly what running those commands by hand reports. It asks for confirmation before it starts and will perform a `git add` and `git commit` after each major step. For unattended runs — scripts, CI, AI coding agents — pass `--yes` to skip the prompts and `--no-commit` to leave the changes uncommitted in the working tree.
+The `full` command runs `init`, `rename`, `migrate` and a closing `tsc --noEmit` check in that order, in one process against one compiler, so it reports exactly what running those commands by hand reports. It asks for confirmation before it starts and will perform a `git add` and `git commit` after each major step. For unattended runs — scripts, CI, AI coding agents — pass `--yes` to skip the prompts and `--commit=false` to leave the changes uncommitted in the working tree.
 
 Commit or stash the folder you are migrating before you start. The run lists anything uncommitted there before Step 1, because the rename and migrate steps rewrite those files whether or not commits are enabled, and with commits enabled `git add .` puts them in the migration's commits too. Without `--yes` the list sits above the confirmation prompt; with `--yes` it is a warning and the run continues.
 
@@ -201,14 +201,14 @@ reports each file it left alone and why. Pass
 The `migrate` command also accepts flags controlling the type-inference stage,
 the most expensive part of a migration:
 
-- `--no-inferTypes` skips the [infer-types](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/infer-types.ts)
+- `--inferTypes=false` skips the [infer-types](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/infer-types.ts)
   plugin and annotates every implicit any with plain `any` (the original
   ts-migrate behavior), which is much faster, at the cost of annotation quality.
 - `--maxStablePasses <n>` (default 5) caps how many times the
   infer-types/explicit-any group repeats while files keep changing. Pass 1 does
   the bulk of the work; later passes resolve annotations that only become
   inferable after their callers were annotated.
-- `--no-incrementalPasses` makes every repeat pass revisit all files, instead of
+- `--incrementalPasses=false` makes every repeat pass revisit all files, instead of
   only the files affected by the previous pass's changes (as computed from the
   import graph).
 
@@ -229,7 +229,7 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --excludePlugin eslint-
 ```
 
 An unknown plugin name errors and lists the valid names. Excluding
-`infer-types` is equivalent to `--no-inferTypes`. `ts-migrate full` forwards
+`infer-types` is equivalent to `--inferTypes=false`. `ts-migrate full` forwards
 the flag to the migrate step, like any other migrate option.
 
 `--plugin <name>` runs one plugin on its own instead of the pipeline. It takes
@@ -292,7 +292,7 @@ upward is never applied silently.
 
 Precedence is flags, then the command's section, then the shared keys: a flag
 on the command line always wins, so a config file never keeps you from
-overriding it for one run. `--no-gitignore` overrides `"gitignore": true` in
+overriding it for one run. `--gitignore=false` overrides `"gitignore": true` in
 the file, the same as it overrides the built-in default.
 
 `full`, `rename`, `migrate`, `reignore`, `report` and `check` read the file.
@@ -415,11 +415,11 @@ the run line:
 The second and third also print a warning, because the config and the engine
 running it then disagree by a major version.
 
-`migrate` and `reignore` take `--no-projectEslint` to use ts-migrate's own
+`migrate` and `reignore` take `--projectEslint=false` to use ts-migrate's own
 ESLint regardless:
 
 ```sh
-npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --no-projectEslint
+npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --projectEslint=false
 ```
 
 Flat versus legacy config is detected separately, from the presence of an
@@ -470,7 +470,7 @@ disables itself when the target folder is not inside a git repository or is
 itself gitignored — a scratch copy of a project inside an ignored directory
 migrates normally.
 
-Pass `--no-gitignore` to `rename`, `migrate`, `reignore`, `report`, or
+Pass `--gitignore=false` to `rename`, `migrate`, `reignore`, `report`, or
 `check` to include ignored files anyway. If your existing tsconfig `include`
 matches gitignored build output, add it to `exclude` as well: ts-migrate
 skips it either way, but your own `tsc` (including the compile check at the
@@ -514,7 +514,7 @@ the rename mapping, which is also what protects the package.json references to
 it: `"build": "node scripts/build.js"` still says `.js` when the run finishes,
 and a `bin` entry pointing at a file some script runs with `node` stays valid
 and is never reported, because that file was never renamed in the first place.
-Two overrides exist: `--no-bootstrap` renames them anyway (use it when the
+Two overrides exist: `--bootstrap=false` renames them anyway (use it when the
 project already loads TypeScript configs through ts-node or tsx), and a
 tsconfig `exclude` entry keeps a specific file out of every run. In `migrate`
 and `reignore` the flag only decides whether the files are loaded into the
@@ -549,7 +549,7 @@ Two kinds of file keep the extension they have:
 - Configs a build tool loads by exact name, such as `postcss.config.cjs`,
   `eslint.config.mjs`, and the `.*rc.cjs` family. The tool looks for that
   filename and would not find a `.cts` or `.mts` one. This holds even under
-  `--no-bootstrap`, which renames build system files that have a working
+  `--bootstrap=false`, which renames build system files that have a working
   `.ts` spelling.
 - Files holding JSX. TypeScript has no JSX-enabled counterpart to `.mts` or
   `.cts` (there is no `.mtsx`), so the rename would turn valid JSX into
@@ -573,10 +573,10 @@ The same document is published as [AGENTS.md](./AGENTS.md) in this package. The
 essentials: run the full pipeline non-interactively with
 
 ```sh
-npx -p @obiemunoz/ts-migrate ts-migrate full <folder> --yes --no-commit
+npx -p @obiemunoz/ts-migrate ts-migrate full <folder> --yes --commit=false
 ```
 
-where `--yes` skips the confirmation prompts and `--no-commit` leaves the
+where `--yes` skips the confirmation prompts and `--commit=false` leaves the
 changes in the working tree instead of creating git commits.
 
 To point your repository's agents at the tool, paste this into your project's
@@ -592,7 +592,7 @@ unmaintained upstream package. First print and follow the tool's playbook:
 
 Then run the migration non-interactively:
 
-    npx -p @obiemunoz/ts-migrate ts-migrate full <folder> --yes --no-commit
+    npx -p @obiemunoz/ts-migrate ts-migrate full <folder> --yes --commit=false
 ```
 
 # Reignore
@@ -641,7 +641,7 @@ would look missing. Everything else waits for the compiler.
 the pipeline they can spend hours in. `init` only writes a config when the
 folder has none, so a project that is already part TypeScript, or any re-run,
 would otherwise hear this for the first time at the end of the run that
-suppressed those errors. Pass `--no-typesPreflight` to skip it;
+suppressed those errors. Pass `--typesPreflight=false` to skip it;
 `ts-migrate full` passes that flag to its migrate step whenever Step 1 wrote the
 tsconfig and already said it. The `"types"` array reminder follows the tsconfig
 the run reads, not the one `init` would have written.
@@ -720,7 +720,7 @@ suppression pass, so the errors it resolves are never written in the first place
   whose types ts-migrate can now resolve are dropped, so installing the real
   `@types` package is all it takes to retire an entry.
 - A file at that path that ts-migrate did not write is left alone.
-- `--no-declareUntypedModules` turns this off and goes back to suppressing each
+- `--declareUntypedModules=false` turns this off and goes back to suppressing each
   import.
 
 On a project migrated before this existed, `reignore` clears the suppressions
@@ -981,10 +981,10 @@ globs it repointed, as `{"file", "key", "from", "to"}`) and
 `packageJsonNotices` (the entry point fields that still name a renamed file
 and were left for you, as `{"file", "key", "value", "target"}`).
 `skippedGitignoredFiles` counts the files the run left untouched because git
-ignores them (always 0 with `--no-gitignore`).
+ignores them (always 0 with `--gitignore=false`).
 `skippedBootstrapFiles` lists the build system files the run kept as
 JavaScript, each with its detection evidence (always empty with
-`--no-bootstrap`). `generatedFiles` lists the declaration files the run wrote
+`--bootstrap=false`). `generatedFiles` lists the declaration files the run wrote
 itself, which are new files rather than changes to existing ones.
 `pluginFailures` lists the files a plugin could not process, grouped by cause:
 a lint config whose rules throw leaves files unchanged without failing the
@@ -1024,7 +1024,7 @@ npx -p @obiemunoz/ts-migrate ts-migrate full /path/to/your/project --sources "so
 npx -p @obiemunoz/ts-migrate ts-migrate rename /path/to/your/project -s "some/components/**/*"
 ```
 
-When `--sources` is used, the tsconfig `include` no longer decides what gets migrated, but the ambient declaration files it matches (`vite-env.d.ts`, `react-app-env.d.ts`, a custom `globals.d.ts`) are kept in the program so the globals they declare still resolve instead of turning into bogus suppressions. The run logs which files it retained. Pass `--no-ambientSources` to opt out and build the program from exactly the sources you list.
+When `--sources` is used, the tsconfig `include` no longer decides what gets migrated, but the ambient declaration files it matches (`vite-env.d.ts`, `react-app-env.d.ts`, a custom `globals.d.ts`) are kept in the program so the globals they declare still resolve instead of turning into bogus suppressions. The run logs which files it retained. Pass `--ambientSources=false` to opt out and build the program from exactly the sources you list.
 
 The directories you have not converted yet are still plain JavaScript, and the generated tsconfig sets `allowJs` so imports reaching into them resolve to the types TypeScript infers from the source instead of erroring and collecting a suppression each. Those suppressions would be pure churn: the next directory's migration removes the file they point at. `checkJs` stays off, and `migrate` never edits `.js`, `.jsx`, `.mjs` or `.cjs`, so nothing on the JavaScript side is type-checked or rewritten before `rename` reaches it. If your project has a hand-written tsconfig, add `"allowJs": true` to get the same behavior.
 
@@ -1091,11 +1091,11 @@ An Airbnb convention this fork inherited: an alias for `any` (`type $TSFixMe = a
 
 > Does it work with ESLint 9 and flat configs?
 
-Yes, and with ESLint 8 and `.eslintrc` too. The eslint-fix step loads your project's own ESLint installation and auto-detects flat versus legacy config (set `ESLINT_USE_FLAT_CONFIG` to override the detection); see [Which ESLint eslint-fix runs](#which-eslint-eslint-fix-runs) for the fallbacks and `--no-projectEslint`. One caveat: if your ESLint can't parse TypeScript yet, there is nothing for it to fix. It warns and moves on, which is one more reason to get `@typescript-eslint` set up early.
+Yes, and with ESLint 8 and `.eslintrc` too. The eslint-fix step loads your project's own ESLint installation and auto-detects flat versus legacy config (set `ESLINT_USE_FLAT_CONFIG` to override the detection); see [Which ESLint eslint-fix runs](#which-eslint-eslint-fix-runs) for the fallbacks and `--projectEslint=false`. One caveat: if your ESLint can't parse TypeScript yet, there is nothing for it to fix. It warns and moves on, which is one more reason to get `@typescript-eslint` set up early.
 
 > It's slow on my big repo.
 
-Type inference is the expensive part, and it's several times faster now than it was when I forked the project. On a huge codebase you still have knobs: `--no-inferTypes` skips inference entirely, and `--maxStablePasses` caps how many times the repeating plugins re-run while files keep changing. Each plugin pass also shows a processed/total counter naming the file it is on (occasional plain lines when output is not a terminal), so you can see how far into the pass it is and which file it is working through. The counter only moves when a file starts or finishes, so a file that is taking a long time leaves it sitting still; when that file does finish, any file over 30 seconds gets a line of its own naming it and how long it took. Between passes the run reports how many files the pass changed, which is what tells a group that is settling from one that is going in circles.
+Type inference is the expensive part, and it's several times faster now than it was when I forked the project. On a huge codebase you still have knobs: `--inferTypes=false` skips inference entirely, and `--maxStablePasses` caps how many times the repeating plugins re-run while files keep changing. Each plugin pass also shows a processed/total counter naming the file it is on (occasional plain lines when output is not a terminal), so you can see how far into the pass it is and which file it is working through. The counter only moves when a file starts or finishes, so a file that is taking a long time leaves it sitting still; when that file does finish, any file over 30 seconds gets a line of its own naming it and how long it took. Between passes the run reports how many files the pass changed, which is what tells a group that is settling from one that is going in circles.
 
 > Is ts-migrate React-specific?
 

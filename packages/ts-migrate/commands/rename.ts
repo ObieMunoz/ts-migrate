@@ -78,7 +78,7 @@ export default function rename({
       log.info(
         `Skipping ${partition.ignored.length} gitignored JS/JSX file(s) ` +
           `(${sampleIgnoredPaths(rootDir, partition.ignored)}); they will not be renamed. ` +
-          `Pass --no-gitignore to rename them.`,
+          `Pass --gitignore=false to rename them.`,
       );
       jsFiles = partition.kept;
     }
@@ -97,7 +97,7 @@ export default function rename({
       log.info(
         `Keeping ${partition.bootstrap.length} build system file(s) as JavaScript so the ` +
           `build still boots under plain Node:\n${lines.join('\n')}\n` +
-          `Pass --no-bootstrap to rename them too, or add a file to the tsconfig "exclude" ` +
+          `Pass --bootstrap=false to rename them too, or add a file to the tsconfig "exclude" ` +
           `to keep it out of every run.`,
       );
       jsFiles = partition.kept;

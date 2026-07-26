@@ -300,7 +300,7 @@ export function describeEmptyMigrationSet(
     case 'all-files-filtered':
       lines.push(
         'Every candidate file was skipped as gitignored or as a build system file. ' +
-          'Pass --no-gitignore or --no-bootstrap to include them.',
+          'Pass --gitignore=false or --bootstrap=false to include them.',
       );
       break;
     default:

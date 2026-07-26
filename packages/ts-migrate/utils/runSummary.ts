@@ -24,9 +24,9 @@ interface RunSummaryBase {
 export interface RenameRunSummary extends RunSummaryBase {
   command: 'rename';
   renamedFiles: Array<{ from: string; to: string }>;
-  /** Files left untouched because git ignores them (0 with --no-gitignore). */
+  /** Files left untouched because git ignores them (0 with --gitignore=false). */
   skippedGitignoredFiles: number;
-  /** Build system files kept as JavaScript, with the detection evidence (empty with --no-bootstrap). */
+  /** Build system files kept as JavaScript, with the detection evidence (empty with --bootstrap=false). */
   skippedBootstrapFiles: Array<{ file: string; reason: string }>;
   /** package.json script paths and test globs repointed at the renamed files. */
   packageJsonRewrites: PackageJsonRewrite[];
@@ -86,9 +86,9 @@ export interface MigrateRunSummary extends RunSummaryBase {
   pluginErrors: Array<{ plugin: string; file: string; message: string }>;
   /** Debt now present in the changed files; null if the post-run scan failed. */
   changedFilesTypeDebt: { aliasNames: string[]; totals: FileDebt } | null;
-  /** Files left untouched because git ignores them (0 with --no-gitignore). */
+  /** Files left untouched because git ignores them (0 with --gitignore=false). */
   skippedGitignoredFiles: number;
-  /** Build system files kept as JavaScript, with the detection evidence (empty with --no-bootstrap). */
+  /** Build system files kept as JavaScript, with the detection evidence (empty with --bootstrap=false). */
   skippedBootstrapFiles: Array<{ file: string; reason: string }>;
 }
 
@@ -102,7 +102,7 @@ export interface FullRunStep {
   status: 'ok' | 'failed' | 'skipped' | 'not-reached';
   /** The step's own exit code, or null where it never ran. */
   exitCode: number | null;
-  /** The commit this step's writes went into, or null under --no-commit. */
+  /** The commit this step's writes went into, or null under --commit=false. */
   commit: string | null;
 }
 

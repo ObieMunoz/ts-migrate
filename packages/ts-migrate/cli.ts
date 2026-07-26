@@ -84,7 +84,7 @@ process.on('unhandledRejection', (reason) => reportCrash('promise rejection', re
 const PROJECT_ESLINT_FLAG_DESCRIPTION =
   "Run eslint-fix with the project's own ESLint (node_modules/eslint, searched from " +
   '<folder> upward), so lint rules and plugins see the engine they were written for. ' +
-  'Disable with --no-projectEslint to use the ESLint bundled with ts-migrate.';
+  'Disable with --projectEslint=false to use the ESLint bundled with ts-migrate.';
 
 const TYPESCRIPT_FLAG_DESCRIPTION =
   'Path to the TypeScript package to run with. Defaults to the project\'s own install ' +
@@ -94,7 +94,7 @@ const TYPESCRIPT_FLAG_DESCRIPTION =
 const TYPES_PREFLIGHT_FLAG_DESCRIPTION =
   'Name the type packages the project declares dependencies for but has not installed before ' +
   'the pipeline starts, so they can be installed instead of suppressed. Disable with ' +
-  '--no-typesPreflight.';
+  '--typesPreflight=false.';
 
 /**
  * The <folder> positional every command takes, resolved against the working
@@ -135,7 +135,7 @@ function migrationFlags<T>(cmd: Argv<T>) {
     )
     .describe(
       'excludePlugin',
-      'Skip a plugin of the default pipeline. Repeat the flag to skip several. Excluding infer-types is equivalent to --no-inferTypes.',
+      'Skip a plugin of the default pipeline. Repeat the flag to skip several. Excluding infer-types is equivalent to --inferTypes=false.',
     )
     .string('aliases')
     .choices('aliases', ['tsfixme'] as const)
@@ -161,7 +161,7 @@ function migrationFlags<T>(cmd: Argv<T>) {
     .default('modernizeDefaultProps', true)
     .describe(
       'modernizeDefaultProps',
-      'Move the defaultProps of a function component into its props destructuring, which React 19 requires. Only conversions that keep the same behavior are made; the rest keep the assignment and are typed instead. Disable with --no-modernizeDefaultProps.',
+      'Move the defaultProps of a function component into its props destructuring, which React 19 requires. Only conversions that keep the same behavior are made; the rest keep the assignment and are typed instead. Disable with --modernizeDefaultProps=false.',
     )
     .string('privateRegex')
     .describe(
@@ -185,31 +185,31 @@ function migrationFlags<T>(cmd: Argv<T>) {
     .default('ambientSources', true)
     .describe(
       'ambientSources',
-      'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --no-ambientSources.',
+      'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --ambientSources=false.',
     )
     .boolean('gitignore')
     .default('gitignore', true)
     .describe(
       'gitignore',
-      'Skip gitignored files: they are neither migrated nor added to the program. Disable with --no-gitignore.',
+      'Skip gitignored files: they are neither migrated nor added to the program. Disable with --gitignore=false.',
     )
     .boolean('bootstrap')
     .default('bootstrap', true)
     .describe(
       'bootstrap',
-      'Skip build system files (configs and node-run scripts): they are kept out of the program. They stay JavaScript either way, since migrate never edits JavaScript files. Disable with --no-bootstrap.',
+      'Skip build system files (configs and node-run scripts): they are kept out of the program. They stay JavaScript either way, since migrate never edits JavaScript files. Disable with --bootstrap=false.',
     )
     .boolean('inferTypes')
     .default('inferTypes', true)
     .describe(
       'inferTypes',
-      'Infer types from usage before falling back to any. Disable with --no-inferTypes.',
+      'Infer types from usage before falling back to any. Disable with --inferTypes=false.',
     )
     .boolean('jsdoc')
     .default('jsdoc', true)
     .describe(
       'jsdoc',
-      'Convert the types JSDoc documents into annotations, so a documented parameter keeps its type instead of falling back to any. Disable with --no-jsdoc.',
+      'Convert the types JSDoc documents into annotations, so a documented parameter keeps its type instead of falling back to any. Disable with --jsdoc=false.',
     )
     .boolean('projectEslint')
     .default('projectEslint', true)
@@ -224,19 +224,19 @@ function migrationFlags<T>(cmd: Argv<T>) {
     .default('incrementalPasses', true)
     .describe(
       'incrementalPasses',
-      'Revisit only files affected by the previous pass when repeating plugins. Disable with --no-incrementalPasses.',
+      'Revisit only files affected by the previous pass when repeating plugins. Disable with --incrementalPasses=false.',
     )
     .boolean('declareUntypedModules')
     .default('declareUntypedModules', true)
     .describe(
       'declareUntypedModules',
-      'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --no-declareUntypedModules.',
+      'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --declareUntypedModules=false.',
     )
     .boolean('declareGlobals')
     .default('declareGlobals', true)
     .describe(
       'declareGlobals',
-      'Declare the properties the code assigns to window, global and globalThis in types/ts-migrate-globals.d.ts, instead of casting every read and write of them. The file is added to the tsconfig if it does not already match it. Disable with --no-declareGlobals.',
+      'Declare the properties the code assigns to window, global and globalThis in types/ts-migrate-globals.d.ts, instead of casting every read and write of them. The file is added to the tsconfig if it does not already match it. Disable with --declareGlobals=false.',
     )
     .string('typescript')
     .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
@@ -404,7 +404,7 @@ const fullBuilder = (cmd: Argv) =>
     .default('commit', true)
     .describe(
       'commit',
-      'Commit after each step that wrote something. Disable with --no-commit to leave every change in the working tree.',
+      'Commit after each step that wrote something. Disable with --commit=false to leave every change in the working tree.',
     )
     .boolean('blameIgnoreRevs')
     .default('blameIgnoreRevs', false)
@@ -430,7 +430,7 @@ const fullBuilder = (cmd: Argv) =>
     )
     .example('$0 full /frontend/foo', 'Migrate /frontend/foo end to end, committing each step')
     .example(
-      '$0 full /frontend/foo --yes --no-commit',
+      '$0 full /frontend/foo --yes --commit=false',
       'The same run unattended, leaving every change in the working tree',
     )
     .require(['folder']);
@@ -445,12 +445,12 @@ const renameBuilder = (cmd: Argv) =>
     .describe('sources', 'Path to a subset of your project to rename.')
     .boolean('gitignore')
     .default('gitignore', true)
-    .describe('gitignore', 'Skip gitignored files. Disable with --no-gitignore.')
+    .describe('gitignore', 'Skip gitignored files. Disable with --gitignore=false.')
     .boolean('bootstrap')
     .default('bootstrap', true)
     .describe(
       'bootstrap',
-      'Keep build system files (configs and node-run scripts) as JavaScript so the build still boots. Disable with --no-bootstrap.',
+      'Keep build system files (configs and node-run scripts) as JavaScript so the build still boots. Disable with --bootstrap=false.',
     )
     .boolean('dryRun')
     .default('dryRun', false)
@@ -516,19 +516,19 @@ const reignoreBuilder = (cmd: Argv) =>
     .default('ambientSources', true)
     .describe(
       'ambientSources',
-      'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --no-ambientSources.',
+      'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --ambientSources=false.',
     )
     .boolean('gitignore')
     .default('gitignore', true)
     .describe(
       'gitignore',
-      'Skip gitignored files: they are neither reignored nor added to the program. Disable with --no-gitignore.',
+      'Skip gitignored files: they are neither reignored nor added to the program. Disable with --gitignore=false.',
     )
     .boolean('bootstrap')
     .default('bootstrap', true)
     .describe(
       'bootstrap',
-      'Skip build system files (configs and node-run scripts): they are kept out of the program. They stay JavaScript either way, since reignore never edits JavaScript files. Disable with --no-bootstrap.',
+      'Skip build system files (configs and node-run scripts): they are kept out of the program. They stay JavaScript either way, since reignore never edits JavaScript files. Disable with --bootstrap=false.',
     )
     .boolean('projectEslint')
     .default('projectEslint', true)
@@ -537,7 +537,7 @@ const reignoreBuilder = (cmd: Argv) =>
     .default('declareUntypedModules', true)
     .describe(
       'declareUntypedModules',
-      'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --no-declareUntypedModules.',
+      'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --declareUntypedModules=false.',
     )
     .boolean('casts')
     .default('casts', false)
@@ -576,7 +576,7 @@ const reportBuilder = (cmd: Argv) =>
     .describe('json', 'Print the report as JSON for machine consumption.')
     .boolean('gitignore')
     .default('gitignore', true)
-    .describe('gitignore', 'Leave gitignored files uncounted. Disable with --no-gitignore.')
+    .describe('gitignore', 'Leave gitignored files uncounted. Disable with --gitignore=false.')
     .example('$0 report /frontend/foo', 'Report the type debt of /frontend/foo')
     .example('$0 report /frontend/foo --json', 'Same counts as JSON')
     .require(['folder']);
@@ -593,7 +593,7 @@ const checkBuilder = (cmd: Argv) =>
     )
     .boolean('gitignore')
     .default('gitignore', true)
-    .describe('gitignore', 'Leave gitignored files uncounted. Disable with --no-gitignore.')
+    .describe('gitignore', 'Leave gitignored files uncounted. Disable with --gitignore=false.')
     .string('typescript')
     .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
     .example(

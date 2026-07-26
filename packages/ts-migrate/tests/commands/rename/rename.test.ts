@@ -250,7 +250,7 @@ describe('rename command', () => {
       expect(infoMessages).toContainEqual(
         expect.stringContaining('Keeping 3 build system file(s) as JavaScript'),
       );
-      expect(infoMessages).toContainEqual(expect.stringContaining('--no-bootstrap'));
+      expect(infoMessages).toContainEqual(expect.stringContaining('--bootstrap=false'));
       infoSpy.mockRestore();
     });
 
@@ -315,7 +315,7 @@ describe('rename command', () => {
       ).toBe(build);
     });
 
-    it('repoints it once --no-bootstrap renames the target', () => {
+    it('repoints it once --bootstrap=false renames the target', () => {
       setUpBootstrapProject();
 
       rename({ rootDir, bootstrap: false });

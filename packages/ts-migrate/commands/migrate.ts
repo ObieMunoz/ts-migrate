@@ -174,13 +174,13 @@ function inapplicableFlags(params: BuildMigrateConfigParams, options: unknown): 
   if (params.useDefaultPropsHelper)
     setFlags.push(['--useDefaultPropsHelper', ['useDefaultPropsHelper']]);
   if (params.modernizeDefaultProps === false)
-    setFlags.push(['--no-modernizeDefaultProps', ['modernizeDefaultProps']]);
+    setFlags.push(['--modernizeDefaultProps=false', ['modernizeDefaultProps']]);
   if (params.defaultAccessibility !== undefined)
     setFlags.push(['--defaultAccessibility', ['defaultAccessibility']]);
   if (params.privateRegex !== undefined) setFlags.push(['--privateRegex', ['privateRegex']]);
   if (params.protectedRegex !== undefined) setFlags.push(['--protectedRegex', ['protectedRegex']]);
   if (params.publicRegex !== undefined) setFlags.push(['--publicRegex', ['publicRegex']]);
-  if (params.projectEslint === false) setFlags.push(['--no-projectEslint', ['projectEslint']]);
+  if (params.projectEslint === false) setFlags.push(['--projectEslint=false', ['projectEslint']]);
 
   const accepted = new Set(Object.keys(options as object));
   return setFlags
@@ -230,7 +230,7 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     };
   }
 
-  // Excluding infer-types is equivalent to --no-inferTypes: both switch
+  // Excluding infer-types is equivalent to --inferTypes=false: both switch
   // explicit-any to a single non-repeating pass.
   const inferTypes =
     (params.inferTypes ?? true) && !excludePlugins.includes(inferTypesPlugin.name);

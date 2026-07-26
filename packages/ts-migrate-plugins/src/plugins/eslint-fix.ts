@@ -234,7 +234,7 @@ function describeESLintEngine(engine: ESLintEngine): string {
   }
   let why = 'project has no eslint installed';
   if (engine.optedOut) {
-    why = '--no-projectEslint';
+    why = '--projectEslint=false';
   } else if (engine.refused) {
     why = `project has eslint ${engine.refused.version}, which ${engine.refused.reason}`;
   }

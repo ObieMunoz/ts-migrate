@@ -320,7 +320,7 @@ export function createBootstrapMigrationFilter(rootDir: string): BootstrapMigrat
         log.info(
           `Skipping ${partition.bootstrap.length} build system file(s) ` +
             `(${sampleIgnoredPaths(rootDir, partition.bootstrap.map(({ file }) => file))}). ` +
-            `They boot the build under plain Node and stay JavaScript; pass --no-bootstrap ` +
+            `They boot the build under plain Node and stay JavaScript; pass --bootstrap=false ` +
             `to migrate them.`,
         );
       }
