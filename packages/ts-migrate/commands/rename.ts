@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 import ts from 'typescript';
+import { errorMessage } from '@obiemunoz/ts-migrate-server';
 import {
   BootstrapFile,
   isKnownConfigName,
@@ -177,9 +178,8 @@ export default function rename({
 
   log.info(`Renaming ${toRename.length} JS/JSX files in ${rootDir}...`);
 
-  toRename.forEach(({ oldFile, newFile }) => {
-    fs.renameSync(oldFile, newFile);
-  });
+  const renamed = renameFiles(rootDir, toRename);
+  if (renamed === null) return null;
 
   updateProjectJson(rootDir);
   // The mapping is final here: the gitignore, bootstrap, and .mjs/.cjs
@@ -197,6 +197,38 @@ export default function rename({
     packageJsonRewrites: references.rewrites,
     packageJsonNotices: references.notices,
   };
+}
+
+/**
+ * Moves the files, reporting a failure rather than letting one reach the
+ * process: a checkout the run cannot write to is the environment, not a bug in
+ * ts-migrate, and the crash handler would say otherwise over a stack trace.
+ *
+ * The moves before the failing one stand. Nothing that reads the mapping has
+ * run yet, so the tree is only part renamed, and re-running once the write
+ * succeeds finishes it: the files already moved no longer have a JS extension
+ * and drop out of the mapping.
+ */
+function renameFiles(
+  rootDir: string,
+  toRename: ReadonlyArray<{ oldFile: string; newFile: string }>,
+): true | null {
+  for (let i = 0; i < toRename.length; i += 1) {
+    const { oldFile, newFile } = toRename[i];
+    try {
+      fs.renameSync(oldFile, newFile);
+    } catch (err) {
+      log.error(
+        `Could not rename ${path.relative(rootDir, oldFile)} to ` +
+          `${path.relative(rootDir, newFile)}: ${errorMessage(err)}.\n` +
+          `${i} of ${toRename.length} file(s) were renamed before this and are still renamed; ` +
+          `no package.json or project.json reference was updated. Re-run \`ts-migrate rename\` ` +
+          `once the files can be written and it will pick up where this stopped.`,
+      );
+      return null;
+    }
+  }
+  return true;
 }
 
 function findJSFiles(rootDir: string, configFile: string, sources?: string | string[]) {
@@ -305,6 +337,16 @@ function updateProjectJson(rootDir: string, dryRun?: boolean) {
     return;
   }
 
-  fs.writeFileSync(projectJsonFile, updatedText, 'utf-8');
+  // The files have already moved by the time this runs, so a write that fails
+  // leaves a stale reference to fix by hand rather than a failed rename.
+  try {
+    fs.writeFileSync(projectJsonFile, updatedText, 'utf-8');
+  } catch (err) {
+    log.warn(
+      `Could not update allowedImports in ${projectJsonFile}: ${errorMessage(err)}. ` +
+        'The entries still name the old JS paths.',
+    );
+    return;
+  }
   log.info(`Updated allowedImports in ${projectJsonFile}`);
 }

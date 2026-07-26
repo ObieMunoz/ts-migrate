@@ -2,6 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
+import { errorMessage } from '@obiemunoz/ts-migrate-server';
 import { isJsExtension, JS_EXTENSION_REGEX } from './jsExtensions';
 import { JSON5Path, replaceJSON5Strings } from './updateJSON5';
 
@@ -161,6 +162,9 @@ export function updatePackageJsonReferences(
       .map(({ newFile }) => newFile)[0];
   };
 
+  const unchanged = (packageJsonFile: string): string =>
+    `Could not update the references in ${toPosix(path.relative(rootDir, packageJsonFile))}`;
+
   packageJsonFiles(rootDir, renamedFiles).forEach((packageJsonFile) => {
     const dir = path.dirname(packageJsonFile);
     let sourceText: string;
@@ -197,18 +201,27 @@ export function updatePackageJsonReferences(
         return replacement;
       });
     } catch (err) {
-      log.warn(
-        `Could not update the references in ${toPosix(path.relative(rootDir, packageJsonFile))}:`,
-        err,
-      );
+      log.warn(`${unchanged(packageJsonFile)}: ${errorMessage(err)}`);
       return;
     }
 
-    result.rewrites.push(...rewrites);
+    // The entry point notices only describe the file, so they hold whether or
+    // not the rewrites below land.
     result.notices.push(...notices);
+
     if (updatedText !== sourceText && !opts.dryRun) {
-      fs.writeFileSync(packageJsonFile, updatedText, 'utf-8');
+      try {
+        fs.writeFileSync(packageJsonFile, updatedText, 'utf-8');
+      } catch (err) {
+        // The files have already moved by the time this runs, so a write that
+        // fails leaves stale references to fix by hand rather than a failed
+        // rename. Reporting the rewrites as done would hide that.
+        log.warn(`${unchanged(packageJsonFile)}: ${errorMessage(err)}`);
+        return;
+      }
     }
+
+    result.rewrites.push(...rewrites);
   });
 
   return result;

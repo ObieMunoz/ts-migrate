@@ -694,7 +694,7 @@ cli
     initBuilder,
     (args) => {
       const rootDir = resolveRootDir(args.folder);
-      init({ rootDir, isExtendedConfig: false });
+      if (!init({ rootDir, isExtendedConfig: false })) process.exit(-1);
     },
   )
   .command(
@@ -703,7 +703,7 @@ cli
     initBuilder,
     (args) => {
       const rootDir = resolveRootDir(args.folder);
-      init({ rootDir, isExtendedConfig: true });
+      if (!init({ rootDir, isExtendedConfig: true })) process.exit(-1);
     },
   )
   .command(
