@@ -212,7 +212,7 @@ export function createGitignoreMigrationFilter(rootDir: string): MigrationFileFi
           `Skipping ${partition.ignored.length} gitignored file(s) ` +
             `(${sampleIgnoredPaths(rootDir, partition.ignored)}). They stay unmigrated and ` +
             `outside the program; add them to the tsconfig "exclude" so your own tsc skips ` +
-            `them too, or pass --no-gitignore to migrate them.`,
+            `them too, or pass --gitignore=false to migrate them.`,
         );
       }
       return partition.kept;

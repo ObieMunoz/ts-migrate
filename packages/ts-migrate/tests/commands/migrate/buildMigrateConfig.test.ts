@@ -108,7 +108,7 @@ describe('buildMigrateConfig', () => {
   it('names the real problem when --plugin is repeated', () => {
     expect(() => buildMigrateConfig({ plugin: ['explicit-any', 'ts-ignore'] })).toThrow(
       '--plugin takes a single plugin name, but was given explicit-any, ts-ignore. ' +
-        'To run the default pipeline without some of its plugins, use --exclude-plugin instead.',
+        'To run the default pipeline without some of its plugins, use --excludePlugin instead.',
     );
   });
 
@@ -227,7 +227,7 @@ describe('buildMigrateConfig', () => {
     expect(defaultPropsOptions({}).useDefaultPropsHelper).toBe(false);
   });
 
-  it('converts function component defaultProps unless --no-modernizeDefaultProps', () => {
+  it('converts function component defaultProps unless --modernizeDefaultProps=false', () => {
     const defaultPropsOptions = (params: Parameters<typeof buildMigrateConfig>[0]) =>
       buildMigrateConfig(params).config.plugins.find(
         ({ plugin }) => plugin.name === 'react-default-props',
@@ -312,7 +312,7 @@ describe('buildMigrateConfig', () => {
     ).toBe(true);
   });
 
-  it('drops jsdoc with --no-jsdoc, leaving the rest of the pipeline alone', () => {
+  it('drops jsdoc with --jsdoc=false, leaving the rest of the pipeline alone', () => {
     const defaultNames = pluginNames(buildMigrateConfig({}).config);
     expect(defaultNames).toContain('jsdoc');
     expect(pluginNames(buildMigrateConfig({ jsdoc: false }).config)).toEqual(
@@ -323,7 +323,7 @@ describe('buildMigrateConfig', () => {
     );
   });
 
-  it('drops the module declarations with --no-declareUntypedModules', () => {
+  it('drops the module declarations with --declareUntypedModules=false', () => {
     expect(pluginNames(buildMigrateConfig({}).config)).toContain('declare-untyped-modules');
     expect(pluginNames(buildMigrateConfig({ declareUntypedModules: false }).config)).not.toContain(
       'declare-untyped-modules',

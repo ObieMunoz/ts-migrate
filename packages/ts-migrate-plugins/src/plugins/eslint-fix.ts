@@ -234,7 +234,7 @@ function describeESLintEngine(engine: ESLintEngine): string {
   }
   let why = 'project has no eslint installed';
   if (engine.optedOut) {
-    why = '--no-projectEslint';
+    why = '--projectEslint=false';
   } else if (engine.refused) {
     why = `project has eslint ${engine.refused.version}, which ${engine.refused.reason}`;
   }
@@ -756,7 +756,7 @@ function lintFailureNotice(error: unknown): PluginFileNotice {
     ruleId: ruleIdOf(error),
     hint:
       removedContextApiHint(reason) ??
-      'If the project lint config cannot be fixed now, --exclude-plugin eslint-fix skips this ' +
+      'If the project lint config cannot be fixed now, --excludePlugin eslint-fix skips this ' +
         'plugin.',
   };
 }

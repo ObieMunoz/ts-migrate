@@ -65,7 +65,7 @@ function readBaseline(baselinePath: string): Baseline {
   }
   if (parsed?.version !== BASELINE_VERSION || typeof parsed.files !== 'object') {
     throw new Error(
-      `Unsupported baseline format in ${baselinePath}. Re-create it with --update-baseline.`,
+      `Unsupported baseline format in ${baselinePath}. Re-create it with --updateBaseline.`,
     );
   }
   return parsed;
@@ -144,7 +144,7 @@ export default function check({
         `Type debt increased over the baseline (${displayPath}):`,
         ...regressions,
         `Remove the new suppressions or any-type annotations, or accept them with ` +
-          `\`ts-migrate check ${folder} --update-baseline\`.`,
+          `\`ts-migrate check ${folder} --updateBaseline\`.`,
       ].join('\n'),
     );
     return 1;

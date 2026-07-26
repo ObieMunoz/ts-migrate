@@ -83,61 +83,99 @@ declare module 'yargs' {
       [key in K]-?: Exclude<T[key], undefined>;
     };
 
+    /**
+     * The property a flag arrives under. Identity for the camelCase names
+     * every command declares today, and the reason a dashed one would still be
+     * typed: yargs puts `--dry-run` on a `dryRun` key, so without this a
+     * handler reading it would fall through to the index signature and get
+     * `unknown`, which type-checks at the read and fails at the use.
+     */
+    type CamelCase<S extends string> = S extends `${infer Head}-${infer Tail}`
+      ? `${Head}${Capitalize<CamelCase<Tail>>}`
+      : S;
+
+    /** Only the parser settings this CLI chooses; yargs-parser has many more. */
+    interface ParserConfiguration {
+      /**
+       * Accept a flag in either spelling and put both on the parsed arguments.
+       * On by default in yargs, and set anyway because it is what keeps
+       * `--dry-run` and `--exclude-plugin` working now that the flags they
+       * name are declared in camelCase.
+       *
+       * Its companion `strip-dashed` is deliberately not declared, so it
+       * cannot be reached for. It drops the key a flag was declared under,
+       * which is the one `choices` validates against: with a flag declared in
+       * kebab-case it makes `--exclude-plugin nope` succeed in silence.
+       */
+      'camel-case-expansion'?: boolean;
+    }
+
+    /**
+     * The options registered on an instance so far. Only the flag names are
+     * declared, which is what the config file is validated against.
+     */
+    interface RegisteredOptions {
+      key: Record<string, boolean>;
+    }
+
     /** `T` is the flags declared so far; the chain adds to it as it goes. */
     interface Argv<T = object> {
       /** A Promise when any command handler is async, which `full` and `migrate` are. */
       argv: Arguments<T> | Promise<Arguments<T>>;
 
       alias(shortName: string, longName: string): Argv<T>;
-      boolean<K extends keyof T>(key: K): Argv<Omit<T, K> & { [key in K]: boolean | undefined }>;
-      boolean<K extends string>(key: K): Argv<T & { [key in K]: boolean | undefined }>;
-      choices<K extends keyof T, C extends readonly any[]>(
-        key: K,
-        values: C,
-      ): Argv<Omit<T, K> & { [key in K]: C[number] | undefined }>;
+      boolean<K extends string>(key: K): Argv<T & { [key in CamelCase<K>]: boolean | undefined }>;
       choices<K extends string, C extends readonly any[]>(
         key: K,
         values: C,
-      ): Argv<T & { [key in K]: C[number] | undefined }>;
+      ): Argv<T & { [key in CamelCase<K>]: C[number] | undefined }>;
       command<U>(
         command: string,
         description: string,
         builder: (args: Argv<T>) => Argv<U>,
         handler: (args: Arguments<U>) => void | Promise<void>,
       ): Argv<T>;
+      /**
+       * Reads flags from the file `key` names. `parseFn` receives the path and
+       * returns the flags to apply; anything it throws is reported as a parse
+       * failure. Values from the file are defaults, so a flag on the command
+       * line wins. One overload only: the key is always new to the chain.
+       */
+      config<K extends string>(
+        key: K,
+        description: string,
+        parseFn: (configPath: string) => object,
+      ): Argv<T & { [key in K]: string | undefined }>;
       conflicts(key: string, value: string): Argv<T>;
-      default<K extends keyof T, V>(key: K, value: V): Argv<Omit<T, K> & { [key in K]: V }>;
-      default<K extends string, V>(key: K, value: V): Argv<T & { [key in K]: V }>;
+      /**
+       * `V` is naked, so TS widens the literal argument: `.default('yes', false)`
+       * gives `boolean`, not `false`, and intersecting it with the `boolean |
+       * undefined` the type declaration produced leaves `boolean`.
+       */
+      default<K extends string, V>(key: K, value: V): Argv<T & { [key in CamelCase<K>]: V }>;
       demandCommand(min: number, minMsg?: string): Argv<T>;
       describe(key: string, description: string): Argv<T>;
       epilogue(msg: string): Argv<T>;
       example(command: string, description: string): Argv<T>;
+      /** The flag names registered so far, which a command builder reports. */
+      getOptions(): RegisteredOptions;
       help(option?: string): Argv<T>;
-      number<K extends keyof T>(key: K): Argv<Omit<T, K> & { [key in K]: number | undefined }>;
-      number<K extends string>(key: K): Argv<T & { [key in K]: number | undefined }>;
-      option<K extends keyof T, O extends Options>(
-        key: K,
-        options: O,
-      ): Argv<Omit<T, K> & { [key in K]: InferredOptionType<O> }>;
+      number<K extends string>(key: K): Argv<T & { [key in CamelCase<K>]: number | undefined }>;
+      parserConfiguration(configuration: ParserConfiguration): Argv<T>;
       option<K extends string, O extends Options>(
         key: K,
         options: O,
-      ): Argv<T & { [key in K]: InferredOptionType<O> }>;
-      positional<K extends keyof T, O extends PositionalOptions>(
-        key: K,
-        options: O,
-      ): Argv<Omit<T, K> & { [key in K]: InferredOptionType<O> }>;
+      ): Argv<T & { [key in CamelCase<K>]: InferredOptionType<O> }>;
       positional<K extends string, O extends PositionalOptions>(
         key: K,
         options: O,
-      ): Argv<T & { [key in K]: InferredOptionType<O> }>;
+      ): Argv<T & { [key in CamelCase<K>]: InferredOptionType<O> }>;
       recommendCommands(): Argv<T>;
       require<K extends keyof T>(keys: readonly K[], msg?: string): Argv<Defined<T, K>>;
       scriptName(name: string): Argv<T>;
       strictCommands(enabled?: boolean): Argv<T>;
       strictOptions(enabled?: boolean): Argv<T>;
-      string<K extends keyof T>(key: K): Argv<Omit<T, K> & { [key in K]: string | undefined }>;
-      string<K extends string>(key: K): Argv<T & { [key in K]: string | undefined }>;
+      string<K extends string>(key: K): Argv<T & { [key in CamelCase<K>]: string | undefined }>;
       /** null off a TTY, which is why every caller has to pick a fallback width. */
       terminalWidth(): number | null;
       usage(message: string): Argv<T>;

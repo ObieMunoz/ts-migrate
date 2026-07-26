@@ -21,7 +21,7 @@ docs live in this package's README.md.
    once the pipeline became a command, and `ts-migrate full <folder>` takes the
    same arguments it did.
 3. **`ts-migrate full` creates git commits** after each step by default. Pass
-   `--no-commit` to leave every change in the working tree instead — do this
+   `--commit=false` to leave every change in the working tree instead — do this
    when you manage commits yourself or the target is not a git repository.
    Commit or stash the target folder first either way. The run reports what is
    uncommitted there and then renames and rewrites those files, and with
@@ -37,7 +37,7 @@ docs live in this package's README.md.
    type-checked, nor counted; `init` also writes the gitignored directories
    into the generated tsconfig's `exclude`. Runs log what they skipped. If a
    migration seems to miss files, check whether git ignores them; pass
-   `--no-gitignore` to include them deliberately.
+   `--gitignore=false` to include them deliberately.
 6. **Build system files stay JavaScript by default.** Configs and scripts
    that must keep running under plain Node (`webpack.config.js`,
    `eslint.config.mjs`, paths run via `node scripts/build.js`, and the
@@ -47,7 +47,7 @@ docs live in this package's README.md.
    `.cjs`, `.mjs`, and a config split per environment
    (`webpack.config.production.js`) counts as a config the same way
    `webpack.config.js` does. Runs log every kept file with its evidence. Pass
-   `--no-bootstrap` to rename them anyway, e.g. when the project loads
+   `--bootstrap=false` to rename them anyway, e.g. when the project loads
    TypeScript configs through ts-node or tsx. In `migrate` and `reignore`
    the flag only decides whether those files are loaded into the program;
    nothing there edits JavaScript.
@@ -80,7 +80,7 @@ docs live in this package's README.md.
    the copy in use once, for example
    `[eslint-fix] ESLint 8.57.1 (project: /repo/node_modules/eslint)`. A project
    with no eslint, one below 8.0, or a flat config with an eslint below 8.57
-   falls back to the ESLint bundled with ts-migrate. Pass `--no-projectEslint`
+   falls back to the ESLint bundled with ts-migrate. Pass `--projectEslint=false`
    to `migrate` or `reignore` to use the bundled one regardless.
 10. **The ESLint config is resolved from `<folder>`, not the working
     directory**, so `ts-migrate migrate packages/app` from a repository root
@@ -91,6 +91,46 @@ docs live in this package's README.md.
     `[eslint-fix] flat config: /repo/packages/app/eslint.config.js`. If that
     line names no file, or names one you did not expect, the lint pass is
     running against the wrong rules.
+11. **Flags are camelCase**, matching `tsc` and `tsconfig.json`: `--dryRun`,
+    `--inferTypes`, `--maxStablePasses`, `--jsonSummary`. That is the one
+    spelling `--help` prints, so write flags that way. The dashed spelling of
+    any flag parses too, so an older script passing `--dry-run` still works and
+    does not need changing.
+12. **A `ts-migrate.config.json` supplies flags**, so a long invocation does
+    not have to be reconstructed each run. It is looked for in `<folder>` and
+    then upward, or named with `--config <path>`; the run prints the file it
+    read. Flags on the command line override it. Keys are flag names, top
+    level keys apply to every command that takes them, and a section named
+    after a command applies to that one. See the section below.
+
+## Configuration file
+
+```json
+{
+  // Flag names as keys. JSON5, so comments and a trailing comma are allowed.
+  "sources": "app/**/*",
+  "maxStablePasses": 3,
+  "migrate": { "plugin": "jsdoc" },
+}
+```
+
+- Found in `<folder>` and then in each directory above it, first one wins.
+  `--config <path>` names one directly and skips the search.
+- Read by `full`, `rename`, `migrate`, `reignore`, `report` and `check`.
+  `init`, `init:extended` and `agents` take no flags.
+- Precedence is command line, then the command's section, then the shared
+  keys. `--gitignore=false` overrides `"gitignore": true` in the file.
+- A shared key the running command has no flag for is ignored, so one file
+  serves every command: `"inferTypes": false` configures `migrate` and is
+  ignored by `rename`. A key no command takes fails the run naming the file
+  and the key, as a mistyped flag on the command line does.
+- A repeatable flag takes an array: `"excludePlugin": ["eslint-fix"]`. A path
+  resolves against the working directory, as it does on the command line, not
+  against the config file. A key is a flag's long name, not its short alias:
+  `"sources"`, never `"s"`.
+- Do not write a config file into a project you are migrating unless asked.
+  Pass the flags, or write the file somewhere outside the tree and point
+  `--config` at it.
 
 ## Recommended workflow (full migration)
 
@@ -112,7 +152,7 @@ npm i -D @types/node          # plus your test runner's types:
 
 # 1. Migrate. <folder> is the project (or sub-project) root, the directory
 #    where tsconfig.json belongs.
-npx -p @obiemunoz/ts-migrate ts-migrate full <folder> --yes --no-commit
+npx -p @obiemunoz/ts-migrate ts-migrate full <folder> --yes --commit=false
 
 # 2. Read the "Type definition recommendations" report printed at the end of
 #    the run. Install what it recommends, e.g.:
@@ -178,7 +218,7 @@ Afterwards, update the project plumbing the tool deliberately does not touch:
 - Teach ESLint about TypeScript (`@typescript-eslint` parser + plugin).
 - If the run created commits, consider a repo-root `.git-blame-ignore-revs`
   so blame skips the mechanical rewrites; the run's final checklist prints
-  the SHAs and the caveats per merge workflow (see `--blame-ignore-revs`).
+  the SHAs and the caveats per merge workflow (see `--blameIgnoreRevs`).
 
 ## Commands
 
@@ -198,35 +238,38 @@ recommendations gathered so far along with the file holding them, and exits
 with that step's exit code; the partial result stays in the working tree.
 
 - `--yes` (`-y`): skip the interactive prompts (accept defaults).
-- `--no-commit`: do not create git commits after each step. Commits are on by
+- `--commit=false`: do not create git commits after each step. Commits are on by
   default (`--commit` is the explicit form).
-- `--blame-ignore-revs`: append the SHAs of the commits this run creates to a
+- `--blameIgnoreRevs`: append the SHAs of the commits this run creates to a
   `.git-blame-ignore-revs` file at the repository root so `git blame` can
   skip the mechanical rewrites. Only useful on merge-commit workflows; with
   squash or rebase merges those SHAs never reach the main branch, so leave
   the flag off and add the merged commit's SHA to the file after the merge
   instead. A successful run prints the SHAs and this guidance either way;
-  the flag is ignored with `--no-commit`.
+  the flag is ignored with `--commit=false`.
 - `--version` (`-v`): print the ts-migrate version and exit.
+- `--config <path>`: take flags from `<path>` instead of the
+  `ts-migrate.config.json` searched for from `<folder>` upward. Flags passed
+  here override it either way.
 - `--typescript <path>`: run the migrate step and the final `tsc --noEmit`
   check with the compiler at `<path>`. Without it, both use whatever compiler
   the migrate step resolved (the project's own, when it has one). The
   interactive prompt for a custom tsc path is the only way the two steps end up
   on different compilers; a mismatch there stops the run before Step 1 rather
   than at the check. `--yes` sets no custom path, so it never applies.
-- `--dry-run`: preview without writing anything. Steps 1 and 2 report the
+- `--dryRun`: preview without writing anything. Steps 1 and 2 report the
   tsconfig they would create and the full old-to-new rename mapping; the run
   then stops, because Steps 3 and 4 read the files the rename would have
   written and a dry run wrote none of them. Preview the migration itself with
-  `ts-migrate migrate <folder> --dry-run` once the rename has really happened.
-  Nothing is committed under `--dry-run`, whatever `--commit` says.
+  `ts-migrate migrate <folder> --dryRun` once the rename has really happened.
+  Nothing is committed under `--dryRun`, whatever `--commit` says.
 - `--jsonSummary <file>`: write a JSON summary of the whole run (see
   "Machine-readable summaries" below). This is the summary to read from a
   script: it carries each step's status and commit SHA plus the rename and
   migrate summaries, rather than one step's summary overwriting another's.
 - All other flags are forwarded to the underlying `rename` and `migrate`
-  commands (e.g. `--sources`, `--no-inferTypes`, `--exclude-plugin`,
-  `--no-projectEslint`, which is also repeated in the reignore hint printed
+  commands (e.g. `--sources`, `--inferTypes=false`, `--excludePlugin`,
+  `--projectEslint=false`, which is also repeated in the reignore hint printed
   on failure). `ts-migrate full --help` lists every one of them, and a flag
   none of them declares exits `1` rather than being ignored.
   One `--sources` deliberately reaches both the rename and the migrate step: a
@@ -238,7 +281,7 @@ with that step's exit code; the partial result stays in the working tree.
 - `--plugin` is **not** accepted here, only on `ts-migrate migrate`. It runs a
   single plugin instead of the pipeline, which leaves the errors the rest of the
   pipeline would have resolved, so Step 4's `tsc --noEmit` check would fail by
-  construction. `--exclude-plugin` is the flag for a staged migration.
+  construction. `--excludePlugin` is the flag for a staged migration.
 
 ### `ts-migrate init <folder>` / `ts-migrate init:extended <folder>`
 
@@ -285,7 +328,7 @@ not installed, where every package would look missing, and about a package
 package.json already declares. `migrate` and `reignore` print the same
 thing with their opening banner, so a folder that already has a tsconfig
 and never reaches `init` still gets it before the pipeline rather than
-hours later (`--no-typesPreflight` turns it off; `ts-migrate full` passes
+hours later (`--typesPreflight=false` turns it off; `ts-migrate full` passes
 that flag to the migrate step whenever Step 1 already said it). Everything
 else waits for the end of run report, which needs the compiler.
 Installed `@types` packages are pinned in a `types` array so that
@@ -305,10 +348,10 @@ Renames `.js`/`.jsx` to `.ts`/`.tsx` (JSX content detected per file), and
 when a build tool loads it by name (`postcss.config.cjs`,
 `eslint.config.mjs`, `.prettierrc.cjs`) or when it holds JSX, which
 `.mts`/`.cts` cannot; both cases are logged with the file and the reason.
-Gitignored files are skipped (`--no-gitignore` renames them too). Build
+Gitignored files are skipped (`--gitignore=false` renames them too). Build
 system files are kept as JavaScript with a log line naming each file and
-its evidence (`--no-bootstrap` renames them too; a tsconfig `exclude`
-entry keeps a specific file out for good). `--dry-run` prints the full
+its evidence (`--bootstrap=false` renames them too; a tsconfig `exclude`
+entry keeps a specific file out for good). `--dryRun` prints the full
 old-to-new mapping (surfacing each `.ts` vs `.tsx` decision) and renames
 nothing. `--jsonSummary <file>` writes the old and new path of every
 renamed file as JSON (see "Machine-readable summaries" below).
@@ -365,7 +408,7 @@ default-importing the whole module object through Babel-style interop can
 observe. A file that is already ESM gets `import x from 'm'` and
 `export default`. Dynamic, conditional and non top level forms are left for
 ts-ignore, and the run reports each file it left alone and why. Pass
-`--exclude-plugin convert-commonjs` to keep CommonJS syntax as it is.
+`--excludePlugin convert-commonjs` to keep CommonJS syntax as it is.
 
 The hook step covers `useState(null)`, `useState(undefined)`, `useState([])`,
 `useState({})` and `useRef(null)`, whose initializers infer `null`,
@@ -383,7 +426,7 @@ argument of the zero argument form, which a type argument alone leaves as
 TS2554. A context provided from another file takes the any type argument
 instead, since one file cannot see it, and `createContext({})` always does: a
 `{}` default accepts every value, so narrowing it would break a caller the run
-cannot see. Pass `--exclude-plugin react-hook-types` to leave hook calls
+cannot see. Pass `--excludePlugin react-hook-types` to leave hook calls
 as they are.
 
 The widening step unions an annotation with what the assignments in its own
@@ -395,26 +438,26 @@ Each widening is re-checked in isolation and dropped unless the errors it was
 made for are gone and no new one appeared. A widened declaration other files
 can see (an exported interface member, a property of an exported class) tells
 them what it really holds, which can surface errors in those files on the same
-run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
+run. Pass `--excludePlugin widen-annotations` to keep annotations as written.
 
 - `--sources <glob>` (`-s`, repeatable): migrate only a subset. Quote globs.
   Ambient `.d.ts` files matched by the tsconfig `include` (vite-env.d.ts,
   custom globals) are kept in the program automatically; pass
-  `--no-ambientSources` to disable that. The rare package that ships
+  `--ambientSources=false` to disable that. The rare package that ships
   unimported globals outside `@types` still needs a manual re-include,
   e.g. `-s "node_modules/some-package/globals.d.ts"`.
-- `--no-gitignore`: also migrate gitignored files. By default they are kept
+- `--gitignore=false`: also migrate gitignored files. By default they are kept
   out of the program entirely (neither parsed nor edited; files imported by
   migrated code and the tsconfig's `.d.ts` files stay in for type
   resolution).
-- `--no-bootstrap`: also load build system files into the program. By
+- `--bootstrap=false`: also load build system files into the program. By
   default they are kept out of it entirely. They stay JavaScript either
   way; only `rename` converts them.
-- `--no-inferTypes`: skip type inference and annotate plain `any`. Much
+- `--inferTypes=false`: skip type inference and annotate plain `any`. Much
   faster; use on very large projects or when annotation quality is secondary.
 - `--maxStablePasses <n>` (default 5): cap the repeat passes of the
   inference stage.
-- `--no-jsdoc`: skip the JSDoc conversion. By default the pipeline reads the
+- `--jsdoc=false`: skip the JSDoc conversion. By default the pipeline reads the
   types the comments document, so a `@param {number}` becomes `: number`
   instead of falling back to `any`, `@type` annotates variables and class
   properties, `@typedef` and `@callback` become type aliases, and `@template`
@@ -432,17 +475,17 @@ run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
   map `String`, `Number`, `Boolean`, `Object`, `date`, `array` and `promise`.
 - `--plugin <name>`: run a single plugin instead of the pipeline. Takes one
   name; repeating the flag is an error, since the subtractive case is
-  `--exclude-plugin`. The plugin gets the same options it would get in the
+  `--excludePlugin`. The plugin gets the same options it would get in the
   pipeline, so plugin flags such as `--defaultAccessibility` apply here too.
   A flag the named plugin has no option for is reported and ignored.
-- `--exclude-plugin <name>` (repeatable): run the default pipeline without the
+- `--excludePlugin <name>` (repeatable): run the default pipeline without the
   named plugin; every occurrence is removed (`eslint-fix` runs twice). Unknown
   names error and list the valid ones. For a staged migration that surfaces
   residual errors for manual fixing instead of suppressing them, pass
-  `--exclude-plugin ts-ignore --exclude-plugin strip-ts-ignore`; pass
-  `--exclude-plugin eslint-fix` to keep lint-autofix churn out of the diff.
-  Excluding `infer-types` is equivalent to `--no-inferTypes`.
-- `--no-modernizeDefaultProps`: keep `Component.defaultProps = { ... }` on
+  `--excludePlugin ts-ignore --excludePlugin strip-ts-ignore`; pass
+  `--excludePlugin eslint-fix` to keep lint-autofix churn out of the diff.
+  Excluding `infer-types` is equivalent to `--inferTypes=false`.
+- `--modernizeDefaultProps=false`: keep `Component.defaultProps = { ... }` on
   function components and type it, instead of moving the defaults into the
   props destructuring (`{ size = 'md' }`), making those props optional and
   deleting the assignment. React 19 ignores defaultProps on function
@@ -465,7 +508,7 @@ run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
   `--privateRegex "^_"` marks underscore-prefixed members private and leaves
   the rest alone. All four flags feed the `member-accessibility` plugin, which
   runs in the default pipeline and under `--plugin member-accessibility`.
-- `--no-declareUntypedModules`: suppress every import of a package that ships
+- `--declareUntypedModules=false`: suppress every import of a package that ships
   no type definitions, instead of declaring those packages once in
   `types/ts-migrate-modules.d.ts`. By default the run generates that file
   (only for packages the compiler reported as untyped), so those imports stay
@@ -473,8 +516,8 @@ run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
   Entries are kept across runs and dropped once their types resolve, so
   installing a real `@types` package retires one. A file at that path that
   ts-migrate did not write is never touched. Kept in the project's tsconfig on
-  the same terms as `--no-declareGlobals` below.
-- `--no-declareGlobals`: cast every read and write of a property the code hangs
+  the same terms as `--declareGlobals=false` below.
+- `--declareGlobals=false`: cast every read and write of a property the code hangs
   off `window`, `global` or `globalThis`, instead of declaring those properties
   once in `types/ts-migrate-globals.d.ts`. By default the run generates that
   file and prints what it declared. Types are the ones the assigned expressions
@@ -486,7 +529,7 @@ run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
   project's tsconfig, editing `"include"` or `"files"` when it has to; without
   a tsconfig it can read, it casts at each site instead, since a declaration
   file nothing includes would leave the project failing `tsc`.
-- `--dry-run`: run every plugin pass but write nothing to disk. Prints each
+- `--dryRun`: run every plugin pass but write nothing to disk. Prints each
   file a real run would update, with the suppression and `any` counts it
   would then contain. The report matches a real run exactly (with
   `--aliases`, the declaration file is modeled in memory), and the run takes
@@ -499,9 +542,9 @@ run. Pass `--exclude-plugin widen-annotations` to keep annotations as written.
   diagnostic the run suppressed to `<file>` (see "Suppression report" below).
 - `--typescript <path>`: run with the compiler at `<path>` instead of the one
   found by searching from `<folder>` upward (critical fact 8).
-- `--no-projectEslint`: run eslint-fix with the ESLint bundled with ts-migrate
+- `--projectEslint=false`: run eslint-fix with the ESLint bundled with ts-migrate
   instead of the project's own (critical fact 9).
-- `--no-typesPreflight`: start the pipeline without naming the type packages
+- `--typesPreflight=false`: start the pipeline without naming the type packages
   the project declares dependencies for but has not installed. On by default,
   printed with the opening banner, and never a reason for a nonzero exit.
 
@@ -515,7 +558,7 @@ existing suppression comments, then re-adds only the ones still needed.
   migrated one directory at a time, pass the same globs as the scoped
   migrate so files outside the subset are left untouched. Ambient `.d.ts`
   files from the tsconfig are kept automatically here too
-  (`--no-ambientSources` disables).
+  (`--ambientSources=false` disables).
 - `-p`/`--messagePrefix`: customizes the comment text.
 - `--casts`: also retry the `as any` assertions ts-migrate inserted. Each one
   is dropped, the file is re-checked, and the removal is kept only where no
@@ -530,17 +573,17 @@ existing suppression comments, then re-adds only the ones still needed.
   passes per file holding one. Run it the way you run `reignore` itself, after
   installing `@types` packages or after a neighboring directory has been
   migrated, and read the reduction off `ts-migrate report`/`check`.
-- `--no-gitignore`: same behavior as in `migrate`.
-- `--no-bootstrap`: same behavior as in `migrate`.
-- `--no-declareUntypedModules`: same behavior as in `migrate`.
-- `--dry-run`: same preview behavior as `migrate`.
+- `--gitignore=false`: same behavior as in `migrate`.
+- `--bootstrap=false`: same behavior as in `migrate`.
+- `--declareUntypedModules=false`: same behavior as in `migrate`.
+- `--dryRun`: same preview behavior as `migrate`.
 - `--jsonSummary <file>`: same machine-readable summary as `migrate`.
 - `--typescript <path>`: same compiler override as `migrate`. A scoped
   migration reignored later must use the same compiler, or the suppressions
   will not match.
-- `--no-projectEslint`: same lint engine override as `migrate`.
+- `--projectEslint=false`: same lint engine override as `migrate`.
 - `--suppressionReportFile <file>`: same suppression report as `migrate`.
-- `--no-typesPreflight`: same behavior as in `migrate`. Worth leaving on
+- `--typesPreflight=false`: same behavior as in `migrate`. Worth leaving on
   here: the reason to run `reignore` is usually that `@types` packages were
   just installed, and the preflight names the ones that were missed before
   the pass rather than after it.
@@ -631,16 +674,16 @@ the project's `.d.ts` files declare rather than hardcoded), and explicit
 `any` annotations. Prints totals plus the 10 worst files and how many more
 have debt. Counts come from per-file ASTs, so strings and JSX text that
 merely contain the directive words are not counted. Gitignored files are
-not counted (`--no-gitignore` counts them; same flag on `check`). `--json`
+not counted (`--gitignore=false` counts them; same flag on `check`). `--json`
 prints the same data as JSON, with every file listed.
 
-### `ts-migrate check <folder> [--update-baseline]`
+### `ts-migrate check <folder> [--updateBaseline]`
 
 Enforcement mode of the same scanner, meant for CI. The first run writes a
 per-file baseline to `.ts-migrate-baseline.json` in `<folder>`; commit that
 file. Later runs exit nonzero if any per-file count exceeds the baseline,
 and lower the baseline automatically when counts improve. After an
-intentional increase, accept the new counts with `--update-baseline`.
+intentional increase, accept the new counts with `--updateBaseline`.
 `--baselineFile <path>` overrides the baseline location.
 
 ### `ts-migrate agents`
@@ -655,7 +698,7 @@ fields:
 `command`, `tsMigrateVersion`, `rootDir`, `exitCode`, `dryRun`. Paths in the
 summary are relative to `<folder>`. When `dryRun` is true the summary
 describes what a real run would have changed (nothing was written except the
-summary file itself); combining `--dry-run` with `--jsonSummary` is the
+summary file itself); combining `--dryRun` with `--jsonSummary` is the
 machine-readable preview. Per command:
 
 - `rename`: `renamedFiles` as `{"from": "src/a.js", "to": "src/a.ts"}` pairs,
@@ -691,9 +734,9 @@ machine-readable preview. Per command:
   exit `0` with entries in the second pair, and a nonzero exit means entries in
   the first pair or a `filesToMigrate` of `0`.
 - All three also report `skippedGitignoredFiles`, the number of files the
-  run left untouched because git ignores them (0 with `--no-gitignore`),
+  run left untouched because git ignores them (0 with `--gitignore=false`),
   and `skippedBootstrapFiles`, the build system files kept as JavaScript
-  as `{"file", "reason"}` pairs (empty with `--no-bootstrap`).
+  as `{"file", "reason"}` pairs (empty with `--bootstrap=false`).
 
 How to read a run from the outside:
 
@@ -718,7 +761,7 @@ come from `report --json`.
   `skipped` (a step the run did not need, such as `init` on a folder that
   already has a tsconfig) or `not-reached` (a step an earlier failure stopped),
   and `commit` is the SHA that step's writes went into or `null` under
-  `--no-commit`. `commits` lists the mechanical rewrite commits the run created
+  `--commit=false`. `commits` lists the mechanical rewrite commits the run created
   as `{"sha", "subject"}`, in the order it made them. `rename` and `migrate`
   hold those steps' own summaries, in the exact shape documented above, or
   `null` where the step did not run.

@@ -23,8 +23,15 @@ import rename from './commands/rename';
 import report from './commands/report';
 import runMigrate from './commands/runMigrate';
 import readAgentsPlaybook from './utils/agentsPlaybook';
-import packageVersion from './utils/packageVersion';
 import {
+  CONFIG_FLAG_DESCRIPTION,
+  findConfigFile,
+  readConfigFile,
+} from './utils/configFile';
+import packageVersion from './utils/packageVersion';
+import { migrationRootFromArgv } from './utils/resolveTypeScript';
+import {
+  logConfigFile,
   logRunFailure,
   logTypeScriptDecision,
   logTypeScriptWarning,
@@ -77,7 +84,7 @@ process.on('unhandledRejection', (reason) => reportCrash('promise rejection', re
 const PROJECT_ESLINT_FLAG_DESCRIPTION =
   "Run eslint-fix with the project's own ESLint (node_modules/eslint, searched from " +
   '<folder> upward), so lint rules and plugins see the engine they were written for. ' +
-  'Disable with --no-projectEslint to use the ESLint bundled with ts-migrate.';
+  'Disable with --projectEslint=false to use the ESLint bundled with ts-migrate.';
 
 const TYPESCRIPT_FLAG_DESCRIPTION =
   'Path to the TypeScript package to run with. Defaults to the project\'s own install ' +
@@ -87,7 +94,7 @@ const TYPESCRIPT_FLAG_DESCRIPTION =
 const TYPES_PREFLIGHT_FLAG_DESCRIPTION =
   'Name the type packages the project declares dependencies for but has not installed before ' +
   'the pipeline starts, so they can be installed instead of suppressed. Disable with ' +
-  '--no-typesPreflight.';
+  '--typesPreflight=false.';
 
 /**
  * The <folder> positional every command takes, resolved against the working
@@ -121,14 +128,14 @@ function migrationFlags<T>(cmd: Argv<T>) {
       'defaultAccessibility',
       'Give every class member that declares no accessibility modifier this one. Members matched by one of the regex flags below take that modifier instead.',
     )
-    .string('exclude-plugin')
+    .string('excludePlugin')
     .choices(
-      'exclude-plugin',
+      'excludePlugin',
       availablePlugins.map((p) => p.name),
     )
     .describe(
-      'exclude-plugin',
-      'Skip a plugin of the default pipeline. Repeat the flag to skip several. Excluding infer-types is equivalent to --no-inferTypes.',
+      'excludePlugin',
+      'Skip a plugin of the default pipeline. Repeat the flag to skip several. Excluding infer-types is equivalent to --inferTypes=false.',
     )
     .string('aliases')
     .choices('aliases', ['tsfixme'] as const)
@@ -154,7 +161,7 @@ function migrationFlags<T>(cmd: Argv<T>) {
     .default('modernizeDefaultProps', true)
     .describe(
       'modernizeDefaultProps',
-      'Move the defaultProps of a function component into its props destructuring, which React 19 requires. Only conversions that keep the same behavior are made; the rest keep the assignment and are typed instead. Disable with --no-modernizeDefaultProps.',
+      'Move the defaultProps of a function component into its props destructuring, which React 19 requires. Only conversions that keep the same behavior are made; the rest keep the assignment and are typed instead. Disable with --modernizeDefaultProps=false.',
     )
     .string('privateRegex')
     .describe(
@@ -178,31 +185,31 @@ function migrationFlags<T>(cmd: Argv<T>) {
     .default('ambientSources', true)
     .describe(
       'ambientSources',
-      'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --no-ambientSources.',
+      'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --ambientSources=false.',
     )
     .boolean('gitignore')
     .default('gitignore', true)
     .describe(
       'gitignore',
-      'Skip gitignored files: they are neither migrated nor added to the program. Disable with --no-gitignore.',
+      'Skip gitignored files: they are neither migrated nor added to the program. Disable with --gitignore=false.',
     )
     .boolean('bootstrap')
     .default('bootstrap', true)
     .describe(
       'bootstrap',
-      'Skip build system files (configs and node-run scripts): they are kept out of the program. They stay JavaScript either way, since migrate never edits JavaScript files. Disable with --no-bootstrap.',
+      'Skip build system files (configs and node-run scripts): they are kept out of the program. They stay JavaScript either way, since migrate never edits JavaScript files. Disable with --bootstrap=false.',
     )
     .boolean('inferTypes')
     .default('inferTypes', true)
     .describe(
       'inferTypes',
-      'Infer types from usage before falling back to any. Disable with --no-inferTypes.',
+      'Infer types from usage before falling back to any. Disable with --inferTypes=false.',
     )
     .boolean('jsdoc')
     .default('jsdoc', true)
     .describe(
       'jsdoc',
-      'Convert the types JSDoc documents into annotations, so a documented parameter keeps its type instead of falling back to any. Disable with --no-jsdoc.',
+      'Convert the types JSDoc documents into annotations, so a documented parameter keeps its type instead of falling back to any. Disable with --jsdoc=false.',
     )
     .boolean('projectEslint')
     .default('projectEslint', true)
@@ -217,19 +224,19 @@ function migrationFlags<T>(cmd: Argv<T>) {
     .default('incrementalPasses', true)
     .describe(
       'incrementalPasses',
-      'Revisit only files affected by the previous pass when repeating plugins. Disable with --no-incrementalPasses.',
+      'Revisit only files affected by the previous pass when repeating plugins. Disable with --incrementalPasses=false.',
     )
     .boolean('declareUntypedModules')
     .default('declareUntypedModules', true)
     .describe(
       'declareUntypedModules',
-      'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --no-declareUntypedModules.',
+      'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --declareUntypedModules=false.',
     )
     .boolean('declareGlobals')
     .default('declareGlobals', true)
     .describe(
       'declareGlobals',
-      'Declare the properties the code assigns to window, global and globalThis in types/ts-migrate-globals.d.ts, instead of casting every read and write of them. The file is added to the tsconfig if it does not already match it. Disable with --no-declareGlobals.',
+      'Declare the properties the code assigns to window, global and globalThis in types/ts-migrate-globals.d.ts, instead of casting every read and write of them. The file is added to the tsconfig if it does not already match it. Disable with --declareGlobals=false.',
     )
     .string('typescript')
     .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
@@ -250,7 +257,7 @@ function migrationFlags<T>(cmd: Argv<T>) {
  */
 interface PipelineArgs {
   plugin?: string | string[];
-  'exclude-plugin'?: string | string[];
+  excludePlugin?: string | string[];
   aliases?: 'tsfixme';
   typeMap?: string;
   annotateReturns?: boolean;
@@ -270,7 +277,7 @@ interface PipelineArgs {
 function pluginParams(args: PipelineArgs): BuildMigrateConfigParams {
   return {
     plugin: args.plugin,
-    excludePlugins: ([] as string[]).concat(args['exclude-plugin'] ?? []),
+    excludePlugins: ([] as string[]).concat(args.excludePlugin ?? []),
     aliases: args.aliases,
     typeMap: args.typeMap,
     annotateReturns: args.annotateReturns,
@@ -346,56 +353,304 @@ const version = packageVersion();
 // and `hideBin` drops the two argv entries the singleton used to skip itself.
 const cli = yargs(hideBin(process.argv));
 
+/**
+ * The config file this run reads, found once from the folder being migrated.
+ * Read off raw argv for the same reason the compiler is: a command declares
+ * `--config` as it is built, which happens before anything has been parsed.
+ */
+const discoveredConfigFile = findConfigFile(
+  migrationRootFromArgv(hideBin(process.argv), process.cwd()),
+);
+
+/**
+ * The flag names each command takes, which is what a config file's keys are
+ * checked against. Built by running each command's own builder against a
+ * throwaway parser, so it cannot drift from what the commands declare.
+ *
+ * Computed on first use rather than up front: the builders below are what it
+ * reads, and one of them is running when it is asked for.
+ */
+let flagSets: Record<string, ReadonlySet<string>> | undefined;
+function flagsByCommand(): Record<string, ReadonlySet<string>> {
+  flagSets ??= Object.fromEntries(
+    Object.entries(commandBuilders).map(([name, builder]) => [
+      name,
+      new Set(Object.keys(builder(yargs([])).getOptions().key)),
+    ]),
+  );
+  return flagSets;
+}
+
+/**
+ * `--config`, and the file it falls back to. Declared per command because
+ * reading the file takes both the section that names the command and the set
+ * of flags that command accepts.
+ */
+function configFlag<T>(cmd: Argv<T>, command: string) {
+  return cmd
+    .config('config', CONFIG_FLAG_DESCRIPTION, (configPath) =>
+      readConfigFile({ configPath, command, flagsByCommand: flagsByCommand() }),
+    )
+    .default('config', discoveredConfigFile);
+}
+
+const fullBuilder = (cmd: Argv) =>
+  migrationFlags(configFlag(cmd.positional('folder', { type: 'string' }), 'full'))
+    .boolean('yes')
+    .alias('yes', 'y')
+    .default('yes', false)
+    .describe('yes', 'Accept the prompts without asking. Required for an unattended run.')
+    .boolean('commit')
+    .default('commit', true)
+    .describe(
+      'commit',
+      'Commit after each step that wrote something. Disable with --commit=false to leave every change in the working tree.',
+    )
+    .boolean('blameIgnoreRevs')
+    .default('blameIgnoreRevs', false)
+    .describe(
+      'blameIgnoreRevs',
+      'Append the SHAs of this run\'s commits to .git-blame-ignore-revs at the repository root. Only useful on merge-commit workflows; with squash or rebase merges those SHAs never reach the main branch.',
+    )
+    .boolean('dryRun')
+    .default('dryRun', false)
+    .describe(
+      'dryRun',
+      'Preview the steps that can run without writes and stop before the migration, which reads the files the rename would have written. Nothing is written and nothing is committed.',
+    )
+    .string('typesReportFile')
+    .describe(
+      'typesReportFile',
+      'Also write the type definition recommendations to this file. They are printed at the end of the run either way, which is what this command holds them back for.',
+    )
+    .string('jsonSummary')
+    .describe(
+      'jsonSummary',
+      'Write a machine-readable JSON summary of the whole run to this file: every step with its status and commit, plus the rename and migrate summaries.',
+    )
+    .example('$0 full /frontend/foo', 'Migrate /frontend/foo end to end, committing each step')
+    .example(
+      '$0 full /frontend/foo --yes --commit=false',
+      'The same run unattended, leaving every change in the working tree',
+    )
+    .require(['folder']);
+
+const initBuilder = (cmd: Argv) =>
+  cmd.positional('folder', { type: 'string' }).require(['folder']);
+
+const renameBuilder = (cmd: Argv) =>
+  configFlag(cmd.positional('folder', { type: 'string' }), 'rename')
+    .string('sources')
+    .alias('sources', 's')
+    .describe('sources', 'Path to a subset of your project to rename.')
+    .boolean('gitignore')
+    .default('gitignore', true)
+    .describe('gitignore', 'Skip gitignored files. Disable with --gitignore=false.')
+    .boolean('bootstrap')
+    .default('bootstrap', true)
+    .describe(
+      'bootstrap',
+      'Keep build system files (configs and node-run scripts) as JavaScript so the build still boots. Disable with --bootstrap=false.',
+    )
+    .boolean('dryRun')
+    .default('dryRun', false)
+    .describe('dryRun', 'Print the rename mapping without renaming any file.')
+    .string('jsonSummary')
+    .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
+    .example('$0 rename /frontend/foo', 'Rename all the files in /frontend/foo')
+    .example('$0 rename /frontend/foo -s "bar/**/*"', 'Rename all the files in /frontend/foo/bar')
+    .require(['folder']);
+
+const migrateBuilder = (cmd: Argv) =>
+  migrationFlags(configFlag(cmd.positional('folder', { type: 'string' }), 'migrate'))
+    // Only here, and not on `full`: a single plugin leaves the errors the
+    // rest of the pipeline would have resolved, so the compile check that
+    // closes a full run would fail by construction.
+    .string('plugin')
+    .choices(
+      'plugin',
+      availablePlugins.map((p) => p.name),
+    )
+    .describe('plugin', 'Run a specific plugin')
+    .conflicts('plugin', 'excludePlugin')
+    .string('typesReportFile')
+    .describe(
+      'typesReportFile',
+      'Write the type definition recommendations to this file instead of printing them.',
+    )
+    .boolean('dryRun')
+    .default('dryRun', false)
+    .describe(
+      'dryRun',
+      'Run every plugin pass but write nothing to disk; print the files a real run would update. Takes as long as a real run.',
+    )
+    .string('jsonSummary')
+    .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
+    .example('$0 migrate /frontend/foo', 'Migrate all the files in /frontend/foo')
+    .example(
+      '$0 migrate /frontend/foo -s "bar/**/*"',
+      'Migrate all the files in /frontend/foo/bar. Ambient .d.ts files from the tsconfig stay in the program.',
+    )
+    .example(
+      '$0 migrate /frontend/foo --plugin jsdoc',
+      'Migrate JSDoc comments for all the files in /frontend/foo',
+    )
+    .example(
+      '$0 migrate /frontend/foo --excludePlugin ts-ignore --excludePlugin strip-ts-ignore',
+      'Migrate /frontend/foo, leaving residual errors unsuppressed for manual fixing',
+    )
+    .require(['folder']);
+
+const reignoreBuilder = (cmd: Argv) =>
+  configFlag(cmd.positional('folder', { type: 'string' }), 'reignore')
+    .option('messagePrefix', {
+      alias: 'p',
+      default: 'FIXME',
+      type: 'string',
+      describe: 'A message to add to the ts-expect-error or ts-ignore comments that are inserted.',
+    })
+    .string('sources')
+    .alias('sources', 's')
+    .describe('sources', 'Path to a subset of your project to reignore (globs are ok).')
+    .boolean('ambientSources')
+    .default('ambientSources', true)
+    .describe(
+      'ambientSources',
+      'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --ambientSources=false.',
+    )
+    .boolean('gitignore')
+    .default('gitignore', true)
+    .describe(
+      'gitignore',
+      'Skip gitignored files: they are neither reignored nor added to the program. Disable with --gitignore=false.',
+    )
+    .boolean('bootstrap')
+    .default('bootstrap', true)
+    .describe(
+      'bootstrap',
+      'Skip build system files (configs and node-run scripts): they are kept out of the program. They stay JavaScript either way, since reignore never edits JavaScript files. Disable with --bootstrap=false.',
+    )
+    .boolean('projectEslint')
+    .default('projectEslint', true)
+    .describe('projectEslint', PROJECT_ESLINT_FLAG_DESCRIPTION)
+    .boolean('declareUntypedModules')
+    .default('declareUntypedModules', true)
+    .describe(
+      'declareUntypedModules',
+      'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --declareUntypedModules=false.',
+    )
+    .boolean('casts')
+    .default('casts', false)
+    .describe(
+      'casts',
+      'Retry the `as any` assertions ts-migrate inserted: drop each one, re-check the file, and keep the removal only where no new error appears. An assertion the file still needs is narrowed to the tightest type the checker can name for it, on the same evidence. Off by default, since it costs up to two validation passes per file holding one.',
+    )
+    .string('typescript')
+    .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
+    .boolean('typesPreflight')
+    .default('typesPreflight', true)
+    .describe('typesPreflight', TYPES_PREFLIGHT_FLAG_DESCRIPTION)
+    .string('suppressionReportFile')
+    .describe(
+      'suppressionReportFile',
+      'Write what the compiler knew about every suppressed diagnostic to this file, as in migrate.',
+    )
+    .boolean('dryRun')
+    .default('dryRun', false)
+    .describe(
+      'dryRun',
+      'Run every plugin pass but write nothing to disk; print the files a real run would update. Takes as long as a real run.',
+    )
+    .string('jsonSummary')
+    .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
+    .example(
+      '$0 reignore /frontend/foo -s "bar/**/*"',
+      'Reignore all the files in /frontend/foo/bar. Ambient .d.ts files from the tsconfig stay in the program.',
+    )
+    .require(['folder']);
+
+const reportBuilder = (cmd: Argv) =>
+  configFlag(cmd.positional('folder', { type: 'string' }), 'report')
+    .boolean('json')
+    .default('json', false)
+    .describe('json', 'Print the report as JSON for machine consumption.')
+    .boolean('gitignore')
+    .default('gitignore', true)
+    .describe('gitignore', 'Leave gitignored files uncounted. Disable with --gitignore=false.')
+    .example('$0 report /frontend/foo', 'Report the type debt of /frontend/foo')
+    .example('$0 report /frontend/foo --json', 'Same counts as JSON')
+    .require(['folder']);
+
+const checkBuilder = (cmd: Argv) =>
+  configFlag(cmd.positional('folder', { type: 'string' }), 'check')
+    .boolean('updateBaseline')
+    .default('updateBaseline', false)
+    .describe('updateBaseline', 'Accept the current counts as the new baseline, even if they grew.')
+    .string('baselineFile')
+    .describe(
+      'baselineFile',
+      'Path of the baseline JSON. Defaults to .ts-migrate-baseline.json in <folder>.',
+    )
+    .boolean('gitignore')
+    .default('gitignore', true)
+    .describe('gitignore', 'Leave gitignored files uncounted. Disable with --gitignore=false.')
+    .string('typescript')
+    .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
+    .example(
+      '$0 check /frontend/foo',
+      'Exit nonzero if any per-file count exceeds the baseline; lower the baseline on improvement',
+    )
+    .example(
+      '$0 check /frontend/foo --updateBaseline',
+      'Accept the current counts as the new baseline',
+    )
+    .require(['folder']);
+
+const agentsBuilder = (cmd: Argv) => cmd;
+
+/**
+ * Every command by name. The config file's section names are checked against
+ * these, and the flags each command takes are read back off these builders.
+ * `init`, `init:extended` and `agents` take no flags, so they declare no
+ * `--config` and a section naming one of them has nothing to set.
+ */
+const commandBuilders: Record<string, (cmd: Argv) => Argv<any>> = {
+  full: fullBuilder,
+  init: initBuilder,
+  'init:extended': initBuilder,
+  rename: renameBuilder,
+  migrate: migrateBuilder,
+  reignore: reignoreBuilder,
+  report: reportBuilder,
+  check: checkBuilder,
+  agents: agentsBuilder,
+};
+
 // eslint-disable-next-line @typescript-eslint/no-unused-expressions
 cli
   .scriptName('ts-migrate')
   .version(version)
   .usage(`ts-migrate v${version}\n\nUsage: $0 <command> [options]`)
+  // Every flag is spelled in camelCase, matching tsc and the tsconfig.json
+  // these users already work in, and the dashed spelling of one parses too,
+  // so `--dry-run` and `--exclude-plugin` keep working wherever they are
+  // already written. Set rather than left to the default because that second
+  // half is what makes them work, and it is not a default worth inheriting
+  // by accident.
+  //
+  // Its companion `strip-dashed` is deliberately absent. It drops the key a
+  // flag was declared under, which is the one `choices` validates against, so
+  // it turns a flag declared in kebab-case into one that accepts any value in
+  // silence. Nothing here is declared that way today, and leaving the setting
+  // off means nothing has to stay that way to keep the validation.
+  .parserConfiguration({ 'camel-case-expansion': true })
   .command(
     'full <folder>',
     'Run the whole pipeline: init, rename, migrate, then verify with tsc --noEmit',
-    (cmd) =>
-      migrationFlags(cmd.positional('folder', { type: 'string' }))
-        .boolean('yes')
-        .alias('yes', 'y')
-        .default('yes', false)
-        .describe('yes', 'Accept the prompts without asking. Required for an unattended run.')
-        .boolean('commit')
-        .default('commit', true)
-        .describe(
-          'commit',
-          'Commit after each step that wrote something. Disable with --no-commit to leave every change in the working tree.',
-        )
-        .boolean('blame-ignore-revs')
-        .default('blame-ignore-revs', false)
-        .describe(
-          'blame-ignore-revs',
-          'Append the SHAs of this run\'s commits to .git-blame-ignore-revs at the repository root. Only useful on merge-commit workflows; with squash or rebase merges those SHAs never reach the main branch.',
-        )
-        .boolean('dry-run')
-        .default('dry-run', false)
-        .describe(
-          'dry-run',
-          'Preview the steps that can run without writes and stop before the migration, which reads the files the rename would have written. Nothing is written and nothing is committed.',
-        )
-        .string('typesReportFile')
-        .describe(
-          'typesReportFile',
-          'Also write the type definition recommendations to this file. They are printed at the end of the run either way, which is what this command holds them back for.',
-        )
-        .string('jsonSummary')
-        .describe(
-          'jsonSummary',
-          'Write a machine-readable JSON summary of the whole run to this file: every step with its status and commit, plus the rename and migrate summaries.',
-        )
-        .example('$0 full /frontend/foo', 'Migrate /frontend/foo end to end, committing each step')
-        .example(
-          '$0 full /frontend/foo --yes --no-commit',
-          'The same run unattended, leaving every change in the working tree',
-        )
-        .require(['folder']),
+    fullBuilder,
     async (args) => {
       const rootDir = resolveRootDir(args.folder);
+      logConfigFile(args.config);
       const { exitCode, summary } = await full({
         rootDir,
         folder: args.folder,
@@ -403,8 +658,8 @@ cli
         typeScriptOverride: args.typescript,
         yes: args.yes,
         commit: args.commit,
-        blameIgnoreRevs: args['blame-ignore-revs'],
-        dryRun: args['dry-run'],
+        blameIgnoreRevs: args.blameIgnoreRevs,
+        dryRun: args.dryRun,
         jsonSummary: args.jsonSummary,
         renameOptions: {
           sources: args.sources,
@@ -436,7 +691,7 @@ cli
   .command(
     'init <folder>',
     'Initialize tsconfig.json file in <folder>',
-    (cmd) => cmd.positional('folder', { type: 'string' }).require(['folder']),
+    initBuilder,
     (args) => {
       const rootDir = resolveRootDir(args.folder);
       init({ rootDir, isExtendedConfig: false });
@@ -445,7 +700,7 @@ cli
   .command(
     'init:extended <folder>',
     'Initialize tsconfig.json in <folder> extending a shared base config',
-    (cmd) => cmd.positional('folder', { type: 'string' }).require(['folder']),
+    initBuilder,
     (args) => {
       const rootDir = resolveRootDir(args.folder);
       init({ rootDir, isExtendedConfig: true });
@@ -454,36 +709,11 @@ cli
   .command(
     'rename <folder>',
     'Rename files in folder from JS/JSX to TS/TSX',
-    (cmd) =>
-      cmd
-        .positional('folder', { type: 'string' })
-        .string('sources')
-        .alias('sources', 's')
-        .describe('sources', 'Path to a subset of your project to rename.')
-        .boolean('gitignore')
-        .default('gitignore', true)
-        .describe('gitignore', 'Skip gitignored files. Disable with --no-gitignore.')
-        .boolean('bootstrap')
-        .default('bootstrap', true)
-        .describe(
-          'bootstrap',
-          'Keep build system files (configs and node-run scripts) as JavaScript so the build still boots. Disable with --no-bootstrap.',
-        )
-        .boolean('dry-run')
-        .default('dry-run', false)
-        .describe('dry-run', 'Print the rename mapping without renaming any file.')
-        .string('jsonSummary')
-        .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
-        .example('$0 rename /frontend/foo', 'Rename all the files in /frontend/foo')
-        .example(
-          '$0 rename /frontend/foo -s "bar/**/*"',
-          'Rename all the files in /frontend/foo/bar',
-        )
-        .require(['folder']),
+    renameBuilder,
     (args) => {
       const rootDir = resolveRootDir(args.folder);
-      const { sources } = args;
-      const dryRun = args['dry-run'];
+      logConfigFile(args.config);
+      const { sources, dryRun } = args;
       const result = rename({
         rootDir,
         sources,
@@ -515,47 +745,10 @@ cli
   .command(
     'migrate <folder>',
     'Fix TypeScript errors, using codemods',
-    (cmd) =>
-      migrationFlags(cmd.positional('folder', { type: 'string' }))
-        // Only here, and not on `full`: a single plugin leaves the errors the
-        // rest of the pipeline would have resolved, so the compile check that
-        // closes a full run would fail by construction.
-        .string('plugin')
-        .choices(
-          'plugin',
-          availablePlugins.map((p) => p.name),
-        )
-        .describe('plugin', 'Run a specific plugin')
-        .conflicts('plugin', 'exclude-plugin')
-        .string('typesReportFile')
-        .describe(
-          'typesReportFile',
-          'Write the type definition recommendations to this file instead of printing them.',
-        )
-        .boolean('dry-run')
-        .default('dry-run', false)
-        .describe(
-          'dry-run',
-          'Run every plugin pass but write nothing to disk; print the files a real run would update. Takes as long as a real run.',
-        )
-        .string('jsonSummary')
-        .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
-        .example('$0 migrate /frontend/foo', 'Migrate all the files in /frontend/foo')
-        .example(
-          '$0 migrate /frontend/foo -s "bar/**/*"',
-          'Migrate all the files in /frontend/foo/bar. Ambient .d.ts files from the tsconfig stay in the program.',
-        )
-        .example(
-          '$0 migrate /frontend/foo --plugin jsdoc',
-          'Migrate JSDoc comments for all the files in /frontend/foo',
-        )
-        .example(
-          '$0 migrate /frontend/foo --exclude-plugin ts-ignore --exclude-plugin strip-ts-ignore',
-          'Migrate /frontend/foo, leaving residual errors unsuppressed for manual fixing',
-        )
-        .require(['folder']),
+    migrateBuilder,
     async (args) => {
       const rootDir = resolveRootDir(args.folder);
+      logConfigFile(args.config);
       const { exitCode } = await runMigrate({
         rootDir,
         folder: args.folder,
@@ -570,7 +763,7 @@ cli
         typesPreflight: args.typesPreflight,
         typesReportFile: args.typesReportFile,
         suppressionReportFile: args.suppressionReportFile,
-        dryRun: args['dry-run'],
+        dryRun: args.dryRun,
         jsonSummary: args.jsonSummary,
       });
       process.exit(exitCode);
@@ -579,79 +772,11 @@ cli
   .command(
     'reignore <folder>',
     'Re-run ts-ignore on a project',
-    (cmd) =>
-      cmd
-        .option('p', {
-          alias: 'messagePrefix',
-          default: 'FIXME',
-          type: 'string',
-          describe:
-            'A message to add to the ts-expect-error or ts-ignore comments that are inserted.',
-        })
-        .positional('folder', { type: 'string' })
-        .string('sources')
-        .alias('sources', 's')
-        .describe('sources', 'Path to a subset of your project to reignore (globs are ok).')
-        .boolean('ambientSources')
-        .default('ambientSources', true)
-        .describe(
-          'ambientSources',
-          'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --no-ambientSources.',
-        )
-        .boolean('gitignore')
-        .default('gitignore', true)
-        .describe(
-          'gitignore',
-          'Skip gitignored files: they are neither reignored nor added to the program. Disable with --no-gitignore.',
-        )
-        .boolean('bootstrap')
-        .default('bootstrap', true)
-        .describe(
-          'bootstrap',
-          'Skip build system files (configs and node-run scripts): they are kept out of the program. They stay JavaScript either way, since reignore never edits JavaScript files. Disable with --no-bootstrap.',
-        )
-        .boolean('projectEslint')
-        .default('projectEslint', true)
-        .describe('projectEslint', PROJECT_ESLINT_FLAG_DESCRIPTION)
-        .boolean('declareUntypedModules')
-        .default('declareUntypedModules', true)
-        .describe(
-          'declareUntypedModules',
-          'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --no-declareUntypedModules.',
-        )
-        .boolean('casts')
-        .default('casts', false)
-        .describe(
-          'casts',
-          'Retry the `as any` assertions ts-migrate inserted: drop each one, re-check the file, and keep the removal only where no new error appears. An assertion the file still needs is narrowed to the tightest type the checker can name for it, on the same evidence. Off by default, since it costs up to two validation passes per file holding one.',
-        )
-        .string('typescript')
-        .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
-        .boolean('typesPreflight')
-        .default('typesPreflight', true)
-        .describe('typesPreflight', TYPES_PREFLIGHT_FLAG_DESCRIPTION)
-        .string('suppressionReportFile')
-        .describe(
-          'suppressionReportFile',
-          'Write what the compiler knew about every suppressed diagnostic to this file, as in migrate.',
-        )
-        .boolean('dry-run')
-        .default('dry-run', false)
-        .describe(
-          'dry-run',
-          'Run every plugin pass but write nothing to disk; print the files a real run would update. Takes as long as a real run.',
-        )
-        .string('jsonSummary')
-        .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
-        .example(
-          '$0 reignore /frontend/foo -s "bar/**/*"',
-          'Reignore all the files in /frontend/foo/bar. Ambient .d.ts files from the tsconfig stay in the program.',
-        )
-        .require(['folder']),
+    reignoreBuilder,
     async (args) => {
       const rootDir = resolveRootDir(args.folder);
-      const { sources } = args;
-      const dryRun = args['dry-run'];
+      const { sources, dryRun } = args;
+      logConfigFile(args.config);
       logTypeScriptDecision(typeScriptDecision());
       if (args.typesPreflight) printTypesPackagePreflight(rootDir);
 
@@ -675,7 +800,7 @@ cli
         rootDir,
         sources,
         ambientSources: args.ambientSources,
-        messagePrefix: args.p,
+        messagePrefix: args.messagePrefix,
         gitignore: args.gitignore,
         bootstrap: args.bootstrap,
         projectEslint: args.projectEslint,
@@ -733,20 +858,12 @@ cli
   .command(
     'report <folder>',
     'Print per-file counts of suppression comments and any-type annotations',
-    (cmd) =>
-      cmd
-        .positional('folder', { type: 'string' })
-        .boolean('json')
-        .default('json', false)
-        .describe('json', 'Print the report as JSON for machine consumption.')
-        .boolean('gitignore')
-        .default('gitignore', true)
-        .describe('gitignore', 'Leave gitignored files uncounted. Disable with --no-gitignore.')
-        .example('$0 report /frontend/foo', 'Report the type debt of /frontend/foo')
-        .example('$0 report /frontend/foo --json', 'Same counts as JSON')
-        .require(['folder']),
+    reportBuilder,
     (args) => {
       const rootDir = resolveRootDir(args.folder);
+      // Under --json the report is the whole of stdout, so nothing else may
+      // be written there.
+      if (!args.json) logConfigFile(args.config);
       process.exit(
         report({ rootDir, folder: args.folder, json: args.json, gitignore: args.gitignore }),
       );
@@ -755,41 +872,15 @@ cli
   .command(
     'check <folder>',
     'Compare suppression and any counts against a committed baseline',
-    (cmd) =>
-      cmd
-        .positional('folder', { type: 'string' })
-        .boolean('update-baseline')
-        .default('update-baseline', false)
-        .describe(
-          'update-baseline',
-          'Accept the current counts as the new baseline, even if they grew.',
-        )
-        .string('baselineFile')
-        .describe(
-          'baselineFile',
-          'Path of the baseline JSON. Defaults to .ts-migrate-baseline.json in <folder>.',
-        )
-        .boolean('gitignore')
-        .default('gitignore', true)
-        .describe('gitignore', 'Leave gitignored files uncounted. Disable with --no-gitignore.')
-        .string('typescript')
-        .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
-        .example(
-          '$0 check /frontend/foo',
-          'Exit nonzero if any per-file count exceeds the baseline; lower the baseline on improvement',
-        )
-        .example(
-          '$0 check /frontend/foo --update-baseline',
-          'Accept the current counts as the new baseline',
-        )
-        .require(['folder']),
+    checkBuilder,
     (args) => {
       const rootDir = resolveRootDir(args.folder);
+      logConfigFile(args.config);
       process.exit(
         check({
           rootDir,
           folder: args.folder,
-          updateBaseline: args['update-baseline'],
+          updateBaseline: args.updateBaseline,
           baselineFile: args.baselineFile,
           gitignore: args.gitignore,
         }),
@@ -799,7 +890,7 @@ cli
   .command(
     'agents',
     'Print usage instructions for AI coding agents (non-interactive playbook)',
-    (cmd) => cmd,
+    agentsBuilder,
     () => {
       process.stdout.write(readAgentsPlaybook());
     },

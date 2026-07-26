@@ -604,7 +604,7 @@ describe('eslint-fix engine selection', () => {
   );
 
   it(
-    'leaves the same file unfixed under the bundled engine, which --no-projectEslint selects',
+    'leaves the same file unfixed under the bundled engine, which --projectEslint=false selects',
     () => {
       const { results, notices, stdout, stderr } = runInFixture(
         'eslint-legacy-plugin',
@@ -616,7 +616,7 @@ describe('eslint-fix engine selection', () => {
       );
 
       expect(results).toEqual([unfixed, unfixed]);
-      expect(stdout).toContain('bundled with ts-migrate; --no-projectEslint');
+      expect(stdout).toContain('bundled with ts-migrate; --projectEslint=false');
       // One notice per file, all sharing the cause and the rule that threw, so
       // the runner reports a rule broken by engine skew once for the project.
       expect(notices).toHaveLength(2);

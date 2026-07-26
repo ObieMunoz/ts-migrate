@@ -169,7 +169,7 @@ function reignoreCommand(params: FullParams): string {
     command += ` --sources "${source}"`;
   });
   if (params.migrateOptions.plugins.projectEslint === false) {
-    command += ' --no-projectEslint';
+    command += ' --projectEslint=false';
   }
   if (params.typeScriptOverride) {
     command += ` --typescript "${params.typeScriptOverride}"`;
@@ -299,7 +299,7 @@ If you need help or have feedback, please file an issue at ${ISSUES_URL}
     if (git(rootDir, ['rev-parse', '--is-inside-work-tree']).status !== 0) {
       if (this.commit) {
         log.info(`${folder} is not in a git repository, so this run cannot commit its
-steps. Continuing as though --no-commit had been passed.
+steps. Continuing as though --commit=false had been passed.
 `);
         this.commit = false;
       }
@@ -684,7 +684,7 @@ The TypeScript check failed. What these errors mean:
 Dry run: the preview stops here. Steps 3 and 4 read the files Step 2 would have
 renamed, and a dry run wrote none of them. Preview the migration itself once the
 rename has really happened:
-  ts-migrate migrate ${folder} --dry-run
+  ts-migrate migrate ${folder} --dryRun
 `);
     return 0;
   }
@@ -846,7 +846,7 @@ This run's partial result is in the working tree; nothing was rolled back.`);
     log.info(`
 Remaining cleanup — the rest of your tooling doesn't know about the rename yet:
 
-1. Sanity check the commits (or, with --no-commit, the working tree).
+1. Sanity check the commits (or, with --commit=false, the working tree).
 2. Add a build step (tsc) or a TS-aware runner (ts-node, tsx). The rename
    repointed package.json script paths and test globs; entry points ("main",
    "bin", "exports", "types", "files") were left alone and listed in the
@@ -877,7 +877,7 @@ Remaining cleanup — the rest of your tooling doesn't know about the rename yet
     } else {
       log.info(`   If your team merges PRs with merge commits, add those full SHAs to a
    .git-blame-ignore-revs file at the repository root; re-running with
-   --blame-ignore-revs writes it for you. If your team squash-merges or
+   --blameIgnoreRevs writes it for you. If your team squash-merges or
    rebases, these SHAs will not exist on the main branch: add the SHA of the
    merged commit to the file after the merge instead.`);
     }

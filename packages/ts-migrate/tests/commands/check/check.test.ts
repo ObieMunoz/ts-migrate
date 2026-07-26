@@ -87,7 +87,7 @@ describe('check command', () => {
     });
   });
 
-  it('accepts grown counts with --update-baseline', () => {
+  it('accepts grown counts with --updateBaseline', () => {
     expect(check({ rootDir, folder: 'foo' })).toBe(0);
     fs.appendFileSync(path.join(rootDir, 'a.ts'), 'export const y: any = 2;\n');
 
