@@ -13,7 +13,7 @@ pnpm only. The workspace is defined by `pnpm-workspace.yaml` and the pnpm
 version is pinned by `packageManager` in `package.json`.
 
 **Never run `pnpm add`.** It reruns peer resolution for the whole workspace, and
-every package declares TypeScript as a peer with the range `>=5.0 <7`, so the
+every package declares TypeScript as a peer with the range `>=5.7.3 <7`, so the
 pass satisfies those ranges with the 6.0.3 copy `ts-migrate-server` keeps for
 its TypeScript 6 tests and rewrites the committed 5.9.3 resolutions. The build
 then fails with cross-package `TypeChecker` and `Symbol` assignability errors in

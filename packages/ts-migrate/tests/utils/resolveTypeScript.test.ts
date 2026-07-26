@@ -88,6 +88,24 @@ describe('resolveTypeScript', () => {
     expect(typeScriptWarning(decision)).toBeUndefined();
   });
 
+  // The floor is a minor and a patch, not a major: SyntaxKind is renumbered
+  // between minors, so a 5.x below it reads the AST differently from every
+  // compiler this repo builds against.
+  it.each([
+    ['5.7.3', 'project'],
+    ['5.7.4', 'project'],
+    ['5.8.0', 'project'],
+    ['6.0.3', 'project'],
+    ['5.7.2', 'bundled'],
+    ['5.6.3', 'bundled'],
+    ['5.0.4', 'bundled'],
+    ['7.0.0', 'bundled'],
+  ])('resolves typescript %s to the %s compiler', (version, source) => {
+    installTypeScript(tmpDir, version);
+
+    expect(resolveTypeScript({ rootDir: tmpDir }).source).toBe(source);
+  });
+
   it('refuses a project compiler outside the supported range and names both versions', () => {
     const packageDir = installTypeScript(tmpDir, '4.9.5');
 
@@ -157,8 +175,8 @@ describe('resolveTypeScript', () => {
   });
 
   it('stays quiet when --typescript is a patch away from the project install', () => {
-    installTypeScript(tmpDir, '5.7.3');
-    const overrideDir = writeTypeScriptPackage(path.join(tmpDir, 'vendor', 'typescript'), '5.7.2');
+    installTypeScript(tmpDir, '5.9.3');
+    const overrideDir = writeTypeScriptPackage(path.join(tmpDir, 'vendor', 'typescript'), '5.9.2');
 
     const decision = resolveTypeScript({ rootDir: tmpDir, override: overrideDir });
 
@@ -167,7 +185,7 @@ describe('resolveTypeScript', () => {
   });
 
   it('has no skew to report when the project has no compiler of its own', () => {
-    const overrideDir = writeTypeScriptPackage(path.join(tmpDir, 'vendor', 'typescript'), '5.5.4');
+    const overrideDir = writeTypeScriptPackage(path.join(tmpDir, 'vendor', 'typescript'), '5.9.3');
 
     const decision = resolveTypeScript({ rootDir: tmpDir, override: overrideDir });
 

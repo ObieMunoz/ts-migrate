@@ -24,7 +24,7 @@ Check out Airbnb's original [blog post](https://medium.com/airbnb-engineering/ts
 
 # What's different in this fork
 
-* TypeScript 5.x and 6.x support (upstream tops out at TypeScript 4)
+* TypeScript 5.7.3 and up, through 6.x (upstream tops out at TypeScript 4)
 * Plugin internals migrated to the TypeScript 5 node factory API
 * ESLint 9 flat config support (with legacy fallback)
 * Lints with the project's own ESLint (`node_modules/eslint`, searched from the migration folder upward) rather than the bundled one, so rules and plugins run on the engine they were written for instead of throwing on removed APIs; `--no-projectEslint` opts out
