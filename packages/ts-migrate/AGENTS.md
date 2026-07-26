@@ -125,7 +125,8 @@ docs live in this package's README.md.
   and the key, as a mistyped flag on the command line does.
 - A repeatable flag takes an array: `"excludePlugin": ["eslint-fix"]`. A path
   resolves against the working directory, as it does on the command line, not
-  against the config file.
+  against the config file. A key is a flag's long name, not its short alias:
+  `"sources"`, never `"s"`.
 - Do not write a config file into a project you are migrating unless asked.
   Pass the flags, or write the file somewhere outside the tree and point
   `--config` at it.

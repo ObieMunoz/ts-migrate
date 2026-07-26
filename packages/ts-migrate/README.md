@@ -308,8 +308,8 @@ the same standard. Inside a section there is no other command the key could
 have been meant for, so a key that command does not take fails there too.
 
 Keys accept either spelling, like the flags themselves, and are reported in
-camelCase. `folder`, `config`, `help` and `version` cannot be set from the
-file.
+camelCase. A key is a flag's long name: `"sources"`, not the `-s` alias.
+`folder`, `config`, `help` and `version` cannot be set from the file.
 
 A repeatable flag takes an array, which is the same as passing it once per
 entry: `"excludePlugin": ["eslint-fix", "ts-ignore"]` is
