@@ -849,10 +849,16 @@ This run's partial result is in the working tree; nothing was rolled back.`);
 
   private closingChecklist(): void {
     const wroteIgnoreRevs = this.writeBlameIgnoreRevs();
+    // A run outside a git repository has already said it cannot commit, so
+    // pointing its result at commits and at `git push` names steps the user
+    // has no way to take.
+    const firstItem = this.inGitWorkTree
+      ? 'Sanity check the commits (or, with --commit=false, the working tree).'
+      : 'Sanity check the working tree.';
     log.info(`
 Remaining cleanup — the rest of your tooling doesn't know about the rename yet:
 
-1. Sanity check the commits (or, with --commit=false, the working tree).
+1. ${firstItem}
 2. Add a build step (tsc) or a TS-aware runner (ts-node, tsx). The rename
    repointed package.json script paths and test globs; entry points ("main",
    "bin", "exports", "types", "files") were left alone and listed in the
@@ -861,8 +867,10 @@ Remaining cleanup — the rest of your tooling doesn't know about the rename yet
 3. Teach ESLint about TypeScript (the @typescript-eslint parser and plugin).`);
 
     if (this.commits.length === 0) {
-      log.info(`4. Push your changes with \`git push\` and open a PR!
+      if (this.inGitWorkTree) {
+        log.info(`4. Push your changes with \`git push\` and open a PR!
 `);
+      }
       return;
     }
 

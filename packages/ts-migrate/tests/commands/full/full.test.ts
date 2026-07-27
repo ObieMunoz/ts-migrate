@@ -321,6 +321,39 @@ describe('the full pipeline git tree preflight', () => {
   }, 120000);
 });
 
+describe('the full pipeline closing checklist', () => {
+  beforeEach(() => {
+    writeSmallProject();
+  });
+
+  it('points a run that made commits at them', async () => {
+    initGitRepo();
+
+    await run({ commit: true });
+
+    expect(output()).toContain('Sanity check the commits');
+    expect(output()).toContain('Push your changes with `git push`');
+  }, 120000);
+
+  it('names no git step outside a git repository, having said it cannot commit', async () => {
+    await run({ commit: true });
+
+    expect(output()).toContain('is not in a git repository');
+    expect(output()).toContain('Sanity check the working tree.');
+    expect(output()).not.toContain('Push your changes');
+    expect(output()).not.toContain('Sanity check the commits');
+  }, 120000);
+
+  it('still points at git under --commit=false, where the tree is in a repository', async () => {
+    initGitRepo();
+
+    await run({ commit: false });
+
+    expect(output()).toContain('Sanity check the commits');
+    expect(output()).toContain('Push your changes with `git push`');
+  }, 120000);
+});
+
 describe('the full pipeline prompts', () => {
   beforeEach(() => {
     writeSmallProject();
