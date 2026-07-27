@@ -38,6 +38,8 @@ The `full` command runs `init`, `rename`, `migrate` and a closing `tsc --noEmit`
 
 Commit or stash the folder you are migrating before you start. The run lists anything uncommitted there before Step 1, because the rename and migrate steps rewrite those files whether or not commits are enabled, and with commits enabled `git add .` puts them in the migration's commits too. Without `--yes` the list sits above the confirmation prompt; with `--yes` it is a warning and the run continues.
 
+That report covers the migration folder, and so do the commits: each one is made with an explicit pathspec, so work you had staged elsewhere in the repository stays staged and out of the migration's history. Only the folder you point at needs to be clean.
+
 A failing step names itself and exits with that step's exit code, leaving the partial result in the working tree. It also prints the type definition recommendations the run had gathered by then, and names the file they were written to so they survive the failure.
 
 A successful run ends with the SHAs of the commits it created and guidance for recording them in a repo-root [`.git-blame-ignore-revs`](https://git-scm.com/docs/git-blame#Documentation/git-blame.txt---ignore-revs-fileltfilegt) file, so `git blame` (locally and on github.com) can skip the mechanical rewrite commits. If your team merges PRs with merge commits, pass `--blameIgnoreRevs` to have the file written for you; with squash or rebase merges those SHAs never reach the main branch, so add the merged commit's SHA to the file after the merge instead.

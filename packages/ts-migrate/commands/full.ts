@@ -709,9 +709,14 @@ rename has really happened:
     if (status.status !== 0) return { failed: true, status: status.status };
     if (status.stdout.trim() === '') return { sha: null, failed: false };
 
+    // The pathspec keeps the commit to the folder the run wrote, which is the
+    // scope the check above already asks about. Without it `git commit` takes
+    // the whole index, so anything staged elsewhere in the repository before
+    // the run lands in a commit attributed to the migration, and the closing
+    // checklist then offers that commit to .git-blame-ignore-revs.
     const steps: Array<{ args: string[] }> = [
       { args: ['add', '.'] },
-      { args: ['commit', '-m', subject, '-m', 'Co-authored-by: ts-migrate <>'] },
+      { args: ['commit', '-m', subject, '-m', 'Co-authored-by: ts-migrate <>', '--', '.'] },
       { args: ['rev-parse', 'HEAD'] },
     ];
     let head = '';

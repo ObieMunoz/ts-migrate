@@ -26,7 +26,10 @@ docs live in this package's README.md.
    Commit or stash the target folder first either way. The run reports what is
    uncommitted there and then renames and rewrites those files, and with
    commits enabled `git add .` also puts them in the migration's commits.
-   Under `--yes` that report is a warning and the run continues.
+   Under `--yes` that report is a warning and the run continues. Only the
+   target folder needs to be clean: each commit is made with an explicit
+   pathspec, so anything staged elsewhere in the repository stays staged and
+   out of the migration's history.
 4. **Suppressions in the output are success, not failure.** The tool's
    contract is that `tsc` compiles with zero errors afterwards; it fulfills it
    by annotating what it can prove and suppressing the rest with

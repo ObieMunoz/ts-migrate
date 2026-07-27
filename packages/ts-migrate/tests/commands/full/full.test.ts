@@ -202,6 +202,56 @@ describe('the full pipeline commit step', () => {
     const ignoreRevs = fs.readFileSync(path.join(rootDir, '.git-blame-ignore-revs'), 'utf-8');
     summary.commits.forEach(({ sha }) => expect(ignoreRevs).toContain(sha));
   }, 120000);
+
+  /**
+   * A monorepo package rather than the whole repository, which is what makes
+   * "elsewhere in the repository" a place that exists.
+   */
+  describe('on a folder below the repository root', () => {
+    /** The migration root, one level down from the git repository. */
+    let packageDir: string;
+
+    beforeEach(() => {
+      writeProject({
+        'package.json': '{ "name": "monorepo", "private": true }\n',
+        'packages/app/package.json': '{ "name": "app" }\n',
+        'packages/app/src/index.js':
+          'function greet(name) {\n  return `hi ${name}`;\n}\nmodule.exports = { greet };\n',
+        'packages/other/notes.txt': 'committed\n',
+      });
+      initGitRepo();
+      packageDir = path.join(rootDir, 'packages/app');
+    });
+
+    const runOnPackage = () =>
+      run({ rootDir: packageDir, folder: packageDir, commit: true });
+
+    it('commits only what it wrote, leaving a change staged elsewhere staged', async () => {
+      fs.writeFileSync(path.join(rootDir, 'packages/other/notes.txt'), 'work in progress\n');
+      git('add', 'packages/other/notes.txt');
+
+      const { exitCode, summary } = await runOnPackage();
+
+      expect(exitCode).toBe(0);
+      expect(summary.commits).toHaveLength(3);
+      // The user's own staged work is not in the migration's history, and is
+      // still where they left it.
+      const committed = git('log', '--format=', '--name-only', `-n${summary.commits.length}`);
+      expect(committed).not.toContain('packages/other/notes.txt');
+      expect(committed).toContain('packages/app/tsconfig.json');
+      expect(git('diff', '--cached', '--name-only')).toContain('packages/other/notes.txt');
+    }, 120000);
+
+    it('still commits the rename, which deletes as well as adds', async () => {
+      const { summary } = await runOnPackage();
+
+      const renameSha = summary.commits[1].sha;
+      expect(git('show', '--format=', '--name-status', renameSha)).toContain(
+        'packages/app/src/index.ts',
+      );
+      expect(fs.existsSync(path.join(packageDir, 'src/index.js'))).toBe(false);
+    }, 120000);
+  });
 });
 
 describe('the full pipeline git tree preflight', () => {
