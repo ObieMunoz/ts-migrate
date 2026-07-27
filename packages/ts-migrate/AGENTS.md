@@ -90,7 +90,10 @@ docs live in this package's README.md.
     The config file is printed next to the engine line, for example
     `[eslint-fix] flat config: /repo/packages/app/eslint.config.js`. If that
     line names no file, or names one you did not expect, the lint pass is
-    running against the wrong rules.
+    running against the wrong rules. A project with no ESLint config at all
+    gets no lint fixes, and eslint-fix says so once per pass. `ts-migrate full`
+    reports the same thing `ts-migrate migrate` does here: it writes no config
+    of its own for the migrate step to find.
 11. **Flags are camelCase**, matching `tsc` and `tsconfig.json`: `--dryRun`,
     `--inferTypes`, `--maxStablePasses`, `--jsonSummary`. That is the one
     spelling `--help` prints, so write flags that way. The dashed spelling of

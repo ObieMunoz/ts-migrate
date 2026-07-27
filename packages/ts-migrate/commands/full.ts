@@ -128,35 +128,6 @@ function currentUser(): string {
 }
 
 /**
- * Any ESLint config the project may have: extensionless `.eslintrc`,
- * `.eslintrc.{js,cjs,json,yml,...}`, flat `eslint.config.*`, or a package.json
- * `"eslintConfig"`.
- */
-function hasEslintConfig(rootDir: string): boolean {
-  let entries: string[];
-  try {
-    entries = fs.readdirSync(rootDir);
-  } catch {
-    return false;
-  }
-  if (
-    entries.some(
-      (entry) =>
-        entry === '.eslintrc' ||
-        entry.startsWith('.eslintrc.') ||
-        entry.startsWith('eslint.config.'),
-    )
-  ) {
-    return true;
-  }
-  try {
-    return fs.readFileSync(path.join(rootDir, 'package.json'), 'utf-8').includes('"eslintConfig"');
-  } catch {
-    return false;
-  }
-}
-
-/**
  * A scoped run must be reignored with the same scope, with the same compiler,
  * and with the same lint engine, so the hint printed on failure repeats the
  * flags this run was invoked with.
@@ -189,8 +160,6 @@ class FullRun {
 
   private inGitWorkTree = false;
 
-  private shouldRemoveEslintrc = false;
-
   /** Full SHAs of the mechanical commits this run creates, newest last. */
   private readonly commits: Array<{ sha: string; subject: string }> = [];
 
@@ -214,9 +183,6 @@ class FullRun {
 
   /** Set when Step 1 wrote the tsconfig, so Step 3 does not repeat its advice. */
   private initSaidTypesPreflight = false;
-
-  /** Whether the project brought an ESLint config of its own to Step 3. */
-  private projectHasEslintConfig = true;
 
   constructor(params: FullParams) {
     this.params = params;
@@ -450,9 +416,6 @@ ${warning}
 
   private stepRename(): number | undefined {
     const { rootDir, folder, dryRun, renameOptions } = this.params;
-    // Looked up before the migrate step writes one of its own, so a project
-    // that never had an ESLint config is told apart from this run's.
-    this.projectHasEslintConfig = hasEslintConfig(rootDir);
 
     log.info(`
 [Step 2 of ${STEP_COUNT}] Renaming files from JS/JSX to TS/TSX and updating project.json...
@@ -504,18 +467,6 @@ ${warning}
 [Step 3 of ${STEP_COUNT}] Fixing TypeScript errors...
 `);
 
-    // The migrate step is the only one that runs ESLint. Writing this between
-    // the surrounding commits keeps a file the project never had out of all
-    // three.
-    if (!this.projectHasEslintConfig) {
-      try {
-        fs.writeFileSync(path.join(rootDir, '.eslintrc'), '');
-        this.shouldRemoveEslintrc = true;
-      } catch (err) {
-        log.warn(`Could not write a placeholder .eslintrc: ${errorMessage(err)}`);
-      }
-    }
-
     let outcome;
     try {
       outcome = await runMigrate({
@@ -534,8 +485,6 @@ ${warning}
       log.error(errorMessage(err));
       if (err instanceof Error && err.stack) log.error(err.stack);
       return this.failStep('migrate', `Step 3 of ${STEP_COUNT} (migrate)`, 255);
-    } finally {
-      this.removeGeneratedEslintrc();
     }
 
     this.typesReport = outcome.typesReport;
@@ -807,16 +756,6 @@ rename has really happened:
 The recommendations above are also in ${reportFile}.`);
   }
 
-  private removeGeneratedEslintrc(): void {
-    if (!this.shouldRemoveEslintrc) return;
-    this.shouldRemoveEslintrc = false;
-    try {
-      fs.rmSync(path.join(this.params.rootDir, '.eslintrc'), { force: true });
-    } catch {
-      // Leaving it behind is untidy, not a reason to fail a run.
-    }
-  }
-
   /**
    * A failing step ends the run with a statement of which step stopped it, what
    * the working tree holds, and what the migration recommended, none of which
@@ -832,7 +771,6 @@ The recommendations above are also in ${reportFile}.`);
 
   /** `headline` states what went wrong; everything after it is the same either way. */
   private endRun(name: FullRunStep['name'], headline: string, status: number): number {
-    this.removeGeneratedEslintrc();
     this.steps.push({ name, status: 'failed', exitCode: status, commit: null });
     log.info(`
 ---

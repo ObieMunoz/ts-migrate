@@ -181,7 +181,7 @@ describe('the full pipeline commit step', () => {
     ).toEqual(['init', 'rename', 'migrate']);
   }, 120000);
 
-  it('keeps the .eslintrc it writes for the migrate step out of every commit', async () => {
+  it('commits nothing the steps did not write', async () => {
     writeSmallProject();
     initGitRepo();
 
@@ -579,32 +579,31 @@ describe('a full pipeline check that fails', () => {
   }, 120000);
 });
 
-describe('the .eslintrc the full pipeline writes for the migrate step', () => {
-  /** The migrate step is the only one that runs ESLint, and it needs a config to find. */
+describe("the full pipeline and the project's ESLint config", () => {
+  /** eslint-fix reads whatever the project has; the run brings none of its own. */
   it.each([
     ['.eslintrc', '{}\n'],
     ['.eslintrc.json', '{}\n'],
     ['eslint.config.js', 'module.exports = [];\n'],
-  ])('is not written when the project already has %s', async (file, contents) => {
+  ])('leaves %s as the project wrote it', async (file, contents) => {
     writeSmallProject();
     fs.writeFileSync(path.join(rootDir, file), contents);
 
     await run();
 
-    // The run neither wrote a config of its own nor deleted the project's.
     expect(fs.readFileSync(path.join(rootDir, file), 'utf-8')).toBe(contents);
     expect(fs.existsSync(path.join(rootDir, '.eslintrc'))).toBe(file === '.eslintrc');
   }, 120000);
 
-  it('is not written when package.json carries the config', async () => {
+  it('writes none for a project that has none', async () => {
     writeProject({
-      'package.json': '{ "name": "demo", "eslintConfig": { "rules": {} } }\n',
+      'package.json': '{ "name": "demo" }\n',
       'src/index.js': 'module.exports = 1;\n',
     });
 
     await run();
 
-    expect(fs.existsSync(path.join(rootDir, '.eslintrc'))).toBe(false);
+    expect(fs.readdirSync(rootDir).filter((entry) => entry.includes('eslint'))).toEqual([]);
   }, 120000);
 });
 
