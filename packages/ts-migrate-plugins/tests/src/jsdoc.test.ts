@@ -549,6 +549,31 @@ const D = async (e: number): Promise<string> => String(e);
 `);
   });
 
+  it('annotates the return of a parameter list written over several lines', () => {
+    const text = `\
+/**
+ * @param a {number}
+ * @param b {number}
+ * @return {string}
+ */
+const A = async (
+  a,
+  b
+) => String(a + b);
+`;
+
+    expect(run(text, { options: { annotateReturns: true } })).toBe(`\
+/**
+ * @param a {number}
+ * @param b {number}
+ * @return {string}
+ */
+const A = async (
+  a: number, b: number
+): string => String(a + b);
+`);
+  });
+
   it('annotates an arrow function that is already generic', () => {
     const text = `\
 /**
