@@ -131,7 +131,12 @@ function coveringCommentRange(
   do {
     child = token
       .getChildren(sourceFile)
-      .find((candidate) => candidate.pos <= pos && pos < candidate.end);
+      // A JSDoc comment is still trivia, but it is also parsed into nodes of
+      // its own that getChildren hands back before the real ones. Descending
+      // into those puts pos at or past a token start, which the check below
+      // reads as code; the comment ranges of the token the JSDoc precedes are
+      // what covers it.
+      .find((candidate) => !ts.isJSDoc(candidate) && candidate.pos <= pos && pos < candidate.end);
     if (child) token = child;
   } while (child);
 
@@ -142,6 +147,24 @@ function coveringCommentRange(
     ...(ts.getTrailingCommentRanges(sourceFile.text, token.pos) ?? []),
   ];
   return commentRanges.find((range) => range.pos <= pos && pos < range.end);
+}
+
+/** Only the comment markers and whitespace a directive may follow on its line. */
+const COMMENT_LINE_OPENING = /^[\s/*]*$/;
+
+/**
+ * Whether the directive at pos opens its comment line, which is what makes
+ * TypeScript treat it as a directive rather than prose: its scanner matches
+ * `/^\/\/\/?\s*@(ts-expect-error|ts-ignore)/` against a line comment from the
+ * `//`, and `/^(?:\/|\*)*\s*@(ts-expect-error|ts-ignore)/` against each line
+ * of a block comment. `// see the docs about @ts-expect-error` suppresses
+ * nothing, so it is not debt either.
+ */
+function startsCommentLine(text: string, comment: ts.CommentRange, pos: number): boolean {
+  // The comment's own start for its first line (a trailing `// @ts-ignore`
+  // after code is still a directive), the line's start for the rest.
+  const lineStart = Math.max(comment.pos, text.lastIndexOf('\n', pos - 1) + 1);
+  return COMMENT_LINE_OPENING.test(text.slice(lineStart, pos));
 }
 
 export function scanFileDebt(
@@ -173,17 +196,17 @@ export function scanFileDebt(
   let match: RegExpExecArray | null;
   while ((match = directiveRegExp.exec(text)) != null) {
     const commentRange = coveringCommentRange(sourceFile, match.index);
-    if (commentRange && !countedComments.has(commentRange.pos)) {
-      countedComments.add(commentRange.pos);
-      if (match[1] === 'expect-error') {
-        debt.tsExpectError += 1;
-      } else {
-        debt.tsIgnore += 1;
-      }
-      if (match[2]) {
-        const code = `TS${match[2]}`;
-        debt.codes[code] = (debt.codes[code] ?? 0) + 1;
-      }
+    if (!commentRange || !startsCommentLine(text, commentRange, match.index)) continue;
+    if (countedComments.has(commentRange.pos)) continue;
+    countedComments.add(commentRange.pos);
+    if (match[1] === 'expect-error') {
+      debt.tsExpectError += 1;
+    } else {
+      debt.tsIgnore += 1;
+    }
+    if (match[2]) {
+      const code = `TS${match[2]}`;
+      debt.codes[code] = (debt.codes[code] ?? 0) + 1;
     }
   }
 

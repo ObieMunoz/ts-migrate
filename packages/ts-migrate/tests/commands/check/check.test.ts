@@ -95,6 +95,23 @@ describe('check command', () => {
     expect(check({ rootDir, folder: 'foo' })).toBe(0);
   });
 
+  it('catches a new suppression written as a JSDoc comment', () => {
+    expect(check({ rootDir, folder: 'foo' })).toBe(0);
+
+    // tsc suppresses on this form, so the ratchet has to see it too.
+    fs.appendFileSync(path.join(rootDir, 'a.ts'), '/** @ts-ignore */\nbar();\n');
+
+    expect(check({ rootDir, folder: 'foo' })).toBe(1);
+  });
+
+  it('does not read a mention of a directive in prose as new debt', () => {
+    expect(check({ rootDir, folder: 'foo' })).toBe(0);
+
+    fs.appendFileSync(path.join(rootDir, 'a.ts'), '// TODO drop the @ts-expect-error above\n');
+
+    expect(check({ rootDir, folder: 'foo' })).toBe(0);
+  });
+
   it('errors on an unreadable baseline', () => {
     fs.writeFileSync(path.join(rootDir, DEFAULT_BASELINE_FILE), 'not json');
     expect(check({ rootDir, folder: 'foo' })).toBe(-1);
