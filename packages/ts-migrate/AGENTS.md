@@ -26,10 +26,7 @@ docs live in this package's README.md.
    Commit or stash the target folder first either way. The run reports what is
    uncommitted there and then renames and rewrites those files, and with
    commits enabled `git add .` also puts them in the migration's commits.
-   Under `--yes` that report is a warning and the run continues. Only the
-   target folder needs to be clean: each commit is made with an explicit
-   pathspec, so anything staged elsewhere in the repository stays staged and
-   out of the migration's history.
+   Under `--yes` that report is a warning and the run continues.
 4. **Suppressions in the output are success, not failure.** The tool's
    contract is that `tsc` compiles with zero errors afterwards; it fulfills it
    by annotating what it can prove and suppressing the rest with
@@ -675,10 +672,13 @@ comments (with the suppressed error codes ts-migrate embeds in them),
 any-alias annotations (`$TSFixMe` and friends, discovered from the aliases
 the project's `.d.ts` files declare rather than hardcoded), and explicit
 `any` annotations. Prints totals plus the 10 worst files and how many more
-have debt. Counts come from per-file ASTs, so strings and JSX text that
-merely contain the directive words are not counted. Gitignored files are
-not counted (`--gitignore=false` counts them; same flag on `check`). `--json`
-prints the same data as JSON, with every file listed.
+have debt. Counts come from per-file ASTs. A suppression counts where
+TypeScript acts on it: the directive has to open its comment line, in any
+comment form (`//`, `///`, `/* */`, `/** */`, `{/* */}`). A directive inside
+a string, a template literal, or JSX text is not counted, and neither is a
+mention of one in prose. Gitignored files are not counted
+(`--gitignore=false` counts them; same flag on `check`). `--json` prints the
+same data as JSON, with every file listed.
 
 ### `ts-migrate check <folder> [--updateBaseline]`
 
@@ -687,7 +687,10 @@ per-file baseline to `.ts-migrate-baseline.json` in `<folder>`; commit that
 file. Later runs exit nonzero if any per-file count exceeds the baseline,
 and lower the baseline automatically when counts improve. After an
 intentional increase, accept the new counts with `--updateBaseline`.
-`--baselineFile <path>` overrides the baseline location.
+`--baselineFile <path>` overrides the baseline location. Versions before
+0.17.0 missed hand-written `/** @ts-ignore */` suppressions, so the first
+run after upgrading can fail on debt that was always there;
+`--updateBaseline` accepts it.
 
 ### `ts-migrate agents`
 

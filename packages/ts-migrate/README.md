@@ -38,8 +38,6 @@ The `full` command runs `init`, `rename`, `migrate` and a closing `tsc --noEmit`
 
 Commit or stash the folder you are migrating before you start. The run lists anything uncommitted there before Step 1, because the rename and migrate steps rewrite those files whether or not commits are enabled, and with commits enabled `git add .` puts them in the migration's commits too. Without `--yes` the list sits above the confirmation prompt; with `--yes` it is a warning and the run continues.
 
-That report covers the migration folder, and so do the commits: each one is made with an explicit pathspec, so work you had staged elsewhere in the repository stays staged and out of the migration's history. Only the folder you point at needs to be clean.
-
 A failing step names itself and exits with that step's exit code, leaving the partial result in the working tree. It also prints the type definition recommendations the run had gathered by then, and names the file they were written to so they survive the failure.
 
 A successful run ends with the SHAs of the commits it created and guidance for recording them in a repo-root [`.git-blame-ignore-revs`](https://git-scm.com/docs/git-blame#Documentation/git-blame.txt---ignore-revs-fileltfilegt) file, so `git blame` (locally and on github.com) can skip the mechanical rewrite commits. If your team merges PRs with merge commits, pass `--blameIgnoreRevs` to have the file written for you; with squash or rebase merges those SHAs never reach the main branch, so add the merged commit's SHA to the file after the merge instead.
@@ -848,9 +846,14 @@ convention and it keeps them.
 A migration that ends with `tsc` exiting 0 says nothing about how much of the
 project ended up suppressed or typed as `any`: a run that turned every
 parameter into `$TSFixMe` passes the same bar as one that inferred everything.
-Two commands measure exactly that. Counts come from per-file ASTs, so strings
-and JSX text that merely contain the directive words are not counted, and no
+Two commands measure exactly that. Counts come from per-file ASTs, so no
 type-checker program is needed.
+
+A suppression counts where TypeScript acts on it: the directive has to open
+its comment line, in any comment form (`//`, `///`, `/* */`, `/** */`, or the
+`{/* */}` ts-migrate writes inside JSX). A directive inside a string, a
+template literal, or JSX text is not counted, and neither is a mention of one
+in prose, since neither suppresses anything.
 
 ```sh
 npx -p @obiemunoz/ts-migrate ts-migrate report <folder>
@@ -883,6 +886,10 @@ file with `--baselineFile <path>`, whose directory has to exist already.
 A baseline that cannot be written is reported as an error and exits nonzero,
 except on the run that would only have lowered it: there the ratchet has
 already held, so the run passes and the baseline is left higher than the code.
+
+Versions before 0.17.0 missed hand-written `/** @ts-ignore */` suppressions,
+so the first `check` after upgrading can fail on debt that was always there.
+Accept it with `--updateBaseline` and the ratchet holds from that count on.
 
 # Files a run cannot write
 
