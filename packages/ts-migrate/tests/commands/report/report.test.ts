@@ -107,6 +107,32 @@ describe('type debt scanner', () => {
     });
   });
 
+  it('counts JSDoc suppressions and skips mentions of one in prose', () => {
+    writeFiles(rootDir, {
+      'tsconfig.json': '{ "compilerOptions": {} }',
+      // The first two suppress the line under them; the last two are prose,
+      // which suppresses nothing. tsc agrees on all four.
+      'src/a.ts': `/** @ts-ignore */
+foo();
+/** @ts-expect-error TS(2304): Cannot find name 'bar'. */
+bar();
+/** @deprecated superseded; do not add a @ts-ignore here */
+export function baz() {}
+// TODO drop the @ts-expect-error above
+`,
+    });
+
+    const debt = scanTypeDebt(rootDir);
+
+    expect(debt.files['src/a.ts']).toEqual({
+      tsExpectError: 1,
+      tsIgnore: 1,
+      anyAlias: 0,
+      any: 0,
+      codes: { TS2304: 1 },
+    });
+  });
+
   it('leaves gitignored files uncounted unless gitignore is disabled', () => {
     writeProject(rootDir);
     execFileSync('git', ['init'], { cwd: rootDir, stdio: 'ignore' });
