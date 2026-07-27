@@ -179,6 +179,33 @@ export default WrappedComponent;
 `);
   });
 
+  it('handles an async arrow function component', async () => {
+    const text = `import React from 'react';
+import PropTypes from 'prop-types';
+
+const propTypes = {
+  foo: PropTypes.string.isRequired,
+};
+
+const Foo = async (props) => <div>{props.foo}</div>;
+
+Foo.propTypes = propTypes;
+
+export default Foo;
+`;
+
+    expect(await run(text)).toBe(`import React from 'react';
+
+type Props = {
+    foo: string;
+};
+
+const Foo = async (props: Props) => <div>{props.foo}</div>;
+
+export default Foo;
+`);
+  });
+
   it('handles functional component wrapped in memo', async () => {
     const text = `import React, { memo } from 'react';
 import PropTypes from 'prop-types';

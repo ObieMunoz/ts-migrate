@@ -40,7 +40,9 @@ class UpdateTracker {
       .find((node) => node.kind === ts.SyntaxKind.CloseParenToken);
     let pos;
     if (paren) {
-      pos = paren.pos + 1;
+      // Past the parenthesis itself, which a parameter list written over
+      // several lines does not start at.
+      pos = paren.end;
     } else if (parenthesizedParameters) {
       pos = node.parameters.end;
     } else {

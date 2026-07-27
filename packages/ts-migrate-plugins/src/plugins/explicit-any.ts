@@ -3,6 +3,7 @@ import { Plugin } from '@obiemunoz/ts-migrate-server';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
+import { hasParameterParentheses } from './utils/arrow';
 
 type Options = AnyAliasOptions;
 
@@ -150,7 +151,11 @@ function annotateIdentifierDeclaration(
 
   if (ts.isParameter(parent) && parent.name === node && parent.type == null) {
     const fn = parent.parent;
-    if (ts.isArrowFunction(fn) && fn.parameters.length === 1 && !hasParentheses(fn, sourceFile)) {
+    if (
+      ts.isArrowFunction(fn) &&
+      fn.parameters.length === 1 &&
+      !hasParameterParentheses(fn, sourceFile)
+    ) {
       insert(node.getStart(sourceFile), '(');
       insert(node.end, `: ${anyType})`);
     } else {
@@ -163,10 +168,6 @@ function annotateIdentifierDeclaration(
   ) {
     insert((parent.questionToken ?? node).end, `: ${anyType}`);
   }
-}
-
-function hasParentheses(fn: ts.ArrowFunction, sourceFile: ts.SourceFile): boolean {
-  return fn.getChildren(sourceFile).some((c) => c.kind === ts.SyntaxKind.OpenParenToken);
 }
 
 function annotateRestParameter(
