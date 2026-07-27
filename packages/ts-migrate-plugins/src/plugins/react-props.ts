@@ -18,6 +18,7 @@ import getTypeFromPropTypesObjectLiteral, {
   unpackInitializer,
 } from './utils/react-props';
 import { elementTypesByTag } from './utils/intrinsic-elements';
+import { hasParameterParentheses } from './utils/arrow';
 import { getTextPreservingWhitespace } from './utils/text';
 import { isStatic } from './utils/modifiers';
 import { updateImports, DefaultImport, NamedImport } from './utils/imports';
@@ -281,7 +282,7 @@ function updatePropTypes(
           if (
             ts.isArrowFunction(signature) &&
             signature.parameters.length === 1 &&
-            signature.getFirstToken()?.kind !== ts.SyntaxKind.OpenParenToken
+            !hasParameterParentheses(signature, sourceFile)
           ) {
             // Special case: when an arrow function has a single parameter and no parentheses,
             // add parentheses.

@@ -507,6 +507,66 @@ window.e = (e: number) => null;
 `);
   });
 
+  it('annotates async arrow functions', () => {
+    const text = `\
+/**
+ * @param a {string}
+ * @param b {number}
+ */
+const A = async (a, b) => a + b;
+/** @param c {number} */
+const B = async c => c;
+/**
+ * @param d {number}
+ * @return {Promise<string>}
+ */
+const C = async d => String(d);
+/**
+ * @param e {number}
+ * @return {Promise<string>}
+ */
+const D = async (e) => String(e);
+`;
+
+    expect(run(text, { options: { annotateReturns: true } })).toBe(`\
+/**
+ * @param a {string}
+ * @param b {number}
+ */
+const A = async (a: string, b: number) => a + b;
+/** @param c {number} */
+const B = async (c: number) => c;
+/**
+ * @param d {number}
+ * @return {Promise<string>}
+ */
+const C = async (d: number): Promise<string> => String(d);
+/**
+ * @param e {number}
+ * @return {Promise<string>}
+ */
+const D = async (e: number): Promise<string> => String(e);
+`);
+  });
+
+  it('annotates an arrow function that is already generic', () => {
+    const text = `\
+/**
+ * @param a {T}
+ * @param b {number}
+ */
+const A = <T,>(a, b) => a;
+`;
+
+    expect(run(text)).toBe(`\
+/**
+ * @param a {T}
+ * @param b {number}
+ */
+const A = <T,>(a: T, b: number) => a;
+`);
+  });
+
   it('parenthesizes an arrow function once when it annotates both ends', () => {
     const text = `\
 /**

@@ -15,6 +15,7 @@ import {
   JSDocTypeAliasScan,
   scanJSDocTypeAliases,
 } from './utils/jsdoc-type-aliases';
+import { hasParameterParentheses } from './utils/arrow';
 
 type TypeMap = Record<string, TypeOptions>;
 
@@ -186,8 +187,7 @@ const jsDocTransformerFactory =
       }
 
       const newParameters = factory.createNodeArray(parameters);
-      const addParens =
-        ts.isArrowFunction(node) && node.getFirstToken()?.kind !== ts.SyntaxKind.OpenParenToken;
+      const addParens = ts.isArrowFunction(node) && !hasParameterParentheses(node, sourceFile);
       updates.replaceNodes(node.parameters, newParameters, addParens);
 
       // `returnType` is the node's own annotation whenever the return type is
