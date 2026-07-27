@@ -64,6 +64,6 @@ it('reports the failing step when the migrate step throws', async () => {
     'failed',
     'not-reached',
   ]);
-  // The placeholder the step writes for eslint-fix is cleaned up even here.
+  // A failed step leaves the project's own files behind, and nothing else.
   expect(fs.existsSync(path.join(rootDir, '.eslintrc'))).toBe(false);
 }, 120000);
