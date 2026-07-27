@@ -703,6 +703,35 @@ describe('migrate command', () => {
       expect(exitCode).toBe(0);
     });
 
+    it('revisits transitive importers through a namespace re-export', async () => {
+      const configDir = path.resolve(fixturesDir, 'tsconfig');
+      copyDir(configDir, rootDir);
+      fs.writeFileSync(path.resolve(rootDir, 'b.ts'), 'export const b = 1; // CHANGE_ME\n');
+      fs.writeFileSync(path.resolve(rootDir, 'barrel.ts'), "export * as ns from './b';\n");
+      fs.writeFileSync(
+        path.resolve(rootDir, 'a.ts'),
+        "import { ns } from './barrel';\nexport const a = ns.b;\n",
+      );
+      fs.writeFileSync(path.resolve(rootDir, 'c.ts'), 'export const c = 3;\n');
+
+      const visited: string[] = [];
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'change-b-once',
+          run({ fileName, text }) {
+            visited.push(path.basename(fileName));
+            return text.replace('CHANGE_ME', 'CHANGED');
+          },
+        },
+        {},
+        { repeatUntilStable: true },
+      );
+
+      const { exitCode } = await migrate({ rootDir, config });
+      expect(visited).toEqual(['a.ts', 'b.ts', 'barrel.ts', 'c.ts', 'a.ts', 'b.ts', 'barrel.ts']);
+      expect(exitCode).toBe(0);
+    });
+
     it('revisits every file when a changed file affects the global scope', async () => {
       const configDir = path.resolve(fixturesDir, 'tsconfig');
       copyDir(configDir, rootDir);
