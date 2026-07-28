@@ -527,11 +527,13 @@ run. Pass `--excludePlugin widen-annotations` to keep annotations as written.
   state outright and the any alias everywhere else, so narrowing one by hand is
   the useful edit and a later run keeps it. Entries are never dropped
   automatically: delete one once something else declares that property, since
-  two declarations of one global is an error. A file at that path that
-  ts-migrate did not write is never touched. The run keeps the file in the
-  project's tsconfig, editing `"include"` or `"files"` when it has to; without
-  a tsconfig it can read, it casts at each site instead, since a declaration
-  file nothing includes would leave the project failing `tsc`.
+  two declarations of one global is an error. A property whose name is a
+  reserved word keeps its cast when it is assigned through `global` or
+  `globalThis`, since no `var` can be declared with that name. A file at that
+  path that ts-migrate did not write is never touched. The run keeps the file
+  in the project's tsconfig, editing `"include"` or `"files"` when it has to;
+  without a tsconfig it can read, it casts at each site instead, since a
+  declaration file nothing includes would leave the project failing `tsc`.
 - `--dryRun`: run every plugin pass but write nothing to disk. Prints each
   file a real run would update, with the suppression and `any` counts it
   would then contain. The report matches a real run exactly (with
