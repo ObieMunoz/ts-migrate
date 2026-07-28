@@ -186,6 +186,9 @@ function installProjectDependencies(tmpDir: string, projectESLint?: ProjectESLin
   }
 }
 
+/** Longer than the slowest of these runs, short enough to fail a hang. */
+const DRIVER_TIMEOUT_MS = 60000;
+
 interface RunOptions {
   env?: Record<string, string>;
   /** Installed at <fixture>/node_modules/eslint before the run. */
@@ -268,7 +271,7 @@ function runInFixture(
     Object.assign(env, extraEnv);
 
     const rootDir = rootSubDir ? path.join(tmpDir, rootSubDir) : tmpDir;
-    const { status, stdout, stderr } = spawnSync(
+    const { status, signal, stdout, stderr } = spawnSync(
       process.execPath,
       [
         path.join(tmpDir, 'driver.cjs'),
@@ -278,8 +281,17 @@ function runInFixture(
         cwd: workingDir ? path.join(tmpDir, workingDir) : tmpDir,
         env,
         encoding: 'utf8',
+        // spawnSync blocks the event loop, so jest's own per-test timeout
+        // cannot interrupt a driver that never returns. Without this, a plugin
+        // that fails to terminate hangs the whole run instead of failing.
+        timeout: DRIVER_TIMEOUT_MS,
       },
     );
+    if (signal) {
+      throw new Error(
+        `driver killed with ${signal} after ${DRIVER_TIMEOUT_MS}ms (it did not terminate): ${stderr}`,
+      );
+    }
     if (status !== 0) {
       throw new Error(`driver exited with ${status}: ${stderr}`);
     }
@@ -416,6 +428,59 @@ describe('eslint-fix plugin', () => {
       expect(notices[0].reason).toContain('ESLint could not parse the file');
     },
     20000,
+  );
+
+  it(
+    'gives up on a config whose fixes never settle instead of fixing forever',
+    () => {
+      const text = `const hello = 'world'\n`;
+      const { results, notices } = runInFixture('eslint-cyclic-fixes', [
+        { fileName: 'Foo.tsx', text },
+      ]);
+
+      // The cycle has no fixed point, so the file keeps the text it arrived
+      // with rather than whichever step the cycle was cut on.
+      expect(results).toEqual([text]);
+      expect(notices).toHaveLength(1);
+      expect(notices[0].reason).toContain('never settled');
+      expect(notices[0].hint).toContain('undo one another');
+    },
+    30000,
+  );
+
+  it(
+    'gives up on a config whose fixes never settle when linting in workers',
+    () => {
+      const text = `const hello = 'world'\n`;
+      const { results, notices, spawnedWorkers } = runInFixture(
+        'eslint-cyclic-fixes',
+        [{ fileName: 'Foo.tsx', text }],
+        { env: { TS_MIGRATE_ESLINT_FIX_WORKERS: '1' } },
+      );
+
+      // Same answer whichever route the file took: a worker that keeps fixing
+      // hangs the run just as surely as the main thread does.
+      expect(spawnedWorkers).toBe(1);
+      expect(results).toEqual([text]);
+      expect(notices).toHaveLength(1);
+      expect(notices[0].reason).toContain('never settled');
+    },
+    30000,
+  );
+
+  it(
+    'still applies fixes that need more than one round to settle',
+    () => {
+      // semi and eol-last each fix, and the result has to be linted again to
+      // prove it is stable: the round cap must not cut a converging config off.
+      const { results, notices } = runInFixture('eslint-flat', [
+        { fileName: 'Foo.tsx', text: `const hello = 'world'` },
+      ]);
+
+      expect(results).toEqual([`const hello = 'world';\n`]);
+      expect(notices).toEqual([]);
+    },
+    15000,
   );
 });
 
