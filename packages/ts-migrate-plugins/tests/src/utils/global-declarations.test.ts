@@ -235,6 +235,26 @@ window.appConfig = loadConfig();
 
     expect([...evidence.properties.keys()]).toEqual([]);
   });
+
+  it('leaves a global whose name cannot be a var declaration name alone', () => {
+    const evidence = collectText(
+      'globalThis.import = importShim;\nglobalThis.arguments = argv;\nglobalThis.registry = {};',
+    );
+
+    expect([...evidence.properties.keys()]).toEqual(['registry']);
+  });
+
+  it('keeps a reserved word assigned through window, where a member is legal', () => {
+    const evidence = collectText('window.import = importShim;');
+
+    expect(evidence.properties.get('import')!.target).toBe('window');
+  });
+
+  it('does not promote a reserved word to a var when globalThis assigns it too', () => {
+    const evidence = collectText('window.import = importShim;\nglobalThis.import = importShim;');
+
+    expect(evidence.properties.get('import')!.target).toBe('window');
+  });
 });
 
 describe('renderGlobalDeclarations', () => {
@@ -482,6 +502,27 @@ function useThem() {
     expect(withFile.kind === 'declarations' && withFile.text).toBe(first);
     expect(withoutFile.kind === 'declarations' && withoutFile.text).toBe(first);
     expect(fs.readFileSync(path.join(rootDir, GLOBAL_DECLARATIONS_FILE), 'utf-8')).toBe(first);
+  });
+
+  it('parse when the code assigns globals named after every reserved word', () => {
+    // A property access can be named anything, so `globalThis.import = ...`
+    // parses; `var import: any;` does not, and one of these in the generated
+    // file stops the whole project compiling.
+    const reserved = `break case catch class const continue debugger default delete do else enum
+export extends false finally for function if import in instanceof new null return super switch
+this throw true try typeof var void while with arguments eval`.split(/\s+/);
+    const evidence = collectText(
+      reserved.map((name) => `globalThis.${name} = 1;\nwindow.${name} = 1;`).join('\n'),
+    );
+    const result = buildGlobalDeclarations(evidence, makeFixture());
+    if (result.kind !== 'declarations') throw new Error(`Expected declarations, got ${result.kind}`);
+
+    const parsed: ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] } =
+      ts.createSourceFile('ts-migrate-globals.d.ts', result.text, ts.ScriptTarget.Latest, true);
+
+    expect(parsed.parseDiagnostics ?? []).toEqual([]);
+    expect(result.text).not.toMatch(/^\s*var /m);
+    expect(parseGlobalDeclarations(result.text)).toEqual(result.declarations);
   });
 });
 

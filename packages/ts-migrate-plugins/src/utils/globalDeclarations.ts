@@ -18,6 +18,23 @@ const GLOBAL_ROOTS: { [name: string]: GlobalTarget } = {
   globalThis: 'globalThis',
 };
 
+/**
+ * The names the grammar refuses as a variable declaration name: every reserved
+ * word, plus `arguments` and `eval`, which strict mode forbids and a
+ * declaration file is always strict.
+ *
+ * A property can be named any of them — `globalThis.import = ...` parses — so
+ * nothing upstream rules them out, and `var import: any;` in the generated file
+ * is a syntax error that stops the whole project compiling and makes the file
+ * unreadable to the next run. A `Window` member has no such restriction, so
+ * only the `globalThis` target is affected.
+ */
+const RESERVED_VARIABLE_NAMES = new Set(
+  `break case catch class const continue debugger default delete do else enum export extends
+false finally for function if import in instanceof new null return super switch this throw
+true try typeof var void while with arguments eval`.split(/\s+/),
+);
+
 export interface GlobalProperty {
   name: string;
   target: GlobalTarget;
@@ -217,6 +234,7 @@ export function collectGlobalAssignments({
     const rootName = left.expression.text;
     const target = GLOBAL_ROOTS[rootName];
     if (!target || isShadowed(left.expression, rootName, bindings)) return;
+    if (target === 'globalThis' && RESERVED_VARIABLE_NAMES.has(left.name.text)) return;
     if (checker && environmentDeclares(checker, left)) return;
 
     record(evidence, left.name.text, target, sourceFile.fileName, assignedType(node.right));
