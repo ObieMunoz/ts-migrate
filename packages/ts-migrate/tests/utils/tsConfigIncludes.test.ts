@@ -128,6 +128,58 @@ describe('tsConfigIncludes', () => {
       expect(readConfig()).toBe('{ "include": ["./app/**/*"] }');
     });
 
+    // The file a dry run reports on is one it has not written, and an include
+    // only ever matches what is on disk, so answering from the disk alone
+    // reports an edit to every tsconfig that already covers the file.
+    describe('on a dry run over a file that has not been written', () => {
+      const pendingFile = (relative = 'types/ts-migrate-globals.d.ts') =>
+        path.join(rootDir, ...relative.split('/'));
+
+      it('says nothing about a config with no include or files of its own', () => {
+        writeConfig('{ "compilerOptions": { "noEmit": true } }');
+        expect(
+          ensureIncludedByTsConfig(rootDir, pendingFile(), { dryRun: true }).kind,
+        ).toBe('included');
+      });
+
+      it('says nothing about an include that already covers the file', () => {
+        writeConfig('{ "include": ["./types/**/*"] }');
+        expect(
+          ensureIncludedByTsConfig(rootDir, pendingFile(), { dryRun: true }).kind,
+        ).toBe('included');
+      });
+
+      it('says nothing about an include covering the migration root', () => {
+        writeConfig('{ "include": ["./**/*"] }');
+        expect(
+          ensureIncludedByTsConfig(rootDir, pendingFile('ts-migrate-aliases.d.ts'), {
+            dryRun: true,
+          }).kind,
+        ).toBe('included');
+      });
+
+      it('names the key the real run would edit when an exclude covers the file', () => {
+        writeConfig('{ "include": ["./**/*"], "exclude": ["./types"] }');
+
+        expect(ensureIncludedByTsConfig(rootDir, pendingFile(), { dryRun: true })).toMatchObject({
+          kind: 'would-add',
+          key: 'files',
+          entry: './types/ts-migrate-globals.d.ts',
+        });
+      });
+
+      it('still reports the edit a config that does not match the file needs', () => {
+        writeConfig('{ "include": ["./app/**/*"] }');
+
+        expect(ensureIncludedByTsConfig(rootDir, pendingFile(), { dryRun: true })).toMatchObject({
+          kind: 'would-add',
+          key: 'include',
+          entry: './types/ts-migrate-globals.d.ts',
+        });
+        expect(readConfig()).toBe('{ "include": ["./app/**/*"] }');
+      });
+    });
+
     it('says nothing when there is no tsconfig to edit', () => {
       expect(ensureIncludedByTsConfig(rootDir, writeGenerated()).kind).toBe('included');
     });

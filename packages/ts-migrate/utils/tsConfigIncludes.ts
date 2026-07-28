@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import ts from 'typescript';
 import { appendJSON5ArrayItem } from './updateJSON5';
@@ -12,6 +13,36 @@ function matchesFile(config: unknown, rootDir: string, filePath: string): boolea
   return ts
     .parseJsonConfigFileContent(config, ts.sys, rootDir)
     .fileNames.some((fileName) => canonical(fileName) === target);
+}
+
+/**
+ * The same question for a file a dry run has not written. An "include" glob
+ * only ever matches what is on disk, so asking about a file that is not there
+ * yet answers no for every config — which reads as "your tsconfig needs an
+ * entry" even when the config already covers the path the real run writes to.
+ *
+ * The specs are matched against paths rather than contents, so a scratch tree
+ * holding nothing but this one file at the same relative path answers for it
+ * exactly. Nothing is written inside the project.
+ */
+function matchesPendingFile(config: unknown, rootDir: string, filePath: string): boolean {
+  const relative = path.relative(rootDir, filePath);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    return matchesFile(config, rootDir, filePath);
+  }
+  let scratchDir: string | undefined;
+  try {
+    scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ts-migrate-tsconfig-'));
+    const scratchFile = path.join(scratchDir, relative);
+    fs.mkdirSync(path.dirname(scratchFile), { recursive: true });
+    fs.writeFileSync(scratchFile, '');
+    return matchesFile(config, scratchDir, scratchFile);
+  } catch {
+    // Nowhere to put the scratch tree: fall back to the answer the disk gives.
+    return matchesFile(config, rootDir, filePath);
+  } finally {
+    if (scratchDir) fs.rmSync(scratchDir, { recursive: true, force: true });
+  }
 }
 
 interface ReadConfig {
@@ -96,7 +127,13 @@ export function ensureIncludedByTsConfig(
   const read = readTsConfig(rootDir);
   if (!read) return { kind: 'included' };
   const { configFile, text, config, hasOwnInclude } = read;
-  if (matchesFile(config, rootDir, filePath)) return { kind: 'included' };
+  // A dry run asks about a file it has not written, so every check below
+  // resolves against a stand-in for the tree the real run would leave.
+  const matches = (candidate: unknown) =>
+    dryRun
+      ? matchesPendingFile(candidate, rootDir, filePath)
+      : matchesFile(candidate, rootDir, filePath);
+  if (matches(config)) return { kind: 'included' };
 
   const entry = `./${path.relative(rootDir, filePath).split(path.sep).join('/')}`;
   const keys: TsConfigListKey[] = hasOwnInclude ? ['include', 'files'] : ['files'];
@@ -108,13 +145,10 @@ export function ensureIncludedByTsConfig(
     } catch {
       continue;
     }
-    // A dry run has not written the declaration file, and an "include" glob
-    // only matches what is on disk, so the candidate cannot be re-resolved.
-    if (dryRun) return { kind: 'would-add', key, entry, configFile };
-
     const parsed = ts.parseConfigFileTextToJson(configFile, edited);
     if (parsed.error || !parsed.config) continue;
-    if (!matchesFile(parsed.config, rootDir, filePath)) continue;
+    if (!matches(parsed.config)) continue;
+    if (dryRun) return { kind: 'would-add', key, entry, configFile };
     fs.writeFileSync(configFile, edited);
     return { kind: 'added', key, entry, configFile };
   }
