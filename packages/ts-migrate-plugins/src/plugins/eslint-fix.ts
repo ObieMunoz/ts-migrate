@@ -330,6 +330,27 @@ function reportParseError(reportNotice: ReportNotice, message: string): void {
   });
 }
 
+// ESLint applies fixes in rounds of its own and stops after ten, so text that
+// is still changing is handed back for another round rather than being at a
+// fixed point. Rules whose fixes undo each other never reach one: the text
+// cycles, and the round it stops on is wherever ESLint's tenth pass landed.
+// Ten rounds is a hundred of ESLint's own passes, far past what a config that
+// converges at all needs.
+const MAX_FIX_ROUNDS = 10;
+
+// Two shapes of config that never settle, and neither is this file's to
+// resolve: the text repeats (rules fixing each other's fixes) or it keeps
+// changing for longer than any converging config would.
+function reportUnsettledFixes(reportNotice: ReportNotice): void {
+  reportNotice({
+    reason: `ESLint's fixes for this file never settled (its text was still changing after ${MAX_FIX_ROUNDS} rounds of fixing)`,
+    hint:
+      'Rules whose fixes undo one another cycle forever, so the file is left unchanged rather ' +
+      'than saved at whichever point the cycle was cut. Running the project\'s own ' +
+      '`eslint --fix` on the file reports the rules that disagree.',
+  });
+}
+
 async function fixToStable(
   cli: AnyESLint,
   fileName: string,
@@ -337,7 +358,8 @@ async function fixToStable(
   reportNotice: ReportNotice,
 ): Promise<string> {
   let newText = text;
-  while (true) {
+  const seen = new Set([text]);
+  for (let round = 0; round < MAX_FIX_ROUNDS; round += 1) {
     const [report] = await cli.lintText(newText, {
       filePath: fileName,
     });
@@ -348,11 +370,16 @@ async function fixToStable(
     }
 
     if (!report || !report.output || report.output === newText) {
-      break;
+      return newText;
     }
+    // Text this file has already been through is a cycle, and every round
+    // after it repeats the same states.
+    if (seen.has(report.output)) break;
+    seen.add(report.output);
     newText = report.output;
   }
-  return newText;
+  reportUnsettledFixes(reportNotice);
+  return text;
 }
 
 // Linting is synchronous CPU work inside ESLint, so overlapping lintText calls
@@ -441,14 +468,25 @@ parentPort.on('message', async ({ fileName, text }) => {
     const cli = await getCli();
     let newText = text;
     let fatalMessage;
-    while (true) {
+    let settled = false;
+    const seen = new Set([text]);
+    for (let round = 0; round < workerData.maxFixRounds; round += 1) {
       const [report] = await cli.lintText(newText, { filePath: fileName });
       const fatal = report && report.messages && report.messages.find((m) => m.fatal);
       if (fatal && fatalMessage === undefined) fatalMessage = fatal.message;
-      if (!report || !report.output || report.output === newText) break;
+      if (!report || !report.output || report.output === newText) { settled = true; break; }
+      if (seen.has(report.output)) break;
+      seen.add(report.output);
       newText = report.output;
     }
-    parentPort.postMessage({ ok: true, text: newText, fatalMessage });
+    // An unsettled file is handed back as it arrived; the reporting lives on
+    // the main thread, with the in-process route's.
+    parentPort.postMessage({
+      ok: true,
+      text: settled ? newText : text,
+      fatalMessage,
+      unsettled: !settled,
+    });
   } catch (error) {
     // ESLint hangs the failing rule's id on the error it throws; only the
     // message survives the structured clone, so send it alongside.
@@ -462,7 +500,7 @@ parentPort.on('message', async ({ fileName, text }) => {
 `;
 
 type WorkerResult =
-  | { ok: true; text: string; fatalMessage?: string }
+  | { ok: true; text: string; fatalMessage?: string; unsettled?: boolean }
   | { ok: false; error: string; ruleId?: string };
 
 interface PoolJob {
@@ -523,6 +561,7 @@ function spawnWorker(): Worker {
       typeScriptDir: typeScriptPackageDir(),
       useFlatConfig: resolvedEngine.config.useFlatConfig,
       cwd: resolvedEngine.config.cwd,
+      maxFixRounds: MAX_FIX_ROUNDS,
     },
   });
   worker.on('message', (result: WorkerResult) => {
@@ -658,6 +697,9 @@ async function tryPool(
   }
   if (result.fatalMessage !== undefined) {
     reportParseError(reportNotice, result.fatalMessage);
+  }
+  if (result.unsettled) {
+    reportUnsettledFixes(reportNotice);
   }
   return result.text;
 }
