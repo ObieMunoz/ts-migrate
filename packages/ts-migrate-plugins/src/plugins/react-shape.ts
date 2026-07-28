@@ -88,6 +88,8 @@ const reactShapePlugin: Plugin<Options> = {
     const typesAndInterfaces = sourceFile.statements.filter(
       (node) => ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node),
     ) as (ts.InterfaceDeclaration | ts.TypeAliasDeclaration)[];
+    const declaresType = (name: string) =>
+      typesAndInterfaces.some((tNode) => tNode.name.text === name);
 
     for (const node of sourceFile.statements) {
       // const shapeName = PropTypes.shape({...})
@@ -107,11 +109,7 @@ const reactShapePlugin: Plugin<Options> = {
             const shapeNode = variableDeclaration.initializer;
             const shapeName = variableDeclaration.name.getText();
             // we are checking here, if there is existing interface/type with the same name in the file
-            if (
-              !typesAndInterfaces.find(
-                (tNode) => tNode.name.text === variableDeclaration.name.getText(),
-              )
-            ) {
+            if (!declaresType(shapeName)) {
               updates.push({
                 kind: 'insert',
                 index: node.pos,
@@ -152,15 +150,19 @@ const reactShapePlugin: Plugin<Options> = {
             const shapeNode = variableDeclaration.initializer.arguments[0] as ts.CallExpression;
             const shapeName = variableDeclaration.name.getText();
 
-            updates.push({
-              kind: 'insert',
-              index: node.pos,
-              text: `\n\n${printer.printNode(
-                ts.EmitHint.Unspecified,
-                getTypeForTheShape(shapeNode, shapeName, sourceFile, options, true),
-                sourceFile,
-              )}`,
-            });
+            // the declaration keeps no annotation naming the type, so this check is
+            // all that stands between a rerun and a second declaration of the name
+            if (!declaresType(shapeName)) {
+              updates.push({
+                kind: 'insert',
+                index: node.pos,
+                text: `\n\n${printer.printNode(
+                  ts.EmitHint.Unspecified,
+                  getTypeForTheShape(shapeNode, shapeName, sourceFile, options, true),
+                  sourceFile,
+                )}`,
+              });
+            }
 
             if (exportModifier) {
               splitVariableExport(node, shapeName, exportModifier);
