@@ -219,6 +219,76 @@ const ArrayShape = PropTypes.arrayOf(
 export default ArrayShape;`);
   });
 
+  it('array of the shapes with an existing type', async () => {
+    const text = `import PropTypes from 'prop-types';
+
+type ArrayShape = {
+    picture: string;
+    caption?: string;
+}[];
+
+const ArrayShape = PropTypes.arrayOf(
+  PropTypes.shape({
+    picture: PropTypes.string.isRequired,
+    caption: PropTypes.string,
+  }),
+);
+export default ArrayShape;`;
+    const result = await reactShapePlugin.run(
+      mockPluginParams({ text, fileName: 'ArrayShape.js', options: { anyAlias: '$TSFixMe' } }),
+    );
+    expect(result).toBe(text);
+  });
+
+  it('array of the shapes with an existing interface', async () => {
+    const text = `import PropTypes from 'prop-types';
+
+interface ArrayShape {
+  picture: string;
+}
+
+const ArrayShape = PropTypes.arrayOf(
+  PropTypes.shape({
+    picture: PropTypes.string.isRequired,
+  }),
+);
+export default ArrayShape;`;
+    const result = await reactShapePlugin.run(
+      mockPluginParams({ text, fileName: 'ArrayShape.js', options: { anyAlias: '$TSFixMe' } }),
+    );
+    expect(result).toBe(text);
+  });
+
+  it('leaves its own output for an array of the shapes alone on a second run', async () => {
+    const text = `import PropTypes from 'prop-types';
+
+export const ArrayShape = PropTypes.arrayOf(
+  PropTypes.shape({
+    picture: PropTypes.string.isRequired,
+    caption: PropTypes.string,
+  }),
+);`;
+    const params = { fileName: 'ArrayShape.js', options: { anyAlias: '$TSFixMe' } };
+    const first = await reactShapePlugin.run(mockPluginParams({ ...params, text }));
+    expect(first).toBe(`import PropTypes from 'prop-types';
+
+type ArrayShape = {
+    picture: string;
+    caption?: string;
+}[];
+
+const ArrayShape = PropTypes.arrayOf(
+  PropTypes.shape({
+    picture: PropTypes.string.isRequired,
+    caption: PropTypes.string,
+  }),
+);
+export { ArrayShape };`);
+
+    const second = await reactShapePlugin.run(mockPluginParams({ ...params, text: first! }));
+    expect(second).toBe(first);
+  });
+
   it('complex exports, multiple variables shapes', async () => {
     const text = `import { Shape, Types } from 'react-validators';
 
