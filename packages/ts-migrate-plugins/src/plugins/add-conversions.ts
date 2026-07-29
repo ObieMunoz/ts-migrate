@@ -79,14 +79,14 @@ const addConversionsTransformerFactory =
       switch (diag.code) {
         case 2339:
         case 7017:
-          if (!ts.isPropertyAccessExpression(token.parent)) {
+          if (!ts.isPropertyAccessExpression(token.parent) || isInJsxTagName(token.parent)) {
             return null;
           }
           return { node: token.parent.expression, type: anyType };
 
         case 2571:
         case 18046:
-          return { node: token, type: anyType };
+          return isInJsxTagName(token) ? null : { node: token, type: anyType };
 
         case 7015:
         case 7053: {
@@ -197,6 +197,26 @@ const addConversionsTransformerFactory =
   };
 
 type Conversion = { node: ts.Node; type: ts.TypeNode };
+
+/**
+ * Whether a conversion here would land in the tag name of a JSX element. A tag
+ * name may only be an identifier, `this`, or a chain of property accesses over
+ * one, so a parenthesized cast written there does not parse, and a closing tag
+ * cannot carry the cast at all. The diagnostic is left for ts-ignore.
+ */
+function isInJsxTagName(node: ts.Node): boolean {
+  let cur = node;
+  while (ts.isPropertyAccessExpression(cur.parent) && cur.parent.expression === cur) {
+    cur = cur.parent;
+  }
+  const { parent } = cur;
+  return (
+    (ts.isJsxOpeningElement(parent) ||
+      ts.isJsxSelfClosingElement(parent) ||
+      ts.isJsxClosingElement(parent)) &&
+    parent.tagName === cur
+  );
+}
 
 type ReplaceRegion = { owner: ts.Node; pos: number; end: number };
 
