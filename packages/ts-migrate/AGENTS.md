@@ -447,6 +447,15 @@ single element counts, and the widening is written only when re-checking the
 file with it in place reports no new error. Pass `--excludePlugin
 react-forwarded-props` to leave those props types as the propTypes wrote them.
 
+propTypes also say nothing about the props a component is simply given: a
+component validates a subset of what its callers pass, and JSX in JavaScript
+checks neither. The passed-props step reads the project's own JSX and declares
+those props on the component's annotation, typed from what the call sites pass,
+with `any` where nothing can be printed. A prop the type already declares is a
+type mismatch rather than a missing member and is left alone, and each prop is
+proven on its own against the declaring file. Pass `--excludePlugin
+react-passed-props` to keep only the props propTypes mention.
+
 The widening step unions an annotation with what the assignments in its own
 file give it, so `let x: number` later assigned null ends up `number | null`
 instead of `@ts-expect-error`. It only ever writes a type it can name in that

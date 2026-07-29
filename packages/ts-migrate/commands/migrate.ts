@@ -19,6 +19,7 @@ import {
   reactForwardedPropsPlugin,
   reactHookTypesPlugin,
   reactInlineImportedPropTypesPlugin,
+  reactPassedPropsPlugin,
   reactPropsPlugin,
   reactPropsFromUsagePlugin,
   reactShapePlugin,
@@ -58,6 +59,7 @@ export const availablePlugins = [
   reactForwardedPropsPlugin,
   reactHookTypesPlugin,
   reactInlineImportedPropTypesPlugin,
+  reactPassedPropsPlugin,
   reactPropsPlugin,
   reactPropsFromUsagePlugin,
   reactShapePlugin,
@@ -153,6 +155,7 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
     entry(reactForwardedPropsPlugin, {}),
     entry(reactHookTypesPlugin, { anyAlias }),
     entry(reactInlineImportedPropTypesPlugin, {}),
+    entry(reactPassedPropsPlugin, {}),
     entry(reactPropsPlugin, { anyAlias, anyFunctionAlias, shouldUpdateAirbnbImports: true }),
     entry(reactPropsFromUsagePlugin, { anyAlias, anyFunctionAlias }),
     entry(reactShapePlugin, { anyAlias, anyFunctionAlias }),
@@ -293,6 +296,10 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     // Reads the props types the passes above wrote, and adds to a component
     // that forwards a rest element the props of the element it forwards to.
     .addPlugin(reactForwardedPropsPlugin, optionsFor(reactForwardedPropsPlugin))
+    // Then the props the call sites pass that no propTypes object mentions, so
+    // the props types the passes below read are the ones the project really
+    // uses rather than the subset that happened to be validated.
+    .addPlugin(reactPassedPropsPlugin, optionsFor(reactPassedPropsPlugin))
     // Runs on the props react-props has just typed, so a setter called with
     // one is evidence instead of an any.
     .addPlugin(reactHookTypesPlugin, optionsFor(reactHookTypesPlugin))
