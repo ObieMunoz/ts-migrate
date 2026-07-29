@@ -11,6 +11,7 @@ import {
   inferTypesPlugin,
   jsDocPlugin,
   memberAccessibilityPlugin,
+  optionalParametersPlugin,
   reactClassLifecycleMethodsPlugin,
   reactClassStatePlugin,
   reactDefaultPropsPlugin,
@@ -47,6 +48,7 @@ export const availablePlugins = [
   inferTypesPlugin,
   jsDocPlugin,
   memberAccessibilityPlugin,
+  optionalParametersPlugin,
   reactClassLifecycleMethodsPlugin,
   reactClassStatePlugin,
   reactDefaultPropsPlugin,
@@ -136,6 +138,7 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
       protectedRegex: params.protectedRegex,
       publicRegex: params.publicRegex,
     }),
+    entry(optionalParametersPlugin, {}),
     entry(reactClassLifecycleMethodsPlugin, { force: true }),
     entry(reactClassStatePlugin, { anyAlias }),
     entry(reactDefaultPropsPlugin, {
@@ -298,6 +301,11 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
   }
   const typesPackageDetector = createTypesPackageDetector();
   config
+    // Before the passes that answer a call the callee's arity rejects, so the
+    // parameters the project already leaves off cost neither a cast nor a
+    // suppression. After the annotating passes, whose `any` is what keeps a
+    // relaxed parameter from contradicting its own body.
+    .addPlugin(optionalParametersPlugin, optionsFor(optionalParametersPlugin))
     // Reads the types the passes above settled on, and turns what is left of
     // the accumulator idiom into one annotation instead of the casts
     // add-conversions would write at every access site below.
