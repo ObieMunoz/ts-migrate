@@ -20,6 +20,58 @@ function B(b: any) {}
 `);
   });
 
+  it('annotates a namepath type as any', () => {
+    const text = `\
+/** @param a {module:store/widgets~Widget} */
+function A(a) {}
+/** @param b {module:store/widgets.Static} */
+function B(b) {}
+/** @param c {module} */
+function C(c) {}
+/** @type {module:store/widgets~Widget} */
+const d = null;
+`;
+
+    expect(run(text)).toBe(`\
+/** @param a {module:store/widgets~Widget} */
+function A(a: any) {}
+/** @param b {module:store/widgets.Static} */
+function B(b: any) {}
+/** @param c {module} */
+function C(c: any) {}
+/** @type {module:store/widgets~Widget} */
+const d: any = null;
+`);
+  });
+
+  it('annotates a namepath return type as any', () => {
+    const text = `\
+/** @returns {module:store/widgets~Widget} */
+function A() {
+  return null;
+}
+`;
+
+    expect(run(text, { options: { annotateReturns: true } })).toBe(`\
+/** @returns {module:store/widgets~Widget} */
+function A(): any {
+  return null;
+}
+`);
+  });
+
+  it('writes the any alias for a namepath type', () => {
+    const text = `\
+/** @param a {module:store/widgets~Widget} */
+function A(a) {}
+`;
+
+    expect(run(text, { options: { anyAlias: '$TSFixMe' } })).toBe(`\
+/** @param a {module:store/widgets~Widget} */
+function A(a: $TSFixMe) {}
+`);
+  });
+
   it('considers synonym tags', () => {
     const text = `\
 /** @arg a {Number} */

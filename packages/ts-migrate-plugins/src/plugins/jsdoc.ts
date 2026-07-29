@@ -576,6 +576,12 @@ const jsDocTransformerFactory =
       switch (node.kind) {
         case ts.SyntaxKind.JSDocAllType:
         case ts.SyntaxKind.JSDocUnknownType:
+        // A namepath (`{module:store/widgets~Widget}`, or the bare `{module}`
+        // that starts one) names a symbol in JSDoc's own namespace rather than
+        // a type. TypeScript parses it into a node its printer emits nothing
+        // for, so printing it writes an annotation with no type in it, and
+        // TypeScript's own declaration emit reads the node as `any`.
+        case ts.SyntaxKind.JSDocNamepathType:
           return anyType;
         case ts.SyntaxKind.JSDocOptionalType:
           if (topLevelParam) {

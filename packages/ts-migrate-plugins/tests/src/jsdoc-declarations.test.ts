@@ -89,6 +89,25 @@ function run(opts: Opts) {}
 `);
   });
 
+  it('declares a namepath typedef and property as any', () => {
+    const text = `\
+/** @typedef {module:store/widgets~Widget} Widget */
+
+/**
+ * @typedef {Object} Holder
+ * @property {module:store/widgets~Widget} widget
+ */
+`;
+
+    expect(run(text)).toBe(`\
+type Widget = any;
+
+type Holder = {
+    widget: any;
+};
+`);
+  });
+
   it('drops a comment that only declares a typedef', () => {
     const text = `\
 /** @typedef {string | number} Key */
