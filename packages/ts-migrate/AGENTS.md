@@ -432,6 +432,16 @@ instead, since one file cannot see it, and `createContext({})` always does: a
 cannot see. Pass `--excludePlugin react-hook-types` to leave hook calls
 as they are.
 
+A component that spreads a rest element onto another element accepts that
+element's props too, which propTypes never say: they describe what a component
+reads, not what it passes on. The forwarding step widens such a component's
+props to `Props & Omit<Partial<React.ComponentProps<typeof Icon>>, 'name'>`,
+where the omitted keys are what the pattern binds for itself, so a prop the
+component declares keeps its own type. Only a rest element spread onto a
+single element counts, and the widening is written only when re-checking the
+file with it in place reports no new error. Pass `--excludePlugin
+react-forwarded-props` to leave those props types as the propTypes wrote them.
+
 The widening step unions an annotation with what the assignments in its own
 file give it, so `let x: number` later assigned null ends up `number | null`
 instead of `@ts-expect-error`. It only ever writes a type it can name in that

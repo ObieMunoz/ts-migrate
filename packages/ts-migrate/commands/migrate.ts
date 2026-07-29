@@ -16,6 +16,7 @@ import {
   reactClassStatePlugin,
   reactDefaultPropsPlugin,
   reactDestructuredPropsPlugin,
+  reactForwardedPropsPlugin,
   reactHookTypesPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
@@ -53,6 +54,7 @@ export const availablePlugins = [
   reactClassStatePlugin,
   reactDefaultPropsPlugin,
   reactDestructuredPropsPlugin,
+  reactForwardedPropsPlugin,
   reactHookTypesPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
@@ -146,6 +148,7 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
       modernizeDefaultProps: params.modernizeDefaultProps ?? true,
     }),
     entry(reactDestructuredPropsPlugin, { anyAlias }),
+    entry(reactForwardedPropsPlugin, {}),
     entry(reactHookTypesPlugin, { anyAlias }),
     entry(reactInlineImportedPropTypesPlugin, {}),
     entry(reactPropsPlugin, { anyAlias, anyFunctionAlias, shouldUpdateAirbnbImports: true }),
@@ -284,6 +287,9 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     .addPlugin(reactClassLifecycleMethodsPlugin, optionsFor(reactClassLifecycleMethodsPlugin))
     .addPlugin(reactDefaultPropsPlugin, optionsFor(reactDefaultPropsPlugin))
     .addPlugin(reactShapePlugin, optionsFor(reactShapePlugin))
+    // Reads the props types the passes above wrote, and adds to a component
+    // that forwards a rest element the props of the element it forwards to.
+    .addPlugin(reactForwardedPropsPlugin, optionsFor(reactForwardedPropsPlugin))
     // Runs on the props react-props has just typed, so a setter called with
     // one is evidence instead of an any.
     .addPlugin(reactHookTypesPlugin, optionsFor(reactHookTypesPlugin))
