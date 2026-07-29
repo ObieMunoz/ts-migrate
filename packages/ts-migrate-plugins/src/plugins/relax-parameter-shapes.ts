@@ -110,7 +110,7 @@ function plan(languageService: ts.LanguageService): Pass {
 
   const changesByFile = new Map<string, PlannedChange[]>();
   refutations.forEach((refutation, parameter) => {
-    const changes = relaxation(refutation);
+    const changes = relaxation(refutation, checker);
     if (changes.length === 0) return;
     const { fileName } = parameter.getSourceFile();
     const forFile = changesByFile.get(fileName);
@@ -172,8 +172,11 @@ function refute(
   if (!parameter) return;
   const literal = parameter.type as ts.TypeLiteralNode;
 
-  const source = checker.getTypeAtLocation(site.argument);
-  if ((source.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0) return;
+  const argumentType = checker.getTypeAtLocation(site.argument);
+  if ((argumentType.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0) return;
+  // A primitive carries its members on its apparent type, so `string` reads as
+  // having no properties at all without this and every member looks missing.
+  const source = checker.getApparentType(argumentType);
   const target = checker.getTypeFromTypeNode(literal);
   const isAssignable = (checker as AssignabilityReader).isTypeAssignableTo;
 
@@ -183,19 +186,49 @@ function refute(
     refutations.set(parameter, refutation);
   }
 
-  literal.members.forEach((member) => {
+  (literal.members as ts.NodeArray<ts.PropertySignature>).forEach((member) => {
     const name = memberName(member);
     const supplied = checker.getPropertyOfType(source, name);
     if (!supplied) {
-      if (!(member as ts.PropertySignature).questionToken) refutation.missing.add(name);
+      if (!member.questionToken) refutation.missing.add(name);
       return;
     }
     const declared = checker.getPropertyOfType(target, name);
     if (!declared || typeof isAssignable !== 'function') return;
+    if (namesProjectType(member.type as ts.TypeNode, checker)) return;
     const from = checker.getTypeOfSymbolAtLocation(supplied, site.argument);
     const to = checker.getTypeOfSymbolAtLocation(declared, site.argument);
     if (!isAssignable.call(checker, from, to)) refutation.mismatched.add(name);
   });
+}
+
+/**
+ * Whether a type node reaches a type the project declares. Such a type is a
+ * contract someone wrote, so an argument disagreeing with it is a caller to
+ * look at rather than evidence the contract is wrong; only the shapes the
+ * migration itself invented are ours to relax.
+ */
+function namesProjectType(type: ts.TypeNode, checker: ts.TypeChecker): boolean {
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (ts.isTypeReferenceNode(node)) {
+      const declarations = resolved(node.typeName, checker)?.declarations ?? [];
+      if (declarations.some((declaration) => isMigratable(declaration.getSourceFile()))) {
+        found = true;
+        return;
+      }
+    }
+    node.forEachChild(visit);
+  };
+  visit(type);
+  return found;
+}
+
+function resolved(name: ts.EntityName, checker: ts.TypeChecker): ts.Symbol | undefined {
+  const symbol = checker.getSymbolAtLocation(ts.isQualifiedName(name) ? name.right : name);
+  if (!symbol) return undefined;
+  return (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(symbol) : symbol;
 }
 
 /**
@@ -236,14 +269,19 @@ function isOverloaded(declaration: ts.SignatureDeclaration, checker: ts.TypeChec
   return symbol.declarations.filter(ts.isFunctionLike).length > 1;
 }
 
-function relaxation({ literal, missing, mismatched }: Refutation): PlannedChange[] {
+function relaxation(
+  { literal, missing, mismatched }: Refutation,
+  checker: ts.TypeChecker,
+): PlannedChange[] {
   if (missing.size === 0 && mismatched.size === 0) return [];
 
   const members = literal.members as ts.NodeArray<ts.PropertySignature>;
   const required = members.filter((member) => !member.questionToken);
   const survivors = required.filter((member) => !missing.has(memberName(member)));
   if (required.length > 0 && survivors.length === 0) {
-    return [asAny(literal.getStart(), literal.end - literal.getStart())];
+    return namesProjectType(literal, checker)
+      ? []
+      : [asAny(literal.getStart(), literal.end - literal.getStart())];
   }
 
   const changes: PlannedChange[] = [];

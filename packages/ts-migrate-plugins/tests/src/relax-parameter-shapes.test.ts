@@ -127,6 +127,58 @@ describe('relax-parameter-shapes plugin', () => {
     expect(result).toBeUndefined();
   });
 
+  it('leaves a member typed by a name the project declares', async () => {
+    const text = `import { Locale } from './types';
+
+export function route(config: { locale: Locale; retries: number }) {
+  return [config.locale, config.retries];
+}
+`;
+    const result = await run(text, {
+      'types.ts': `export type Locale = { key: string; primary: boolean };\n`,
+      'calls.ts':
+        `import { route } from './declares';\n` +
+        `const config = { locale: { key: 'en' }, retries: 1 };\n` +
+        `route(config);\n`,
+    });
+
+    expect(result).toBeUndefined();
+  });
+
+  it('keeps a shape that names a project type rather than dropping it', async () => {
+    const text = `import { Locale } from './types';
+
+export function pick(config: { locale: Locale }) {
+  return config.locale;
+}
+`;
+    const result = await run(text, {
+      'types.ts': `export type Locale = { key: string; primary: boolean };\n`,
+      'calls.ts':
+        `import { pick } from './declares';\nconst config = { id: 1 };\npick(config);\n`,
+    });
+
+    expect(result).toBeUndefined();
+  });
+
+  it('widens a member typed by a name only the standard library declares', async () => {
+    const text = `export function collect(input: { items: Array<number>; label: string }) {
+  return input.items.length + input.label.length;
+}
+`;
+    const result = await run(text, {
+      'calls.ts':
+        `import { collect } from './declares';\n` +
+        `const input = { items: ['a'], label: 'x' };\n` +
+        `collect(input);\n`,
+    });
+
+    expect(result).toBe(`export function collect(input: { items: any; label: string }) {
+  return input.items.length + input.label.length;
+}
+`);
+  });
+
   it('relaxes each member the calls between them refute', async () => {
     const text = `export function open(target: { href: string; title: string; id: string }) {
   return [target.href, target.title, target.id];
