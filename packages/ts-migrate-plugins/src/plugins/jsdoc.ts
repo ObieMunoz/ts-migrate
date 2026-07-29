@@ -88,6 +88,9 @@ const jsDocPlugin: Plugin<Options> = {
 
 export default jsDocPlugin;
 
+/** `parseDiagnostics` is not on the public SourceFile, and is absent on older compilers. */
+type ParsedSourceFile = ts.SourceFile & { parseDiagnostics?: readonly unknown[] };
+
 const jsDocTransformerFactory =
   (
     updates: UpdateTracker,
@@ -101,6 +104,9 @@ const jsDocTransformerFactory =
       ? factory.createTypeReferenceNode(anyAlias, undefined)
       : factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
     const typeMap: TypeMap = { ...defaultTypeMap, ...optionsTypeMap };
+    // How deep the current visitJSDocType recursion is, so that only the type
+    // a caller is about to write pays for the printability check.
+    let visitDepth = 0;
     let sourceFile!: ts.SourceFile;
     let markers!: FollowUpMarkers;
     let aliasNames = new Set<string>();
@@ -572,7 +578,43 @@ const jsDocTransformerFactory =
     // All visitJSDoc functions are adapted from:
     // https://github.com/microsoft/TypeScript/blob/v4.0.2/src/services/codefixes/annotateWithTypeFromJSDoc.ts
 
+    /**
+     * The type a JSDoc node converts to, or the any type when that type is one
+     * the printer cannot write.
+     *
+     * TypeScript's JSDoc parser recovers from a type it cannot read by handing
+     * back a partial tree rather than by failing: a function type missing a
+     * parameter name keeps the parameter as a member with no name, and drops
+     * the return type entirely. Printing that tree writes text that does not
+     * parse, which leaves the file broken and fails the whole migration, so
+     * what cannot be written back takes `any` instead. Only the outermost call
+     * checks, since a type built out of parts that each print is itself
+     * printable, and the check costs a parse.
+     */
     function visitJSDocType(node: ts.Node, topLevelParam = false): ts.TypeNode {
+      visitDepth += 1;
+      try {
+        const type = visitJSDocTypeWorker(node, topLevelParam);
+        return visitDepth === 1 && !isPrintableType(type) ? anyType : type;
+      } finally {
+        visitDepth -= 1;
+      }
+    }
+
+    /** Whether the printed type reads back as the type it was written from. */
+    function isPrintableType(type: ts.TypeNode): boolean {
+      const text = printer.printNode(ts.EmitHint.Unspecified, type, sourceFile);
+      const probe: ParsedSourceFile = ts.createSourceFile(
+        'ts-migrate-jsdoc-probe.ts',
+        `type __TsMigrateProbe = ${text};`,
+        ts.ScriptTarget.Latest,
+        /* setParentNodes */ false,
+        ts.ScriptKind.TS,
+      );
+      return !probe.parseDiagnostics || probe.parseDiagnostics.length === 0;
+    }
+
+    function visitJSDocTypeWorker(node: ts.Node, topLevelParam = false): ts.TypeNode {
       switch (node.kind) {
         case ts.SyntaxKind.JSDocAllType:
         case ts.SyntaxKind.JSDocUnknownType:
