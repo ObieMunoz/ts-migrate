@@ -159,7 +159,6 @@ delete window.temp;
 `);
 
     expect([...evidence.properties.keys()].sort()).toEqual(['counter', 'nested', 'temp']);
-    // None of the three said what the property holds.
     expect(evidence.properties.get('counter')!.assignments).toBe(0);
     expect(evidence.properties.get('counter')!.reads).toBe(1);
   });
@@ -555,8 +554,7 @@ function useThem() {
   const id: string = globalThis.buildId;
   return [name, id, window.appConfig, window.polyfilled];
 }
-// Set by a script tag rather than by anything here, so a read is the only
-// evidence of them there is.
+// Set by a script tag rather than by anything here.
 function useVendor() {
   window.vendorSdk.init({ mode: 'fast' });
   return globalThis.buildStamp;
@@ -590,8 +588,6 @@ function useVendor() {
     // naming it would not resolve here.
     expect(text).toContain('appConfig: any;');
     expect(text).not.toMatch(/:\s*Config\b/);
-    // Nothing assigns these, so a run that collected only assignments left
-    // every use of them to a cast.
     expect(text).toContain('vendorSdk: any;');
     expect(text).toContain('var buildStamp: any;');
   });

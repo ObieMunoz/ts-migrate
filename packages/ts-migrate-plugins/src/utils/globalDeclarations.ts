@@ -44,7 +44,7 @@ export interface GlobalProperty {
   unknownType: boolean;
   files: Set<string>;
   assignments: number;
-  /** Reads of the property, which say it exists without saying what it holds. */
+  /** Reads, which say the property exists without saying what it holds. */
   reads: number;
 }
 
@@ -213,12 +213,6 @@ function recordAssignment(
   }
 }
 
-/**
- * A read says the property is expected to exist and nothing about what it
- * holds, so it adds the property without touching the type its assignments
- * derived. Widening `io_enable_rip: boolean` back to the any alias because
- * something also reads it would undo the one useful thing the assignment said.
- */
 function recordRead(
   evidence: GlobalAssignmentEvidence,
   name: string,
@@ -228,7 +222,6 @@ function recordRead(
   propertyFor(evidence, name, target, fileName).reads += 1;
 }
 
-/** The global and property an access names, or undefined when it names neither. */
 function globalAccess(
   node: ts.PropertyAccessExpression,
 ): { name: string; root: string; target: GlobalTarget } | undefined {
@@ -240,19 +233,13 @@ function globalAccess(
 }
 
 /**
- * Records every `window.x`, `global.x` and `globalThis.x` in the file, at any
- * nesting depth: the polyfill guarded by an `if` and the property set inside an
- * install function are the normal shapes, and requiring the top level would
- * miss most of them.
+ * Records every `window.x`, `global.x` and `globalThis.x` in the file, written
+ * or read, at any nesting depth: the polyfill guarded by an `if` and the
+ * property set inside an install function are the normal shapes, and requiring
+ * the top level would miss most of them.
  *
- * Both writes and reads count, through a property name that is an identifier.
- * A read is the only evidence there is for the globals a third-party script tag
- * sets, which nothing in the project ever assigns, and every read of an
- * undeclared property is an error whether or not the code assigns it too, so
- * collecting only assignments left those to a cast at each site. That is why
- * `window.x += 1` and `delete window.x` count here: both read a property that
- * has to be declared. `window['x'] = 1` still names nothing to declare, and
- * `'x' in window` is not an error to begin with.
+ * Only a property name that is an identifier counts. `window['x'] = 1` names
+ * nothing to declare, and `'x' in window` is not an error to begin with.
  */
 export function collectGlobalAssignments({
   evidence,
@@ -266,8 +253,7 @@ export function collectGlobalAssignments({
 }): void {
   const bindings = new Map<ts.Node, Set<string>>();
   // The root resolves to the same symbol everywhere the shadowing check passes,
-  // so the answer turns only on the two names. Reads are far more numerous than
-  // assignments, and this keeps that from becoming a checker call apiece.
+  // so the answer turns only on the two names.
   const environmentAnswers = new Map<string, boolean>();
 
   const declarable = (
@@ -303,8 +289,7 @@ export function collectGlobalAssignments({
             assignedType(node.right),
           );
         }
-        // Whatever the guards decided, the target is this assignment's and not a
-        // read of its own, so only the assigned expression is still to visit.
+        // The target is this assignment's, never a read of its own.
         visit(node.right);
         return;
       }
@@ -449,8 +434,7 @@ export function parseGlobalDeclarations(text: string): GlobalDeclaration[] | nul
 
 /**
  * The type to declare a property with: the union of what its assignments said,
- * or the any alias when any one of them said nothing. A property only ever read
- * has nothing that said anything, and lands on the alias for the same reason.
+ * or the any alias when any one of them said nothing.
  *
  * `null` and `undefined` on their own are dropped for the alias. They are
  * true of the assignment that produced them and useless everywhere else: every
@@ -528,7 +512,7 @@ export interface GlobalDeclarationsReport {
   /** The file that was written, when one was. */
   filePath?: string;
   declarations: GlobalDeclaration[];
-  /** Where each declared property is used, and how. */
+  /** Where each declared property is used. */
   properties: { name: string; assignments: number; reads: number; fileCount: number }[];
   /** A file at the generated path that ts-migrate did not write. */
   foreignFile?: string;
@@ -538,12 +522,6 @@ function pluralize(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
-/**
- * What the run saw of a property. A property with no assignment is called out
- * as never assigned rather than left to read as an absence: nothing in the
- * project sets it, so its type can only come from whatever sets it outside, and
- * looking that up is the edit worth making.
- */
 function evidenceSummary({
   assignments,
   reads,
