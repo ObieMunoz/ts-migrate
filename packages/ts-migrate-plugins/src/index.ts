@@ -22,6 +22,7 @@ import reactInlineImportedPropTypesPlugin from './plugins/react-inline-imported-
 import reactPropsPlugin from './plugins/react-props';
 import reactPropsFromUsagePlugin from './plugins/react-props-from-usage';
 import reactShapePlugin from './plugins/react-shape';
+import relaxParameterShapesPlugin from './plugins/relax-parameter-shapes';
 import retryConversionsPlugin from './plugins/retry-conversions';
 import stripTSIgnorePlugin from './plugins/strip-ts-ignore';
 import tsIgnorePlugin from './plugins/ts-ignore';
@@ -109,6 +110,7 @@ export {
   reactPropsPlugin,
   reactPropsFromUsagePlugin,
   reactShapePlugin,
+  relaxParameterShapesPlugin,
   retryConversionsPlugin,
   stripTSIgnorePlugin,
   tsIgnorePlugin,
