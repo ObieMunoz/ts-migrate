@@ -1,3 +1,4 @@
+import ts from 'typescript';
 import { realPluginParams } from '../test-utils';
 import addConversionsPlugin from '../../src/plugins/add-conversions';
 
@@ -315,6 +316,42 @@ export function read(key: string, index: number) {
     const result = addConversionsPlugin.run(before) as string;
     const after = await realPluginParams({ text: result });
     expect(after.getLanguageService().getSemanticDiagnostics(after.fileName)).toEqual([]);
+  });
+
+  it('leaves JSX tag names alone', async () => {
+    const text = `\
+const ns = {};
+
+const a = <ns.Missing value={1} />;
+const b = <ns.Other>text</ns.Other>;
+const c = <ns.deep.Nested />;
+`;
+    const params = await realPluginParams({
+      fileName: 'file.tsx',
+      text,
+      compilerOptions: { jsx: ts.JsxEmit.React },
+    });
+
+    expect(addConversionsPlugin.run(params)).toBe(text);
+  });
+
+  it('converts outside a tag name in a file that has one', async () => {
+    const text = `\
+const ns = {};
+
+const a = <ns.Missing value={ns.count} />;
+`;
+    const params = await realPluginParams({
+      fileName: 'file.tsx',
+      text,
+      compilerOptions: { jsx: ts.JsxEmit.React },
+    });
+
+    expect(addConversionsPlugin.run(params)).toBe(`\
+const ns = {};
+
+const a = <ns.Missing value={(ns as any).count}/>;
+`);
   });
 
   it('handles dollar amounts', async () => {
