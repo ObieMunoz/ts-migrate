@@ -467,6 +467,17 @@ error was hiding an argument mismatch behind reports that mismatch once the
 arity is right, so a few suppressions change code rather than going away. Pass
 `--excludePlugin optional-parameters` to leave every parameter required.
 
+An object type written inline on a parameter is inferred from one function
+body, which is a guess about callers that live in other files, and every
+disagreement costs a suppression at the call site. The shape step reads the
+project's own calls and relaxes it to what they support: a member no argument
+carries becomes optional, a member whose type they contradict becomes `any`,
+and a shape whose last required member the calls refute is dropped for `any`,
+since a type of nothing but optional members rejects an argument sharing no
+property with it and would only trade one error for another. A relaxation the
+declaring file gains a new error from is dropped. Pass `--excludePlugin
+relax-parameter-shapes` to keep those shapes as they were inferred.
+
 - `--sources <glob>` (`-s`, repeatable): migrate only a subset. Quote globs.
   Ambient `.d.ts` files matched by the tsconfig `include` (vite-env.d.ts,
   custom globals) are kept in the program automatically; pass

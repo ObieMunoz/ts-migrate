@@ -22,6 +22,7 @@ import {
   reactPropsPlugin,
   reactPropsFromUsagePlugin,
   reactShapePlugin,
+  relaxParameterShapesPlugin,
   stripTSIgnorePlugin,
   tsIgnorePlugin,
   updateImportPathsPlugin,
@@ -60,6 +61,7 @@ export const availablePlugins = [
   reactPropsPlugin,
   reactPropsFromUsagePlugin,
   reactShapePlugin,
+  relaxParameterShapesPlugin,
   stripTSIgnorePlugin,
   tsIgnorePlugin,
   updateImportPathsPlugin,
@@ -154,6 +156,7 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
     entry(reactPropsPlugin, { anyAlias, anyFunctionAlias, shouldUpdateAirbnbImports: true }),
     entry(reactPropsFromUsagePlugin, { anyAlias, anyFunctionAlias }),
     entry(reactShapePlugin, { anyAlias, anyFunctionAlias }),
+    entry(relaxParameterShapesPlugin, { anyAlias }),
     entry(stripTSIgnorePlugin, {}),
     entry(tsIgnorePlugin, {}),
     entry(updateImportPathsPlugin, {}),
@@ -312,6 +315,9 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     // suppression. After the annotating passes, whose `any` is what keeps a
     // relaxed parameter from contradicting its own body.
     .addPlugin(optionalParametersPlugin, optionsFor(optionalParametersPlugin))
+    // After the arity step, whose relaxations let the checker report the
+    // argument mismatches an arity error was reported in place of.
+    .addPlugin(relaxParameterShapesPlugin, optionsFor(relaxParameterShapesPlugin))
     // Reads the types the passes above settled on, and turns what is left of
     // the accumulator idiom into one annotation instead of the casts
     // add-conversions would write at every access site below.
