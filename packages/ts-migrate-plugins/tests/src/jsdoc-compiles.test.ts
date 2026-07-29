@@ -210,4 +210,26 @@ export function read(r) {
     expect(files['/consumer.ts']).toContain("w: import('./file').Wrap<string>");
     expect(typeCheck(files)).toEqual([]);
   });
+
+  it('type-checks the namepath types it converts', () => {
+    const text = `\
+/** @typedef {module:store/widgets~Widget} Widget */
+
+/**
+ * @param {module:store/widgets~Widget} widget
+ * @param {module} mod
+ * @returns {module:store/widgets~Widget}
+ */
+export function find(widget, mod) {
+  /** @type {module:store/widgets~Widget} */
+  const found = widget[mod];
+  return found;
+}
+`;
+
+    const result = run(text, { options: { annotateReturns: true } }) as string;
+
+    expect(result).toContain('export function find(widget: any, mod: any): any {');
+    expect(typeCheck({ '/file.ts': result })).toEqual([]);
+  });
 });
