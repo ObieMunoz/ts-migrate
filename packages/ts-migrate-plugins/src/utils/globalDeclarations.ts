@@ -44,6 +44,8 @@ export interface GlobalProperty {
   unknownType: boolean;
   files: Set<string>;
   assignments: number;
+  /** Reads of the property, which say it exists without saying what it holds. */
+  reads: number;
 }
 
 export interface GlobalAssignmentEvidence {
@@ -168,13 +170,12 @@ function environmentDeclares(
   return checker.getPropertyOfType(objectType, access.name.text) !== undefined;
 }
 
-function record(
+function propertyFor(
   evidence: GlobalAssignmentEvidence,
   name: string,
   target: GlobalTarget,
   fileName: string,
-  type: string | undefined,
-): void {
+): GlobalProperty {
   let property = evidence.properties.get(name);
   if (!property) {
     property = {
@@ -184,6 +185,7 @@ function record(
       unknownType: false,
       files: new Set(),
       assignments: 0,
+      reads: 0,
     };
     evidence.properties.set(name, property);
   } else if (target === 'globalThis') {
@@ -191,8 +193,19 @@ function record(
     // not answer `globalThis.x`, and declaring both intersects the two types.
     property.target = 'globalThis';
   }
-  property.assignments += 1;
   property.files.add(fileName);
+  return property;
+}
+
+function recordAssignment(
+  evidence: GlobalAssignmentEvidence,
+  name: string,
+  target: GlobalTarget,
+  fileName: string,
+  type: string | undefined,
+): void {
+  const property = propertyFor(evidence, name, target, fileName);
+  property.assignments += 1;
   if (type === undefined) {
     property.unknownType = true;
   } else {
@@ -201,14 +214,45 @@ function record(
 }
 
 /**
- * Records every `window.x = ...`, `global.x = ...` and `globalThis.x = ...` in
- * the file, at any nesting depth: the polyfill guarded by an `if` and the
- * property set inside an install function are the normal shapes, and requiring
- * the top level would miss most of them.
+ * A read says the property is expected to exist and nothing about what it
+ * holds, so it adds the property without touching the type its assignments
+ * derived. Widening `io_enable_rip: boolean` back to the any alias because
+ * something also reads it would undo the one useful thing the assignment said.
+ */
+function recordRead(
+  evidence: GlobalAssignmentEvidence,
+  name: string,
+  target: GlobalTarget,
+  fileName: string,
+): void {
+  propertyFor(evidence, name, target, fileName).reads += 1;
+}
+
+/** The global and property an access names, or undefined when it names neither. */
+function globalAccess(
+  node: ts.PropertyAccessExpression,
+): { name: string; root: string; target: GlobalTarget } | undefined {
+  if (!ts.isIdentifier(node.expression) || !ts.isIdentifier(node.name)) return undefined;
+  const root = node.expression.text;
+  const target = GLOBAL_ROOTS[root];
+  if (!target) return undefined;
+  return { name: node.name.text, root, target };
+}
+
+/**
+ * Records every `window.x`, `global.x` and `globalThis.x` in the file, at any
+ * nesting depth: the polyfill guarded by an `if` and the property set inside an
+ * install function are the normal shapes, and requiring the top level would
+ * miss most of them.
  *
- * Only plain assignment counts, and only through a property name that is an
- * identifier. `window['x'] = 1` names nothing to declare, and `window.x += 1`
- * reads a property that something else already had to assign.
+ * Both writes and reads count, through a property name that is an identifier.
+ * A read is the only evidence there is for the globals a third-party script tag
+ * sets, which nothing in the project ever assigns, and every read of an
+ * undeclared property is an error whether or not the code assigns it too, so
+ * collecting only assignments left those to a cast at each site. That is why
+ * `window.x += 1` and `delete window.x` count here: both read a property that
+ * has to be declared. `window['x'] = 1` still names nothing to declare, and
+ * `'x' in window` is not an error to begin with.
  */
 export function collectGlobalAssignments({
   evidence,
@@ -221,23 +265,58 @@ export function collectGlobalAssignments({
   checker?: ts.TypeChecker;
 }): void {
   const bindings = new Map<ts.Node, Set<string>>();
+  // The root resolves to the same symbol everywhere the shadowing check passes,
+  // so the answer turns only on the two names. Reads are far more numerous than
+  // assignments, and this keeps that from becoming a checker call apiece.
+  const environmentAnswers = new Map<string, boolean>();
+
+  const declarable = (
+    access: ts.PropertyAccessExpression,
+    { name, root, target }: { name: string; root: string; target: GlobalTarget },
+  ): boolean => {
+    if (isShadowed(access.expression, root, bindings)) return false;
+    if (target === 'globalThis' && RESERVED_VARIABLE_NAMES.has(name)) return false;
+    if (!checker) return true;
+    const key = `${root}.${name}`;
+    let declared = environmentAnswers.get(key);
+    if (declared === undefined) {
+      declared = environmentDeclares(checker, access);
+      environmentAnswers.set(key, declared);
+    }
+    return !declared;
+  };
 
   const visit = (node: ts.Node): void => {
-    ts.forEachChild(node, visit);
-    if (!ts.isBinaryExpression(node) || node.operatorToken.kind !== ts.SyntaxKind.EqualsToken) {
-      return;
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isPropertyAccessExpression(node.left)
+    ) {
+      const access = globalAccess(node.left);
+      if (access) {
+        if (declarable(node.left, access)) {
+          recordAssignment(
+            evidence,
+            access.name,
+            access.target,
+            sourceFile.fileName,
+            assignedType(node.right),
+          );
+        }
+        // Whatever the guards decided, the target is this assignment's and not a
+        // read of its own, so only the assigned expression is still to visit.
+        visit(node.right);
+        return;
+      }
     }
-    const { left } = node;
-    if (!ts.isPropertyAccessExpression(left) || !ts.isIdentifier(left.expression)) return;
-    if (!ts.isIdentifier(left.name)) return;
 
-    const rootName = left.expression.text;
-    const target = GLOBAL_ROOTS[rootName];
-    if (!target || isShadowed(left.expression, rootName, bindings)) return;
-    if (target === 'globalThis' && RESERVED_VARIABLE_NAMES.has(left.name.text)) return;
-    if (checker && environmentDeclares(checker, left)) return;
-
-    record(evidence, left.name.text, target, sourceFile.fileName, assignedType(node.right));
+    if (ts.isPropertyAccessExpression(node)) {
+      const access = globalAccess(node);
+      if (access && declarable(node, access)) {
+        recordRead(evidence, access.name, access.target, sourceFile.fileName);
+      }
+    }
+    ts.forEachChild(node, visit);
   };
   ts.forEachChild(sourceFile, visit);
 }
@@ -267,7 +346,7 @@ export function renderGlobalDeclarations(declarations: GlobalDeclaration[]): str
   const globals = sorted.filter((declaration) => declaration.target === 'globalThis');
 
   const lines = [
-    `${GENERATED_MARKER} Properties the code assigns to window and globalThis,`,
+    `${GENERATED_MARKER} Properties the code hangs off window and globalThis,`,
     '// declared once here so every read and write of them type-checks instead',
     '// of needing a cast at each site. Narrow a type to the real shape when you',
     '// know it and ts-migrate keeps your version. Delete an entry once',
@@ -370,7 +449,8 @@ export function parseGlobalDeclarations(text: string): GlobalDeclaration[] | nul
 
 /**
  * The type to declare a property with: the union of what its assignments said,
- * or the any alias when any one of them said nothing.
+ * or the any alias when any one of them said nothing. A property only ever read
+ * has nothing that said anything, and lands on the alias for the same reason.
  *
  * `null` and `undefined` on their own are dropped for the alias. They are
  * true of the assignment that produced them and useless everywhere else: every
@@ -448,14 +528,35 @@ export interface GlobalDeclarationsReport {
   /** The file that was written, when one was. */
   filePath?: string;
   declarations: GlobalDeclaration[];
-  /** Where each declared property is assigned. */
-  properties: { name: string; assignments: number; fileCount: number }[];
+  /** Where each declared property is used, and how. */
+  properties: { name: string; assignments: number; reads: number; fileCount: number }[];
   /** A file at the generated path that ts-migrate did not write. */
   foreignFile?: string;
 }
 
 function pluralize(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * What the run saw of a property. A property with no assignment is called out
+ * as never assigned rather than left to read as an absence: nothing in the
+ * project sets it, so its type can only come from whatever sets it outside, and
+ * looking that up is the edit worth making.
+ */
+function evidenceSummary({
+  assignments,
+  reads,
+  fileCount,
+}: {
+  assignments: number;
+  reads: number;
+  fileCount: number;
+}): string {
+  const where = ` in ${pluralize(fileCount, 'file')}`;
+  if (assignments === 0) return `${pluralize(reads, 'read')}${where}, never assigned`;
+  if (reads === 0) return `${pluralize(assignments, 'assignment')}${where}`;
+  return `${pluralize(assignments, 'assignment')}, ${pluralize(reads, 'read')}${where}`;
 }
 
 /**
@@ -476,10 +577,7 @@ export function formatGlobalDeclarationsReport(report: GlobalDeclarationsReport)
     );
     report.declarations.forEach(({ name, type }) => {
       const property = evidence.get(name);
-      const where = property
-        ? ` (${pluralize(property.assignments, 'assignment')} in ` +
-          `${pluralize(property.fileCount, 'file')})`
-        : '';
+      const where = property ? ` (${evidenceSummary(property)})` : '';
       lines.push(`    ${name}: ${type}${where}`);
     });
     lines.push(
@@ -580,6 +678,7 @@ export function createGlobalDeclarations(
       properties: [...evidence.properties.values()].map((property) => ({
         name: property.name,
         assignments: property.assignments,
+        reads: property.reads,
         fileCount: property.files.size,
       })),
       foreignFile: result.kind === 'foreign' ? result.filePath : undefined,

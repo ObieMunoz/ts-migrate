@@ -195,13 +195,18 @@ export and a wrong declaration type-checks while a suppression does not.
 own rather than in this one.
 
 A run may also add `types/ts-migrate-globals.d.ts`, declaring the properties
-the code assigns to `window`, `global` and `globalThis` so those reads and
-writes type-check instead of taking a cast at each site. Commit it too. Its
-types are the ones the assigned expressions state outright and the any alias
-everywhere else, so narrowing one to the real shape is the useful edit and a
-later run keeps it. Delete an entry once something else declares that
-property, since two declarations of one global is an error. Do not add
-entries by hand: the file is rewritten from its own declarations every run.
+the code hangs off `window`, `global` and `globalThis` so those reads and
+writes type-check instead of taking a cast at each site. Commit it too. A
+property the code only reads is declared too, since a global a third-party
+script tag sets is never assigned anywhere in the project and a read of an
+undeclared property is an error just the same. Its types are the ones the
+assigned expressions state outright and the any alias everywhere else, so
+narrowing one to the real shape is the useful edit and a later run keeps it.
+The report names the properties nothing assigns, which are the ones whose real
+type can only come from whatever sets them outside the project. Delete an entry
+once something else declares that property, since two declarations of one
+global is an error. Do not add entries by hand: the file is rewritten from its
+own declarations every run.
 
 A generated declaration file only counts if the project's tsconfig matches it:
 otherwise it is in the migration's own program and no later one, and every
@@ -523,12 +528,16 @@ run. Pass `--excludePlugin widen-annotations` to keep annotations as written.
 - `--declareGlobals=false`: cast every read and write of a property the code hangs
   off `window`, `global` or `globalThis`, instead of declaring those properties
   once in `types/ts-migrate-globals.d.ts`. By default the run generates that
-  file and prints what it declared. Types are the ones the assigned expressions
-  state outright and the any alias everywhere else, so narrowing one by hand is
-  the useful edit and a later run keeps it. Entries are never dropped
-  automatically: delete one once something else declares that property, since
-  two declarations of one global is an error. A property whose name is a
-  reserved word keeps its cast when it is assigned through `global` or
+  file and prints what it declared. A property the code only reads is declared
+  too: a global a third-party script tag sets is assigned nowhere in the
+  project, and reading an undeclared property is an error just the same. Types
+  are the ones the assigned expressions state outright and the any alias
+  everywhere else, so narrowing one by hand is the useful edit and a later run
+  keeps it. A read never contributes a type, only the property, so a property
+  the assignments typed keeps that type however often it is read. Entries are
+  never dropped automatically: delete one once something else declares that
+  property, since two declarations of one global is an error. A property whose
+  name is a reserved word keeps its cast when it is used through `global` or
   `globalThis`, since no `var` can be declared with that name. A file at that
   path that ts-migrate did not write is never touched. The run keeps the file
   in the project's tsconfig, editing `"include"` or `"files"` when it has to;
