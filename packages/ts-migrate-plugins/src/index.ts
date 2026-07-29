@@ -15,6 +15,7 @@ import reactClassLifecycleMethodsPlugin from './plugins/react-class-lifecycle-me
 import reactClassStatePlugin from './plugins/react-class-state';
 import reactDefaultPropsPlugin from './plugins/react-default-props';
 import reactDestructuredPropsPlugin from './plugins/react-destructured-props';
+import reactForwardedPropsPlugin from './plugins/react-forwarded-props';
 import reactHookTypesPlugin from './plugins/react-hook-types';
 import reactInlineImportedPropTypesPlugin from './plugins/react-inline-imported-prop-types';
 import reactPropsPlugin from './plugins/react-props';
@@ -100,6 +101,7 @@ export {
   reactClassStatePlugin,
   reactDefaultPropsPlugin,
   reactDestructuredPropsPlugin,
+  reactForwardedPropsPlugin,
   reactHookTypesPlugin,
   reactInlineImportedPropTypesPlugin,
   reactPropsPlugin,
