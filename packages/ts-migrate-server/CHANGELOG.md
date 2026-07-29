@@ -3,6 +3,18 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.17.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.16.0...v0.17.0) (2026-07-29)
+
+
+### Bug Fixes
+
+* report a file migrate and reignore cannot write instead of printing the help screen ([#315](https://github.com/ObieMunoz/ts-migrate/issues/315)) ([033b6eb](https://github.com/ObieMunoz/ts-migrate/commit/033b6eb564f29ec427d3223e3f5b65fd04095b27))
+* **ts-migrate-server:** give namespace re-exports a dirty-file dependency edge ([#319](https://github.com/ObieMunoz/ts-migrate/issues/319)) ([ceeff9b](https://github.com/ObieMunoz/ts-migrate/commit/ceeff9b69636d3860d6a875b710a9361218ac413))
+
+
+
+
+
 # [0.16.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.15.0...v0.16.0) (2026-07-26)
 
 **Note:** Version bump only for package @obiemunoz/ts-migrate-server
