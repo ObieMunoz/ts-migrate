@@ -445,6 +445,47 @@ export default f;
 `);
   });
 
+  it('annotates a destructuring whose keys are all missing', async () => {
+    const text = `\
+declare function source(): { kept: string };
+const { gone, alsoGone } = source();
+`;
+
+    const result = await explicitAnyPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`\
+declare function source(): { kept: string };
+const { gone, alsoGone }: any = source();
+`);
+  });
+
+  it('leaves a destructuring that also binds a known key', async () => {
+    const text = `\
+declare function source(): { kept: string };
+const { kept, gone } = source();
+`;
+
+    const result = await explicitAnyPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(text);
+  });
+
+  it('reads a nested pattern by its own bindings', async () => {
+    const text = `\
+declare function source(): { outer: { kept: string } };
+const { outer: { kept, gone } } = source();
+const { outer: { gone: onlyGone } } = source();
+`;
+
+    const result = await explicitAnyPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`\
+declare function source(): { outer: { kept: string } };
+const { outer: { kept, gone } } = source();
+const { outer: { gone: onlyGone } }: any = source();
+`);
+  });
+
   it('ignores diagnostics that do not map to an annotatable node', async () => {
     const text = `function f(a, a) { return a; }`;
 
