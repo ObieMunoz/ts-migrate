@@ -29,7 +29,6 @@ const addConversionsPlugin: Plugin<Options> = {
   run({ fileName, sourceFile, options, getLanguageService }) {
     const languageService = getLanguageService();
 
-    // Filter out diagnostics we care about.
     const diags = languageService
       .getSemanticDiagnostics(fileName)
       .filter(isDiagnosticWithLinePosition)
@@ -103,7 +102,6 @@ const addConversionsTransformerFactory =
         }
 
         default:
-          // Should be impossible.
           return null;
       }
     }
@@ -135,7 +133,6 @@ const addConversionsTransformerFactory =
       );
     }
 
-    // Nodes that have one expression child called "expression".
     type ExpressionChild =
       | ts.DoStatement
       | ts.IfStatement
@@ -143,12 +140,9 @@ const addConversionsTransformerFactory =
       | ts.WithStatement
       | ts.WhileStatement;
 
-    /**
-     * For nodes that contain both expression and statement children, only
-     * replace the direct expression children. The statements have already
-     * been replaced at a lower level and replacing them again can produce
-     * duplicate statements or invalid syntax.
-     */
+    /** Where a node has both expression and statement children, only the
+     * expression children are replaced: the statements were already replaced
+     * lower down, and doing it again duplicates them or breaks the syntax. */
     function replaceNode(origNode: ts.Node, newNode: ts.Node): void {
       switch (origNode.kind) {
         case ts.SyntaxKind.DoStatement:
@@ -198,12 +192,8 @@ const addConversionsTransformerFactory =
 
 type Conversion = { node: ts.Node; type: ts.TypeNode };
 
-/**
- * Whether a conversion here would land in the tag name of a JSX element. A tag
- * name may only be an identifier, `this`, or a chain of property accesses over
- * one, so a parenthesized cast written there does not parse, and a closing tag
- * cannot carry the cast at all. The diagnostic is left for ts-ignore.
- */
+/** A tag name admits only an identifier, `this`, or a property access chain
+ * over one, so a cast written there does not parse. */
 function isInJsxTagName(node: ts.Node): boolean {
   let cur = node;
   while (ts.isPropertyAccessExpression(cur.parent) && cur.parent.expression === cur) {
@@ -220,12 +210,8 @@ function isInJsxTagName(node: ts.Node): boolean {
 
 type ReplaceRegion = { owner: ts.Node; pos: number; end: number };
 
-/**
- * Computes the source ranges that will be rewritten for the given conversions,
- * keeping only the outermost ones. Statements within such a range must not
- * record their own replacement — nested text updates duplicate parts of the
- * enclosing range — so their changes bubble up into the owner's replacement.
- */
+/** Only the outermost range is kept: a nested text update would duplicate part
+ * of the enclosing one, so inner changes bubble up into the owner's. */
 function computeReplaceRegions(conversions: Iterable<ts.Node>): ReplaceRegion[] {
   const regions: ReplaceRegion[] = [];
   Array.from(conversions).forEach((conversion) => {
@@ -274,13 +260,9 @@ function findReplaceRegion(conversion: ts.Node): ReplaceRegion | null {
   }
 }
 
-/**
- * Determines whether a node is eligible to be replaced.
- *
- * Replacing only the expression may produce invalid syntax due to missing parentheses.
- * There is still some risk of losing whitespace if the expression is contained within
- * an if statement condition or other construct that can contain blocks.
- */
+/** Replacing only the expression can produce invalid syntax through missing
+ * parentheses, and can still lose whitespace where the expression sits in a
+ * construct that can contain blocks. */
 function shouldReplace(node: ts.Node): boolean {
   if (isStatement(node)) {
     return true;
@@ -302,10 +284,7 @@ function isStatement(node: ts.Node): node is ts.Statement {
   return ts.SyntaxKind.FirstStatement <= node.kind && node.kind <= ts.SyntaxKind.LastStatement;
 }
 
-/**
- * Finds the element access an implicit-any index diagnostic reports on.
- * TS7053 spans the whole access, TS7015 spans only the index expression.
- */
+/** TS7053 spans the whole access, TS7015 spans only the index expression. */
 function findElementAccess(
   file: ts.SourceFile,
   token: ts.Node,
@@ -328,7 +307,6 @@ function findElementAccess(
     : null;
 }
 
-/** How a key participates in `keyof`: as a string, numeric or symbol literal. */
 type KeyKind = 'string' | 'number' | 'symbol';
 
 /**
@@ -386,7 +364,6 @@ function indexKeyType(
   );
 }
 
-/** Rewrites an object expression as the entity name of a `typeof` query. */
 function toEntityName(expression: ts.Expression, factory: ts.NodeFactory): ts.EntityName | null {
   if (ts.isIdentifier(expression)) {
     return factory.createIdentifier(expression.text);
