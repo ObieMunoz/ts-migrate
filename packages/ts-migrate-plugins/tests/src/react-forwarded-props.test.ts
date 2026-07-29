@@ -144,6 +144,21 @@ export const Field = ({ label, ...props }: Props) => <input {...props} placehold
     expect(typeCheck(run(text))).toEqual([]);
   });
 
+  it('widens an annotation that already carries an error of its own', () => {
+    const text = `\
+import React from 'react';
+import Icon from './react-forwarded-props-target';
+
+export const IconContainer = ({ name, ...props }: { label?: element; name?: string }) => (
+  <Icon {...props} name={name} />
+);
+`;
+
+    expect(run(text)).toContain(
+      "{ label?: element; name?: string } & Omit<Partial<React.ComponentProps<typeof Icon>>, 'name'>",
+    );
+  });
+
   it('leaves a component whose rest is spread onto two different elements', () => {
     const text = `\
 import React from 'react';
