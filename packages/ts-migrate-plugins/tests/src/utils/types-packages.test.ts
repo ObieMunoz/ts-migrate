@@ -250,6 +250,41 @@ describe('summarizeTypesEvidence', () => {
     expect(report.missing.map((rec) => rec.packageName)).toEqual(['@types/node']);
     expect(report.notes[0]).toContain('no test runner was found');
   });
+
+  // create-react-app and a hoisting monorepo both supply the runner through
+  // another dependency, and its @types is the largest single win available.
+  it('recommends @types for a runner a dependency installed but the project does not declare', () => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({ dependencies: { 'react-scripts': '^5.0.0' } }),
+      'node_modules/jest/package.json': JSON.stringify({ name: 'jest', version: '29.7.0' }),
+    });
+
+    const report = summarizeTypesEvidence(nodeAndTestRunnerEvidence(), rootDir);
+    expect(report.missing.map((rec) => rec.packageName)).toEqual(['@types/jest', '@types/node']);
+  });
+
+  it('stays ambiguous when two undeclared runners resolve', () => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({ dependencies: { 'react-scripts': '^5.0.0' } }),
+      'node_modules/jest/package.json': JSON.stringify({ name: 'jest', version: '29.7.0' }),
+      'node_modules/mocha/package.json': JSON.stringify({ name: 'mocha', version: '10.0.0' }),
+    });
+
+    const report = summarizeTypesEvidence(nodeAndTestRunnerEvidence(), rootDir);
+    expect(report.missing.map((rec) => rec.packageName)).toEqual(['@types/node']);
+    expect(report.notes[0]).toContain('no test runner was found');
+  });
+
+  it('prefers the declared runner over one only a dependency installed', () => {
+    const rootDir = makeFixture({
+      'package.json': JSON.stringify({ devDependencies: { vitest: '^2.0.0' } }),
+      'node_modules/jest/package.json': JSON.stringify({ name: 'jest', version: '29.7.0' }),
+    });
+
+    const report = summarizeTypesEvidence(nodeAndTestRunnerEvidence(), rootDir);
+    expect(report.missing.map((rec) => rec.packageName)).toEqual(['@types/node']);
+    expect(report.notes[0]).toContain('"vitest/globals"');
+  });
 });
 
 describe('package manager detection', () => {
