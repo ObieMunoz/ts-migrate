@@ -19,6 +19,7 @@ import reactDestructuredPropsPlugin from './plugins/react-destructured-props';
 import reactForwardedPropsPlugin from './plugins/react-forwarded-props';
 import reactHookTypesPlugin from './plugins/react-hook-types';
 import reactInlineImportedPropTypesPlugin from './plugins/react-inline-imported-prop-types';
+import reactPassedPropsPlugin from './plugins/react-passed-props';
 import reactPropsPlugin from './plugins/react-props';
 import reactPropsFromUsagePlugin from './plugins/react-props-from-usage';
 import reactShapePlugin from './plugins/react-shape';
@@ -106,6 +107,7 @@ export {
   reactForwardedPropsPlugin,
   reactHookTypesPlugin,
   reactInlineImportedPropTypesPlugin,
+  reactPassedPropsPlugin,
   reactPropsPlugin,
   reactPropsFromUsagePlugin,
   reactShapePlugin,
