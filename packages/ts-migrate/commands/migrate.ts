@@ -132,13 +132,13 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
     entry(hoistDeclarationsPlugin, {}),
     entry(inferTypesPlugin, {}),
     entry(jsDocPlugin, { anyAlias, typeMap, annotateReturns: params.annotateReturns }),
-    entry(optionalParametersPlugin, {}),
     entry(memberAccessibilityPlugin, {
       defaultAccessibility: params.defaultAccessibility,
       privateRegex: params.privateRegex,
       protectedRegex: params.protectedRegex,
       publicRegex: params.publicRegex,
     }),
+    entry(optionalParametersPlugin, {}),
     entry(reactClassLifecycleMethodsPlugin, { force: true }),
     entry(reactClassStatePlugin, { anyAlias }),
     entry(reactDefaultPropsPlugin, {
