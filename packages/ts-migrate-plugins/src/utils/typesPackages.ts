@@ -645,7 +645,18 @@ export function summarizeTypesEvidence(
     if (env.errorCount === 0) return;
 
     if (key === 'testRunner') {
-      const runnerEntry = TEST_RUNNER_TYPES.find(([runner]) => declaredDeps[runner] !== undefined);
+      // A runner the project declares names itself. One it does not declare
+      // still supplies these globals when a dependency brought it in, which is
+      // the shape create-react-app and a hoisting monorepo both leave behind,
+      // and the types it needs are the ones worth the most here. Falling back
+      // to what resolves is only unambiguous when a single runner does: a
+      // project holding two has no evidence here saying which one wrote the
+      // tests, and guessing would pin the wrong globals.
+      const declared = TEST_RUNNER_TYPES.find(([runner]) => declaredDeps[runner] !== undefined);
+      const installed = TEST_RUNNER_TYPES.filter(([runner]) =>
+        findInstalledPackage(rootDir, runner),
+      );
+      const runnerEntry = declared ?? (installed.length === 1 ? installed[0] : undefined);
       if (!runnerEntry) {
         report.notes.push(
           `Test globals (${exampleNames(env.names).join(', ')}) caused ${env.errorCount} ` +
