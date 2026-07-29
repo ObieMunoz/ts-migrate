@@ -182,7 +182,9 @@ function A(a?: number) {}
 /** @param [b] {Number} */
 function B(b?: number) {}
 /** @param [c] {Object} */
-function C({ c }: object) {}
+function C({ c }: {
+    c?: object;
+}) {}
 /** @param [d] {Number} */
 function D(d: number = 1) {}
 `);
@@ -767,6 +769,110 @@ const f = (a, b) => {};
     expect(run(text)).toBe(`\
 /** @type {(data: string, opts: { path: string[] }) => void} */
 const f: (data: string, opts: { path: string[]; }) => void = (a, b) => {};
+`);
+  });
+});
+
+describe('jsdoc plugin, destructured parameters', () => {
+  it('builds an object type from tags that name what the pattern binds', () => {
+    const text = `\
+/**
+ * @param {boolean} hasSaved
+ * @param {Object} applied
+ */
+export const f = ({ hasSaved, applied }) => !hasSaved || !applied.visible;
+`;
+
+    expect(run(text)).toBe(`\
+/**
+ * @param {boolean} hasSaved
+ * @param {Object} applied
+ */
+export const f = ({ hasSaved, applied }: {
+    hasSaved?: boolean;
+    applied?: object;
+}) => !hasSaved || !applied.visible;
+`);
+  });
+
+  it('keeps a binding no tag documents readable', () => {
+    const text = `\
+/**
+ * @param {string} text
+ * @param {string} className
+ */
+const f = ({ text, linkClassName, ...rest }) => [text, linkClassName, rest];
+`;
+
+    expect(run(text)).toBe(`\
+/**
+ * @param {string} text
+ * @param {string} className
+ */
+const f = ({ text, linkClassName, ...rest }: {
+    text?: string;
+    className?: string;
+    linkClassName?: any;
+}) => [text, linkClassName, rest];
+`);
+  });
+
+  it('leaves the nested spelling to the type literal TypeScript parses it into', () => {
+    const text = `\
+/**
+ * @param {Object} props
+ * @param {string} props.text
+ * @param {number} props.count
+ */
+const f = ({ text, count }) => [text, count];
+`;
+
+    expect(run(text)).toBe(`\
+/**
+ * @param {Object} props
+ * @param {string} props.text
+ * @param {number} props.count
+ */
+const f = ({ text, count }: {
+    text: string;
+    count: number;
+}) => [text, count];
+`);
+  });
+
+  it('leaves a tag that names the parameter itself alone', () => {
+    const text = `\
+/**
+ * @param {Options} options
+ */
+const f = ({ a, b }) => [a, b];
+`;
+
+    expect(run(text)).toBe(`\
+/**
+ * @param {Options} options
+ */
+const f = ({ a, b }: Options) => [a, b];
+`);
+  });
+
+  it('does not take the tags of a named parameter', () => {
+    const text = `\
+/**
+ * @param {string} name
+ * @param {number} count
+ */
+const f = (name, { count }) => [name, count];
+`;
+
+    expect(run(text)).toBe(`\
+/**
+ * @param {string} name
+ * @param {number} count
+ */
+const f = (name: string, { count }: {
+    count?: number;
+}) => [name, count];
 `);
   });
 });
