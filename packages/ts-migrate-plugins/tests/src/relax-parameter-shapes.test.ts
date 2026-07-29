@@ -27,37 +27,37 @@ describe('relax-parameter-shapes plugin', () => {
   });
 
   it('drops a shape whose last required member the calls refute', async () => {
-    const text = `export function stateInfo(next: { location: any }) {
-  return next.location;
+    const text = `export function snapshot(next: { origin: any }) {
+  return next.origin;
 }
 `;
     const result = await run(text, {
       'calls.ts':
-        `import { stateInfo } from './declares';\nconst props = { id: 1 };\nstateInfo(props);\n`,
+        `import { snapshot } from './declares';\nconst props = { id: 1 };\nsnapshot(props);\n`,
     });
 
-    expect(result).toBe(`export function stateInfo(next: any) {
-  return next.location;
+    expect(result).toBe(`export function snapshot(next: any) {
+  return next.origin;
 }
 `);
   });
 
   it('writes the any alias where one is configured', async () => {
-    const text = `export function stateInfo(next: { location: any }) {
-  return next.location;
+    const text = `export function snapshot(next: { origin: any }) {
+  return next.origin;
 }
 `;
     const result = await run(
       text,
       {
         'calls.ts':
-          `import { stateInfo } from './declares';\nconst props = { id: 1 };\nstateInfo(props);\n`,
+          `import { snapshot } from './declares';\nconst props = { id: 1 };\nsnapshot(props);\n`,
       },
       { anyAlias: '$TSFixMe' },
     );
 
-    expect(result).toBe(`export function stateInfo(next: $TSFixMe) {
-  return next.location;
+    expect(result).toBe(`export function snapshot(next: $TSFixMe) {
+  return next.origin;
 }
 `);
   });
