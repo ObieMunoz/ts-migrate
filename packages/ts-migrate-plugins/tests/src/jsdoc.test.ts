@@ -706,3 +706,67 @@ function A(): number {}
 `);
   });
 });
+
+describe('jsdoc plugin, malformed types', () => {
+  // TypeScript's JSDoc parser recovers from a type it cannot read by handing
+  // back a partial tree. Printing that tree writes text the compiler cannot
+  // parse, which leaves the whole file broken and fails the migration.
+  const unnamedParam =
+    '{<T extends object, K extends string>(data: T[K], { path: string[]; parent: T }) => any}';
+
+  it('falls back to any for a @type it cannot print', () => {
+    const text = `\
+/** @type ${unnamedParam} */
+const f = (a, b) => a;
+`;
+
+    expect(run(text)).toBe(`\
+/** @type ${unnamedParam} */
+const f: any = (a, b) => a;
+`);
+  });
+
+  it('falls back to any for a @typedef it cannot print, keeping the name', () => {
+    const text = `\
+/**
+ * @typedef Fn
+ * @type ${unnamedParam}
+ */
+const x = 1;
+`;
+
+    expect(run(text)).toContain('type Fn = any;');
+  });
+
+  it('keeps the parameters it can read when one of them cannot be printed', () => {
+    const text = `\
+/**
+ * @param {string} a
+ * @param ${unnamedParam} b
+ */
+function f(a, b) {}
+`;
+
+    // The unreadable tag leaves its parameter alone rather than taking the
+    // whole signature down with it; explicit-any annotates it later.
+    expect(run(text)).toBe(`\
+/**
+ * @param {string} a
+ * @param ${unnamedParam} b
+ */
+function f(a: string, b) {}
+`);
+  });
+
+  it('still writes a well-formed function type', () => {
+    const text = `\
+/** @type {(data: string, opts: { path: string[] }) => void} */
+const f = (a, b) => {};
+`;
+
+    expect(run(text)).toBe(`\
+/** @type {(data: string, opts: { path: string[] }) => void} */
+const f: (data: string, opts: { path: string[]; }) => void = (a, b) => {};
+`);
+  });
+});
