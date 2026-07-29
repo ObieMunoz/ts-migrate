@@ -383,6 +383,18 @@ const jsDocTransformerFactory =
           return param;
         }
 
+        const destructured = destructuredParameterType(functionDeclaration, param);
+        if (destructured) {
+          return factory.createParameterDeclaration(
+            param.modifiers,
+            param.dotDotDotToken,
+            param.name,
+            param.questionToken,
+            destructured,
+            param.initializer,
+          );
+        }
+
         const paramNode = ts.getJSDocParameterTags(param).find((tag) => tag.typeExpression);
         if (!paramNode || !paramNode.typeExpression) {
           return param;
@@ -413,6 +425,91 @@ const jsDocTransformerFactory =
         return newParams;
       }
       return functionDeclaration.parameters;
+    }
+
+    /**
+     * The object type described by `@param` tags that name what a destructuring
+     * binds rather than the parameter itself (`@param {string} text` over
+     * `({ text })`).
+     *
+     * A binding pattern has no name for TypeScript to match a tag to, so it
+     * falls back to the tag in the same position, which here describes one
+     * member and annotates the whole pattern with it. Undefined when no tag
+     * names a member, which is the `@param {Options} options` case that
+     * fallback exists for.
+     */
+    function destructuredParameterType(
+      functionDeclaration: ts.SignatureDeclaration,
+      param: ts.ParameterDeclaration,
+    ): ts.TypeNode | undefined {
+      if (!ts.isObjectBindingPattern(param.name)) {
+        return undefined;
+      }
+      const bound = new Map<string, ts.BindingElement>();
+      param.name.elements.forEach((element) => {
+        if (element.dotDotDotToken) return;
+        const key = element.propertyName ?? element.name;
+        if (ts.isIdentifier(key) || ts.isStringLiteral(key)) {
+          bound.set(key.text, element);
+        }
+      });
+
+      const namedParameters = new Set(
+        functionDeclaration.parameters
+          .filter((other) => ts.isIdentifier(other.name))
+          .map((other) => (other.name as ts.Identifier).text),
+      );
+      const unclaimed = ts
+        .getJSDocTags(functionDeclaration)
+        .filter(ts.isJSDocParameterTag)
+        .filter((tag) => !(ts.isIdentifier(tag.name) && namedParameters.has(tag.name.text)));
+
+      // One tag naming a binding is what separates this spelling from a tag
+      // that names the parameter; the rest of the group then documents the
+      // same object, including members the pattern leaves in a rest element.
+      const memberTags = unclaimed.filter((tag) => ts.isIdentifier(tag.name));
+      if (!memberTags.some((tag) => bound.has(tag.name.getText()))) {
+        return undefined;
+      }
+
+      const members: ts.PropertySignature[] = [];
+      const written = new Set<string>();
+      memberTags.forEach((tag) => {
+        const property = visitJSDocPropertyLikeTag(tag);
+        if (!ts.isIdentifier(property.name) && !ts.isStringLiteral(property.name)) return;
+        const name = property.name.text;
+        if (written.has(name)) return;
+        written.add(name);
+        members.push(
+          factory.createPropertySignature(
+            undefined,
+            propertyName(name),
+            factory.createToken(ts.SyntaxKind.QuestionToken),
+            property.type,
+          ),
+        );
+      });
+      // A binding the tags do not document still has to be readable, or the
+      // annotation trades the wrong type for a missing property at every use.
+      bound.forEach((_element, name) => {
+        if (written.has(name)) return;
+        written.add(name);
+        members.push(
+          factory.createPropertySignature(
+            undefined,
+            propertyName(name),
+            factory.createToken(ts.SyntaxKind.QuestionToken),
+            anyType,
+          ),
+        );
+      });
+      return members.length > 0 ? factory.createTypeLiteralNode(members) : undefined;
+    }
+
+    function propertyName(name: string): ts.PropertyName {
+      return /^[A-Za-z_$][\w$]*$/.test(name)
+        ? factory.createIdentifier(name)
+        : factory.createStringLiteral(name);
     }
 
     function visitReturnType(
