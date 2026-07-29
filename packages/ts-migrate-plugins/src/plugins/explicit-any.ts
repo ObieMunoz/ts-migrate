@@ -31,6 +31,7 @@ function withExplicitAny(
 ): string {
   const anyType = anyAlias ?? 'any';
   const updates: SourceTextUpdate[] = [];
+  const missingKeys: ts.BindingElement[] = [];
   const seen = new Set<string>();
   const insert = (index: number, text: string) => {
     const key = `${index}:${text}`;
@@ -65,7 +66,7 @@ function withExplicitAny(
       // is reported as TS2339 instead of TS7031. Only binding-pattern keys are
       // matched, so member-access errors (e.g. `a.b`) are ignored.
       case 2339:
-        annotateDestructuredKey(sourceFile, diagnostic, anyType, insert);
+        collectDestructuredKey(sourceFile, diagnostic, missingKeys);
         break;
       // TS7034: "Variable '{0}' implicitly has type '{1}' in some locations where its type cannot be determined."
       case 7034:
@@ -95,12 +96,13 @@ function withExplicitAny(
     }
   });
 
+  annotateFullyMissingPatterns(missingKeys, anyType, insert, getLanguageService);
+
   return updateSourceText(sourceFile.text, updates);
 }
 
 type Insert = (index: number, text: string) => void;
 
-/** The innermost node whose span matches the diagnostic exactly. */
 function findNodeAtSpan(
   sourceFile: ts.SourceFile,
   diagnostic: ts.DiagnosticWithLocation,
@@ -181,11 +183,8 @@ function annotateRestParameter(
   insert(node.name.end, `: ${anyType}[]`);
 }
 
-/**
- * Climbs to the outermost enclosing binding pattern, crossing binding elements
- * (which cover object properties, rest elements, and defaults). Annotations
- * are only valid on the outermost pattern, not on nested binding elements.
- */
+/** An annotation is only valid on the outermost pattern, never on a nested
+ * binding element. */
 function getOutermostPattern(node: ts.Node): ts.BindingPattern | undefined {
   let pattern: ts.BindingPattern | undefined;
   let cur: ts.Node | undefined = node;
@@ -222,22 +221,78 @@ function annotateBindingPattern(
   if (pattern) annotatePattern(pattern, anyType, insert);
 }
 
-function annotateDestructuredKey(
+function collectDestructuredKey(
   sourceFile: ts.SourceFile,
   diagnostic: ts.DiagnosticWithLocation,
-  anyType: string,
-  insert: Insert,
+  into: ts.BindingElement[],
 ) {
   const node = findNodeAtSpan(sourceFile, diagnostic);
   if (!node || !ts.isIdentifier(node)) return;
   const element = node.parent;
   if (!ts.isBindingElement(element) || !ts.isObjectBindingPattern(element.parent)) return;
-  // Only property keys are matched.
   const isKey = element.propertyName != null ? element.propertyName === node : element.name === node;
   if (!isKey) return;
 
-  const pattern = getOutermostPattern(element);
-  if (pattern) annotatePattern(pattern, anyType, insert);
+  into.push(element);
+}
+
+/**
+ * The annotation lands on the declaration, so it replaces the source type for
+ * the whole pattern rather than for the missing key alone. A pattern that also
+ * binds a property the source has would lose that binding's type, so its
+ * diagnostic goes to ts-ignore instead.
+ */
+function annotateFullyMissingPatterns(
+  missingKeys: ts.BindingElement[],
+  anyType: string,
+  insert: Insert,
+  getLanguageService: () => ts.LanguageService,
+) {
+  if (missingKeys.length === 0) return;
+  const checker = getLanguageService().getProgram?.()?.getTypeChecker();
+  if (!checker) return;
+
+  const patterns = new Set<ts.BindingPattern>();
+  missingKeys.forEach((element) => {
+    const pattern = getOutermostPattern(element);
+    if (pattern) patterns.add(pattern);
+  });
+
+  patterns.forEach((pattern) => {
+    if (!bindsKnownProperty(pattern, sourceTypeOf(pattern, checker), checker)) {
+      annotatePattern(pattern, anyType, insert);
+    }
+  });
+}
+
+/** Read from the initializer: a pattern with an object literal default takes its
+ * declared type from its own bindings. */
+function sourceTypeOf(pattern: ts.BindingPattern, checker: ts.TypeChecker): ts.Type {
+  const decl = pattern.parent;
+  const initializer =
+    ts.isVariableDeclaration(decl) || ts.isParameter(decl) ? decl.initializer : undefined;
+  return checker.getTypeAtLocation(initializer ?? pattern);
+}
+
+function bindsKnownProperty(
+  pattern: ts.BindingPattern,
+  sourceType: ts.Type,
+  checker: ts.TypeChecker,
+): boolean {
+  return pattern.elements.some((element) => {
+    if (ts.isOmittedExpression(element)) return false;
+    if (element.dotDotDotToken) return true;
+    const key = element.propertyName ?? element.name;
+    if (!ts.isIdentifier(key) && !ts.isStringLiteral(key)) return true;
+    const property = checker.getPropertyOfType(sourceType, key.text);
+    if (!property) return false;
+    if (!isBindingPattern(element.name)) return true;
+    return bindsKnownProperty(
+      element.name,
+      checker.getTypeOfSymbolAtLocation(property, element),
+      checker,
+    );
+  });
 }
 
 function annotateVariable(
@@ -254,10 +309,7 @@ function annotateVariable(
   }
 }
 
-/**
- * The implicit type named by the diagnostic ('any', 'any[]', ...) with `any`
- * swapped for the alias, so array-ness survives the annotation.
- */
+/** The implicit type the diagnostic names, with `any` swapped for the alias. */
 function implicitTypeFromMessage(diagnostic: ts.DiagnosticWithLocation, anyType: string): string {
   const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ');
   const match = /'(any(?:\[\])*)'/.exec(message.slice(message.indexOf('implicitly')));
