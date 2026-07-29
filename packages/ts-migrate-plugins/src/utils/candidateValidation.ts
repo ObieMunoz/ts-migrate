@@ -41,10 +41,18 @@ export function applyTextChanges(text: string, changes: TextChange[]): string {
   return updateSourceText(text, updates);
 }
 
+/**
+ * Only a change that ends at or before the position moves it. A position
+ * inside a replaced span keeps its offset, which is where it stays for the
+ * replacements these plugins make: each one writes the text it replaces back
+ * out as a prefix, so a diagnostic the annotation already carried is reported
+ * at the same offset in the candidate. Shifting it instead makes that
+ * diagnostic look new and the change looks like it broke the file.
+ */
 export function toCandidatePos(originalPos: number, changes: TextChange[]): number {
   let shift = 0;
   changes.forEach((change) => {
-    if (change.start <= originalPos) {
+    if (change.start + change.length <= originalPos) {
       shift += change.text.length - change.length;
     }
   });
