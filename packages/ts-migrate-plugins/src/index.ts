@@ -11,6 +11,7 @@ import hoistDeclarationsPlugin from './plugins/hoist-declarations';
 import inferTypesPlugin from './plugins/infer-types';
 import jsDocPlugin from './plugins/jsdoc';
 import memberAccessibilityPlugin from './plugins/member-accessibility';
+import optionalParametersPlugin from './plugins/optional-parameters';
 import reactClassLifecycleMethodsPlugin from './plugins/react-class-lifecycle-methods';
 import reactClassStatePlugin from './plugins/react-class-state';
 import reactDefaultPropsPlugin from './plugins/react-default-props';
@@ -96,6 +97,7 @@ export {
   inferTypesPlugin,
   jsDocPlugin,
   memberAccessibilityPlugin,
+  optionalParametersPlugin,
   reactClassLifecycleMethodsPlugin,
   reactClassStatePlugin,
   reactDefaultPropsPlugin,

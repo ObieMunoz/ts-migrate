@@ -443,6 +443,15 @@ can see (an exported interface member, a property of an exported class) tells
 them what it really holds, which can surface errors in those files on the same
 run. Pass `--excludePlugin widen-annotations` to keep annotations as written.
 
+JavaScript has no arity checking, so a parameter callers leave off was already
+optional before the migration; the declaration is what makes it required, and
+every such call then costs a suppression. The arity step marks those `?`, from
+the position the fewest arguments any call in the project passes, and only
+where re-checking the declaring file reports no new error. A call the arity
+error was hiding an argument mismatch behind reports that mismatch once the
+arity is right, so a few suppressions change code rather than going away. Pass
+`--excludePlugin optional-parameters` to leave every parameter required.
+
 - `--sources <glob>` (`-s`, repeatable): migrate only a subset. Quote globs.
   Ambient `.d.ts` files matched by the tsconfig `include` (vite-env.d.ts,
   custom globals) are kept in the program automatically; pass
