@@ -22,6 +22,7 @@ import {
   reactPassedPropsPlugin,
   reactPropsPlugin,
   reactPropsFromUsagePlugin,
+  reactReadPropsPlugin,
   reactShapePlugin,
   relaxParameterShapesPlugin,
   stripTSIgnorePlugin,
@@ -62,6 +63,7 @@ export const availablePlugins = [
   reactPassedPropsPlugin,
   reactPropsPlugin,
   reactPropsFromUsagePlugin,
+  reactReadPropsPlugin,
   reactShapePlugin,
   relaxParameterShapesPlugin,
   stripTSIgnorePlugin,
@@ -158,6 +160,7 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
     entry(reactPassedPropsPlugin, {}),
     entry(reactPropsPlugin, { anyAlias, anyFunctionAlias, shouldUpdateAirbnbImports: true }),
     entry(reactPropsFromUsagePlugin, { anyAlias, anyFunctionAlias }),
+    entry(reactReadPropsPlugin, {}),
     entry(reactShapePlugin, { anyAlias, anyFunctionAlias }),
     entry(relaxParameterShapesPlugin, { anyAlias }),
     entry(stripTSIgnorePlugin, {}),
@@ -300,6 +303,9 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     // the props types the passes below read are the ones the project really
     // uses rather than the subset that happened to be validated.
     .addPlugin(reactPassedPropsPlugin, optionsFor(reactPassedPropsPlugin))
+    // Then the props the component itself reads, which the pass above has
+    // already declared wherever a call site passes one explicitly.
+    .addPlugin(reactReadPropsPlugin, optionsFor(reactReadPropsPlugin))
     // Runs on the props react-props has just typed, so a setter called with
     // one is evidence instead of an any.
     .addPlugin(reactHookTypesPlugin, optionsFor(reactHookTypesPlugin))

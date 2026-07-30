@@ -499,6 +499,31 @@ type mismatch rather than a missing member and is left alone, and each prop is
 proven on its own against the declaring file. Pass `--excludePlugin
 react-passed-props` to keep only the props propTypes mention.
 
+The other side of the same gap is a prop the component reads. A prop that only
+ever arrives through a spread, a wrapper or a container is checked against
+nothing at the call site, so the props type has no member for it and every read
+inside the component costs a suppression. The read step declares those props on
+the component's annotation, typed from the value a call site passes for the prop,
+the member of the object a call site spreads, the element the component spreads
+it onto, or the parameter it is handed to. A prop whose type none of that proves
+keeps its suppression: the tool does not invent `any` to clear a diagnostic, for
+the reason below. A read TypeScript suggests a near-miss name for is left alone,
+since a name one letter off a declared one is a typo rather than an undeclared
+prop. Pass `--excludePlugin react-read-props` to leave those reads to the
+suppression pass.
+
+A suppression is a legitimate output, not a failure to be counted down. Where the
+project proves nothing about a type, `@ts-expect-error` beats writing `any`, on
+two mechanical grounds rather than taste. It withdraws itself: the day something
+declares the member, the directive becomes `TS2578` and has to be removed, so the
+debt cleans itself up, and `reignore` re-evaluates the whole set on a later run.
+And it is local, where a declaration is a contract: adding `subtitle?: any` to a
+props type silences the excess-property error every call site passing `subtitle`
+reports today, and licenses every future one. A read under a suppression is
+already error-typed, so the suppression gives up no checking at the read that the
+`any` would have kept. Prefer it wherever a pass would otherwise declare
+something it cannot prove.
+
 The widening step unions an annotation with what the assignments in its own
 file give it, so `let x: number` later assigned null ends up `number | null`
 instead of `@ts-expect-error`. It only ever writes a type it can name in that
