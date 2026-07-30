@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.19.1](https://github.com/ObieMunoz/ts-migrate/compare/v0.19.0...v0.19.1) (2026-07-30)
+
+
+### Bug Fixes
+
+* **ts-migrate-plugins:** stop the type printer following an array back into itself ([#344](https://github.com/ObieMunoz/ts-migrate/issues/344)) ([808615c](https://github.com/ObieMunoz/ts-migrate/commit/808615ce9f2607922acdd75fb8ac1a2eb37d7821))
+
+
+
+
+
 # [0.19.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.18.0...v0.19.0) (2026-07-30)
 
 
