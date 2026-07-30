@@ -89,6 +89,7 @@ Commands:
   ts-migrate rename <folder>         Rename files in folder from JS/JSX to TS/TSX
   ts-migrate migrate <folder>        Fix TypeScript errors, using codemods
   ts-migrate reignore <folder>       Re-run ts-ignore on a project
+  ts-migrate retype <folder>         Re-infer the any annotations an earlier migration wrote
   ts-migrate report <folder>         Print per-file counts of suppression comments and any-type
                                      annotations
   ts-migrate check <folder>          Compare suppression and any counts against a committed baseline
@@ -150,7 +151,7 @@ than a directory. The message names the absolute path the argument resolved to,
 so a relative path that landed somewhere unexpected shows where it went. An
 empty directory is a directory: `init` writes a tsconfig into it and exits 0.
 
-The `rename`, `migrate`, and `reignore` commands accept a `--sources` (or `-s`) flag. This flag
+The `rename`, `migrate`, `reignore`, and `retype` commands accept a `--sources` (or `-s`) flag. This flag
 accepts a relative path to a subset of your project as a string (glob patterns are
 allowed). When this flag is used, ts-migrate ignores your project's default source
 files in favor of the ones you've listed. It is effectively the same as replacing
@@ -310,7 +311,7 @@ on the command line always wins, so a config file never keeps you from
 overriding it for one run. `--gitignore=false` overrides `"gitignore": true` in
 the file, the same as it overrides the built-in default.
 
-`full`, `rename`, `migrate`, `reignore`, `report` and `check` read the file.
+`full`, `rename`, `migrate`, `reignore`, `retype`, `report` and `check` read the file.
 `init`, `init:extended` and `agents` take no flags, so there is nothing for
 them to read.
 
@@ -362,7 +363,7 @@ in the banner and in a warning:
 - the project's typescript is outside the range ts-migrate supports
   (`>=5.7.3 <7`)
 
-`migrate`, `reignore`, and `check` accept `--typescript <path>` for a compiler
+`migrate`, `reignore`, `retype`, and `check` accept `--typescript <path>` for a compiler
 that is not under `node_modules`, or to force a specific one. The path can be
 the package directory or any file inside it:
 
@@ -485,7 +486,7 @@ disables itself when the target folder is not inside a git repository or is
 itself gitignored — a scratch copy of a project inside an ignored directory
 migrates normally.
 
-Pass `--gitignore=false` to `rename`, `migrate`, `reignore`, `report`, or
+Pass `--gitignore=false` to `rename`, `migrate`, `reignore`, `retype`, `report`, or
 `check` to include ignored files anyway. If your existing tsconfig `include`
 matches gitignored build output, add it to `exclude` as well: ts-migrate
 skips it either way, but your own `tsc` (including the compile check at the
@@ -624,6 +625,66 @@ Usage: `npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>`.
 If only part of the project was migrated with `--sources`, pass the same flags
 here so reignore stays inside that subset instead of churning suppressions in
 directories the migration never touched.
+
+# Retype
+
+Reignore refreshes the suppression comments a migration wrote. The annotations
+it wrote are permanent: every `any` and `$TSFixMe` records a type the checker
+could not work out on migration day, and nothing reconsiders it afterwards. The
+annotation is itself what keeps it that way, since the diagnostics the inference
+engine acts on are the implicit-any ones, reported only where the declaration
+carries no type at all.
+
+`retype` is reignore with those annotations retried. Each one is stripped, the
+inference engine is asked again, and the result is kept only where the file
+re-checks with no error it did not already have and the checker answers
+something other than `any` for the declaration. Anything it cannot improve is
+restored byte for byte, so the diff holds only the types it recovered.
+
+Usage: `npx -p @obiemunoz/ts-migrate ts-migrate retype <folder>`.
+
+Run it when the project's types have moved on: after installing `@types`
+packages, after migrating a neighboring directory, after converting CommonJS
+modules to ESM. The run ends with what it took off the type debt:
+
+```
+Type debt change for frontend/foo:
+  @ts-expect-error comments: 40 -> 41 (+1)
+  @ts-ignore comments: 0 -> 0 (0)
+  any-alias annotations: 120 -> 96 (-24)
+  explicit any annotations: 8 -> 8 (0)
+  Total: 168 -> 145 (-23)
+```
+
+A suppression count that goes up is the expected shape of that trade: an
+annotation narrowed from `any` to the type its body needs is a type a caller
+elsewhere can now be wrong about, and the suppression pass that runs afterwards
+is what keeps the project compiling. It takes the same flags as `reignore`, plus
+`--casts` on by default here, since a stale assertion is the same debt as a
+stale annotation.
+
+Only ts-migrate's own output is in scope: `any`, `any[]`, and an alias the
+project declares as `any`. A hand-written annotation is left alone, as is an
+alias for a function type (`$TSFixMeFunction`), whose declarations pass the
+"not any any more" test whether anything improved or not.
+
+Three kinds of replacement are refused even where they check clean, because each
+would leave the file worse than the `any` it replaced:
+
+- one that says nothing a reader can use: `null`, `undefined`, `void`, `never`,
+  and arrays of those. That is what the engine prints where the only evidence it
+  found was an argument nothing was ever passed for, and an annotation of one
+  rejects every real value the declaration later holds.
+- one over 120 characters, or spanning lines. The engine will print a
+  parameter's whole structural shape, comments from the source type included,
+  and several hundred characters of inline object type is a worse thing to leave
+  in a maintained file than an `any`.
+- one holding more `any` than the annotation it replaces. Trading
+  `callback: any` for `callback: (arg0: any, arg1: any) => any` says a little
+  more about the value and triples the file's `any` count doing it, which
+  `ts-migrate check` reads as debt growth and fails a build over.
+
+Those sites keep their `any`.
 
 # Type definition recommendations
 
@@ -954,7 +1015,7 @@ run could not write is left out of the rewrites `--jsonSummary` reports.
 
 # Previewing a run (`--dryRun`)
 
-`rename`, `migrate`, and `reignore` accept `--dryRun` to show what a run
+`rename`, `migrate`, `reignore`, and `retype` accept `--dryRun` to show what a run
 would touch before anything hits disk:
 
 ```sh
@@ -995,9 +1056,10 @@ would have written, and a dry run wrote none of them. Preview those with
 # Machine-readable run summaries
 
 A script or agent driving the CLI otherwise has to scrape the progress log to
-learn what a run did. The `full`, `rename`, `migrate`, and `reignore` commands
-accept a `--jsonSummary <file>` flag that writes a JSON summary of the run to a
-file (a file rather than stdout, which stays reserved for the progress log):
+learn what a run did. The `full`, `rename`, `migrate`, `reignore`, and `retype`
+commands accept a `--jsonSummary <file>` flag that writes a JSON summary of the
+run to a file (a file rather than stdout, which stays reserved for the progress
+log):
 
 ```sh
 npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --jsonSummary migrate-summary.json

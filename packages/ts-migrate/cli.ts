@@ -17,10 +17,10 @@ import check from './commands/check';
 import full, { Prompter } from './commands/full';
 import init from './commands/init';
 import { availablePlugins, BuildMigrateConfigParams } from './commands/migrate';
-import reignore from './commands/reignore';
 import rename from './commands/rename';
 import report from './commands/report';
 import runMigrate from './commands/runMigrate';
+import runReignore from './commands/runReignore';
 import readAgentsPlaybook from './utils/agentsPlaybook';
 import {
   CONFIG_FLAG_DESCRIPTION,
@@ -29,26 +29,8 @@ import {
 } from './utils/configFile';
 import packageVersion from './utils/packageVersion';
 import { migrationRootFromArgv } from './utils/resolveTypeScript';
-import {
-  logConfigFile,
-  logRunFailure,
-  logTypeScriptDecision,
-  logTypeScriptWarning,
-  printDryRunSummary,
-  printFollowUpReport,
-  printGeneratedFiles,
-  printSuppressionReport,
-  printTypeDebtSummary,
-  printTypesPackagePreflight,
-  reportGeneratedFileLinting,
-  typesPackageReport,
-} from './utils/runReports';
-import { canKeepGeneratedDeclarations } from './utils/tsConfigIncludes';
-import {
-  buildMigrateRunSummary,
-  buildRenameRunSummary,
-  writeRunSummary,
-} from './utils/runSummary';
+import { logConfigFile } from './utils/runReports';
+import { buildRenameRunSummary, writeRunSummary } from './utils/runSummary';
 
 const BUG_REPORT_URL = 'https://github.com/ObieMunoz/ts-migrate/issues';
 
@@ -501,8 +483,14 @@ const migrateBuilder = (cmd: Argv) =>
     )
     .require(['folder']);
 
-const reignoreBuilder = (cmd: Argv) =>
-  configFlag(cmd.positional('folder', { type: 'string' }), 'reignore')
+/**
+ * The flags the strip-and-re-add pipeline takes. `reignore` refreshes the
+ * suppression comments and `retype` re-infers the annotations, which is the same
+ * run with one more plugin in it, so both declare this set. Generic over the
+ * argument type for the same reason `migrationFlags` is.
+ */
+function reignoreFlags<T>(cmd: Argv<T>, command: string) {
+  return configFlag(cmd.positional('folder', { type: 'string' }), command)
     .option('messagePrefix', {
       alias: 'p',
       default: 'FIXME',
@@ -511,7 +499,7 @@ const reignoreBuilder = (cmd: Argv) =>
     })
     .string('sources')
     .alias('sources', 's')
-    .describe('sources', 'Path to a subset of your project to reignore (globs are ok).')
+    .describe('sources', 'Path to a subset of your project to run over (globs are ok).')
     .boolean('ambientSources')
     .default('ambientSources', true)
     .describe(
@@ -522,13 +510,13 @@ const reignoreBuilder = (cmd: Argv) =>
     .default('gitignore', true)
     .describe(
       'gitignore',
-      'Skip gitignored files: they are neither reignored nor added to the program. Disable with --gitignore=false.',
+      'Skip gitignored files: they are neither edited nor added to the program. Disable with --gitignore=false.',
     )
     .boolean('bootstrap')
     .default('bootstrap', true)
     .describe(
       'bootstrap',
-      'Skip build system files (configs and node-run scripts): they are kept out of the program. They stay JavaScript either way, since reignore never edits JavaScript files. Disable with --bootstrap=false.',
+      'Skip build system files (configs and node-run scripts): they are kept out of the program. They stay JavaScript either way, since neither command edits JavaScript files. Disable with --bootstrap=false.',
     )
     .boolean('projectEslint')
     .default('projectEslint', true)
@@ -538,12 +526,6 @@ const reignoreBuilder = (cmd: Argv) =>
     .describe(
       'declareUntypedModules',
       'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --declareUntypedModules=false.',
-    )
-    .boolean('casts')
-    .default('casts', false)
-    .describe(
-      'casts',
-      'Retry the `as any` assertions ts-migrate inserted: drop each one, re-check the file, and keep the removal only where no new error appears. An assertion the file still needs is narrowed to the tightest type the checker can name for it, on the same evidence. Off by default, since it costs up to two validation passes per file holding one.',
     )
     .string('typescript')
     .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
@@ -563,11 +545,40 @@ const reignoreBuilder = (cmd: Argv) =>
     )
     .string('jsonSummary')
     .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
+    .require(['folder']);
+}
+
+const CASTS_FLAG_DESCRIPTION =
+  'Retry the `as any` assertions ts-migrate inserted: drop each one, re-check the file, and keep ' +
+  'the removal only where no new error appears. An assertion the file still needs is narrowed to ' +
+  'the tightest type the checker can name for it, on the same evidence.';
+
+const reignoreBuilder = (cmd: Argv) =>
+  reignoreFlags(cmd, 'reignore')
+    .boolean('casts')
+    .default('casts', false)
+    .describe(
+      'casts',
+      `${CASTS_FLAG_DESCRIPTION} Off by default, since it costs up to two validation passes per file holding one. On by default in retype.`,
+    )
     .example(
       '$0 reignore /frontend/foo -s "bar/**/*"',
       'Reignore all the files in /frontend/foo/bar. Ambient .d.ts files from the tsconfig stay in the program.',
+    );
+
+const retypeBuilder = (cmd: Argv) =>
+  reignoreFlags(cmd, 'retype')
+    .boolean('casts')
+    .default('casts', true)
+    .describe(
+      'casts',
+      `${CASTS_FLAG_DESCRIPTION} On by default here, since a stale assertion is the same debt as a stale annotation. Disable with --casts=false.`,
     )
-    .require(['folder']);
+    .example('$0 retype /frontend/foo', 'Re-infer the any annotations of /frontend/foo')
+    .example(
+      '$0 retype /frontend/foo --dryRun',
+      'Print the files it would change without writing anything',
+    );
 
 const reportBuilder = (cmd: Argv) =>
   configFlag(cmd.positional('folder', { type: 'string' }), 'report')
@@ -621,6 +632,7 @@ const commandBuilders: Record<string, (cmd: Argv) => Argv<any>> = {
   rename: renameBuilder,
   migrate: migrateBuilder,
   reignore: reignoreBuilder,
+  retype: retypeBuilder,
   report: reportBuilder,
   check: checkBuilder,
   agents: agentsBuilder,
@@ -775,90 +787,58 @@ cli
     reignoreBuilder,
     async (args) => {
       const rootDir = resolveRootDir(args.folder);
-      const { sources, dryRun } = args;
       logConfigFile(args.config);
-      logTypeScriptDecision(typeScriptDecision());
-      if (args.typesPreflight) printTypesPackagePreflight(rootDir);
-
-      const {
-        exitCode,
-        filesToMigrate,
-        typesPackageDetector,
-        suppressionExplainer,
-        updatedSourceFiles,
-        updatedFileTexts,
-        migratedFilesWithSyntaxErrors,
-        nonMigratedFilesWithSyntaxErrors,
-        pluginStats,
-        pluginFailures,
-        pluginNotices,
-        pluginErrors,
-        generatedFiles,
-        skippedGitignoredFiles,
-        skippedBootstrapFiles,
-      } = await reignore({
-        rootDir,
-        sources,
-        ambientSources: args.ambientSources,
-        messagePrefix: args.messagePrefix,
-        gitignore: args.gitignore,
-        bootstrap: args.bootstrap,
-        projectEslint: args.projectEslint,
-        // See the migrate command: without a tsconfig to keep it in, a
-        // generated declaration file is undone by the next `tsc` run.
-        declareUntypedModules: args.declareUntypedModules && canKeepGeneratedDeclarations(rootDir),
-        casts: args.casts,
-        dryRun,
-      });
-
-      printGeneratedFiles(rootDir, generatedFiles, dryRun);
-      const generatedFileParseErrors = await reportGeneratedFileLinting(
-        rootDir,
-        [...generatedFiles].map(([filePath, text]) => ({ filePath, text })),
-        dryRun,
+      process.exit(
+        await runReignore({
+          command: 'reignore',
+          rootDir,
+          folder: args.folder,
+          typeScript: typeScriptDecision(),
+          sources: args.sources,
+          ambientSources: args.ambientSources,
+          messagePrefix: args.messagePrefix,
+          gitignore: args.gitignore,
+          bootstrap: args.bootstrap,
+          projectEslint: args.projectEslint,
+          declareUntypedModules: args.declareUntypedModules,
+          casts: args.casts,
+          typesPreflight: args.typesPreflight,
+          suppressionReportFile: args.suppressionReportFile,
+          dryRun: args.dryRun,
+          jsonSummary: args.jsonSummary,
+        }),
       );
-      const typesReport = typesPackageReport(typesPackageDetector, rootDir, args.folder);
-      if (typesReport) log.info(typesReport);
-      printSuppressionReport(suppressionExplainer, rootDir, args.suppressionReportFile);
-      if (dryRun) {
-        printDryRunSummary(rootDir, args.folder, updatedSourceFiles, updatedFileTexts);
-      } else {
-        printTypeDebtSummary(rootDir, args.folder, args.gitignore);
-      }
-      logTypeScriptWarning(typeScriptDecision());
-      printFollowUpReport(pluginNotices);
-
-      if (exitCode !== 0) {
-        logRunFailure(pluginErrors, migratedFilesWithSyntaxErrors);
-      }
-
-      let finalExitCode = exitCode;
-      if (args.jsonSummary) {
-        finalExitCode = writeRunSummary(
-          args.jsonSummary,
-          buildMigrateRunSummary({
-            command: 'reignore',
-            rootDir,
-            exitCode,
-            dryRun,
-            filesToMigrate,
-            updatedSourceFiles,
-            fileContents: updatedFileTexts,
-            migratedFilesWithSyntaxErrors,
-            nonMigratedFilesWithSyntaxErrors,
-            pluginStats,
-            pluginFailures,
-            pluginNotices,
-            pluginErrors,
-            generatedFiles,
-            generatedFileParseErrors,
-            skippedGitignoredFiles,
-            skippedBootstrapFiles,
-          }),
-        );
-      }
-
-      process.exit(finalExitCode);
+    },
+  )
+  .command(
+    'retype <folder>',
+    'Re-infer the any annotations an earlier migration wrote',
+    retypeBuilder,
+    async (args) => {
+      const rootDir = resolveRootDir(args.folder);
+      logConfigFile(args.config);
+      process.exit(
+        await runReignore({
+          command: 'retype',
+          rootDir,
+          folder: args.folder,
+          typeScript: typeScriptDecision(),
+          sources: args.sources,
+          ambientSources: args.ambientSources,
+          messagePrefix: args.messagePrefix,
+          gitignore: args.gitignore,
+          bootstrap: args.bootstrap,
+          projectEslint: args.projectEslint,
+          declareUntypedModules: args.declareUntypedModules,
+          annotations: true,
+          casts: args.casts,
+          typesPreflight: args.typesPreflight,
+          suppressionReportFile: args.suppressionReportFile,
+          dryRun: args.dryRun,
+          jsonSummary: args.jsonSummary,
+          debtChange: true,
+        }),
+      );
     },
   )
   .command(

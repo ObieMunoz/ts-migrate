@@ -148,6 +148,7 @@ describe('a <folder> that is not a directory', () => {
     ['rename'],
     ['migrate'],
     ['reignore'],
+    ['retype'],
     ['report'],
     ['check'],
   ])('makes %s name the folder and exit nonzero', (name) => {
@@ -204,6 +205,7 @@ describe('help output off a terminal', () => {
     ['rename', ['rename']],
     ['migrate', ['migrate']],
     ['reignore', ['reignore']],
+    ['retype', ['retype']],
     ['report', ['report']],
     ['check', ['check']],
   ])('wraps the help of %s', (_name, args) => {
@@ -215,7 +217,7 @@ describe('help output off a terminal', () => {
     expect(status).toBe(0);
   }, 30000);
 
-  it.each([['rename'], ['migrate'], ['reignore'], ['report'], ['check']])(
+  it.each([['rename'], ['migrate'], ['reignore'], ['retype'], ['report'], ['check']])(
     'prints only the positionals %s takes in its usage line',
     (name) => {
       const { output } = runCli([name, '--help']);
@@ -235,11 +237,15 @@ describe('help output off a terminal', () => {
     expect(output).toContain('--publicRegex');
   }, 30000);
 
-  it.each([['migrate'], ['reignore']])('documents the type package preflight of %s', (name) => {
-    const { output } = runCli([name, '--help']);
+  it.each([['migrate'], ['reignore'], ['retype']])(
+    'documents the type package preflight of %s',
+    (name) => {
+      const { output } = runCli([name, '--help']);
 
-    expect(output).toContain('--typesPreflight');
-  }, 30000);
+      expect(output).toContain('--typesPreflight');
+    },
+    30000,
+  );
 });
 
 describe('flag spelling', () => {
@@ -262,6 +268,7 @@ describe('flag spelling', () => {
     ['rename', ['rename']],
     ['migrate', ['migrate']],
     ['reignore', ['reignore']],
+    ['retype', ['retype']],
     ['report', ['report']],
     ['check', ['check']],
   ])('prints every flag of %s in camelCase', (_name, args) => {
@@ -609,6 +616,67 @@ describe('the type package preflight', () => {
     expect(output).toContain(PREFLIGHT_HEADING);
     expect(output).not.toContain(PINNED_TYPES_REMINDER);
   }, 60000);
+});
+
+describe('a retype run', () => {
+  let retypeDir: string;
+
+  beforeEach(() => {
+    retypeDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-retype-'));
+    fs.writeFileSync(
+      path.join(retypeDir, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { noEmit: true, strict: true, types: [] }, include: ['.'] }),
+    );
+    fs.writeFileSync(
+      path.join(retypeDir, 'a.ts'),
+      `export const count: any = 1;
+
+export function passthrough(value: any) {
+  return value;
+}
+`,
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(retypeDir, { recursive: true, force: true });
+  });
+
+  it('reports what it took off the debt and leaves the rest annotated', () => {
+    const summaryFile = path.join(retypeDir, 'summary.json');
+    const { status, output } = runCliInOrder([
+      'retype',
+      retypeDir,
+      '--jsonSummary',
+      summaryFile,
+      '--no-casts',
+    ]);
+
+    expect(output).toContain(`Type debt change for ${retypeDir}`);
+    expect(output).toContain('explicit any annotations: 2 -> 1 (-1)');
+    expect(output).toContain('Total: 2 -> 1 (-1)');
+    expect(fs.readFileSync(path.join(retypeDir, 'a.ts'), 'utf8')).toBe(`export const count = 1;
+
+export function passthrough(value: any) {
+  return value;
+}
+`);
+    expect(status).toBe(0);
+
+    const summary = JSON.parse(fs.readFileSync(summaryFile, 'utf8'));
+    expect(summary.command).toBe('retype');
+    expect(summary.changedFiles).toEqual(['a.ts']);
+  }, 120000);
+
+  it('leaves the annotations alone under reignore', () => {
+    const { status, output } = runCliInOrder(['reignore', retypeDir]);
+
+    expect(output).not.toContain('Type debt change');
+    expect(fs.readFileSync(path.join(retypeDir, 'a.ts'), 'utf8')).toContain(
+      'export const count: any = 1;',
+    );
+    expect(status).toBe(0);
+  }, 120000);
 });
 
 describe('a migrate run with nothing to migrate', () => {

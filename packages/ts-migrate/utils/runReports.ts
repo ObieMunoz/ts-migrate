@@ -23,9 +23,11 @@ import { ensureIncludedByTsConfig } from './tsConfigIncludes';
 import {
   FileDebt,
   formatFileDebtCounts,
+  formatTypeDebtDelta,
   formatTypeDebtSummary,
   scanTypeDebt,
   scanTypeDebtForFiles,
+  TypeDebtReport,
 } from './typeDebt';
 
 /**
@@ -371,6 +373,40 @@ export function describeEmptyMigrationSet(
 export function printTypeDebtSummary(rootDir: string, folder: string, gitignore?: boolean): void {
   try {
     log.info(formatTypeDebtSummary(scanTypeDebt(rootDir, gitignore), folder));
+  } catch (err) {
+    log.warn(`Skipped type debt summary: ${errorMessage(err)}`);
+  }
+}
+
+/**
+ * The counts as they stand before a run, for the before-and-after summary
+ * below. Undefined where the scan could not run at all, which the summary
+ * reports as a plain total instead of holding up the run over it.
+ */
+export function typeDebtBaseline(rootDir: string, gitignore?: boolean): TypeDebtReport | undefined {
+  try {
+    return scanTypeDebt(rootDir, gitignore);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The debt summary with what the run took off it, for a command that exists to
+ * reduce the counts rather than to keep them accurate.
+ */
+export function printTypeDebtChange(
+  rootDir: string,
+  folder: string,
+  before: TypeDebtReport | undefined,
+  gitignore?: boolean,
+): void {
+  if (!before) {
+    printTypeDebtSummary(rootDir, folder, gitignore);
+    return;
+  }
+  try {
+    log.info(formatTypeDebtDelta(before, scanTypeDebt(rootDir, gitignore), folder));
   } catch (err) {
     log.warn(`Skipped type debt summary: ${errorMessage(err)}`);
   }

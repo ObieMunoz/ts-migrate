@@ -14,7 +14,7 @@ import { FileDebt, scanTypeDebtForFiles } from './typeDebt';
  * slashes; lists are sorted so identical runs produce identical files.
  */
 interface RunSummaryBase {
-  command: 'rename' | 'migrate' | 'reignore' | 'full';
+  command: 'rename' | 'migrate' | 'reignore' | 'retype' | 'full';
   tsMigrateVersion: string;
   rootDir: string;
   exitCode: number;
@@ -36,7 +36,7 @@ export interface RenameRunSummary extends RunSummaryBase {
 }
 
 export interface MigrateRunSummary extends RunSummaryBase {
-  command: 'migrate' | 'reignore';
+  command: 'migrate' | 'reignore' | 'retype';
   /**
    * How many files the plugins were handed. 0 means the run touched nothing,
    * whatever else the summary says.
@@ -180,7 +180,7 @@ function sortByFileAndKey<T extends { file: string; key: string }>(entries: T[])
 }
 
 export function buildMigrateRunSummary(params: {
-  command: 'migrate' | 'reignore';
+  command: 'migrate' | 'reignore' | 'retype';
   rootDir: string;
   exitCode: number;
   dryRun?: boolean;
