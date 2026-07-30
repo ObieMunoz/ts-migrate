@@ -2,12 +2,12 @@ import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import getTokenAtPosition from './utils/token-pos';
 import {
-  applyTextChanges,
-  createFileLanguageService,
-  findNewErrors,
-  getValidationOptions,
-  TextChange,
-} from '../utils/candidateValidation';
+  AnnotationGroup,
+  annotationGroup,
+  applyProvenAdditions,
+  Member,
+} from '../utils/annotationAdditions';
+import { isClosedType, isMigratableFile, propsAnnotationOfTag } from '../utils/componentProps';
 import { DEFAULT_MAX_UNION_MEMBERS, printType } from '../utils/typePrinter';
 import { createValidate, Properties } from '../utils/validateOptions';
 
@@ -23,19 +23,9 @@ const attributeDiagnosticCodes = new Set([2322, 2326, 2559, 2769]);
 
 const reactOwnAttributes = new Set(['key', 'ref']);
 
-const maxValidationPrograms = 12;
-
-interface Group {
-  start: number;
-  length: number;
-  declared: string;
-  open: boolean;
-  members: string[];
-}
-
 interface PlannedFile {
   text: string;
-  groups: Group[];
+  groups: AnnotationGroup[];
 }
 
 interface Pass {
@@ -60,7 +50,7 @@ const reactPassedPropsPlugin: Plugin<Options> = {
     if (!planned || planned.text !== text) {
       return undefined;
     }
-    return applyProven(fileName, text, planned.groups, languageService);
+    return applyProvenAdditions(fileName, text, planned.groups, languageService);
   },
 
   validate: createValidate<Options>(optionProperties),
@@ -81,7 +71,7 @@ function plan(languageService: ts.LanguageService, maxUnionMembers: number): Pas
 
   const byAnnotation = new Map<ts.TypeNode, Map<string, Evidence>>();
   program.getSourceFiles().forEach((file) => {
-    if (!isMigratable(file)) return;
+    if (!isMigratableFile(file)) return;
     pass.known.add(file.fileName);
     if (!/\.[jt]sx$/.test(file.fileName)) return;
     languageService.getSemanticDiagnostics(file.fileName).forEach((diagnostic) => {
@@ -92,12 +82,16 @@ function plan(languageService: ts.LanguageService, maxUnionMembers: number): Pas
     });
   });
 
-  const groupsByFile = new Map<string, Group[]>();
+  const groupsByFile = new Map<string, AnnotationGroup[]>();
   byAnnotation.forEach((props, annotation) => {
-    const group = groupFor(checker, annotation, props, maxUnionMembers);
-    if (!group) return;
+    const members: Member[] = [];
+    props.forEach((evidence, name) => {
+      members.push({ name, type: memberType(checker, annotation, evidence, maxUnionMembers) });
+    });
+    if (members.length === 0) return;
     const { fileName } = annotation.getSourceFile();
     const forFile = groupsByFile.get(fileName);
+    const group = annotationGroup(annotation, members);
     if (forFile) {
       forFile.push(group);
     } else {
@@ -114,10 +108,6 @@ function plan(languageService: ts.LanguageService, maxUnionMembers: number): Pas
     });
   });
   return pass;
-}
-
-function isMigratable(file: ts.SourceFile): boolean {
-  return !file.isDeclarationFile && !file.fileName.includes('/node_modules/');
 }
 
 function attributeAt(file: ts.SourceFile, start: number): ts.JsxAttribute | undefined {
@@ -138,12 +128,14 @@ function collect(
 
   const attributes = attribute.parent;
   const received = checker.getContextualType(attributes);
-  if (!received || !isClosed(checker, received) || checker.getPropertyOfType(received, name)) return;
+  if (!received || !isClosedType(checker, received) || checker.getPropertyOfType(received, name)) {
+    return;
+  }
 
-  const annotation = propsAnnotation(attributes.parent.tagName, checker);
+  const annotation = propsAnnotationOfTag(attributes.parent.tagName, checker);
   if (!annotation) return;
   const declared = checker.getTypeFromTypeNode(annotation);
-  if (!isClosed(checker, declared) || checker.getPropertyOfType(declared, name)) return;
+  if (!isClosedType(checker, declared) || checker.getPropertyOfType(declared, name)) return;
 
   let props = byAnnotation.get(annotation);
   if (!props) {
@@ -181,133 +173,6 @@ function attributeValue(attribute: ts.JsxAttribute): ts.Expression | undefined {
   return ts.isJsxExpression(initializer) ? initializer.expression : initializer;
 }
 
-function isClosed(checker: ts.TypeChecker, type: ts.Type): boolean {
-  if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) return false;
-  if (type.isUnion()) return false;
-  return (
-    !checker.getIndexInfoOfType(type, ts.IndexKind.String) &&
-    !checker.getIndexInfoOfType(type, ts.IndexKind.Number)
-  );
-}
-
-function propsAnnotation(
-  tagName: ts.JsxTagNameExpression,
-  checker: ts.TypeChecker,
-): ts.TypeNode | undefined {
-  const symbol = aliased(checker.getSymbolAtLocation(tagName), checker);
-  const declaration = symbol?.declarations?.[0];
-  return declaration && annotationOf(declaration, checker, new Set());
-}
-
-function aliased(symbol: ts.Symbol | undefined, checker: ts.TypeChecker): ts.Symbol | undefined {
-  let current = symbol;
-  while (current && current.flags & ts.SymbolFlags.Alias) {
-    const next = checker.getAliasedSymbol(current);
-    if (!next || next === current) return current;
-    current = next;
-  }
-  return current;
-}
-
-function annotationOf(
-  node: ts.Node,
-  checker: ts.TypeChecker,
-  seen: Set<ts.Node>,
-): ts.TypeNode | undefined {
-  if (seen.has(node)) return undefined;
-  seen.add(node);
-  if (!isMigratable(node.getSourceFile())) return undefined;
-
-  if (ts.isFunctionDeclaration(node) || ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
-    const parameter = node.parameters[0];
-    return parameter && parameter.type && !isAny(parameter.type) ? parameter.type : undefined;
-  }
-  if (ts.isClassDeclaration(node) || ts.isClassExpression(node)) {
-    const argument = componentTypeArgument(node);
-    return argument && !isAny(argument) ? argument : undefined;
-  }
-  if (ts.isExportAssignment(node)) {
-    return annotationOf(node.expression, checker, seen);
-  }
-  if (ts.isVariableDeclaration(node)) {
-    return node.type || !node.initializer
-      ? undefined
-      : annotationOf(node.initializer, checker, seen);
-  }
-  if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node)) {
-    return annotationOf(node.expression, checker, seen);
-  }
-  if (ts.isIdentifier(node) || ts.isPropertyAccessExpression(node)) {
-    const symbol = aliased(checker.getSymbolAtLocation(node), checker);
-    const declaration = symbol?.declarations?.[0];
-    return declaration && annotationOf(declaration, checker, seen);
-  }
-  if (ts.isCallExpression(node)) {
-    const component = node.arguments.find(isComponentShaped);
-    return component && annotationOf(component, checker, seen);
-  }
-  return undefined;
-}
-
-function isComponentShaped(argument: ts.Expression): boolean {
-  return (
-    ts.isIdentifier(argument) ||
-    ts.isPropertyAccessExpression(argument) ||
-    ts.isArrowFunction(argument) ||
-    ts.isFunctionExpression(argument) ||
-    ts.isClassExpression(argument)
-  );
-}
-
-function isAny(typeNode: ts.TypeNode): boolean {
-  return typeNode.kind === ts.SyntaxKind.AnyKeyword;
-}
-
-function componentTypeArgument(node: ts.ClassLikeDeclaration): ts.TypeNode | undefined {
-  const heritage = node.heritageClauses?.find(
-    (clause) => clause.token === ts.SyntaxKind.ExtendsKeyword,
-  );
-  return heritage?.types[0]?.typeArguments?.[0];
-}
-
-function groupFor(
-  checker: ts.TypeChecker,
-  annotation: ts.TypeNode,
-  props: Map<string, Evidence>,
-  maxUnionMembers: number,
-): Group | undefined {
-  const members: string[] = [];
-  props.forEach((evidence, name) => {
-    members.push(`${name}?: ${memberType(checker, annotation, evidence, maxUnionMembers)}`);
-  });
-  if (members.length === 0) return undefined;
-
-  const source = annotation.getSourceFile();
-  const start = annotation.getStart(source);
-  const declared = source.text.slice(start, annotation.end);
-  const open = ts.isTypeLiteralNode(annotation) && !declared.includes('\n');
-  return {
-    start,
-    length: annotation.end - start,
-    declared: needsParentheses(annotation) ? `(${declared})` : declared,
-    open,
-    members,
-  };
-}
-
-function changeFor(group: Group, members: string[]): TextChange {
-  const addition = `{ ${members.join('; ')} }`;
-  if (!group.open) {
-    return { start: group.start, length: group.length, text: `${group.declared} & ${addition}` };
-  }
-  const inner = group.declared.slice(1, -1).trim().replace(/[;,]$/, '');
-  return {
-    start: group.start,
-    length: group.length,
-    text: inner ? `{ ${inner}; ${members.join('; ')} }` : addition,
-  };
-}
-
 function memberType(
   checker: ts.TypeChecker,
   at: ts.Node,
@@ -325,71 +190,4 @@ function memberType(
   });
   if (members.length === 0 || members.length > maxUnionMembers) return 'any';
   return members.join(' | ');
-}
-
-function needsParentheses(typeNode: ts.TypeNode): boolean {
-  return (
-    ts.isUnionTypeNode(typeNode) ||
-    ts.isFunctionTypeNode(typeNode) ||
-    ts.isConstructorTypeNode(typeNode) ||
-    ts.isConditionalTypeNode(typeNode) ||
-    ts.isInferTypeNode(typeNode)
-  );
-}
-
-interface Addition {
-  group: Group;
-  member: string;
-}
-
-function applyProven(
-  fileName: string,
-  text: string,
-  groups: Group[],
-  languageService: ts.LanguageService,
-): string | undefined {
-  const program = languageService.getProgram();
-  const compilerOptions = getValidationOptions(program ? program.getCompilerOptions() : {});
-  const baseline = createFileLanguageService(fileName, text, compilerOptions, program);
-  const baselineSyntacticCount = baseline.getSyntacticDiagnostics(fileName).length;
-  let programsLeft = maxValidationPrograms;
-
-  const attempt = (accepted: Addition[]): string | undefined => {
-    if (programsLeft <= 0) return undefined;
-    programsLeft -= 1;
-    const changes = changesOf(groups, accepted);
-    const candidateText = applyTextChanges(text, changes);
-    const candidate = createFileLanguageService(fileName, candidateText, compilerOptions, program);
-    if (candidate.getSyntacticDiagnostics(fileName).length !== baselineSyntacticCount) {
-      return undefined;
-    }
-    return findNewErrors(baseline, candidate, changes, fileName).length > 0
-      ? undefined
-      : candidateText;
-  };
-
-  const all = groups.flatMap((group) => group.members.map((member) => ({ group, member })));
-  const whole = attempt(all);
-  if (whole || all.length === 1) return whole;
-
-  const accepted: Addition[] = [];
-  let kept: string | undefined;
-  all.forEach((addition) => {
-    const next = attempt([...accepted, addition]);
-    if (!next) return;
-    accepted.push(addition);
-    kept = next;
-  });
-  return kept;
-}
-
-function changesOf(groups: Group[], accepted: Addition[]): TextChange[] {
-  const changes: TextChange[] = [];
-  groups.forEach((group) => {
-    const members = accepted
-      .filter((addition) => addition.group === group)
-      .map((addition) => addition.member);
-    if (members.length > 0) changes.push(changeFor(group, members));
-  });
-  return changes;
 }
