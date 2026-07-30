@@ -669,6 +669,23 @@ existing suppression comments, then re-adds only the ones still needed.
 Both `migrate` and `reignore` end the run by printing a one-paragraph type
 debt summary (the `report` totals for the project).
 
+### Values imported as types
+
+`TS1361` ("'x' cannot be used as a value because it was imported using
+'import type'") is repaired rather than suppressed: ts-ignore drops the `type`
+modifier, so `import type { connect }` followed by a `connect(...)` call
+becomes a value import again. Suppressing it would be worse than the error,
+because a type-only import is erased when TypeScript emits and the value is
+undefined at run time. A name with no value to import is `TS2693` instead, and
+is still suppressed.
+
+The `import type` comes from the project's own lint config, which `eslint-fix`
+runs during the migration (`@typescript-eslint/consistent-type-imports`
+rewrites a value import as type-only when it cannot see a value use), so it can
+happen again on any run and the repair runs after it. A project migrated before
+this landed still holds these suppressions: find them with
+`grep -rn "TS(1361)"` and clear them with `ts-migrate reignore <folder>`.
+
 ### Follow-up markers
 
 Four plugins recognize something they cannot convert and leave it for a person:

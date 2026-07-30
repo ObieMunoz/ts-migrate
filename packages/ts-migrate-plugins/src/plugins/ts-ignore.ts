@@ -3,6 +3,7 @@ import { fileNoticeReporter, Plugin, PluginFileNotice } from '@obiemunoz/ts-migr
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import createFollowUpMarkers from '../utils/followUpMarker';
+import typeOnlyImportRepairs from '../utils/typeOnlyImportRepair';
 import { createValidate, Properties } from '../utils/validateOptions';
 
 type Options = {
@@ -20,20 +21,39 @@ const optionProperties: Properties = {
 const tsIgnorePlugin: Plugin<Options> = {
   name: 'ts-ignore',
 
-  // Only inserts suppression comments, so the runner can defer its writes and
-  // check every file against one warm program.
+  // Inserts suppression comments, and drops a `type` modifier off an import
+  // whose value is used. Neither changes a type another file reads, so the
+  // runner can defer its writes and check every file against one warm program.
   mutationsPreserveTypes: true,
 
   run(params) {
     const { getLanguageService, fileName, sourceFile, options } = params;
-    const diagnostics = getLanguageService()
+    const languageService = getLanguageService();
+    const diagnostics = languageService
       .getSemanticDiagnostics(fileName)
       .filter(isDiagnosticWithLinePosition);
-    return getTextWithIgnores(
+    const reportNotice = fileNoticeReporter(params, '[ts-ignore]');
+    const { updates, repaired, unrepaired } = typeOnlyImportRepairs(
+      languageService,
+      fileName,
       sourceFile,
       diagnostics,
+    );
+    unrepaired.forEach(() =>
+      reportNotice({
+        reason: 'suppressed a value that is imported with `import type` instead of repairing it',
+        hint:
+          'A type-only import is erased when TypeScript emits, so the value is undefined at ' +
+          'run time. Those imports need the `type` dropped by hand.',
+        recovered: true,
+      }),
+    );
+    return getTextWithIgnores(
+      sourceFile,
+      diagnostics.filter((diagnostic) => !repaired.has(diagnostic)),
       options,
-      fileNoticeReporter(params, '[ts-ignore]'),
+      reportNotice,
+      updates,
     );
   },
 
@@ -49,9 +69,10 @@ function getTextWithIgnores(
   diagnostics: ts.DiagnosticWithLocation[],
   options: Options,
   reportNotice: (notice: PluginFileNotice) => void,
+  repairs: SourceTextUpdate[] = [],
 ): string {
   const { text } = sourceFile;
-  const updates: SourceTextUpdate[] = [];
+  const updates: SourceTextUpdate[] = [...repairs];
   const isIgnored: { [line: number]: boolean } = {};
   const markers = createFollowUpMarkers(sourceFile);
 

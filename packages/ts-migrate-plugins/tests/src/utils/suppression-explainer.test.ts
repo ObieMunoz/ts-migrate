@@ -105,6 +105,19 @@ describe('createSuppressionExplainer', () => {
     expect(explainer.summarize(ROOT_DIR).total).toBe(1);
   });
 
+  // ts-ignore repairs these instead of suppressing them, so counting them here
+  // would report suppressions the files do not have.
+  it('does not count a value imported with `import type`, which is repaired', async () => {
+    const extraFiles = { 'cn.ts': 'export function cn(a: string) { return a; }\n' };
+    const { report } = await explain(
+      `import type { cn } from './cn';\n\nexport const classes = cn('a');\nconst n: number = 'x';\n`,
+      extraFiles,
+    );
+
+    expect(report.sites.map((site) => site.code)).toEqual([2322]);
+    expect(report.total).toBe(1);
+  });
+
   it('reports a notice instead of failing when the language service throws', async () => {
     const notices: string[] = [];
     const params = {

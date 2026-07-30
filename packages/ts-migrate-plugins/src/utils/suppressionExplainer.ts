@@ -2,6 +2,7 @@ import path from 'path';
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import { isDiagnosticWithLinePosition } from './type-guards';
+import typeOnlyImportRepairs from './typeOnlyImportRepair';
 
 /** Type strings are never abbreviated; the report exists to keep what the comment drops. */
 const TYPE_FORMAT_FLAGS = ts.TypeFormatFlags.NoTruncation;
@@ -197,12 +198,21 @@ export function createSuppressionExplainer(): SuppressionExplainer {
       visited.add(fileName);
       try {
         const languageService = getLanguageService();
+        const diagnostics = languageService.getSemanticDiagnostics(fileName);
+        // ts-ignore repairs a value that was imported with `import type` rather
+        // than suppressing it, so those are not suppressions to explain.
+        const { repaired } = typeOnlyImportRepairs(
+          languageService,
+          fileName,
+          sourceFile,
+          diagnostics,
+        );
         collectSuppressionEvidence({
           sites,
           rootDir,
           sourceFile,
           program: languageService.getProgram?.(),
-          diagnostics: languageService.getSemanticDiagnostics(fileName),
+          diagnostics: diagnostics.filter((diagnostic) => !repaired.has(diagnostic)),
         });
       } catch (err) {
         reportFileNotice?.({

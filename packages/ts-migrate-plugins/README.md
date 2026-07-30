@@ -74,7 +74,7 @@ process.exit(exitCode);
 | [retry-conversions](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/retry-conversions.ts) | Reconsider the `as any` assertions add-conversions inserted, once `@types` have landed or a neighboring directory has been migrated. Each one is dropped and the file re-checked; the ones the file still needs are then retyped to the tightest type the checker can name for them, so `f(raw as any)` reads `f(raw as Opts)`. Only the tool's own output is in scope: `as any`, and an assertion to a type alias declared as `any`. See "What retry-conversions will and will not write" below. |
 | [strip-ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/strip-ts-ignore.ts) | Strip `// @ts-ignore`. comments |
 | [detect-types-packages](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/utils/typesPackages.ts) | Read-only. Classifies the diagnostics ts-ignore is about to suppress into `@types` package recommendations (missing, not loaded, outdated, or redundant), reported at the end of the run. Created per run with `createTypesPackageDetector()` and placed immediately before ts-ignore. |
-| [ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/ts-ignore.ts) | Add `// @ts-ignore` comments for the remaining errors. A diagnostic inside a multiline string, template, or comment cannot take one, so the statement around it is marked instead (see "Follow-up markers"). |
+| [ts-ignore](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/ts-ignore.ts) | Add `// @ts-ignore` comments for the remaining errors. A diagnostic inside a multiline string, template, or comment cannot take one, so the statement around it is marked instead (see "Follow-up markers"). A value that is imported with `import type` and then used as a value (`TS1361`) is repaired rather than suppressed: the `type` modifier is dropped, since a type-only import is erased when TypeScript emits and suppressing the use would leave the value undefined at run time. See ["Values imported as types"](#values-imported-as-types) below. |
 | [update-import-paths](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/update-import-paths.ts) | Re-point imports that still say `./foo.js`/`./foo.jsx` after the file was renamed to `.ts`/`.tsx`. Drops the extension by default; keeps a `.js` extension in ESM packages (`"type": "module"`) or with `{ extension: 'js' }`. A `.cts`/`.cjs` file keeps the extensionless form even there: it emits `.cjs`, which is CommonJS whatever the package says. Imports whose target still exists on disk are left alone. Absolute imports the project maps through tsconfig `paths`, like `selectors/Address.js`, are re-pointed using the project's own module resolution; one the tsconfig cannot resolve is left alone. |
 | [widen-annotations](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/widen-annotations.ts) | Union an annotation with the types the assignments in its own file give it, so `let x: number` later assigned null reads `number \| null` instead of taking a suppression. Covers variable, class property, interface member and return annotations; never parameters. `{ maxUnionMembers: n }` (default 4) caps how wide an annotation may get. |
 
@@ -174,6 +174,37 @@ The end of the run prints how many files and causes there were, and
 `--jsonSummary` records them under `pluginNotices`. A cause with nowhere to
 write a marker, such as a diagnostic that falls inside a comment, is reported
 with `"marked": false` and the run leaves the `grep` line off.
+
+## Values imported as types
+
+A migrated file can end up importing a function as a type and then calling it:
+
+```ts
+import type { connect } from 'react-redux';
+
+// @ts-expect-error TS(1361): 'connect' cannot be used as a value because it was...
+export default connect(mapStateToProps, mapDispatchToProps)(CqTag);
+```
+
+That suppression is worse than the error it hides. A type-only import is erased
+when TypeScript emits, so the file compiles and then throws for an undefined
+binding at run time. `ts-ignore` therefore repairs `TS1361` instead of
+suppressing it, by dropping the `type` modifier the way TypeScript's own
+"Remove 'type' from import declaration" fix does. A name that has no value to
+import is a different diagnostic (`TS2693`, with no such fix) and is still
+suppressed.
+
+No plugin writes `import type`. What does is the project's own lint config,
+which `eslint-fix` runs inside the migration:
+`@typescript-eslint/consistent-type-imports` rewrites a value import as
+type-only when it cannot see a value use, and older versions of that rule miss
+uses that a current one keeps. Nothing in a migration can stop the project's
+rule from firing, so the repair runs after it.
+
+A project migrated before this landed still has the suppressions, and
+`ts-migrate reignore <folder>` clears them: the old comments are stripped, the
+imports are repaired, and only the diagnostics that are still real are
+suppressed again. `grep -rn "TS(1361)"` finds the files first.
 
 ## What infer-types annotations mean
 
