@@ -26,6 +26,7 @@ import reactInlineImportedPropTypesPlugin from './plugins/react-inline-imported-
 import reactPassedPropsPlugin from './plugins/react-passed-props';
 import reactPropsPlugin from './plugins/react-props';
 import reactPropsFromUsagePlugin from './plugins/react-props-from-usage';
+import reactReadPropsPlugin from './plugins/react-read-props';
 import reactShapePlugin from './plugins/react-shape';
 import relaxParameterShapesPlugin from './plugins/relax-parameter-shapes';
 import retryAnnotationsPlugin from './plugins/retry-annotations';
@@ -117,6 +118,7 @@ export {
   reactPassedPropsPlugin,
   reactPropsPlugin,
   reactPropsFromUsagePlugin,
+  reactReadPropsPlugin,
   reactShapePlugin,
   relaxParameterShapesPlugin,
   retryAnnotationsPlugin,

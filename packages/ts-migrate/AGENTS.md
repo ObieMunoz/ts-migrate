@@ -499,6 +499,17 @@ type mismatch rather than a missing member and is left alone, and each prop is
 proven on its own against the declaring file. Pass `--excludePlugin
 react-passed-props` to keep only the props propTypes mention.
 
+The other side of the same gap is a prop the component reads. A prop that only
+ever arrives through a spread, a wrapper or a container is checked against
+nothing at the call site, so the props type has no member for it and every read
+inside the component costs a suppression. The read step declares those props on
+the component's annotation, typed from the value a call site passes for the prop
+or from the member of the object a call site spreads, and `any` where the
+project passes it nowhere, which still records that the component has the prop.
+A read TypeScript suggests a near-miss name for is left alone, since a name one
+letter off a declared one is a typo rather than an undeclared prop. Pass
+`--excludePlugin react-read-props` to leave those reads to the suppression pass.
+
 The widening step unions an annotation with what the assignments in its own
 file give it, so `let x: number` later assigned null ends up `number | null`
 instead of `@ts-expect-error`. It only ever writes a type it can name in that
