@@ -997,6 +997,7 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --jsonSummary migrate-s
   "dryRun": false,
   "changedFiles": ["src/a.ts", "src/b.ts"],
   "generatedFiles": ["types/ts-migrate-modules.d.ts"],
+  "generatedFileParseErrors": [],
   "nonMigratedFilesWithSyntaxErrors": [],
   "plugins": [
     { "name": "infer-types", "changedFileCount": 2 },
@@ -1045,6 +1046,12 @@ ignores them (always 0 with `--gitignore=false`).
 JavaScript, each with its detection evidence (always empty with
 `--bootstrap=false`). `generatedFiles` lists the declaration files the run wrote
 itself, which are new files rather than changes to existing ones.
+`generatedFileParseErrors` lists the ones the project's ESLint reports a parse
+error on, as `{"file", "message"}`: those leave `eslint .` failing on a run that
+otherwise succeeded, and the fix is in the lint config rather than in the file
+(see [Generated declarations and your ESLint
+config](#generated-declarations-and-your-eslint-config)). It is empty when the
+run resolved no ESLint to ask.
 `pluginFailures` lists the files a plugin could not process, grouped by cause:
 a lint config whose rules throw leaves files unchanged without failing the
 run, so a run that exits 0 can still have left files untouched. It is empty

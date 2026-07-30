@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 
+import { GeneratedFileParseError } from '@obiemunoz/ts-migrate-plugins';
 import { errorMessage, MigrateResult } from '@obiemunoz/ts-migrate-server';
 import { BootstrapFile } from './bootstrapFiles';
 import { PackageJsonNotice, PackageJsonRewrite } from './packageJsonReferences';
@@ -44,6 +45,14 @@ export interface MigrateRunSummary extends RunSummaryBase {
   changedFiles: string[];
   /** Declaration files the run generated (e.g. the untyped module declarations). */
   generatedFiles: string[];
+  /**
+   * The generated declarations the project's ESLint reports a parse error on,
+   * with its own message. A lint config that reads these files as JavaScript
+   * rejects them, which leaves `eslint .` failing on a run that otherwise
+   * succeeded, and no comment in the generated file can suppress it. Empty
+   * where no lint pass resolved an engine to ask.
+   */
+  generatedFileParseErrors: Array<{ file: string; message: string }>;
   /**
    * Migrated files that still do not parse. These fail the run, unlike
    * nonMigratedFilesWithSyntaxErrors below.
@@ -186,6 +195,7 @@ export function buildMigrateRunSummary(params: {
   pluginNotices?: MigrateResult['pluginNotices'];
   pluginErrors?: MigrateResult['pluginErrors'];
   generatedFiles?: ReadonlyMap<string, string>;
+  generatedFileParseErrors?: readonly GeneratedFileParseError[];
   skippedGitignoredFiles?: number;
   skippedBootstrapFiles?: BootstrapFile[];
 }): MigrateRunSummary {
@@ -211,6 +221,9 @@ export function buildMigrateRunSummary(params: {
     generatedFiles: [...(params.generatedFiles?.keys() ?? [])]
       .map((fileName) => relativeTo(rootDir, fileName))
       .sort(),
+    generatedFileParseErrors: (params.generatedFileParseErrors ?? [])
+      .map(({ filePath, message }) => ({ file: relativeTo(rootDir, filePath), message }))
+      .sort((a, b) => (a.file < b.file ? -1 : 1)),
     migratedFilesWithSyntaxErrors: (params.migratedFilesWithSyntaxErrors ?? [])
       .map((fileName) => relativeTo(rootDir, fileName))
       .sort(),

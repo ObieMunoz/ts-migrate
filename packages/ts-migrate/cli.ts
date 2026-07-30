@@ -812,7 +812,7 @@ cli
       });
 
       printGeneratedFiles(rootDir, generatedFiles, dryRun);
-      await reportGeneratedFileLinting(
+      const generatedFileParseErrors = await reportGeneratedFileLinting(
         rootDir,
         [...generatedFiles].map(([filePath, text]) => ({ filePath, text })),
         dryRun,
@@ -851,6 +851,7 @@ cli
             pluginNotices,
             pluginErrors,
             generatedFiles,
+            generatedFileParseErrors,
             skippedGitignoredFiles,
             skippedBootstrapFiles,
           }),

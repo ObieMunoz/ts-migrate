@@ -186,7 +186,7 @@ export default async function runMigrate(params: RunMigrateParams): Promise<RunM
   printGeneratedFiles(rootDir, generatedFiles, dryRun);
   // The alias declarations are written before the run rather than by a plugin,
   // and their file is as much a TypeScript-only file as the generated ones.
-  await reportGeneratedFileLinting(
+  const generatedFileParseErrors = await reportGeneratedFileLinting(
     rootDir,
     [
       ...[...generatedFiles].map(([filePath, text]) => ({ filePath, text })),
@@ -247,6 +247,7 @@ export default async function runMigrate(params: RunMigrateParams): Promise<RunM
     pluginNotices,
     pluginErrors,
     generatedFiles,
+    generatedFileParseErrors,
     skippedGitignoredFiles: gitignoreFilter?.skippedFiles().length ?? 0,
     skippedBootstrapFiles: bootstrapFilter?.skippedFiles() ?? [],
   });

@@ -266,23 +266,25 @@ export function formatGeneratedFileLintReport(
  * Asks the project's ESLint to read the declaration files this run generated,
  * and reports the ones it cannot. Advice about a file the compiler is happy
  * with, so it must never fail an otherwise successful run.
+ *
+ * Returns what it found, for the run summary: nobody reads a CI log, and this
+ * is the one finding of a successful run that lives outside the files it wrote.
  */
 export async function reportGeneratedFileLinting(
   rootDir: string,
   files: Iterable<{ filePath: string; text: string }>,
   dryRun: boolean,
-): Promise<void> {
+): Promise<GeneratedFileParseError[]> {
   try {
-    const report = formatGeneratedFileLintReport(
-      await findGeneratedFileParseErrors(files),
-      rootDir,
-      dryRun,
-    );
+    const problems = await findGeneratedFileParseErrors(files);
+    const report = formatGeneratedFileLintReport(problems, rootDir, dryRun);
     if (report) log.warn(report);
+    return problems;
   } catch (err) {
     log.warn(
       `Skipped checking whether ESLint can parse the generated declarations: ${errorMessage(err)}`,
     );
+    return [];
   }
 }
 

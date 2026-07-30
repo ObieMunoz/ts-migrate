@@ -782,6 +782,10 @@ machine-readable preview. Per command:
   `generatedFiles` (declaration files the run wrote itself, e.g.
   `types/ts-migrate-modules.d.ts` and `types/ts-migrate-globals.d.ts`, which
   are new files rather than edits),
+  `generatedFileParseErrors` (the generated declarations the project's ESLint
+  reports a parse error on, as `{"file", "message"}`; those leave `eslint .`
+  failing after a run that exits 0, and the fix belongs in the lint config, not
+  in the file),
   `migratedFilesWithSyntaxErrors` (migrated files that still do not parse),
   `nonMigratedFilesWithSyntaxErrors` (files that will keep failing `tsc` and
   that re-running cannot fix), `plugins` (`{"name", "changedFileCount"}` per
