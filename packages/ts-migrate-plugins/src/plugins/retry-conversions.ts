@@ -9,6 +9,7 @@ import {
   toCandidatePos,
 } from '../utils/candidateValidation';
 import { printType } from '../utils/typePrinter';
+import { isAnyOrAliasReference, isAnyType } from './utils/anyTypes';
 
 // Validation programs one file may build, per pass, before the assertions
 // still unproven are kept.
@@ -61,7 +62,7 @@ const retryConversionsPlugin: Plugin = {
     }
 
     const checker = program.getTypeChecker();
-    const inScope = assertions.filter((node) => isAnyAssertion(node.type, checker));
+    const inScope = assertions.filter((node) => isAnyType(node.type, checker));
     if (inScope.length === 0) {
       return text;
     }
@@ -105,34 +106,6 @@ function collectAssertions(sourceFile: ts.SourceFile): ts.AsExpression[] {
   };
   sourceFile.forEachChild(visit);
   return assertions;
-}
-
-function isAnyOrAliasReference(typeNode: ts.TypeNode): boolean {
-  return (
-    typeNode.kind === ts.SyntaxKind.AnyKeyword ||
-    (ts.isTypeReferenceNode(typeNode) &&
-      ts.isIdentifier(typeNode.typeName) &&
-      typeNode.typeArguments == null)
-  );
-}
-
-/**
- * Whether the asserted type is the one add-conversions writes: `any`, or the
- * alias it takes from config, read here as any alias the project declares as
- * `any` rather than as a hardcoded name.
- */
-function isAnyAssertion(typeNode: ts.TypeNode, checker: ts.TypeChecker): boolean {
-  if (typeNode.kind === ts.SyntaxKind.AnyKeyword) {
-    return true;
-  }
-  if (!ts.isTypeReferenceNode(typeNode) || !ts.isIdentifier(typeNode.typeName)) {
-    return false;
-  }
-  const symbol = checker.getSymbolAtLocation(typeNode.typeName);
-  return (symbol?.declarations ?? []).some(
-    (declaration) =>
-      ts.isTypeAliasDeclaration(declaration) && declaration.type.kind === ts.SyntaxKind.AnyKeyword,
-  );
 }
 
 /**
