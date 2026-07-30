@@ -228,6 +228,19 @@ Afterwards, update the project plumbing the tool deliberately does not touch:
   so blame skips the mechanical rewrites; the run's final checklist prints
   the SHAs and the caveats per merge workflow (see `--blameIgnoreRevs`).
 
+`full` asks for the first two only where it finds no sign of them, so the
+checklist a run prints holds what that project has left rather than the
+whole list above. A build step is any script that invokes a compiler or a
+TS-aware runner (`tsc -b`, `tsx`, `node -r ts-node/register`, `vite`,
+`next`), or a declared dependency that is one, including what teaches a
+JavaScript toolchain to read `.ts` (`ts-loader`,
+`@babel/preset-typescript`); `tsc --noEmit` alone is a type check and does
+not count. ESLint counts as taught when a config or a dependency names
+`typescript-eslint`, or a shared config that brings it. Both look at the
+folder's own `package.json` and every one above it up to the repository
+root, so a monorepo's shared toolchain answers for its packages. Neither
+can tell whether a build actually emits, so both err towards asking.
+
 ## Commands
 
 ### `ts-migrate full <folder> [flags]`
@@ -383,10 +396,12 @@ Entry points are reported, not rewritten. `main`, `module`, `browser`,
 the outside, and after a TypeScript conversion they need to name build
 output rather than the renamed source, which the rename cannot produce.
 Every one that still names a renamed file is logged, and listed in the
-JSON summary, for you to repoint once a build step exists. An entry point
-that names a build system file is absent from both lists, because that file
-was never renamed: `"start": "node src/cli.js"` keeps `src/cli.js` as
-JavaScript, so a `bin` pointing at it stays valid and needs no notice.
+JSON summary, for you to repoint once a build step exists. The log adds
+"add a build step" to that notice only for a project that has none, on the
+evidence `full`'s closing checklist uses. An entry point that names a build
+system file is absent from both lists, because that file was never renamed:
+`"start": "node src/cli.js"` keeps `src/cli.js` as JavaScript, so a `bin`
+pointing at it stays valid and needs no notice.
 
 ### `ts-migrate migrate <folder> [flags]`
 

@@ -1108,6 +1108,8 @@ The tool's contract is narrow on purpose: when it finishes, `tsc` compiles your 
 
 Honestly, item 3 is worth doing before you migrate at all. With the environment types in place, globals like `require` and `describe` resolve to real types instead of a wall of suppressed "Cannot find name" errors.
 
+The checklist `full` prints at the end holds only the items your project has left, so a project that already builds and lints TypeScript sees neither of the first two. A build step is any script that invokes a compiler or a TS-aware runner (`tsc -b`, `tsx`, `node -r ts-node/register`, `vite`, `next`), or a dependency that is one. That includes the loaders and presets that teach a JavaScript toolchain to read `.ts`, like `ts-loader` and `@babel/preset-typescript`. A lone `tsc --noEmit` is a type check, not a build step, so it does not count. ESLint counts as taught about TypeScript when a config file, a `package.json` `eslintConfig` block, or a dependency names `typescript-eslint` (or a shared config that brings it, like `eslint-config-airbnb-typescript`). Both checks read your folder's `package.json` and every one above it up to the repository root, so a monorepo's shared toolchain answers for the package being migrated. Neither can know whether your build really emits, so where the evidence is missing you get the item.
+
 # FAQ
 
 > Why fork airbnb/ts-migrate?

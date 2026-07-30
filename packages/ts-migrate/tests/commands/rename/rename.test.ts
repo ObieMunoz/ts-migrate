@@ -413,6 +413,24 @@ describe('rename command', () => {
         expect.stringContaining('Left 3 package.json entry point(s) alone'),
       );
       expect(infoMessages).toContainEqual(expect.stringContaining('need to name build output'));
+      // This project builds with `node scripts/build.js`, so the entry points
+      // have no output to name yet.
+      expect(infoMessages).toContainEqual(expect.stringContaining('Add a build step (tsc)'));
+      infoSpy.mockRestore();
+    });
+
+    it('does not ask a project that already compiles TypeScript for a build step', () => {
+      setUpProject();
+      writeFile('package.json', packageJsonText.replace('node scripts/build.js', 'tsc -p .'));
+      const infoSpy = jest.spyOn(log, 'info');
+
+      rename({ rootDir });
+
+      const infoMessages = infoSpy.mock.calls.map((call) => call.join(' '));
+      expect(infoMessages).toContainEqual(
+        expect.stringContaining('Left 3 package.json entry point(s) alone'),
+      );
+      expect(infoMessages.join('\n')).not.toContain('Add a build step');
       infoSpy.mockRestore();
     });
 

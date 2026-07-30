@@ -164,7 +164,7 @@ export default function rename({
     );
     updateProjectJson(rootDir, dryRun);
     const references = updatePackageJsonReferences(rootDir, toRename, { dryRun });
-    logPackageJsonReferences(references, dryRun);
+    logPackageJsonReferences(rootDir, references, dryRun);
     return {
       renamedFiles: toRename,
       skippedGitignoredFiles,
@@ -185,7 +185,7 @@ export default function rename({
   // partitions have all run, so a file that kept its .js extension is absent
   // from it and every reference to it is left alone.
   const references = updatePackageJsonReferences(rootDir, toRename);
-  logPackageJsonReferences(references);
+  logPackageJsonReferences(rootDir, references);
 
   log.info('Done.');
   return {
