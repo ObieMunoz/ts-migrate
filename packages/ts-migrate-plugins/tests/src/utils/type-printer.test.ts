@@ -104,6 +104,25 @@ describe('printType', () => {
     expect(refusal('declare const a: { id: number }[];', 'a')).toBe('anonymous');
   });
 
+  // The element type of the array is the alias again, so following it does not
+  // end. `classnames` and every hand written JSON type are spelled this way.
+  it('refuses an array that reaches itself through its element type', () => {
+    expect(refusal('type Json = string | Json[];\ndeclare const a: Json;', 'a')).toBe('circular');
+    expect(
+      refusal(
+        'type Argument = string | ArgumentArray;\ntype ArgumentArray = Array<Argument>;\ndeclare const a: ArgumentArray;',
+        'a',
+      ),
+    ).toBe('circular');
+    expect(refusal('type Nested = Nested[];\ndeclare const a: Nested;', 'a')).toBe('circular');
+  });
+
+  // The guard tracks the way down, not every array already printed, so an
+  // array reached twice on separate branches still prints.
+  it('prints the same array type in two places of one union', () => {
+    expect(printed('declare const a: string[] | number[];', 'a')).toBe('string[] | number[]');
+  });
+
   it('splits unions and deduplicates the members', () => {
     expect(printed('declare const a: string | null;', 'a')).toBe('null | string');
     expect(printed('declare const a: "x" | "y";', 'a', { widenLiterals: true })).toBe('string');

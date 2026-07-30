@@ -7,6 +7,7 @@ export type TypePrintRefusal =
   | 'never'
   | 'void'
   | 'anonymous'
+  | 'circular'
   | 'union-too-large'
   | 'type-arguments'
   | 'needs-import'
@@ -80,8 +81,9 @@ function printed(text: string): PrintedType {
  *
  * A type is refused when it cannot be named without an import, when it is an
  * anonymous object or function shape, when it is a generic that would need its
- * type arguments spelled out, when its union is wider than `maxUnionMembers`,
- * and when it is `any`, `unknown`, `never` or `void`. `any` is called out on
+ * type arguments spelled out, when it is an array that reaches itself through
+ * its own element type, when its union is wider than `maxUnionMembers`, and
+ * when it is `any`, `unknown`, `never` or `void`. `any` is called out on
  * its own: it is assignable both ways, so a caller validating a candidate by
  * re-checking the file gets no signal from it, and a `T | any` written into an
  * annotation silently erases `T`.
@@ -103,13 +105,29 @@ export function printType(
   at: ts.Node,
   options: PrintTypeOptions = {},
 ): PrintTypeResult {
+  return printUnion(checker, type, at, options, new Set());
+}
+
+/**
+ * `open` holds the array types being printed on the way down, so an element
+ * type that reaches one of them again is refused rather than followed. A type
+ * alias may name itself through an array (`type Json = string | Json[]`), and
+ * the element of that array is the alias again, with no end to it.
+ */
+function printUnion(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+  at: ts.Node,
+  options: PrintTypeOptions,
+  open: Set<ts.Type>,
+): PrintTypeResult {
   const maxUnionMembers = options.maxUnionMembers ?? DEFAULT_MAX_UNION_MEMBERS;
   const constituents = unionConstituents(type);
   if (constituents.length > MAX_UNION_CONSTITUENTS) return refuse('union-too-large');
 
   const printedMembers: string[] = [];
   for (const constituent of constituents) {
-    const member = printMember(checker, constituent, at, options);
+    const member = printMember(checker, constituent, at, options, open);
     if (!member.printable) return member;
     member.members.forEach((text) => {
       if (!printedMembers.includes(text)) printedMembers.push(text);
@@ -141,6 +159,7 @@ function printMember(
   type: ts.Type,
   at: ts.Node,
   options: PrintTypeOptions,
+  open: Set<ts.Type>,
 ): PrintTypeResult {
   if ((type.flags & ts.TypeFlags.Any) !== 0) return refuse('any');
   if ((type.flags & ts.TypeFlags.Unknown) !== 0) return refuse('unknown');
@@ -154,7 +173,7 @@ function printMember(
     return keyword(checker, member, at);
   }
   if ((member.flags & ts.TypeFlags.Object) !== 0) {
-    return printObject(checker, member as ts.ObjectType, at, options);
+    return printObject(checker, member as ts.ObjectType, at, options, open);
   }
   if ((member.flags & (ts.TypeFlags.EnumLike | ts.TypeFlags.TypeParameter)) !== 0) {
     return printNamed(checker, member, at);
@@ -181,6 +200,7 @@ function printObject(
   type: ts.ObjectType,
   at: ts.Node,
   options: PrintTypeOptions,
+  open: Set<ts.Type>,
 ): PrintTypeResult {
   const typeArguments =
     (type.objectFlags & ts.ObjectFlags.Reference) !== 0
@@ -188,7 +208,10 @@ function printObject(
       : [];
 
   if (isArray(type, typeArguments)) {
-    const element = printType(checker, typeArguments[0], at, options);
+    if (open.has(type)) return refuse('circular');
+    open.add(type);
+    const element = printUnion(checker, typeArguments[0], at, options, open);
+    open.delete(type);
     if (!element.printable) return element;
     return printed(element.members.length > 1 ? `(${element.text})[]` : `${element.text}[]`);
   }
