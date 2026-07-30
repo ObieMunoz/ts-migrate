@@ -381,3 +381,148 @@ it("tests", () => {
 `);
   });
 });
+
+// A test that replaces a module reads its exports as mock functions, which the
+// checker cannot see: it resolves the import to the real declaration, so every
+// mock method on it is a TS2339. `any` suppresses the whole member access,
+// `jest.Mock` says what the value is and keeps the method checked.
+describe('add-conversions plugin on mocked module exports', () => {
+  const jestTypes = `declare namespace jest {
+  interface MockInstance<T, Y extends any[]> {
+    mock: { calls: Y[] };
+    mockClear(): void;
+    mockReset(): void;
+    mockRestore(): void;
+    mockImplementation(fn?: (...args: Y) => T): this;
+    mockName(name: string): this;
+    mockReturnThis(): this;
+    mockReturnValue(value: T): this;
+    mockResolvedValue(value: any): this;
+  }
+  interface Mock<T = any, Y extends any[] = any> extends Function, MockInstance<T, Y> {
+    new (...args: Y): T;
+    (...args: Y): T;
+  }
+  function fn(): Mock;
+  function fn<T, Y extends any[]>(implementation?: (...args: Y) => T): Mock<T, Y>;
+  function mock(moduleName: string, factory?: () => unknown): typeof jest;
+}
+declare function test(name: string, fn: () => void): void;
+`;
+
+  const hooks = `export interface Settings { currency: { code: string } }
+export function useSettingsFlag<F extends keyof Settings>(flag: F): Settings[F] {
+  return { code: 'USD' } as Settings[F];
+}
+export const settings = { code: 'USD' };
+`;
+
+  const run = async (text: string, extraFiles: { [fileName: string]: string }) =>
+    addConversionsPlugin.run(await realPluginParams({ text, extraFiles }));
+
+  it('casts an import the test mocks to jest.Mock', async () => {
+    const text = `import { useSettingsFlag } from './hooks';
+
+jest.mock('./hooks', () => ({
+  useSettingsFlag: jest.fn(),
+}));
+
+test('reads the flag', () => {
+  useSettingsFlag.mockReturnValue({ code: 'USD' });
+});
+`;
+    const result = await run(text, { 'jest.d.ts': jestTypes, 'hooks.ts': hooks });
+
+    expect(result).toBe(`import { useSettingsFlag } from './hooks';
+
+jest.mock('./hooks', () => ({
+  useSettingsFlag: jest.fn(),
+}));
+
+test('reads the flag', () => {
+  (useSettingsFlag as jest.Mock).mockReturnValue({ code: 'USD' });
+});
+`);
+  });
+
+  // The member name is the evidence, so an automocked module read through a
+  // local alias is the same case, with neither a factory nor an import binding
+  // at the access to find.
+  it('casts an automocked export reached through a local alias', async () => {
+    const text = `import { useSettingsFlag } from './hooks';
+
+jest.mock('./hooks');
+const mockFlag = useSettingsFlag;
+
+test('reads the flag', () => {
+  mockFlag.mockReturnValue({ code: 'USD' });
+});
+`;
+    const result = await run(text, { 'jest.d.ts': jestTypes, 'hooks.ts': hooks });
+
+    expect(result).toBe(`import { useSettingsFlag } from './hooks';
+
+jest.mock('./hooks');
+const mockFlag = useSettingsFlag;
+
+test('reads the flag', () => {
+  (mockFlag as jest.Mock).mockReturnValue({ code: 'USD' });
+});
+`);
+  });
+
+  it('falls back to any where the assertion would not compile', async () => {
+    const text = `import { settings } from './hooks';
+
+jest.mock('./hooks');
+
+test('reads the flag', () => {
+  settings.mockReturnValue({ code: 'USD' });
+});
+`;
+    const result = await run(text, { 'jest.d.ts': jestTypes, 'hooks.ts': hooks });
+
+    expect(result).toBe(`import { settings } from './hooks';
+
+jest.mock('./hooks');
+
+test('reads the flag', () => {
+  (settings as any).mockReturnValue({ code: 'USD' });
+});
+`);
+  });
+
+  it('falls back to any where the jest namespace does not resolve', async () => {
+    const text = `import { useSettingsFlag } from './hooks';
+
+useSettingsFlag.mockReturnValue({ code: 'USD' });
+`;
+    const result = await run(text, { 'hooks.ts': hooks });
+
+    expect(result).toBe(`import { useSettingsFlag } from './hooks';
+
+(useSettingsFlag as any).mockReturnValue({ code: 'USD' });
+`);
+  });
+
+  it('leaves a member that is not a mock method as any', async () => {
+    const text = `import { useSettingsFlag } from './hooks';
+
+jest.mock('./hooks');
+
+test('reads the flag', () => {
+  useSettingsFlag.notAMockMethod();
+});
+`;
+    const result = await run(text, { 'jest.d.ts': jestTypes, 'hooks.ts': hooks });
+
+    expect(result).toBe(`import { useSettingsFlag } from './hooks';
+
+jest.mock('./hooks');
+
+test('reads the flag', () => {
+  (useSettingsFlag as any).notAMockMethod();
+});
+`);
+  });
+});

@@ -2,6 +2,7 @@ import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
 import getTokenAtPosition from './utils/token-pos';
+import { jestMockType } from './utils/mockTypes';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 import UpdateTracker from './utils/update';
 
@@ -77,11 +78,15 @@ const addConversionsTransformerFactory =
       const token = getTokenAtPosition(file, diag.start);
       switch (diag.code) {
         case 2339:
-        case 7017:
+        case 7017: {
           if (!ts.isPropertyAccessExpression(token.parent) || isInJsxTagName(token.parent)) {
             return null;
           }
-          return { node: token.parent.expression, type: anyType };
+          // A mocked value keeps the rest of the member access checkable, the
+          // way an index key does below; casting to `any` is the fallback.
+          const mockType = checker && jestMockType(token.parent, checker, factory);
+          return { node: token.parent.expression, type: mockType ?? anyType };
+        }
 
         case 2571:
         case 18046:
