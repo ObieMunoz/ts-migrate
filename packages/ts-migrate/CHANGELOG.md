@@ -3,6 +3,30 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.18.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.17.0...v0.18.0) (2026-07-30)
+
+
+### Bug Fixes
+
+* **cli:** ask only for the plumbing a project does not already have ([#341](https://github.com/ObieMunoz/ts-migrate/issues/341)) ([6ed1ef3](https://github.com/ObieMunoz/ts-migrate/commit/6ed1ef34b45ec1ff1b9888faeac588b44c28248e))
+* **ts-migrate-plugins:** re-point an absolute import left naming a renamed file ([#337](https://github.com/ObieMunoz/ts-migrate/issues/337)) ([c3778ed](https://github.com/ObieMunoz/ts-migrate/commit/c3778ed943b3af5f7144971ef5a15bc36d6e0ff1))
+* **ts-migrate-plugins:** restore a value that was imported as a type instead of suppressing it ([#340](https://github.com/ObieMunoz/ts-migrate/issues/340)) ([60b32a8](https://github.com/ObieMunoz/ts-migrate/commit/60b32a8d7d54524e90f8447505197ad68e6e09cd))
+
+
+### Features
+
+* **ts-migrate-plugins:** declare the globals a project only reads ([#333](https://github.com/ObieMunoz/ts-migrate/issues/333)) ([115b193](https://github.com/ObieMunoz/ts-migrate/commit/115b1939490e541dfb1abd9327396cdf268e3ce9))
+* **ts-migrate-plugins:** declare the props a component is passed but does not say it takes ([#336](https://github.com/ObieMunoz/ts-migrate/issues/336)) ([a20bd53](https://github.com/ObieMunoz/ts-migrate/commit/a20bd530d8cc60e6bdbdd8da46925b7ea716da2a))
+* **ts-migrate-plugins:** mark a parameter optional where callers already omit it ([#330](https://github.com/ObieMunoz/ts-migrate/issues/330)) ([f3bd54c](https://github.com/ObieMunoz/ts-migrate/commit/f3bd54c6e7c755a1ed00ad988b207829d4acfec8))
+* **ts-migrate-plugins:** relax an inferred parameter shape to what the project's calls support ([#334](https://github.com/ObieMunoz/ts-migrate/issues/334)) ([0d3c16f](https://github.com/ObieMunoz/ts-migrate/commit/0d3c16f4e957415965b388c70a649dd07f3d8c6d))
+* **ts-migrate-plugins:** type the props a component forwards to the element it wraps ([#332](https://github.com/ObieMunoz/ts-migrate/issues/332)) ([e96e133](https://github.com/ObieMunoz/ts-migrate/commit/e96e13332f21d986f78aad62ad694917343ae938))
+* **ts-migrate:** add a retype command that re-infers old any annotations ([#338](https://github.com/ObieMunoz/ts-migrate/issues/338)) ([262b496](https://github.com/ObieMunoz/ts-migrate/commit/262b496b140cb642ff339bf2530ac478a5baa436))
+* **ts-migrate:** report the generated declarations the project's ESLint cannot parse ([#339](https://github.com/ObieMunoz/ts-migrate/issues/339)) ([6900ab1](https://github.com/ObieMunoz/ts-migrate/commit/6900ab15c26bed110f443ab5c196a646beffb4b1))
+
+
+
+
+
 # [0.17.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.16.0...v0.17.0) (2026-07-29)
 
 

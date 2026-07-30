@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.18.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.17.0...v0.18.0) (2026-07-30)
+
+
+### Bug Fixes
+
+* **ts-migrate-plugins:** re-point an absolute import left naming a renamed file ([#337](https://github.com/ObieMunoz/ts-migrate/issues/337)) ([c3778ed](https://github.com/ObieMunoz/ts-migrate/commit/c3778ed943b3af5f7144971ef5a15bc36d6e0ff1))
+
+
+
+
+
 # [0.17.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.16.0...v0.17.0) (2026-07-29)
 
 
