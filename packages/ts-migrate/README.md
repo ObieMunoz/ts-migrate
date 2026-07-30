@@ -747,6 +747,29 @@ does; if yours restricts `include` to a source directory, add
 `types/ts-migrate-modules.d.ts` to `include` or `files` — ts-migrate warns when
 the file it generated is not matched.
 
+## Generated declarations and your ESLint config
+
+Every declaration file a run generates holds nothing but TypeScript, so a lint
+config that routes one to a parser for JavaScript reports a parse error on it:
+
+```
+Warning: This project's ESLint cannot parse 1 generated declaration file:
+  types/ts-migrate-globals.d.ts: Parsing error: Unexpected token global
+```
+
+The compiler reads the file, so nothing about the migration is affected; only
+`eslint .` and the editor fail. It is easy to hit on a project whose config sets
+the TypeScript parser for the directories its components are in, since the
+generated files sit in `types/` instead. It is also not fixable from inside the
+generated file: a parse error is fatal, and no `eslint-disable` comment
+suppresses one.
+
+Two ways to answer it, and ts-migrate goes quiet after either: extend the config
+entry that sets the TypeScript parser so it covers these paths (`**/*.d.ts`, or
+`types/**`), or add them to that config's `ignores`. The check runs at the end of
+`migrate` and `reignore`, on the same ESLint the run linted with, so it says
+nothing on a project that has no ESLint config to read the files with.
+
 ## Asset imports on a webpack project
 
 A bundled app imports assets through its loaders: `import logo from './logo.png'`,
@@ -989,6 +1012,7 @@ npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --jsonSummary migrate-s
   "dryRun": false,
   "changedFiles": ["src/a.ts", "src/b.ts"],
   "generatedFiles": ["types/ts-migrate-modules.d.ts"],
+  "generatedFileParseErrors": [],
   "nonMigratedFilesWithSyntaxErrors": [],
   "plugins": [
     { "name": "infer-types", "changedFileCount": 2 },
@@ -1037,6 +1061,12 @@ ignores them (always 0 with `--gitignore=false`).
 JavaScript, each with its detection evidence (always empty with
 `--bootstrap=false`). `generatedFiles` lists the declaration files the run wrote
 itself, which are new files rather than changes to existing ones.
+`generatedFileParseErrors` lists the ones the project's ESLint reports a parse
+error on, as `{"file", "message"}`: those leave `eslint .` failing on a run that
+otherwise succeeded, and the fix is in the lint config rather than in the file
+(see [Generated declarations and your ESLint
+config](#generated-declarations-and-your-eslint-config)). It is empty when the
+run resolved no ESLint to ask.
 `pluginFailures` lists the files a plugin could not process, grouped by cause:
 a lint config whose rules throw leaves files unchanged without failing the
 run, so a run that exits 0 can still have left files untouched. It is empty

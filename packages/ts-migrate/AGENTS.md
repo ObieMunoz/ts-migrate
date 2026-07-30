@@ -181,6 +181,16 @@ are errors again. Delete a line from it once that package has real types
 (a later run drops the entry on its own), and never add hand-written
 declarations to it — ts-migrate rewrites the file.
 
+Every declaration file a run generates is TypeScript only, so a lint config
+that parses it as JavaScript reports `Parsing error` on it. The run says so at
+the end (`This project's ESLint cannot parse 1 generated declaration file`) and
+names each file with ESLint's own message. `tsc` is unaffected, and the
+generated file cannot fix it: a parse error is fatal, so no `eslint-disable`
+comment in the file suppresses one. Fix the project's ESLint config instead,
+either by extending the entry that sets the TypeScript parser to cover the
+generated paths or by adding them to that config's `ignores`. Either one
+silences the warning.
+
 On a webpack project, `init` also writes `types/ts-migrate-assets.d.ts`,
 declaring the asset imports the bundler resolves and TypeScript does not
 (`import logo from './logo.png'`, `import './App.css'`). Commit it too.
@@ -787,6 +797,10 @@ machine-readable preview. Per command:
   `generatedFiles` (declaration files the run wrote itself, e.g.
   `types/ts-migrate-modules.d.ts` and `types/ts-migrate-globals.d.ts`, which
   are new files rather than edits),
+  `generatedFileParseErrors` (the generated declarations the project's ESLint
+  reports a parse error on, as `{"file", "message"}`; those leave `eslint .`
+  failing after a run that exits 0, and the fix belongs in the lint config, not
+  in the file),
   `migratedFilesWithSyntaxErrors` (migrated files that still do not parse),
   `nonMigratedFilesWithSyntaxErrors` (files that will keep failing `tsc` and
   that re-running cannot fix), `plugins` (`{"name", "changedFileCount"}` per

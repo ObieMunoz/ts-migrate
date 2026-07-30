@@ -108,6 +108,61 @@ describe('run summary', () => {
     });
   });
 
+  it('records the generated declarations the project ESLint could not parse', () => {
+    fs.writeFileSync(path.join(rootDir, 'tsconfig.json'), '{ "compilerOptions": {} }');
+
+    const summary = buildMigrateRunSummary({
+      command: 'migrate',
+      rootDir,
+      exitCode: 0,
+      filesToMigrate: 1,
+      updatedSourceFiles: new Set(),
+      nonMigratedFilesWithSyntaxErrors: [],
+      pluginStats: [],
+      generatedFiles: new Map([
+        [path.join(rootDir, 'types', 'ts-migrate-globals.d.ts'), 'declare global {}\n'],
+      ]),
+      generatedFileParseErrors: [
+        {
+          filePath: path.join(rootDir, 'types', 'ts-migrate-globals.d.ts'),
+          message: 'Parsing error: Unexpected token global',
+        },
+        {
+          filePath: path.join(rootDir, 'ts-migrate-aliases.d.ts'),
+          message: 'Parsing error: Unexpected token TsMigrateAny',
+        },
+      ],
+    });
+
+    // Sorted and rootDir-relative, like every other path in the summary.
+    expect(summary.generatedFileParseErrors).toEqual([
+      { file: 'ts-migrate-aliases.d.ts', message: 'Parsing error: Unexpected token TsMigrateAny' },
+      {
+        file: 'types/ts-migrate-globals.d.ts',
+        message: 'Parsing error: Unexpected token global',
+      },
+    ]);
+    // The run still succeeded: this is a lint config to fix, not a failure.
+    expect(summary.exitCode).toBe(0);
+  });
+
+  it('records no parse errors for a run that generated nothing', () => {
+    fs.writeFileSync(path.join(rootDir, 'tsconfig.json'), '{ "compilerOptions": {} }');
+
+    const summary = buildMigrateRunSummary({
+      command: 'migrate',
+      rootDir,
+      exitCode: 0,
+      filesToMigrate: 1,
+      updatedSourceFiles: new Set(),
+      nonMigratedFilesWithSyntaxErrors: [],
+      pluginStats: [],
+    });
+
+    expect(summary.generatedFiles).toEqual([]);
+    expect(summary.generatedFileParseErrors).toEqual([]);
+  });
+
   it('records the files a plugin could not process, with the cause', () => {
     fs.writeFileSync(path.join(rootDir, 'tsconfig.json'), '{ "compilerOptions": {} }');
 
