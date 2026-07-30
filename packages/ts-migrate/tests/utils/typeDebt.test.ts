@@ -1,4 +1,9 @@
-import { scanFileDebt } from '../../utils/typeDebt';
+import {
+  FileDebt,
+  formatTypeDebtDelta,
+  scanFileDebt,
+  TypeDebtReport,
+} from '../../utils/typeDebt';
 
 function suppressions(text: string, fileName = 'a.ts') {
   const debt = scanFileDebt(fileName, text, new Set(['$TSFixMe']));
@@ -135,5 +140,30 @@ describe('scanFileDebt', () => {
 
   it('handles a file with nothing in it', () => {
     expect(count('')).toBe(0);
+  });
+});
+
+describe('formatTypeDebtDelta', () => {
+  const report = (counts: Partial<FileDebt>): TypeDebtReport => ({
+    rootDir: '/project',
+    filesScanned: 3,
+    aliasNames: ['$TSFixMe'],
+    totals: { tsExpectError: 0, tsIgnore: 0, anyAlias: 0, any: 0, codes: {}, ...counts },
+    files: {},
+  });
+
+  it('states every count before and after, with the change signed', () => {
+    const before = report({ tsExpectError: 40, anyAlias: 120, any: 8 });
+    const after = report({ tsExpectError: 41, anyAlias: 96, any: 8 });
+
+    expect(formatTypeDebtDelta(before, after, 'frontend/foo')).toBe(
+      `Type debt change for frontend/foo:
+  @ts-expect-error comments: 40 -> 41 (+1)
+  @ts-ignore comments: 0 -> 0 (0)
+  any-alias annotations: 120 -> 96 (-24)
+  explicit any annotations: 8 -> 8 (0)
+  Total: 168 -> 145 (-23)
+Run \`npx -p @obiemunoz/ts-migrate ts-migrate report frontend/foo\` for per-file counts.`,
+    );
   });
 });

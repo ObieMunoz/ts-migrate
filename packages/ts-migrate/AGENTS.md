@@ -58,10 +58,10 @@ docs live in this package's README.md.
    migrated: this is a codemod, and nothing it writes depends on the Node it
    ran under.
 8. **The migration runs the project's own compiler.** `migrate`, `reignore`,
-   and `check` load the `node_modules/typescript` found by searching from
-   `<folder>` upward, not the one npx resolved for ts-migrate, because every
-   suppression written is derived from what that compiler reports. The first
-   line of a run names the copy in use, for example
+   `retype` and `check` load the `node_modules/typescript` found by searching
+   from `<folder>` upward, not the one npx resolved for ts-migrate, because
+   every suppression written is derived from what that compiler reports. The
+   first line of a run names the copy in use, for example
    `TypeScript 5.7.3 (project: /repo/node_modules/typescript)`. A project with
    no typescript, or one outside `>=5.7.3 <7`, falls back to the bundled
    compiler with a warning. Pass `--typescript <path>` (the package directory
@@ -119,8 +119,8 @@ docs live in this package's README.md.
 
 - Found in `<folder>` and then in each directory above it, first one wins.
   `--config <path>` names one directly and skips the search.
-- Read by `full`, `rename`, `migrate`, `reignore`, `report` and `check`.
-  `init`, `init:extended` and `agents` take no flags.
+- Read by `full`, `rename`, `migrate`, `reignore`, `retype`, `report` and
+  `check`. `init`, `init:extended` and `agents` take no flags.
 - Precedence is command line, then the command's section, then the shared
   keys. `--gitignore=false` overrides `"gitignore": true` in the file.
 - A shared key the running command has no flag for is ignored, so one file
@@ -173,7 +173,25 @@ npx -p @obiemunoz/ts-migrate ts-migrate reignore <folder>
 
 # 4. Verify:
 npx tsc -p <folder>/tsconfig.json --noEmit   # must exit 0
+
+# 5. Reduce the debt: retype is step 3 with the any annotations retried too.
+#    Every one records a type the checker could not work out on migration day,
+#    and the annotation is what keeps it that way, since inference only fires
+#    where a declaration carries no type. It strips each one, asks the engine
+#    again, and keeps only what the file re-checks clean with a type that is no
+#    longer any; the rest are restored byte for byte. It ends with what it took
+#    off the debt. Same flags as reignore, so repeat any --sources from step 1.
+#    It does step 3's work as well, so it can replace step 3 rather than follow
+#    it; it is the slower of the two.
+npx -p @obiemunoz/ts-migrate ts-migrate retype <folder>
+npx tsc -p <folder>/tsconfig.json --noEmit   # must exit 0 again
 ```
+
+Steps 2, 3 and 5 are the loop: whenever the project's types move on — a new
+`@types` package, a neighboring directory migrated, a CommonJS module
+converted — running them again recovers what has since become knowable.
+`ts-migrate report` and `ts-migrate check` are how you tell whether a pass
+through the loop was worth it.
 
 A run may also add `types/ts-migrate-modules.d.ts`, declaring the imported
 packages that ship no type definitions. Commit it: without it those imports
@@ -648,9 +666,10 @@ existing suppression comments, then re-adds only the ones still needed.
   anonymous shape, a generic needing type arguments and a union past four
   members are all refused, and those sites keep their `any`. Assertions to any
   other type are left alone. Off by default: it costs up to two validation
-  passes per file holding one. Run it the way you run `reignore` itself, after
-  installing `@types` packages or after a neighboring directory has been
-  migrated, and read the reduction off `ts-migrate report`/`check`.
+  passes per file holding one. On by default in `retype`, which is where this
+  belongs on a project whose types have moved on: run it after installing
+  `@types` packages or after a neighboring directory has been migrated, and read
+  the reduction off `ts-migrate report`/`check`.
 - `--gitignore=false`: same behavior as in `migrate`.
 - `--bootstrap=false`: same behavior as in `migrate`.
 - `--declareUntypedModules=false`: same behavior as in `migrate`.
@@ -668,6 +687,59 @@ existing suppression comments, then re-adds only the ones still needed.
 
 Both `migrate` and `reignore` end the run by printing a one-paragraph type
 debt summary (the `report` totals for the project).
+
+### `ts-migrate retype <folder> [flags]`
+
+`reignore` with the `any` annotations retried, for a project whose types have
+moved on since it was migrated: `@types` packages installed, a neighboring
+directory migrated, CommonJS modules converted to ESM. Each annotation is
+stripped, TypeScript's inference engine is asked again, and the result is kept
+only where the re-checked file gains no error it did not already have and the
+checker answers something other than `any` for the declaration. Everything else
+is restored byte for byte, so the diff holds only the types it recovered.
+
+- Takes every flag `reignore` takes, with the same meanings. Repeat the
+  `--sources` globs of a scoped migration here too.
+- `--casts` is on by default here (off in `reignore`): a stale `as any` is the
+  same debt as a stale annotation. Pass `--casts=false` for the annotations
+  alone, which is the faster run.
+- In scope: `any`, `any[]`, and an alias the project declares as `any`
+  (`$TSFixMe`). A hand-written annotation is left alone, and so is an alias for
+  a function type (`$TSFixMeFunction`), which would pass the "not `any` any
+  more" test whether anything improved or not. Interface and type-literal
+  members are left alone as well: nothing infers those.
+- Three kinds of replacement are refused even where they check clean, and those
+  sites keep their `any`: a type that says nothing a reader can use (`null`,
+  `undefined`, `void`, `never`, and arrays of those, which is what the engine
+  prints where the only evidence was an argument nothing was passed for); one
+  over 120 characters or spanning lines, since the engine will print a
+  parameter's whole structural shape with the comments from the source type
+  included; and one holding more `any` than the annotation it replaces, e.g.
+  `callback: any` for `callback: (arg0: any, arg1: any) => any`, which
+  `ts-migrate check` would read as debt growth and fail a build over.
+- A class property whose type the constructor assignment establishes loses its
+  annotation rather than gaining a printed one, which is the same bare
+  declaration declare-missing-class-properties writes. TypeScript gives it the
+  same type either way.
+- The suppression comments are rewritten with reignore's `FIXME` prefix, so a
+  project migrated by `migrate` (which writes none) sees a one-word change on
+  every one of them. Pass `-p ''` to keep them as `migrate` wrote them.
+- The run ends with what it took off the debt rather than with the totals:
+
+```
+Type debt change for frontend/foo:
+  @ts-expect-error comments: 40 -> 41 (+1)
+  @ts-ignore comments: 0 -> 0 (0)
+  any-alias annotations: 120 -> 96 (-24)
+  explicit any annotations: 8 -> 8 (0)
+  Total: 168 -> 145 (-23)
+```
+
+A suppression count that goes up is the expected shape of the trade. Validation
+is per file, so an annotation narrowed to what its body needs is a type a caller
+in another file can now be wrong about; the suppression pass runs after the
+retry for that reason, and the project still compiles. Run `tsc --noEmit`
+afterwards as you would after `reignore`.
 
 ### Values imported as types
 
@@ -793,7 +865,8 @@ Prints this document.
 
 ## Machine-readable summaries (`--jsonSummary`)
 
-`full`, `rename`, `migrate`, and `reignore` accept `--jsonSummary <file>` and
+`full`, `rename`, `migrate`, `reignore`, and `retype` accept `--jsonSummary
+<file>` and
 write a JSON summary of the run there; stdout stays human-oriented. Common
 fields:
 `command`, `tsMigrateVersion`, `rootDir`, `exitCode`, `dryRun`. Paths in the
@@ -807,9 +880,9 @@ machine-readable preview. Per command:
   `{"file", "key", "from", "to"}`), and `packageJsonNotices` (the entry point
   fields that still name a renamed file and were left for a build step, as
   `{"file", "key", "value", "target"}`).
-- `migrate` and `reignore`: `filesToMigrate` (how many files the plugins were
-  handed, counted before the first one ran; `0` means the run touched nothing
-  whatever the rest of the summary says),
+- `migrate`, `reignore` and `retype`: `filesToMigrate` (how many files the
+  plugins were handed, counted before the first one ran; `0` means the run
+  touched nothing whatever the rest of the summary says),
   `changedFiles` (every file the run modified),
   `generatedFiles` (declaration files the run wrote itself, e.g.
   `types/ts-migrate-modules.d.ts` and `types/ts-migrate-globals.d.ts`, which
@@ -887,8 +960,8 @@ come from `report --json`.
   length of a migration. `ts-migrate full` forwards a single argument list to
   both `rename` and `migrate` and declares the union of what the two accept, so
   every flag either step takes is one it recognizes.
-- `migrate`/`reignore` exit `0` on success and nonzero (255) if a plugin
-  errored or a file still has syntax errors after migration.
+- `migrate`/`reignore`/`retype` exit `0` on success and nonzero (255) if a
+  plugin errored or a file still has syntax errors after migration.
 - `migrate` exits nonzero when it has nothing to migrate, and names the signal
   that produced the empty set: a tsconfig `include` that matched no file
   (reported as TS18003, and the usual cause is that `rename` has not run yet),
@@ -911,10 +984,10 @@ come from `report --json`.
   for the files that are not the point of the step, and still exit `0`: `init`
   for the generated asset declarations, `rename` for the `package.json` and
   `project.json` references, which by then name files that have already moved.
-- `migrate` and `reignore` exit 255 when they cannot write a file they migrated.
-  Every other file in the run is written first, and each failure is named with
-  its reason, so a read-only file does not cost the rest of the run. The
-  changes to a file that could not be written are lost; re-run once it is
+- `migrate`, `reignore` and `retype` exit 255 when they cannot write a file they
+  migrated. Every other file in the run is written first, and each failure is
+  named with its reason, so a read-only file does not cost the rest of the run.
+  The changes to a file that could not be written are lost; re-run once it is
   writable. Those files are left out of the updated files `--jsonSummary`
   lists, so a summary never names a change the file does not hold.
 - `ts-migrate full` stops at the first failing step, naming it and exiting with

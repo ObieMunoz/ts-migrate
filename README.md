@@ -31,6 +31,7 @@ Check out Airbnb's original [blog post](https://medium.com/airbnb-engineering/ts
 * Works on plain JS projects out of the box: no local TypeScript install required, and `init` writes a migration-friendly tsconfig instead of shelling out to `tsc --init`
 * Migrates with the project's own TypeScript (`node_modules/typescript`, searched from the migration folder upward) rather than the version npx happens to resolve, so the suppressions it writes match what the project's `tsc` reports; `--typescript <path>` overrides it
 * Honors `.gitignore`: build output inside the source tree (bundles, `dist`, coverage) is neither renamed, migrated, nor type-checked, and `init` excludes it in the generated tsconfig (`--no-gitignore` opts out)
+* Reduces the debt it wrote instead of only refreshing it: `ts-migrate retype` strips the `any` annotations of an earlier migration, asks TypeScript's inference engine again now that `@types` are installed or a neighboring directory has been migrated, and keeps only what re-checks clean with a real type — the rest are restored byte for byte
 * Agent-ready: `ts-migrate agents` prints a usage playbook for AI coding agents, `ts-migrate full --yes --no-commit` runs the whole pipeline non-interactively without touching git, `--dry-run` previews what a run would touch without writing anything, and `--jsonSummary` writes a machine-readable summary of what a run changed
 * Updated toolchain (Jest 29, modern dependencies)
 

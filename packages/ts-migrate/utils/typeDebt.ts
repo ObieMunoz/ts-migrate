@@ -350,6 +350,44 @@ export function formatTypeDebtReport(report: TypeDebtReport, folder: string): st
   return lines.join('\n');
 }
 
+/** The count labels of a debt report, in the order the reports print them. */
+const DEBT_ROWS: Array<[label: string, of: (debt: FileDebt) => number]> = [
+  ['@ts-expect-error comments', (debt) => debt.tsExpectError],
+  ['@ts-ignore comments', (debt) => debt.tsIgnore],
+  ['any-alias annotations', (debt) => debt.anyAlias],
+  ['explicit any annotations', (debt) => debt.any],
+];
+
+/**
+ * What a run took off the type debt, scanned before and after it. A command
+ * whose whole purpose is the reduction states the reduction, rather than
+ * leaving it to be diffed against the totals a previous run happened to print.
+ *
+ * A count that did not move is still printed: a reduction that moved nothing is
+ * the answer the command was asked for as much as any other, and a row missing
+ * from the list reads as a count that was not measured.
+ */
+export function formatTypeDebtDelta(
+  before: TypeDebtReport,
+  after: TypeDebtReport,
+  folder: string,
+): string {
+  const change = (from: number, to: number) => {
+    const delta = to - from;
+    return `${from} -> ${to} (${delta > 0 ? '+' : ''}${delta})`;
+  };
+
+  const lines = [`Type debt change for ${folder}:`];
+  DEBT_ROWS.forEach(([label, of]) => {
+    lines.push(`  ${label}: ${change(of(before.totals), of(after.totals))}`);
+  });
+  lines.push(`  Total: ${change(debtTotal(before.totals), debtTotal(after.totals))}`);
+  lines.push(
+    `Run \`npx -p @obiemunoz/ts-migrate ts-migrate report ${folder}\` for per-file counts.`,
+  );
+  return lines.join('\n');
+}
+
 export function formatTypeDebtSummary(report: TypeDebtReport, folder: string): string {
   const { totals } = report;
   if (debtTotal(totals) === 0) {
