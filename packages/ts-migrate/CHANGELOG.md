@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.19.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.18.0...v0.19.0) (2026-07-30)
+
+
+### Features
+
+* **ts-migrate-plugins:** declare the props a component reads but does not say it takes ([#342](https://github.com/ObieMunoz/ts-migrate/issues/342)) ([bbd60cb](https://github.com/ObieMunoz/ts-migrate/commit/bbd60cbab05201a8b68fcaaf8293a37e9bf43995))
+
+
+
+
+
 # [0.18.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.17.0...v0.18.0) (2026-07-30)
 
 
