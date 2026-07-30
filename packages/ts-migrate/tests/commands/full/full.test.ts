@@ -354,6 +354,83 @@ describe('the full pipeline closing checklist', () => {
   }, 120000);
 });
 
+describe('the full pipeline closing checklist tooling items', () => {
+  it('asks for a build step and for ESLint where the project has neither', async () => {
+    writeProject({
+      'package.json': '{ "name": "demo", "devDependencies": { "eslint": "^8.57.0" } }\n',
+      'src/index.js': 'module.exports = 1;\n',
+    });
+
+    await run();
+
+    expect(output()).toContain("the rest of your tooling doesn't know about the rename yet");
+    expect(output()).toContain('2. Add a build step (tsc) or a TS-aware runner (ts-node, tsx).');
+    expect(output()).toContain('3. Teach ESLint about TypeScript');
+  }, 120000);
+
+  it('asks for neither where the project already has both', async () => {
+    writeProject({
+      'package.json': `${JSON.stringify({
+        name: 'demo',
+        scripts: { build: 'tsc -p .' },
+        devDependencies: { eslint: '^9.0.0', 'typescript-eslint': '^8.0.0' },
+      })}\n`,
+      'src/index.js': 'module.exports = 1;\n',
+    });
+
+    await run();
+
+    expect(output()).toContain('Remaining cleanup:');
+    expect(output()).not.toContain("doesn't know about the rename yet");
+    expect(output()).not.toContain('Add a build step');
+    expect(output()).not.toContain('Teach ESLint about TypeScript');
+  }, 120000);
+
+  it('asks for a build step where the only compiler invocation type checks', async () => {
+    writeProject({
+      'package.json': `${JSON.stringify({
+        name: 'demo',
+        scripts: { typecheck: 'tsc --noEmit' },
+        devDependencies: { 'typescript-eslint': '^8.0.0' },
+      })}\n`,
+      'src/index.js': 'module.exports = 1;\n',
+    });
+
+    await run();
+
+    expect(output()).toContain('2. Add a build step');
+    expect(output()).not.toContain('Teach ESLint about TypeScript');
+  }, 120000);
+
+  it('names the entry points the rename left pointing at a renamed file', async () => {
+    writeProject({
+      'package.json': `${JSON.stringify({
+        name: 'demo',
+        main: 'src/index.js',
+        files: ['src/index.js'],
+        scripts: { build: 'tsup src/index.ts' },
+      })}\n`,
+      'src/index.js': 'module.exports = 1;\n',
+    });
+
+    await run();
+
+    expect(output()).toContain(
+      '2. Point the package.json entry points the rename listed ("files", "main")',
+    );
+    expect(output()).not.toContain('Add a build step');
+  }, 120000);
+
+  it('says nothing about entry points where the rename listed none', async () => {
+    writeSmallProject();
+
+    await run();
+
+    expect(output()).toContain('Add a build step');
+    expect(output()).not.toContain('Point the package.json entry points');
+  }, 120000);
+});
+
 describe('the full pipeline prompts', () => {
   beforeEach(() => {
     writeSmallProject();

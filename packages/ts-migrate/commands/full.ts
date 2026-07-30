@@ -9,6 +9,7 @@ import init from './init';
 import rename from './rename';
 import runMigrate, { RunMigrateParams } from './runMigrate';
 import isIncludedByTsConfig from '../utils/tsConfigIncludes';
+import { eslintTypeScriptSupport, hasTypeScriptBuild } from '../utils/projectTooling';
 import { checkerSkewWarning, TypeScriptDecision } from '../utils/resolveTypeScript';
 import { buildRenameRunSummary, FullRunStep, FullRunSummary } from '../utils/runSummary';
 import packageVersion from '../utils/packageVersion';
@@ -785,34 +786,81 @@ This run's partial result is in the working tree; nothing was rolled back.`);
     return status;
   }
 
+  /** Each item is numbered where it lands, so a dropped one leaves no gap. */
   private closingChecklist(): void {
     const wroteIgnoreRevs = this.writeBlameIgnoreRevs();
+    const tooling = this.toolingItems();
     // A run outside a git repository has already said it cannot commit, so
     // pointing its result at commits and at `git push` names steps the user
     // has no way to take.
-    const firstItem = this.inGitWorkTree
-      ? 'Sanity check the commits (or, with --commit=false, the working tree).'
-      : 'Sanity check the working tree.';
-    log.info(`
-Remaining cleanup — the rest of your tooling doesn't know about the rename yet:
-
-1. ${firstItem}
-2. Add a build step (tsc) or a TS-aware runner (ts-node, tsx). The rename
-   repointed package.json script paths and test globs; entry points ("main",
-   "bin", "exports", "types", "files") were left alone and listed in the
-   rename output where they still name a renamed file. Point those at the
-   build output instead.
-3. Teach ESLint about TypeScript (the @typescript-eslint parser and plugin).`);
-
-    if (this.commits.length === 0) {
-      if (this.inGitWorkTree) {
-        log.info(`4. Push your changes with \`git push\` and open a PR!
-`);
-      }
-      return;
+    const items: Array<(position: number) => void> = [
+      (position) =>
+        log.info(
+          this.inGitWorkTree
+            ? `${position}. Sanity check the commits (or, with --commit=false, the working tree).`
+            : `${position}. Sanity check the working tree.`,
+        ),
+      ...tooling.map((item) => (position: number) => log.info(`${position}. ${item}`)),
+    ];
+    if (this.commits.length > 0) {
+      items.push((position) => this.blameItem(position, wroteIgnoreRevs));
+    }
+    if (this.inGitWorkTree) {
+      items.push((position) =>
+        log.info(`${position}. Push your changes with \`git push\` and open a PR!\n`),
+      );
     }
 
-    log.info('4. Keep git blame useful. This run created mechanical rewrite commits:');
+    // The claim about the tooling belongs to the tooling items: without them,
+    // the git steps are the whole list and the project's tooling is fine.
+    const heading =
+      tooling.length > 0
+        ? "Remaining cleanup — the rest of your tooling doesn't know about the rename yet:"
+        : 'Remaining cleanup:';
+    log.info(`
+${heading}
+`);
+    items.forEach((print, index) => print(index + 1));
+  }
+
+  /**
+   * The project plumbing the migration deliberately does not touch, minus what
+   * this project already has: advice a project has already taken reads as
+   * advice the run never checked, and takes the items beside it down with it.
+   */
+  private toolingItems(): string[] {
+    const { rootDir } = this.params;
+    const items: string[] = [];
+    if (!hasTypeScriptBuild(rootDir)) {
+      items.push('Add a build step (tsc) or a TS-aware runner (ts-node, tsx).');
+    }
+    const entryPoints = this.renamedEntryPointFields();
+    if (entryPoints.length > 0) {
+      items.push(`Point the package.json entry points the rename listed (${entryPoints.join(', ')})
+   at build output. They address your package from the outside, so pointing
+   them at the renamed source would leave it unloadable rather than merely
+   stale; script paths and test globs were repointed for you.`);
+    }
+    if (eslintTypeScriptSupport(rootDir) === 'javascript-only') {
+      items.push('Teach ESLint about TypeScript (the @typescript-eslint parser and plugin).');
+    }
+    return items;
+  }
+
+  /**
+   * The entry point fields the rename left pointing at a file it renamed, as
+   * the field names alone: the rename step listed each one with its value and
+   * its new target, and one field named twice is still one thing to go fix.
+   */
+  private renamedEntryPointFields(): string[] {
+    const notices = this.renameSummary?.packageJsonNotices ?? [];
+    // The key addresses the value inside the field, as in `files[0]`.
+    const fields = notices.map(({ key }) => `"${key.split(/[.[]/)[0]}"`);
+    return [...new Set(fields)];
+  }
+
+  private blameItem(position: number, wroteIgnoreRevs: boolean): void {
+    log.info(`${position}. Keep git blame useful. This run created mechanical rewrite commits:`);
     this.commits.forEach(({ sha }) => {
       const shown = git(this.params.rootDir, [
         '--no-pager',
@@ -835,9 +883,7 @@ Remaining cleanup — the rest of your tooling doesn't know about the rename yet
     }
     log.info(`   Once the file is committed, \`git config blame.ignoreRevsFile .git-blame-ignore-revs\`
    makes local git blame skip those commits; github.com applies the root file
-   automatically.
-5. Push your changes with \`git push\` and open a PR!
-`);
+   automatically.`);
   }
 
   private outcome(exitCode: number): FullOutcome {

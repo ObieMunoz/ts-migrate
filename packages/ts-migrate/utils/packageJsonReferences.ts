@@ -3,6 +3,7 @@ import path from 'path';
 import log from 'updatable-log';
 import { errorMessage } from '@obiemunoz/ts-migrate-server';
 import { isJsExtension, JS_EXTENSION_REGEX } from './jsExtensions';
+import { hasTypeScriptBuild } from './projectTooling';
 import { JSON5Path, replaceJSON5Strings } from './updateJSON5';
 
 export interface PackageJsonRewrite {
@@ -228,6 +229,7 @@ export function updatePackageJsonReferences(
 
 /** The standard notices for what the rename changed and what it deliberately left. */
 export function logPackageJsonReferences(
+  rootDir: string,
   result: PackageJsonReferenceResult,
   dryRun?: boolean,
 ): void {
@@ -247,11 +249,16 @@ export function logPackageJsonReferences(
       ({ file, key, value, target }) =>
         `  ${file} ${key}: ${JSON.stringify(value)} (now ${target})`,
     );
+    // Where the project has no build step the entry points have nothing to name
+    // yet, so the fix starts one step earlier. Where it has one, saying so
+    // reads as a run that never looked.
+    const advice = hasTypeScriptBuild(rootDir)
+      ? ''
+      : '\nAdd a build step (tsc) or a TypeScript aware runner, then point them at its output.';
     log.info(
       `Left ${result.notices.length} package.json entry point(s) alone. They point at renamed ` +
         `files, and after a TypeScript conversion they need to name build output rather than ` +
-        `the source:\n${lines.join('\n')}\n` +
-        `Add a build step (tsc) or a TypeScript aware runner, then point them at its output.`,
+        `the source:\n${lines.join('\n')}${advice}`,
     );
   }
 }
