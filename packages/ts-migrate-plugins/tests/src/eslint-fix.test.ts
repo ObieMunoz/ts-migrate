@@ -400,6 +400,29 @@ describe('eslint-fix plugin', () => {
   );
 
   it(
+    'reports them on an eslintrc project too, which is where the config predates the migration',
+    () => {
+      const { generatedFileParseErrors } = runInFixture(
+        'eslint-legacy',
+        [{ fileName: 'src/Foo.tsx', text: `const hello = 'world'` }],
+        {
+          generatedFiles: [
+            { fileName: 'ts-migrate-aliases.d.ts', text: 'type TsMigrateAny = any;\n' },
+          ],
+        },
+      );
+
+      expect(generatedFileParseErrors).toEqual([
+        {
+          fileName: 'ts-migrate-aliases.d.ts',
+          message: 'Parsing error: Unexpected token TsMigrateAny',
+        },
+      ]);
+    },
+    20000,
+  );
+
+  it(
     'reports nothing for generated declarations the project config can parse',
     () => {
       const { generatedFileParseErrors, results } = runInFixture(
