@@ -1,17 +1,24 @@
 import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
-import { Plugin } from '@obiemunoz/ts-migrate-server';
+import { ModuleResolution, Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { createValidate, Properties } from '../utils/validateOptions';
 import { isEsmFilePath } from '../utils/moduleFormat';
 
 /**
- * Updates relative module specifiers that still end in `.js`/`.jsx` after the
- * rename step converted their target files to `.ts`/`.tsx`. TypeScript
- * tolerates the stale extension, but bundlers and test runners resolving the
- * literal path do not. Specifiers whose target still exists on disk are left
- * alone.
+ * Updates module specifiers that still end in `.js`/`.jsx` after the rename
+ * step converted their target files to `.ts`/`.tsx`. TypeScript tolerates the
+ * stale extension, substituting the migrated extension when it resolves, but
+ * bundlers and test runners resolving the literal path do not. Specifiers whose
+ * target still exists on disk are left alone.
+ *
+ * Relative specifiers name a path from the importing file, so a rewrite is
+ * decided by looking on disk. An absolute specifier the project resolves
+ * through tsconfig `paths` (`selectors/AddressSelector.js`) names no such path,
+ * so it is decided by resolving it instead: the rewrite happens only when the
+ * compiler answers the specifier with a migrated file, its literal target is
+ * gone, and the candidate resolves back to that same file.
  *
  * By default the extension is dropped (`./foo.js` -> `./foo`). When the
  * importing file is ESM, where extensionless relative imports are an error,
@@ -34,7 +41,7 @@ const optionProperties: Properties = {
 const updateImportPathsPlugin: Plugin<Options> = {
   name: 'update-import-paths',
 
-  run({ fileName, sourceFile, text, options }) {
+  run({ fileName, sourceFile, text, options, moduleResolution }) {
     const importerDir = path.dirname(fileName);
     const extension = options.extension ?? (isEsmFilePath(fileName) ? 'js' : 'omit');
 
@@ -43,7 +50,14 @@ const updateImportPathsPlugin: Plugin<Options> = {
       // Splice the raw quoted text so the rest of the literal is untouched.
       const start = literal.getStart(sourceFile) + 1;
       const specifier = text.slice(start, literal.getEnd() - 1);
-      const newSpecifier = renamedSpecifier(specifier, importerDir, extension);
+      const newSpecifier = isRelative(specifier)
+        ? renamedSpecifier(specifier, importerDir, extension)
+        : renamedAliasedSpecifier(specifier, extension, {
+            fileName,
+            sourceFile,
+            usage: literal,
+            resolution: moduleResolution,
+          });
       if (newSpecifier !== undefined && newSpecifier !== specifier) {
         updates.push({ kind: 'replace', index: start, length: specifier.length, text: newSpecifier });
       }
@@ -64,17 +78,39 @@ const renamedExtensions: Record<string, string[]> = {
   '.jsx': ['.tsx', '.ts'],
 };
 
+function isRelative(specifier: string): boolean {
+  return specifier.startsWith('./') || specifier.startsWith('../');
+}
+
+/**
+ * The stale `.js`/`.jsx` extension a specifier carries, or undefined when it
+ * carries none. A specifier that is nothing but an extension (`./.js`) names a
+ * dotfile rather than a migrated module.
+ */
+function staleExtension(specifier: string): string | undefined {
+  const match = /\.jsx?$/.exec(specifier);
+  if (!match) return undefined;
+  const lastSegment = specifier.slice(specifier.lastIndexOf('/') + 1);
+  return lastSegment.length > match[0].length ? match[0] : undefined;
+}
+
+/** The same specifier written for the migrated file. */
+function candidateSpecifier(
+  specifier: string,
+  oldExtension: string,
+  extension: 'omit' | 'js',
+): string {
+  const base = specifier.slice(0, -oldExtension.length);
+  return extension === 'js' ? `${base}.js` : base;
+}
+
 function renamedSpecifier(
   specifier: string,
   importerDir: string,
   extension: 'omit' | 'js',
 ): string | undefined {
-  if (!specifier.startsWith('./') && !specifier.startsWith('../')) return undefined;
-  const match = /\.jsx?$/.exec(specifier);
-  if (!match) return undefined;
-  const oldExtension = match[0];
-  const lastSegment = specifier.slice(specifier.lastIndexOf('/') + 1);
-  if (lastSegment.length <= oldExtension.length) return undefined;
+  const oldExtension = staleExtension(specifier);
+  if (oldExtension === undefined) return undefined;
 
   const target = path.resolve(importerDir, specifier);
   if (fs.existsSync(target)) return undefined;
@@ -83,8 +119,56 @@ function renamedSpecifier(
     return undefined;
   }
 
-  const specifierBase = specifier.slice(0, -oldExtension.length);
-  return extension === 'js' ? `${specifierBase}.js` : specifierBase;
+  return candidateSpecifier(specifier, oldExtension, extension);
+}
+
+interface AliasedContext {
+  fileName: string;
+  sourceFile: ts.SourceFile;
+  usage: ts.StringLiteralLike;
+  resolution: ModuleResolution | undefined;
+}
+
+/**
+ * The rewrite for a specifier that is not a path from the importing file, which
+ * is either an absolute import the project maps through `paths` or a package
+ * name. Where it points is only knowable by resolving it, so without the
+ * project's resolution it is left alone.
+ */
+function renamedAliasedSpecifier(
+  specifier: string,
+  extension: 'omit' | 'js',
+  { fileName, sourceFile, usage, resolution }: AliasedContext,
+): string | undefined {
+  if (resolution === undefined) return undefined;
+  const oldExtension = staleExtension(specifier);
+  if (oldExtension === undefined) return undefined;
+
+  const { compilerOptions, host, cache } = resolution;
+  // The mode this specifier resolves under, which under `nodenext` differs
+  // between an import and a require of the same name.
+  const mode = ts.getModeForUsageLocation(sourceFile, usage, compilerOptions);
+  const resolve = (name: string) =>
+    ts.resolveModuleName(name, fileName, compilerOptions, host, cache, undefined, mode)
+      .resolvedModule;
+
+  const resolved = resolve(specifier);
+  if (resolved === undefined) return undefined;
+  // A dependency's own files are not this migration's to rewrite.
+  if (resolved.isExternalLibraryImport) return undefined;
+  // Only a specifier the compiler answered by substituting the extension names
+  // a file the rename step moved; one that resolved as written still ships.
+  if (!renamedExtensions[oldExtension].includes(resolved.extension)) return undefined;
+  const base = resolved.resolvedFileName.slice(0, -resolved.extension.length);
+  // Without allowJs the compiler substitutes past a `.js` file that is still
+  // there, which the bundler would still have resolved to.
+  if (fs.existsSync(base + oldExtension)) return undefined;
+
+  const candidate = candidateSpecifier(specifier, oldExtension, extension);
+  // A `paths` pattern can name the extension (`"config.js": [...]`), so the
+  // rewrite stands only if it still resolves to the file it started from.
+  if (resolve(candidate)?.resolvedFileName !== resolved.resolvedFileName) return undefined;
+  return candidate;
 }
 
 const jestModuleMethods = new Set([

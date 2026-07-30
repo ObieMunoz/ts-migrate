@@ -159,7 +159,7 @@ passed multiple times.
 
 The `migrate` command starts by running the
 [update-import-paths](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/update-import-paths.ts)
-plugin: relative imports that still name the pre-rename file, like
+plugin: imports that still name the pre-rename file, like
 `import foo from './foo.js'` or `'./foo.jsx'`, are re-pointed at the renamed
 `.ts`/`.tsx` file (the extension is dropped, or kept as `.js` when the
 importing file is ESM, either by its own `.mts` extension or by its package's
@@ -168,6 +168,21 @@ its package says, so its own imports keep the extensionless form). Imports
 whose target still exists on disk are left alone, as are `./foo.mjs` and
 `./foo.cjs` imports: `.mts` and `.cts` emit those same extensions, so the
 import already names the file that ships.
+
+This covers absolute imports too, the kind a bundler resolves from a source
+root or an alias, like `import { isEurope } from 'selectors/Address.js'`. Those
+name no path from the importing file, so they are re-pointed using the
+project's own module resolution: the rewrite happens only when the compiler
+answers the import with a renamed file, the `.js` file it names is really gone,
+and the rewritten import resolves back to that same file. An import your
+tsconfig cannot resolve is left alone, so if your aliases live only in
+`webpack.config.js` or `jsconfig.json`, run `init` first — it translates them
+into tsconfig `paths`.
+
+Nothing else in a migration reports these: TypeScript resolves
+`'selectors/Address.js'` to `Address.ts` by substituting the extension, so
+`tsc` stays silent while the bundler, which resolves the literal path, does
+not.
 
 The [convert-commonjs](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/convert-commonjs.ts)
 plugin runs next, on the specifiers update-import-paths has already re-pointed.
