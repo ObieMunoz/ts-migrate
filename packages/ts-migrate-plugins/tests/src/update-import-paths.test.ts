@@ -1,4 +1,5 @@
 import path from 'path';
+import ts from 'typescript';
 import { mockPluginParams } from '../test-utils';
 import updateImportPathsPlugin from '../../src/plugins/update-import-paths';
 
@@ -189,6 +190,119 @@ import Widget from './Widget';
       mockPluginParams({ text: result, fileName: esmCtsEntryFile }),
     );
     expect(rerun).toBe(result);
+  });
+
+  describe('absolute specifiers the project maps through paths', () => {
+    // What init writes for a project whose bundler resolves absolute imports
+    // from a source root, parsed the way the runner parses the real tsconfig so
+    // the `paths` values are read from the same place.
+    const aliasOptions = (overrides: object = {}) =>
+      ts.parseJsonConfigFileContent(
+        {
+          compilerOptions: {
+            module: 'esnext',
+            moduleResolution: 'bundler',
+            allowJs: true,
+            paths: { '*': ['./src/*'] },
+            ...overrides,
+          },
+        },
+        ts.sys,
+        fixturesDir,
+      ).options;
+
+    it('rewrites a specifier of a renamed file across module syntaxes', async () => {
+      const text = `import foo from 'foo.js';
+import Widget from 'Widget.jsx';
+import { helper } from 'utils/helpers.js';
+export { foo2 } from 'foo.js';
+const lazy = () => import('foo.js');
+const required = require('foo.js');
+jest.mock('foo.js');
+`;
+
+      const result = await updateImportPathsPlugin.run(
+        mockPluginParams({ text, fileName: entryFile, compilerOptions: aliasOptions() }),
+      );
+
+      expect(result).toBe(`import foo from 'foo';
+import Widget from 'Widget';
+import { helper } from 'utils/helpers';
+export { foo2 } from 'foo';
+const lazy = () => import('foo');
+const required = require('foo');
+jest.mock('foo');
+`);
+    });
+
+    it('keeps a .js extension with the extension option', async () => {
+      const result = await updateImportPathsPlugin.run(
+        mockPluginParams({
+          text: `import Widget from 'Widget.jsx';\n`,
+          fileName: entryFile,
+          options: { extension: 'js' },
+          compilerOptions: aliasOptions(),
+        }),
+      );
+
+      expect(result).toBe(`import Widget from 'Widget.js';\n`);
+    });
+
+    it('leaves a specifier whose own file is still there alone', async () => {
+      // legacy.js was never renamed, and both.js sits beside a both.ts that
+      // the compiler substitutes to only because this project has no allowJs.
+      const text = `import legacy from 'legacy.js';
+import both from 'both.js';
+`;
+
+      const result = await updateImportPathsPlugin.run(
+        mockPluginParams({
+          text,
+          fileName: entryFile,
+          compilerOptions: aliasOptions({ allowJs: false }),
+        }),
+      );
+
+      expect(result).toBe(text);
+    });
+
+    it('leaves a package and an unresolvable specifier alone', async () => {
+      const text = `import ts from 'typescript';
+import shim from 'core-js/modules/es.array.flat.js';
+import nothing from 'not/a/module.js';
+import styles from 'theme/colors.css';
+`;
+
+      const result = await updateImportPathsPlugin.run(
+        mockPluginParams({ text, fileName: entryFile, compilerOptions: aliasOptions() }),
+      );
+
+      expect(result).toBe(text);
+    });
+
+    it('leaves a specifier a paths pattern names the extension of alone', async () => {
+      // Dropping the extension here resolves to nothing, so the rewrite that
+      // would break the build is the one that has to be declined.
+      const result = await updateImportPathsPlugin.run(
+        mockPluginParams({
+          text: `import foo from 'legacy.js';\n`,
+          fileName: entryFile,
+          compilerOptions: aliasOptions({ paths: { 'legacy.js': ['./src/foo.ts'] } }),
+        }),
+      );
+
+      expect(result).toBe(`import foo from 'legacy.js';\n`);
+    });
+
+    it('leaves absolute specifiers alone without project resolution', async () => {
+      const text = `import foo from 'foo.js';\n`;
+
+      const result = await updateImportPathsPlugin.run(
+        mockPluginParams({ text, fileName: entryFile }),
+      );
+
+      expect(result).toBe(text);
+    });
   });
 
   it('validates options', () => {

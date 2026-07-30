@@ -63,6 +63,12 @@ export interface MockParams<TOptions = unknown> {
   options?: TOptions;
   /** Set to collect what the plugin reports, as the runner does. */
   reportFileNotice?: (notice: PluginFileNotice) => void;
+  /**
+   * Compiler options for a plugin that resolves specifiers. Set to give the
+   * plugin the project resolution the runner passes; left unset, the plugin
+   * sees none, which is the standalone case.
+   */
+  compilerOptions?: ts.CompilerOptions;
 }
 
 export function mockPluginParams<TOptions = unknown>(
@@ -76,6 +82,7 @@ export function mockPluginParams<TOptions = unknown>(
     suggestionDiagnostics = [],
     options = {},
     reportFileNotice,
+    compilerOptions,
   } = params;
 
   const sourceFile = ts.createSourceFile(
@@ -97,6 +104,18 @@ export function mockPluginParams<TOptions = unknown>(
     text,
     sourceFile,
     reportFileNotice,
+    moduleResolution:
+      compilerOptions === undefined
+        ? undefined
+        : {
+            compilerOptions,
+            host: ts.sys,
+            cache: ts.createModuleResolutionCache(
+              path.dirname(fileName),
+              (s) => s,
+              compilerOptions,
+            ),
+          },
     getLanguageService: () =>
       ({
         getProgram: () => undefined,
