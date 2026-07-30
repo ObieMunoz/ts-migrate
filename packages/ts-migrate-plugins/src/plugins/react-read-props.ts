@@ -6,7 +6,6 @@ import {
   AnnotationGroup,
   annotationGroup,
   applyProvenAdditions,
-  Member,
 } from '../utils/annotationAdditions';
 import {
   aliasedSymbol,
@@ -46,11 +45,15 @@ let currentPass: Pass | undefined;
  * propTypes describe what callers are expected to pass, so a prop that only
  * ever arrives through a spread, a wrapper or a container is absent from the
  * type built from them, and every read of it inside the component reports
- * TS2339. The reads are the evidence that the prop exists; the project's own
- * JSX is the evidence for its type, taken from the value a call site passes
- * explicitly or from the member of the object a call site spreads. A prop
- * nothing passes is declared `any`, which still records that the component has
- * it.
+ * TS2339.
+ *
+ * A prop is declared only where the project proves a type for it: the value a
+ * call site passes, the member of an object a call site spreads, the element the
+ * component spreads it onto, or the parameter it is handed to. A prop whose type
+ * nothing proves keeps its suppression, which is the better of the two: an `any`
+ * member would invent a contract every future call site is then held to, and
+ * would give up the excess-property error those call sites report today, while
+ * the suppression withdraws itself the day something declares the prop.
  *
  * Only the props of a component are touched, and only where the checker agrees
  * the declared type lacks the name. A read TypeScript has a near-miss
@@ -116,13 +119,19 @@ function plan(languageService: ts.LanguageService, maxUnionMembers: number): Pas
 
   const groupsByFile = new Map<string, AnnotationGroup[]>();
   needed.forEach((props, annotation) => {
-    const members: Member[] = [];
+    const members: string[] = [];
     props.forEach((uses, name) => {
-      members.push({
+      const type = memberType(
+        checker,
+        annotation,
+        sites.get(annotation) ?? [],
         name,
-        type: memberType(checker, annotation, sites.get(annotation) ?? [], name, uses, maxUnionMembers),
-      });
+        uses,
+        maxUnionMembers,
+      );
+      if (type) members.push(`${name}?: ${type}`);
     });
+    if (members.length === 0) return;
     const { fileName } = annotation.getSourceFile();
     const group = annotationGroup(annotation, members);
     const forFile = groupsByFile.get(fileName);
@@ -311,7 +320,7 @@ function memberType(
   name: string,
   uses: ts.Node[],
   maxUnionMembers: number,
-): string {
+): string | undefined {
   const printOptions = { maxUnionMembers, widenLiterals: true };
   const members: string[] = [];
   const add = (text: string) => {
@@ -341,7 +350,7 @@ function memberType(
   uses.forEach((use) => {
     fromUse(checker, use, at, printOptions).forEach(add);
   });
-  if (members.length === 0 || members.length > maxUnionMembers) return 'any';
+  if (members.length === 0 || members.length > maxUnionMembers) return undefined;
   return members.join(' | ');
 }
 

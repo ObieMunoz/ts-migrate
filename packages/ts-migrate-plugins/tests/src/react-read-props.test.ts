@@ -35,8 +35,16 @@ import { Widget } from './react-read-props-fixture';
 export const Row = () => ${body};
 `;
 
+const spreadCall = `\
+import React from 'react';
+import { Widget } from './react-read-props-fixture';
+
+const row = { name: 'a', subtitle: 'b' };
+export const Row = () => <Widget {...row} />;
+`;
+
 describe('react-read-props plugin', () => {
-  it('declares a prop the component reads and nothing passes', () => {
+  it('leaves a prop the component reads that nothing in the project types', () => {
     const text = `\
 import React from 'react';
 
@@ -47,15 +55,7 @@ type Props = {
 export const Widget = (props: Props) => <div>{props.name}{props.subtitle}</div>;
 `;
 
-    expect(run(text, { [callsName]: callSite('<Widget name="a" />') })).toBe(`\
-import React from 'react';
-
-type Props = {
-  name?: string;
-};
-
-export const Widget = (props: Props & { subtitle?: any }) => <div>{props.name}{props.subtitle}</div>;
-`);
+    expect(run(text, { [callsName]: callSite('<Widget name="a" />') })).toBe(text);
   });
 
   it('types a prop from the object a call site spreads', () => {
@@ -117,8 +117,8 @@ export class Widget extends React.Component<Props> {
 }
 `;
 
-    expect(run(text, { [callsName]: callSite('<Widget name="a" />') })).toContain(
-      'extends React.Component<Props & { subtitle?: any }>',
+    expect(run(text, { [callsName]: spreadCall })).toContain(
+      'extends React.Component<Props & { subtitle?: string }>',
     );
   });
 
@@ -138,8 +138,8 @@ export class Widget extends React.Component<Props> {
 }
 `;
 
-    expect(run(text, { [callsName]: callSite('<Widget name="a" />') })).toContain(
-      'extends React.Component<Props & { subtitle?: any }>',
+    expect(run(text, { [callsName]: spreadCall })).toContain(
+      'extends React.Component<Props & { subtitle?: string }>',
     );
   });
 
@@ -154,8 +154,8 @@ type Props = {
 export const Widget = ({ name, subtitle }: Props) => <div>{name}{subtitle}</div>;
 `;
 
-    expect(run(text, { [callsName]: callSite('<Widget name="a" />') })).toContain(
-      '({ name, subtitle }: Props & { subtitle?: any })',
+    expect(run(text, { [callsName]: spreadCall })).toContain(
+      '({ name, subtitle }: Props & { subtitle?: string })',
     );
   });
 
@@ -170,8 +170,8 @@ type Props = {
 export const Widget: React.FC<Props> = (props) => <div>{props.name}{props.subtitle}</div>;
 `;
 
-    expect(run(text, { [callsName]: callSite('<Widget name="a" />') })).toContain(
-      'React.FC<Props & { subtitle?: any }>',
+    expect(run(text, { [callsName]: spreadCall })).toContain(
+      'React.FC<Props & { subtitle?: string }>',
     );
   });
 
@@ -269,7 +269,7 @@ export const Widget = ({ name, depth }: Props) => (
     );
   });
 
-  it('falls back to any where the type the usage gives breaks the file', () => {
+  it('leaves a prop whose only evidence the declaring file contradicts', () => {
     const text = `\
 import React from 'react';
 
@@ -288,8 +288,29 @@ export const Widget = ({ name, subtitle }: Props) => (
 );
 `;
 
-    const result = run(text, { [callsName]: callSite('<Widget name="a" />') });
-    expect(result).toContain('({ name, subtitle }: Props & { subtitle?: any })');
+    expect(run(text, { [callsName]: callSite('<Widget name="a" />') })).toBe(text);
+  });
+
+  it('leaves a prop the project passes but cannot print a type for', () => {
+    const text = `\
+import React from 'react';
+
+type Props = {
+  name?: string;
+};
+
+export const Widget = (props: Props) => <div>{props.name}{String(props.meta)}</div>;
+`;
+
+    const calls = `\
+import React from 'react';
+import { Widget } from './react-read-props-fixture';
+
+const row = { name: 'a', meta: { id: 1 } };
+export const Row = () => <Widget {...row} />;
+`;
+
+    expect(run(text, { [callsName]: calls })).toBe(text);
   });
 
   it('leaves a read one letter off a prop the type declares', () => {
@@ -364,11 +385,12 @@ type Props = {
 };
 
 const Widget = (props: Props) => <div>{props.name}{props.subtitle}</div>;
-export const Row = () => <Widget name="a" />;
+const row = { name: 'a', subtitle: 'b' };
+export const Row = () => <Widget {...row} />;
 `;
 
     const result = run(text);
-    expect(result).toContain('(props: Props & { subtitle?: any })');
+    expect(result).toContain('(props: Props & { subtitle?: string })');
     expect(typeCheck(result)).toEqual([]);
     expect(typeCheck(text)).toHaveLength(1);
   });

@@ -5,8 +5,9 @@
  * Members are proved one at a time after the whole set fails, because a set is
  * only as good as its worst member: one member a narrow declared type
  * contradicts would otherwise cost the file every other member the same
- * annotation gained. A member the file rejects is retried as `any`, which keeps
- * the name the pass had evidence for when only the type it inferred was wrong.
+ * annotation gained. A member the file rejects is dropped rather than widened:
+ * a type the file contradicts was not proved, and the suppression that stands
+ * in its place says so and withdraws itself once something declares the member.
  */
 import ts from 'typescript';
 import {
@@ -17,12 +18,7 @@ import {
   TextChange,
 } from './candidateValidation';
 
-const maxValidationPrograms = 16;
-
-export interface Member {
-  name: string;
-  type: string;
-}
+const maxValidationPrograms = 12;
 
 export interface AnnotationGroup {
   start: number;
@@ -30,15 +26,15 @@ export interface AnnotationGroup {
   declared: string;
   /** A one-line type literal, which the members go inside rather than beside. */
   open: boolean;
-  members: Member[];
+  members: string[];
 }
 
 interface Addition {
   group: AnnotationGroup;
-  member: Member;
+  member: string;
 }
 
-export function annotationGroup(annotation: ts.TypeNode, members: Member[]): AnnotationGroup {
+export function annotationGroup(annotation: ts.TypeNode, members: string[]): AnnotationGroup {
   const source = annotation.getSourceFile();
   const start = annotation.getStart(source);
   const declared = source.text.slice(start, annotation.end);
@@ -79,23 +75,15 @@ export function applyProvenAdditions(
 
   const all = groups.flatMap((group) => group.members.map((member) => ({ group, member })));
   const whole = attempt(all);
-  if (whole) return whole;
+  if (whole || all.length === 1) return whole;
 
   const accepted: Addition[] = [];
   let kept: string | undefined;
   all.forEach((addition) => {
     const next = attempt([...accepted, addition]);
-    if (next) {
-      accepted.push(addition);
-      kept = next;
-      return;
-    }
-    if (addition.member.type === 'any') return;
-    const widened = { group: addition.group, member: { name: addition.member.name, type: 'any' } };
-    const fallback = attempt([...accepted, widened]);
-    if (!fallback) return;
-    accepted.push(widened);
-    kept = fallback;
+    if (!next) return;
+    accepted.push(addition);
+    kept = next;
   });
   return kept;
 }
@@ -111,9 +99,8 @@ function changesOf(groups: AnnotationGroup[], accepted: Addition[]): TextChange[
   return changes;
 }
 
-function changeFor(group: AnnotationGroup, members: Member[]): TextChange {
-  const spelled = members.map((member) => `${member.name}?: ${member.type}`);
-  const addition = `{ ${spelled.join('; ')} }`;
+function changeFor(group: AnnotationGroup, members: string[]): TextChange {
+  const addition = `{ ${members.join('; ')} }`;
   if (!group.open) {
     return { start: group.start, length: group.length, text: `${group.declared} & ${addition}` };
   }
@@ -121,7 +108,7 @@ function changeFor(group: AnnotationGroup, members: Member[]): TextChange {
   return {
     start: group.start,
     length: group.length,
-    text: inner ? `{ ${inner}; ${spelled.join('; ')} }` : addition,
+    text: inner ? `{ ${inner}; ${members.join('; ')} }` : addition,
   };
 }
 

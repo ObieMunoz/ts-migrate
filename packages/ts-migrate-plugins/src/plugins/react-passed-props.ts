@@ -5,7 +5,6 @@ import {
   AnnotationGroup,
   annotationGroup,
   applyProvenAdditions,
-  Member,
 } from '../utils/annotationAdditions';
 import { isClosedType, isMigratableFile, propsAnnotationOfTag } from '../utils/componentProps';
 import { DEFAULT_MAX_UNION_MEMBERS, printType } from '../utils/typePrinter';
@@ -84,9 +83,9 @@ function plan(languageService: ts.LanguageService, maxUnionMembers: number): Pas
 
   const groupsByFile = new Map<string, AnnotationGroup[]>();
   byAnnotation.forEach((props, annotation) => {
-    const members: Member[] = [];
+    const members: string[] = [];
     props.forEach((evidence, name) => {
-      members.push({ name, type: memberType(checker, annotation, evidence, maxUnionMembers) });
+      members.push(`${name}?: ${memberType(checker, annotation, evidence, maxUnionMembers)}`);
     });
     if (members.length === 0) return;
     const { fileName } = annotation.getSourceFile();
