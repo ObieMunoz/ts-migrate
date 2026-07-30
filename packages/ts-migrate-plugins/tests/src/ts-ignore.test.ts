@@ -741,3 +741,136 @@ export class ReadMore extends Component<object, State> {
     expect(await residualDiagnosticCodes('file.tsx', text, compilerOptions)).toEqual([]);
   });
 });
+
+// A value imported with `import type` is erased when TypeScript emits, so
+// suppressing its use ships a file that compiles and then throws for an
+// undefined binding. eslint-fix runs the project's own config, and a rule that
+// rewrites value imports as type-only ones is what leaves these behind.
+describe('ts-ignore plugin with a value imported as a type', () => {
+  const extraFiles = {
+    'cn.ts':
+      "export function cn(...args: string[]) { return args.join(' '); }\n" +
+      'export type Args = string[];\n',
+    'nav.ts': 'export function replace(path: string) { return path; }\n',
+  };
+
+  it('drops the type modifier instead of suppressing the call', async () => {
+    const text = `import type { cn } from './cn';
+
+export const classes = cn('a', 'b');
+`;
+
+    const result = (await tsIgnorePlugin.run(
+      await realPluginParams({ text, extraFiles }),
+    )) as string;
+
+    expect(result).toBe(`import { cn } from './cn';
+
+export const classes = cn('a', 'b');
+`);
+    expect(await residualDiagnosticCodes('file.ts', result, undefined, extraFiles)).toEqual([]);
+  });
+
+  it('repairs the import once for every use of it', async () => {
+    const text = `import type { replace } from './nav';
+
+export const map = { replace };
+export const go = () => replace('/');
+`;
+
+    const result = (await tsIgnorePlugin.run(
+      await realPluginParams({ text, extraFiles }),
+    )) as string;
+
+    expect(result).toContain("import { replace } from './nav';");
+    expect(result).not.toContain('@ts-expect-error');
+    expect(await residualDiagnosticCodes('file.ts', result, undefined, extraFiles)).toEqual([]);
+  });
+
+  it('drops the type modifier off a default import', async () => {
+    const text = `import type cn from './default-cn';
+
+export const classes = cn('a');
+`;
+    const files = { 'default-cn.ts': 'export default function cn(a: string) { return a; }\n' };
+
+    const result = (await tsIgnorePlugin.run(
+      await realPluginParams({ text, extraFiles: files }),
+    )) as string;
+
+    expect(result).toContain("import cn from './default-cn';");
+    expect(await residualDiagnosticCodes('file.ts', result, undefined, files)).toEqual([]);
+  });
+
+  it('drops an inline type modifier and leaves the rest of the import alone', async () => {
+    const text = `import { type cn, type Args } from './cn';
+
+export const classes = cn('a');
+export const args: Args = ['a'];
+`;
+
+    const result = (await tsIgnorePlugin.run(
+      await realPluginParams({ text, extraFiles }),
+    )) as string;
+
+    expect(result).toContain("import { cn, type Args } from './cn';");
+    expect(await residualDiagnosticCodes('file.ts', result, undefined, extraFiles)).toEqual([]);
+  });
+
+  it('keeps suppressing the other diagnostics in a repaired file', async () => {
+    const text = `import type { cn } from './cn';
+
+export const classes = cn('a');
+export const count: number = 'oops';
+`;
+
+    const result = (await tsIgnorePlugin.run(
+      await realPluginParams({ text, extraFiles }),
+    )) as string;
+
+    expect(result).toContain("import { cn } from './cn';");
+    expect(result).toContain('TS(2322)');
+    expect(await residualDiagnosticCodes('file.ts', result, undefined, extraFiles)).toEqual([]);
+  });
+
+  // The repair is only ever right for a name that has a value to import, and
+  // that is exactly the case TypeScript reports as TS1361; a name that is only
+  // a type is TS2693, with no fix to offer.
+  it('suppresses a name that is only ever a type', async () => {
+    const text = `import type { Args } from './cn';
+
+export const args = Args;
+`;
+
+    const result = (await tsIgnorePlugin.run(
+      await realPluginParams({ text, extraFiles }),
+    )) as string;
+
+    expect(result).toContain("import type { Args } from './cn';");
+    expect(result).toContain('TS(2693)');
+  });
+
+  it('reports the use it leaves suppressed when no repair is offered', async () => {
+    const text = `import type { cn } from './cn';
+
+export const classes = cn('a');
+`;
+    const notices: PluginFileNotice[] = [];
+
+    // The mock language service offers no code fixes at all, which is how a
+    // compiler that stops offering this one would look from here.
+    const result = await tsIgnorePlugin.run(
+      mockPluginParams({
+        text,
+        semanticDiagnostics: [mockDiagnostic(text, "cn('a')", { code: 1361 })],
+        reportFileNotice: (notice) => notices.push(notice),
+      }),
+    );
+
+    expect(result).toContain("import type { cn } from './cn';");
+    expect(result).toContain('@ts-expect-error TS(1361)');
+    expect(notices).toHaveLength(1);
+    expect(notices[0].recovered).toBe(true);
+    expect(notices[0].reason).toMatch(/imported with `import type`/);
+  });
+});
