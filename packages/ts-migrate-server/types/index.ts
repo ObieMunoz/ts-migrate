@@ -29,6 +29,18 @@ export interface PluginFileNotice {
   marked?: boolean;
 }
 
+/**
+ * The project's own module resolution, for a plugin that needs to know where a
+ * specifier points without building a program. The host and cache are the ones
+ * the language service resolves through, so a lookup here is a cache hit for
+ * anything the program already resolved.
+ */
+export interface ModuleResolution {
+  compilerOptions: ts.CompilerOptions;
+  host: ts.ModuleResolutionHost;
+  cache: ts.ModuleResolutionCache;
+}
+
 export interface PluginParams<TPluginOptions> {
   options: TPluginOptions;
   fileName: string;
@@ -36,6 +48,11 @@ export interface PluginParams<TPluginOptions> {
   text: string;
   sourceFile: ts.SourceFile;
   getLanguageService: () => ts.LanguageService;
+  /**
+   * Unset when the plugin runs outside a migration project, in which case a
+   * plugin that needs resolution leaves whatever it cannot check alone.
+   */
+  moduleResolution?: ModuleResolution;
   /**
    * Adds a declaration file to the program and to the files the run writes at
    * the end (nothing is written on a dry run). Lets a plugin declare types the

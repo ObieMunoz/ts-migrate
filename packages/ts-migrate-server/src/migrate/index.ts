@@ -241,6 +241,12 @@ export default async function migrate({
     if (project.hasRootFile(fileName) && project.getFileText(fileName) === text) return;
     project.addVirtualSourceFile(fileName, text);
   };
+  // Stable for the whole run: the compiler options are parsed once and the
+  // host and cache are the project's own.
+  const moduleResolution = {
+    compilerOptions: project.getCompilerOptions(),
+    ...project.getModuleResolution(),
+  };
   const updatedSourceFiles = new Set<string>();
   const changedFilesByPlugin = config.plugins.map(() => new Set<string>());
   const pluginFailures: MigrateResult['pluginFailures'] = [];
@@ -340,6 +346,7 @@ export default async function migrate({
             text: sourceFile.text,
             options: pluginOptions,
             getLanguageService,
+            moduleResolution,
             addGeneratedFile,
             reportFileNotice: (notice) => {
               notices.add(fileName, notice);
