@@ -27,6 +27,7 @@ import {
   printTypeDebtSummary,
   printTypesPackagePreflight,
   reportGeneratedFileInclusion,
+  reportGeneratedFileLinting,
   typesPackageReport,
 } from '../utils/runReports';
 import { buildMigrateRunSummary, MigrateRunSummary, writeRunSummary } from '../utils/runSummary';
@@ -183,6 +184,16 @@ export default async function runMigrate(params: RunMigrateParams): Promise<RunM
   }
 
   printGeneratedFiles(rootDir, generatedFiles, dryRun);
+  // The alias declarations are written before the run rather than by a plugin,
+  // and their file is as much a TypeScript-only file as the generated ones.
+  await reportGeneratedFileLinting(
+    rootDir,
+    [
+      ...[...generatedFiles].map(([filePath, text]) => ({ filePath, text })),
+      ...(aliasDeclarations ? [aliasDeclarations] : []),
+    ],
+    dryRun,
+  );
   if (globalDeclarations) {
     printGlobalDeclarationsReport(globalDeclarations);
   }

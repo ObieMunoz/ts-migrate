@@ -12,8 +12,9 @@ workerThreads.Worker = class extends RealWorker {
     super(source, options);
   }
 };
-const plugin = require('./plugin/' + PLUGIN_ENTRY).default;
-const { files, rootDir, options } = JSON.parse(process.argv[2]);
+const pluginModule = require('./plugin/' + PLUGIN_ENTRY);
+const plugin = pluginModule.default;
+const { files, rootDir, options, generatedFiles } = JSON.parse(process.argv[2]);
 const notices = [];
 (async () => {
   const results = await Promise.all(
@@ -27,11 +28,28 @@ const notices = [];
       }),
     ),
   );
+  // Checked after the pass, on the engine the pass resolved, the way a run
+  // reports on the declaration files its plugins generated.
+  const generatedFileParseErrors = generatedFiles
+    ? (
+        await pluginModule.findGeneratedFileParseErrors(
+          generatedFiles.map(({ fileName, text }) => ({
+            filePath: path.resolve(rootDir, fileName),
+            text,
+          })),
+        )
+      ).map(({ filePath, message }) => ({
+        // The temp tree the paths point into is gone by the time the test reads this.
+        fileName: path.relative(rootDir, filePath),
+        message,
+      }))
+    : undefined;
   fs.writeFileSync(
     path.join(__dirname, 'result.json'),
     JSON.stringify({
       results,
       notices,
+      generatedFileParseErrors,
       // The temp tree is gone by the time the test reads this.
       workerData: workerData.map((data) => ({
         ...data,

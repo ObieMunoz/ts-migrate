@@ -40,6 +40,7 @@ import {
   printSuppressionReport,
   printTypeDebtSummary,
   printTypesPackagePreflight,
+  reportGeneratedFileLinting,
   typesPackageReport,
 } from './utils/runReports';
 import { canKeepGeneratedDeclarations } from './utils/tsConfigIncludes';
@@ -811,6 +812,11 @@ cli
       });
 
       printGeneratedFiles(rootDir, generatedFiles, dryRun);
+      await reportGeneratedFileLinting(
+        rootDir,
+        [...generatedFiles].map(([filePath, text]) => ({ filePath, text })),
+        dryRun,
+      );
       const typesReport = typesPackageReport(typesPackageDetector, rootDir, args.folder);
       if (typesReport) log.info(typesReport);
       printSuppressionReport(suppressionExplainer, rootDir, args.suppressionReportFile);

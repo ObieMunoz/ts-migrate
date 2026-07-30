@@ -287,7 +287,7 @@ async function createESLint(rootDir: string, useProjectESLint: boolean): Promise
     );
   }
 
-  const options = {
+  return instantiateESLint(engine, {
     fix: true,
     // Set ignore to false so we can lint in `tmp` for testing.
     ignore: false,
@@ -295,9 +295,18 @@ async function createESLint(rootDir: string, useProjectESLint: boolean): Promise
     // config all start here, so it has to be the project, not wherever the
     // command was typed.
     cwd: config.cwd,
-  };
+  });
+}
+
+/** Enters the engine through whichever of the two APIs it exports. */
+async function instantiateESLint(
+  engine: ESLintEngine,
+  options: { fix: boolean; ignore: boolean; cwd: string },
+): Promise<AnyESLint> {
   if (typeof engine.module.loadESLint === 'function') {
-    const ESLintClass = await engine.module.loadESLint({ useFlatConfig: config.useFlatConfig });
+    const ESLintClass = await engine.module.loadESLint({
+      useFlatConfig: engine.config.useFlatConfig,
+    });
     return new ESLintClass(options);
   }
   return new (engine.module.ESLint as ESLintConstructor)(options);
@@ -308,6 +317,62 @@ function getESLint(rootDir: string, useProjectESLint: boolean): Promise<AnyESLin
     eslintPromise = createESLint(rootDir, useProjectESLint);
   }
   return eslintPromise;
+}
+
+/** A generated declaration file the project's ESLint reports a parse error on. */
+export interface GeneratedFileParseError {
+  filePath: string;
+  /** ESLint's own message, e.g. `Parsing error: Unexpected token global`. */
+  message: string;
+}
+
+/**
+ * Which of the declaration files a run generates the project's ESLint cannot
+ * read. They hold nothing but TypeScript, so a config that routes them to a
+ * parser for JavaScript stops at the first declaration keyword: the compiler is
+ * satisfied and `eslint .` is not. Worth a report of its own rather than a
+ * comment in the generated file, since a parse error is fatal and no directive
+ * comment suppresses one.
+ *
+ * The check runs on the engine an eslint-fix pass already resolved, and reports
+ * nothing when no pass did. Resolving one here would put its banner lines after
+ * everything else the run has to say, and would lint on behalf of a project
+ * that had opted out of linting during the migration.
+ *
+ * Ignores are honoured, which the fixing instance disables: ignoring these
+ * files is one of the two answers to a config that cannot parse them, and a run
+ * that reported a file the project had ignored would ask for the same edit
+ * forever.
+ */
+export async function findGeneratedFileParseErrors(
+  files: Iterable<{ filePath: string; text: string }>,
+): Promise<GeneratedFileParseError[]> {
+  const engine = resolvedEngine;
+  const candidates = [...files];
+  if (!engine || candidates.length === 0) return [];
+
+  let cli: AnyESLint;
+  try {
+    cli = await instantiateESLint(engine, { fix: false, ignore: true, cwd: engine.config.cwd });
+  } catch {
+    // A config this engine cannot load at all is the pass's finding to report,
+    // and it has: every file it linted failed on the same config.
+    return [];
+  }
+
+  const problems: GeneratedFileParseError[] = [];
+  for (const { filePath, text } of candidates) {
+    try {
+      // One at a time, as the in-process lint route does: lintText on a shared
+      // instance is not known to be re-entrant under a type-aware parser.
+      const [report] = await cli.lintText(text, { filePath, warnIgnored: false });
+      const fatal = report?.messages?.find((message) => message.fatal);
+      if (fatal) problems.push({ filePath, message: fatal.message });
+    } catch {
+      // Per file, for the same reason.
+    }
+  }
+  return problems;
 }
 
 // The exact text eslint-fix last produced for each file. eslint's autofix is

@@ -3,7 +3,11 @@ import addConversionsPlugin from './plugins/add-conversions';
 import convertCommonjsPlugin from './plugins/convert-commonjs';
 import declareEmptyObjectPropertiesPlugin from './plugins/declare-empty-object-properties';
 import declareMissingClassPropertiesPlugin from './plugins/declare-missing-class-properties';
-import eslintFixPlugin, { Options as EslintFixOptionsType } from './plugins/eslint-fix';
+import eslintFixPlugin, {
+  findGeneratedFileParseErrors,
+  GeneratedFileParseError as GeneratedFileParseErrorType,
+  Options as EslintFixOptionsType,
+} from './plugins/eslint-fix';
 import explicitAnyPlugin from './plugins/explicit-any';
 import hoistArrowFunctionsPlugin from './plugins/hoist-arrow-functions';
 import hoistClassStaticsPlugin from './plugins/hoist-class-statics';
@@ -72,6 +76,7 @@ import {
 
 export type Plugin<T = unknown> = PluginType<T>;
 export type EslintFixOptions = EslintFixOptionsType;
+export type GeneratedFileParseError = GeneratedFileParseErrorType;
 export type GlobalDeclarationsCollector = GlobalDeclarationsCollectorType;
 export type GlobalDeclarationsReport = GlobalDeclarationsReportType;
 export type SourceTextUpdate = SourceTextUpdateType;
@@ -132,6 +137,7 @@ export {
   formatSuppressionSummary,
   formatTypesPackagePreflight,
   formatTypesPackageReport,
+  findGeneratedFileParseErrors,
   collectModuleSpecifiers,
   preflightTypesPackages,
   FOLLOW_UP_MARKER,

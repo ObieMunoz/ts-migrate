@@ -4,11 +4,13 @@ import ts from 'typescript';
 import log from 'updatable-log';
 
 import {
+  findGeneratedFileParseErrors,
   formatGlobalDeclarationsReport,
   formatSuppressionReport,
   formatSuppressionSummary,
   formatTypesPackagePreflight,
   formatTypesPackageReport,
+  GeneratedFileParseError,
   GlobalDeclarationsCollector,
   preflightTypesPackages,
   SuppressionExplainer,
@@ -227,6 +229,60 @@ export function reportGeneratedFileInclusion(
       break;
     default:
       break;
+  }
+}
+
+/**
+ * The generated declaration files the project's ESLint reports a parse error
+ * on. The run put them in the project's lint scope, so the run is what should
+ * say the scope rejects them: nothing else does until somebody opens one.
+ */
+export function formatGeneratedFileLintReport(
+  problems: readonly GeneratedFileParseError[],
+  rootDir: string,
+  dryRun: boolean,
+): string | null {
+  if (problems.length === 0) return null;
+  const files = `declaration file${problems.length === 1 ? '' : 's'}`;
+  const lines = [
+    dryRun
+      ? `This project's ESLint could not parse ${problems.length} generated ${files} a real ` +
+        `run would write:`
+      : `This project's ESLint cannot parse ${problems.length} generated ${files}:`,
+  ];
+  problems.forEach(({ filePath, message }) => {
+    lines.push(`  ${path.relative(rootDir, filePath) || filePath}: ${message}`);
+  });
+  lines.push(
+    'The compiler reads them, so nothing about the migration is affected; `eslint .` and the ' +
+      'editor report the parse error. A parse error is fatal, so no eslint-disable comment in ' +
+      'the file suppresses it: either extend the config entry that sets the TypeScript parser ' +
+      'to cover these paths, or add them to the config\'s ignores.',
+  );
+  return lines.join('\n');
+}
+
+/**
+ * Asks the project's ESLint to read the declaration files this run generated,
+ * and reports the ones it cannot. Advice about a file the compiler is happy
+ * with, so it must never fail an otherwise successful run.
+ */
+export async function reportGeneratedFileLinting(
+  rootDir: string,
+  files: Iterable<{ filePath: string; text: string }>,
+  dryRun: boolean,
+): Promise<void> {
+  try {
+    const report = formatGeneratedFileLintReport(
+      await findGeneratedFileParseErrors(files),
+      rootDir,
+      dryRun,
+    );
+    if (report) log.warn(report);
+  } catch (err) {
+    log.warn(
+      `Skipped checking whether ESLint can parse the generated declarations: ${errorMessage(err)}`,
+    );
   }
 }
 
