@@ -433,8 +433,9 @@ pointing at it stays valid and needs no notice.
 
 ### `ts-migrate migrate <folder> [flags]`
 
-Runs the codemod pipeline on an already-renamed project: re-points stale
-relative imports, rewrites CommonJS `require`/`module.exports` into TypeScript
+Runs the codemod pipeline on an already-renamed project: re-points imports
+that name a file under an extension the project does not ship it under,
+rewrites CommonJS `require`/`module.exports` into TypeScript
 module syntax, declares the properties the code assigns to `window` and
 `globalThis`, converts React propTypes to types, names the props of the
 components that never had propTypes, writes the type arguments React hook
@@ -447,6 +448,19 @@ migration targets. `.js`, `.jsx`, `.mjs` and `.cjs` are never edited, even
 when a tsconfig with `allowJs` pulls them in; they stay in the program and
 still type the files that import them. Run `rename` on a file to make it
 migratable.
+
+The import step covers two forms. `import foo from './foo.js'` after the
+rename moved that file to `./foo.ts` is one: `tsc` resolves it by substituting
+the extension and stays silent, while the bundler resolving the literal path
+does not. `import foo from './foo.ts'` is the other, and it is error TS5097,
+so the extension is stripped rather than left for ts-ignore to put an
+`@ts-expect-error` on. Both drop the extension, or keep a `.js` one when the
+importing file is ESM; a `./foo.mts` or `./foo.cts` import becomes
+`./foo.mjs` or `./foo.cjs`, the extension it emits. An import whose target is
+still on disk, one under `allowImportingTsExtensions`, and one whose base
+names a second file are all left alone. Absolute imports the project maps
+through tsconfig `paths` are covered too, so run `init` first if your aliases
+live only in `webpack.config.js` or `jsconfig.json`.
 
 The CommonJS step matters on vanilla Node projects: left alone, `require()`
 returns `any` and every import boundary in the project loses its types. It
