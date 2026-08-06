@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.20.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.19.1...v0.20.0) (2026-08-06)
+
+
+### Features
+
+* **ts-migrate-plugins:** import the names a file uses instead of suppressing them ([#347](https://github.com/ObieMunoz/ts-migrate/issues/347)) ([0f0e146](https://github.com/ObieMunoz/ts-migrate/commit/0f0e14621ae6fd808238143f58354b359b5d4ecc))
+
+
+
+
+
 # [0.19.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.18.0...v0.19.0) (2026-07-30)
 
 **Note:** Version bump only for package @obiemunoz/ts-migrate-server

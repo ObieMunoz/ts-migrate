@@ -3,6 +3,23 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.20.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.19.1...v0.20.0) (2026-08-06)
+
+
+### Bug Fixes
+
+* **ts-migrate-plugins:** write the imports the types it infers need ([#346](https://github.com/ObieMunoz/ts-migrate/issues/346)) ([728866c](https://github.com/ObieMunoz/ts-migrate/commit/728866cd286fcb1e6c049b04bc02f57b1b89c99a))
+
+
+### Features
+
+* **ts-migrate-plugins:** import the names a file uses instead of suppressing them ([#347](https://github.com/ObieMunoz/ts-migrate/issues/347)) ([0f0e146](https://github.com/ObieMunoz/ts-migrate/commit/0f0e14621ae6fd808238143f58354b359b5d4ecc))
+* **ts-migrate-plugins:** strip an import path that names a TypeScript file ([#345](https://github.com/ObieMunoz/ts-migrate/issues/345)) ([596290f](https://github.com/ObieMunoz/ts-migrate/commit/596290ff88710abce819524841a97854d13976a7))
+
+
+
+
+
 ## [0.19.1](https://github.com/ObieMunoz/ts-migrate/compare/v0.19.0...v0.19.1) (2026-07-30)
 
 **Note:** Version bump only for package @obiemunoz/ts-migrate
