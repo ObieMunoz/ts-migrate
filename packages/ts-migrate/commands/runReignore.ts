@@ -43,6 +43,8 @@ export interface RunReignoreParams {
   bootstrap?: boolean;
   projectEslint?: boolean;
   declareUntypedModules?: boolean;
+  addMissingImports?: boolean;
+  ambiguousImports?: 'first' | 'skip';
   annotations?: boolean;
   casts?: boolean;
   typesPreflight?: boolean;
@@ -91,6 +93,8 @@ export default async function runReignore(params: RunReignoreParams): Promise<nu
     // generated declaration file is undone by the next `tsc` run.
     declareUntypedModules:
       (params.declareUntypedModules ?? true) && canKeepGeneratedDeclarations(rootDir),
+    addMissingImports: params.addMissingImports,
+    ambiguousImports: params.ambiguousImports,
     annotations: params.annotations,
     casts: params.casts,
     dryRun,

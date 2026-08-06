@@ -686,6 +686,66 @@ would leave the file worse than the `any` it replaced:
 
 Those sites keep their `any`.
 
+# Names a file uses but never imports
+
+A freshly renamed file is usually full of names nothing in scope provides: a
+bundler injected them as globals, a transform hoisted the `require` away, or the
+project just leaned on an editor to add the import when someone got round to it.
+Each one is a `Cannot find name` error, and left alone each one becomes a
+suppression:
+
+```tsx
+{/* @ts-expect-error TS(2304): Cannot find name 'formatLabel'. */}
+<button title={formatLabel('save')}>
+  {/* @ts-expect-error TS(2304): Cannot find name 'Spinner'. */}
+  <Spinner />
+</button>
+```
+
+Your editor already knows where those come from — its quick fix menu offers
+"Add import from …" for every one of them. ts-migrate asks TypeScript the same
+question and applies the answer, so the file above comes out of a run with
+imports instead:
+
+```tsx
+import { formatLabel } from '../utils/formatLabel';
+import Spinner from './Spinner';
+```
+
+This is worth more than the comment count. A suppressed name is `any`, so every
+pass that runs afterwards reads `any` where the real type was, and the
+annotations they infer are worse for it. The pass runs early for that reason,
+before anything that reads types across files.
+
+- The candidates are TypeScript's own, and so is the edit: names taken from one
+  module merge into a single statement, and the quoting and specifier style
+  match the imports the file already has. `--ambiguousImports` is described
+  below; `moduleSpecifier` on the plugin overrides how the specifier is written.
+- A name no module in the program exports is left alone and still gets its
+  suppression comment. Nothing is invented: the modules on offer are the ones
+  already in the project's program.
+- Where a name really is exported by several modules, the run takes the one
+  TypeScript ranks first (the same pick "Add all missing imports" makes in an
+  editor) and marks the import with the alternatives it passed over:
+
+  ```tsx
+  // TODO(ts-migrate): Check that this import is the one meant; TypeScript offered the name from
+  // several modules.
+  // Button was taken from ./Button, over ../widgets/Button.
+  import { Button } from './Button';
+  ```
+
+  A module and a barrel that re-exports it are one candidate, not two, so this
+  only fires where the name genuinely has two homes. `--ambiguousImports=skip`
+  leaves those names for you instead, so they keep their suppression comment
+  while the unambiguous ones around them are still imported.
+- `--addMissingImports=false` turns the whole pass off and goes back to
+  suppressing every name.
+
+On a project migrated before this existed, `reignore` picks the imports up
+retroactively: it strips the suppressions, sees the errors again, and imports
+the names instead of re-adding the comments.
+
 # Type definition recommendations
 
 Many of the errors ts-migrate suppresses aren't really problems with your code —

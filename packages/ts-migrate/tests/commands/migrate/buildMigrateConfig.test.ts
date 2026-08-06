@@ -352,4 +352,32 @@ describe('buildMigrateConfig', () => {
     expect(declared({})).toEqual({ plugins: globalPlugins, collector: true });
     expect(declared({ declareGlobals: false })).toEqual({ plugins: [], collector: false });
   });
+
+  it('adds the missing imports after the globals and before the passes that read types', () => {
+    const names = pluginNames(buildMigrateConfig({}).config);
+
+    expect(names.indexOf('add-missing-imports')).toBeGreaterThan(names.indexOf('declare-globals'));
+    expect(names.indexOf('add-missing-imports')).toBeGreaterThan(names.indexOf('jsdoc'));
+    expect(names.indexOf('add-missing-imports')).toBeLessThan(names.indexOf('react-props'));
+    expect(names.indexOf('add-missing-imports')).toBeLessThan(names.indexOf('infer-types'));
+    expect(names.indexOf('add-missing-imports')).toBeLessThan(names.indexOf('ts-ignore'));
+  });
+
+  it('drops add-missing-imports with --addMissingImports=false', () => {
+    expect(pluginNames(buildMigrateConfig({ addMissingImports: true }).config)).toContain(
+      'add-missing-imports',
+    );
+    expect(pluginNames(buildMigrateConfig({ addMissingImports: false }).config)).not.toContain(
+      'add-missing-imports',
+    );
+  });
+
+  it('passes the ambiguous import choice through', () => {
+    expect(pluginOptions(buildMigrateConfig({}).config, 'add-missing-imports')).toEqual({
+      ambiguous: undefined,
+    });
+    expect(
+      pluginOptions(buildMigrateConfig({ ambiguousImports: 'skip' }).config, 'add-missing-imports'),
+    ).toEqual({ ambiguous: 'skip' });
+  });
 });

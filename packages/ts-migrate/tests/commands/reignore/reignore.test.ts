@@ -105,12 +105,13 @@ const alsoFine: number = 2;
       'strip-ts-ignore',
       'detect-types-packages',
       'declare-untyped-modules',
+      'add-missing-imports',
       'explain-suppressions',
       'ts-ignore',
       'eslint-fix-changed',
     ]);
     expect(pluginStats[0].changedFileCount).toBe(1);
-    expect(pluginStats[4].changedFileCount).toBe(1);
+    expect(pluginStats[5].changedFileCount).toBe(1);
 
     // The evidence behind the suppression the run just wrote. Line 2 because
     // strip-ts-ignore removed the stale comment before the explainer ran.
@@ -229,5 +230,56 @@ export function missing(  ) {
     expect(exitCode).toBe(0);
     expect([...updatedSourceFiles]).toEqual([]);
     expect(fs.readFileSync(file, 'utf8')).toBe(afterFirst);
+  }, 60000);
+
+  /**
+   * A project migrated before the import pass existed: the name a module in the
+   * project exports is behind a suppression comment rather than an import.
+   */
+  function writeSuppressedImportProject(): string {
+    fs.writeFileSync(
+      path.resolve(rootDir, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { noEmit: true, strict: true }, include: ['.'] }),
+    );
+    fs.writeFileSync(
+      path.resolve(rootDir, 'formatLabel.ts'),
+      'export function formatLabel(key: string) {\n  return key;\n}\n',
+    );
+    const file = path.resolve(rootDir, 'src.ts');
+    fs.writeFileSync(
+      file,
+      `// @ts-expect-error TS(2304): Cannot find name 'formatLabel'.
+export const label = formatLabel('save');
+`,
+    );
+    return file;
+  }
+
+  it('imports the names an earlier run suppressed instead of re-suppressing them', async () => {
+    const file = writeSuppressedImportProject();
+
+    const { exitCode } = await reignore({ rootDir, gitignore: false, projectEslint: false });
+
+    expect(exitCode).toBe(0);
+    expect(fs.readFileSync(file, 'utf8')).toBe(`import { formatLabel } from "./formatLabel";
+
+export const label = formatLabel('save');
+`);
+  }, 60000);
+
+  it('leaves them suppressed under --addMissingImports=false', async () => {
+    const file = writeSuppressedImportProject();
+
+    const { exitCode } = await reignore({
+      rootDir,
+      gitignore: false,
+      projectEslint: false,
+      addMissingImports: false,
+    });
+
+    expect(exitCode).toBe(0);
+    const text = fs.readFileSync(file, 'utf8');
+    expect(text).toMatch(/@ts-expect-error TS\(2304\)/);
+    expect(text).not.toContain('import { formatLabel }');
   }, 60000);
 });
