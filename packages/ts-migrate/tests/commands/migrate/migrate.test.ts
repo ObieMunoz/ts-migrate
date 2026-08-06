@@ -102,6 +102,34 @@ export const value = util;
     expect(exitCode).toBe(0);
   });
 
+  it('strips an import path that names a TypeScript file instead of suppressing it', async () => {
+    const inputDir = path.resolve(fixturesDir, 'migrate/input');
+    copyDir(inputDir, rootDir);
+    fs.writeFileSync(path.resolve(rootDir, 'util.ts'), `export const util = 1;\n`);
+    // TS5097: legal for the bundler that resolved it before the migration, an
+    // error for tsc, and left for ts-ignore to suppress without this pass.
+    fs.writeFileSync(
+      path.resolve(rootDir, 'file-1.ts'),
+      `import { util } from './util.ts';
+
+export const value = util;
+`,
+    );
+
+    const config = new MigrateConfig()
+      .addPlugin(updateImportPathsPlugin, {})
+      .addPlugin(tsIgnorePlugin, {});
+
+    const { exitCode } = await migrate({ rootDir, config });
+    expect(fs.readFileSync(path.resolve(rootDir, 'file-1.ts'), 'utf8')).toBe(
+      `import { util } from './util';
+
+export const value = util;
+`,
+    );
+    expect(exitCode).toBe(0);
+  });
+
   describe('sources-scoped migration with ambient declaration files', () => {
     const sourceText = 'export const version: string = __APP_VERSION__;\n';
 

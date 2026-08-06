@@ -185,6 +185,23 @@ Nothing else in a migration reports these: TypeScript resolves
 `tsc` stays silent while the bundler, which resolves the literal path, does
 not.
 
+The same pass strips an import that names a TypeScript file outright, like
+`import { parse } from './reducer.ts'` — the form a codebase whose bundler
+resolves `.ts` can write before the migration, and the form an import of an
+already migrated file keeps. That one is error TS5097, "an import path
+can only end with a '.ts' extension when 'allowImportingTsExtensions' is
+enabled", so stripping it is what keeps ts-ignore from putting a
+`@ts-expect-error` on the line instead. It follows the same rule as a stale
+`.js` import: the extension is dropped, or written as `.js` when the importing
+file is ESM. A `./foo.mts` or `./foo.cts` import becomes `./foo.mjs` or
+`./foo.cjs` either way, since that is the extension it emits.
+
+Two imports keep their TypeScript extension. One your tsconfig sets
+`allowImportingTsExtensions` for is written that way on purpose, and there is
+no error to head off. One whose base names a second file, like a `./foo.ts`
+beside a `./foo.js` the migration has not reached yet, is left alone because
+the extension is the only thing telling the two apart.
+
 The [convert-commonjs](https://github.com/ObieMunoz/ts-migrate/blob/master/packages/ts-migrate-plugins/src/plugins/convert-commonjs.ts)
 plugin runs next, on the specifiers update-import-paths has already re-pointed.
 Top level `require` and `module.exports` become TypeScript module syntax, so the

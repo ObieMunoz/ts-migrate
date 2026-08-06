@@ -81,6 +81,102 @@ import Widget from './Widget.js';
 `);
   });
 
+  it('drops a .ts/.tsx extension across module syntaxes', async () => {
+    const text = `import foo from './foo.ts';
+import Widget from './Widget.tsx';
+import { helper } from './utils/helpers.ts';
+import shared from '../shared.ts';
+export { foo2 } from './foo.ts';
+export * from './foo.ts';
+import fooEquals = require('./foo.ts');
+type FooModule = typeof import('./foo.ts');
+const lazy = () => import('./foo.ts');
+const resolved = require.resolve('./foo.ts');
+jest.mock('./foo.ts');
+`;
+
+    const result = await updateImportPathsPlugin.run(
+      mockPluginParams({ text, fileName: entryFile }),
+    );
+
+    expect(result).toBe(`import foo from './foo';
+import Widget from './Widget';
+import { helper } from './utils/helpers';
+import shared from '../shared';
+export { foo2 } from './foo';
+export * from './foo';
+import fooEquals = require('./foo');
+type FooModule = typeof import('./foo');
+const lazy = () => import('./foo');
+const resolved = require.resolve('./foo');
+jest.mock('./foo');
+`);
+  });
+
+  it('keeps a .js extension on a .ts/.tsx specifier in an ESM package', async () => {
+    const text = `import foo from './foo.ts';
+import Widget from './Widget.tsx';
+`;
+
+    const result = await updateImportPathsPlugin.run(
+      mockPluginParams({ text, fileName: esmEntryFile }),
+    );
+
+    expect(result).toBe(`import foo from './foo.js';
+import Widget from './Widget.js';
+`);
+  });
+
+  it('rewrites a .mts/.cts specifier to the extension it emits', async () => {
+    const text = `import task from './task.mts';
+const helper = require('./helper.cts');
+`;
+
+    const result = await updateImportPathsPlugin.run(
+      mockPluginParams({ text, fileName: entryFile }),
+    );
+
+    expect(result).toBe(`import task from './task.mjs';
+const helper = require('./helper.cjs');
+`);
+  });
+
+  it('leaves a .ts specifier alone where another file shares its base', async () => {
+    // both.ts sits beside a both.js, so './both' names one of two files;
+    // missing.ts is not there to be named under any extension; and types.d.ts
+    // is emitted under no other extension, so './types.d' names nothing.
+    const text = `import both from './both.ts';
+import missing from './missing.ts';
+import type { Shape } from './types.d.ts';
+`;
+
+    const result = await updateImportPathsPlugin.run(
+      mockPluginParams({ text, fileName: entryFile }),
+    );
+
+    expect(result).toBe(text);
+  });
+
+  it('leaves a .ts specifier alone with allowImportingTsExtensions', async () => {
+    // The project writes the extension on purpose, so only the stale .js one,
+    // which TypeScript still resolves past, is rewritten.
+    const text = `import foo from './foo.ts';
+import Chart from './Chart.js';
+`;
+
+    const result = await updateImportPathsPlugin.run(
+      mockPluginParams({
+        text,
+        fileName: entryFile,
+        compilerOptions: { allowImportingTsExtensions: true, noEmit: true },
+      }),
+    );
+
+    expect(result).toBe(`import foo from './foo.ts';
+import Chart from './Chart';
+`);
+  });
+
   it('leaves .mjs and .cjs specifiers of renamed files alone', async () => {
     const text = `import task from './task.mjs';
 import helper from './helper.cjs';
@@ -246,6 +342,37 @@ jest.mock('foo');
       );
 
       expect(result).toBe(`import Widget from 'Widget.js';\n`);
+    });
+
+    it('drops a .ts/.tsx extension the project resolves', async () => {
+      const text = `import foo from 'foo.ts';
+import Widget from 'Widget.tsx';
+import { helper } from 'utils/helpers.ts';
+const lazy = () => import('foo.ts');
+jest.mock('foo.ts');
+`;
+
+      const result = await updateImportPathsPlugin.run(
+        mockPluginParams({ text, fileName: entryFile, compilerOptions: aliasOptions() }),
+      );
+
+      expect(result).toBe(`import foo from 'foo';
+import Widget from 'Widget';
+import { helper } from 'utils/helpers';
+const lazy = () => import('foo');
+jest.mock('foo');
+`);
+    });
+
+    it('leaves a .ts specifier alone where another file shares its base', async () => {
+      // both.ts sits beside a both.js, so 'both' names one of two files.
+      const text = `import both from 'both.ts';\n`;
+
+      const result = await updateImportPathsPlugin.run(
+        mockPluginParams({ text, fileName: entryFile, compilerOptions: aliasOptions() }),
+      );
+
+      expect(result).toBe(text);
     });
 
     it('leaves a specifier whose own file is still there alone', async () => {
