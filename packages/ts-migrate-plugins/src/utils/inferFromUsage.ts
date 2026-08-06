@@ -8,9 +8,17 @@
  * asks the same engine what it can infer now that the project's types have
  * moved on. Both need the fix asked for the same way, since a difference
  * between them would show up as one pass undoing the other's work.
+ *
+ * An annotation may name a type the file does not import, and the fix writes
+ * the import that makes it legal alongside it. Both halves come back as edits
+ * to the same file, so they are separated here: a caller that keeps some
+ * annotations and drops others cannot keep the engine's import edits verbatim,
+ * and one that replays the annotations onto different text cannot use their
+ * positions at all. `imports` is what those edits add, in a form that survives
+ * both.
  */
 import ts from 'typescript';
-import { TextChange } from './candidateValidation';
+import { applyTextChanges, TextChange } from './candidateValidation';
 
 // Diagnostics the `inferFromUsage` code fix acts on: implicit-any errors
 // under noImplicitAny, plus their suggestion-level counterparts without it.
@@ -42,12 +50,37 @@ export function inferenceFormatSettings(lintConfig?: LintConfig): ts.FormatCodeS
   };
 }
 
+/** An import an inferred annotation needs to name the type it names. */
+export interface InferredImport {
+  /** The local name the annotation spells. */
+  name: string;
+  moduleSpecifier: string;
+  /** A default import rather than a named one. */
+  isDefault: boolean;
+  /** The engine wrote it as type-only, which `verbatimModuleSyntax` requires. */
+  isTypeOnly: boolean;
+}
+
+export interface InferenceChanges {
+  /** The annotations to write, in the coordinates of the file asked about. */
+  annotations: TextChange[];
+  /** The engine's own edits to the file's imports, in the same coordinates. */
+  importEdits: TextChange[];
+  /** What those edits add, in a form that outlives their positions. */
+  imports: InferredImport[];
+}
+
+export function inferredImportKey(inferredImport: InferredImport): string {
+  const kind = inferredImport.isDefault ? 'default' : 'named';
+  return `${kind}:${inferredImport.name}:${inferredImport.moduleSpecifier}`;
+}
+
 export function getInferenceChanges(
   languageService: ts.LanguageService,
   fileName: string,
   formatSettings: ts.FormatCodeSettings,
   onPartial: (error: unknown) => void,
-): TextChange[] {
+): InferenceChanges {
   let fileTextChanges: readonly ts.FileTextChanges[];
   try {
     fileTextChanges = languageService.getCombinedCodeFix(
@@ -72,15 +105,29 @@ export function getInferenceChanges(
   // Without strictNullChecks an empty array literal prints as `undefined[]`
   // (with it, `never[]`), so only there does that spelling mean "no element
   // evidence" rather than an array genuinely seeded with undefined values.
-  const options = languageService.getProgram()?.getCompilerOptions() ?? {};
+  const program = languageService.getProgram();
+  const options = program?.getCompilerOptions() ?? {};
   const rewriteUndefinedArrays = !(options.strictNullChecks ?? options.strict);
+  const sourceFile = program?.getSourceFile(fileName);
 
-  const changes: TextChange[] = [];
+  const annotations: TextChange[] = [];
+  const importEdits: TextChange[] = [];
   const seen = new Set<string>();
   fileTextChanges
     .filter((fileChanges) => fileChanges.fileName === fileName)
     .forEach((fileChanges) => {
       fileChanges.textChanges.forEach(({ span, newText }) => {
+        if (sourceFile && isImportEdit(sourceFile, span, newText)) {
+          // Each annotation that needs an import asks for it separately, so
+          // one import two of them share arrives twice.
+          const importKey = `import:${span.start}:${span.length}:${newText}`;
+          if (seen.has(importKey)) return;
+          seen.add(importKey);
+
+          importEdits.push({ start: span.start, length: span.length, text: newText });
+          return;
+        }
+
         const annotation = replaceNoEvidenceTypes(newText, rewriteUndefinedArrays);
         // Setter parameters produce the same insert twice (TS7032 + TS7006).
         const key = `${span.start}:${span.length}:${annotation}`;
@@ -89,10 +136,82 @@ export function getInferenceChanges(
 
         if (anyFallbackRegex.test(annotation)) return;
 
-        changes.push({ start: span.start, length: span.length, text: annotation });
+        annotations.push({ start: span.start, length: span.length, text: annotation });
       });
     });
-  return changes;
+  return { annotations, importEdits, imports: addedImports(sourceFile, importEdits) };
+}
+
+/**
+ * Whether the edit is the fix writing an import rather than an annotation.
+ *
+ * The two are told apart by where they land, since an import the file has no
+ * declaration for yet arrives as a whole statement and one it does arrives as a
+ * name spliced into the existing braces, which is the same shape of edit as an
+ * annotation. Nothing an annotation can attach to sits inside an import
+ * declaration, so the position is enough.
+ */
+function isImportEdit(sourceFile: ts.SourceFile, span: ts.TextSpan, newText: string): boolean {
+  if (span.length === 0 && /^\s*import\b/.test(newText)) return true;
+  return sourceFile.statements.some(
+    (statement) =>
+      (ts.isImportDeclaration(statement) || ts.isImportEqualsDeclaration(statement)) &&
+      span.start >= statement.getStart(sourceFile) &&
+      span.start + span.length <= statement.end,
+  );
+}
+
+/**
+ * The imports `importEdits` add, read off the file they produce rather than
+ * off the edits themselves, so however the fix chose to phrase one comes out
+ * the same.
+ *
+ * A namespace import is not reported: nothing here can write one back, and the
+ * fix reaches for one only where a module has no export to name.
+ */
+function addedImports(
+  sourceFile: ts.SourceFile | undefined,
+  importEdits: TextChange[],
+): InferredImport[] {
+  if (!sourceFile || importEdits.length === 0) return [];
+  let imported: ts.SourceFile;
+  try {
+    imported = ts.createSourceFile(
+      sourceFile.fileName,
+      applyTextChanges(sourceFile.text, importEdits),
+      sourceFile.languageVersion,
+    );
+  } catch {
+    // Overlapping edits, which is the fix contradicting itself. The caller
+    // keeps the edits it has; they are still applied as written.
+    return [];
+  }
+  const before = importedNames(sourceFile);
+  return [...importedNames(imported).values()].filter(
+    (inferredImport) => !before.has(inferredImportKey(inferredImport)),
+  );
+}
+
+function importedNames(sourceFile: ts.SourceFile): Map<string, InferredImport> {
+  const imports = new Map<string, InferredImport>();
+  sourceFile.statements.filter(ts.isImportDeclaration).forEach((statement) => {
+    const { importClause } = statement;
+    if (!importClause || !ts.isStringLiteral(statement.moduleSpecifier)) return;
+    const moduleSpecifier = statement.moduleSpecifier.text;
+    const add = (name: string, isDefault: boolean, isTypeOnly: boolean) => {
+      const inferredImport = { name, moduleSpecifier, isDefault, isTypeOnly };
+      imports.set(inferredImportKey(inferredImport), inferredImport);
+    };
+
+    if (importClause.name) add(importClause.name.text, true, importClause.isTypeOnly);
+    const { namedBindings } = importClause;
+    if (namedBindings && ts.isNamedImports(namedBindings)) {
+      namedBindings.elements.forEach((element) =>
+        add(element.name.text, false, importClause.isTypeOnly || element.isTypeOnly),
+      );
+    }
+  });
+  return imports;
 }
 
 /**

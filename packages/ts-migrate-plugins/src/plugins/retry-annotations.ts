@@ -8,7 +8,12 @@ import {
   TextChange,
   toCandidatePos,
 } from '../utils/candidateValidation';
-import { getInferenceChanges, inferenceFormatSettings } from '../utils/inferFromUsage';
+import {
+  getInferenceChanges,
+  inferenceFormatSettings,
+  InferredImport,
+} from '../utils/inferFromUsage';
+import { withImportChanges } from './utils/annotationImports';
 import { isAnyOrAliasReference, isAnyType } from './utils/anyTypes';
 
 // Validation programs one file may build, per pass, before the annotations
@@ -234,7 +239,7 @@ function retriedChanges(
   candidates: Candidate[],
   projectProgram: ts.Program,
 ): TextChange[] {
-  const annotations = inferredAnnotations(
+  const { annotations, imports } = inferredAnnotations(
     fileName,
     text,
     compilerOptions,
@@ -261,10 +266,21 @@ function retriedChanges(
   const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
   let programsLeft = maxValidationPrograms;
 
+  // A retried annotation may name a type the file no longer imports, since
+  // the annotation it replaces was the reason nothing did. The import goes in
+  // with the group it belongs to, so a group is judged as it would be written.
+  const withImports = (group: Proposal[]): TextChange[] =>
+    withImportChanges(
+      fileName,
+      text,
+      group.map(({ change }) => change),
+      imports,
+    );
+
   const checksClean = (group: Proposal[]): boolean => {
     if (programsLeft <= 0) return false;
     programsLeft -= 1;
-    const changes = group.map(({ change }) => change).sort((a, b) => a.start - b.start);
+    const changes = withImports(group);
     const candidate = createFileLanguageService(
       fileName,
       applyTextChanges(text, changes),
@@ -278,14 +294,14 @@ function retriedChanges(
   };
 
   if (checksClean(proposals)) {
-    return proposals.map(({ change }) => change);
+    return withImports(proposals);
   }
 
   const accepted: Proposal[] = [];
   proposals.forEach((proposal) => {
     if (checksClean([...accepted, proposal])) accepted.push(proposal);
   });
-  return accepted.map(({ change }) => change);
+  return accepted.length > 0 ? withImports(accepted) : [];
 }
 
 /**
@@ -297,6 +313,10 @@ function retriedChanges(
  * Writing a type for a declaration that never had one is the migration's job,
  * and doing it here would put a new annotation in a diff that is supposed to be
  * a reduction.
+ *
+ * The imports come back whole rather than per candidate: they are written
+ * against the file the accepted annotations produce, which drops the ones no
+ * annotation kept ended up naming.
  */
 function inferredAnnotations(
   fileName: string,
@@ -304,7 +324,7 @@ function inferredAnnotations(
   compilerOptions: ts.CompilerOptions,
   candidates: Candidate[],
   projectProgram: ts.Program,
-): Map<number, string> {
+): { annotations: Map<number, string>; imports: InferredImport[] } {
   const strips: TextChange[] = candidates.map((candidate) => ({
     start: candidate.start,
     length: candidate.end - candidate.start,
@@ -318,9 +338,9 @@ function inferredAnnotations(
   );
   // Nothing to report from a partial answer: a type the engine cannot print is
   // one more annotation this file keeps, which is the state it is already in.
-  const changes = getInferenceChanges(stripped, fileName, inferenceFormatSettings(), () => {});
+  const inference = getInferenceChanges(stripped, fileName, inferenceFormatSettings(), () => {});
 
-  const byPosition = new Map(changes.map((change) => [change.start, change.text]));
+  const byPosition = new Map(inference.annotations.map((change) => [change.start, change.text]));
   const annotations = new Map<number, string>();
   candidates.forEach((candidate) => {
     const annotation = byPosition.get(toCandidatePos(candidate.start, strips));
@@ -328,7 +348,7 @@ function inferredAnnotations(
       annotations.set(candidate.start, annotation);
     }
   });
-  return annotations;
+  return { annotations, imports: inference.imports };
 }
 
 /**

@@ -182,7 +182,8 @@ console.log(
         ),
       ),
     ).toBe(`import a0, { a1 } from "mod1";
-import { b1 } from "mod2";console.log(a0, a1, b1);
+import { b1 } from "mod2";
+console.log(a0, a1, b1);
 `);
   });
 
@@ -223,7 +224,8 @@ console.log(a0);
           [],
         ),
       ),
-    ).toBe(`import a0, { a1 } from "mod1";console.log(a0, a1);
+    ).toBe(`import a0, { a1 } from "mod1";
+console.log(a0, a1);
 `);
   });
 
@@ -244,6 +246,52 @@ console.log(a0);
       ),
     ).toBe(`import { a0 } from "mod3"; import WithStylesProps from mod1;
 import a1 from "modc"; type Props = WithStylesProps; console.log(a0, a1);
+`);
+  });
+
+  it('writes a type-only name as a type-only specifier', () => {
+    const sourceText = `import { a0 } from 'mod1';
+
+type Props = { one: a1; two: a2 };
+console.log(a0);
+`;
+    expect(
+      updateSourceText(
+        sourceText,
+        updateImports(
+          ts.createSourceFile('file.ts', sourceText, ts.ScriptTarget.Latest),
+          [
+            { namedImport: 'a1', moduleSpecifier: 'mod1', isTypeOnly: true },
+            { namedImport: 'a2', moduleSpecifier: 'mod2', isTypeOnly: true },
+          ],
+          [],
+        ),
+      ),
+    ).toBe(`import { a0, type a1 } from "mod1";
+import { type a2 } from "mod2";
+
+type Props = { one: a1; two: a2 };
+console.log(a0);
+`);
+  });
+
+  it('drops the type modifier where the declaration is already an import type', () => {
+    const sourceText = `import type { a0 } from 'mod1';
+
+type Props = { one: a0; two: a1 };
+`;
+    expect(
+      updateSourceText(
+        sourceText,
+        updateImports(
+          ts.createSourceFile('file.ts', sourceText, ts.ScriptTarget.Latest),
+          [{ namedImport: 'a1', moduleSpecifier: 'mod1', isTypeOnly: true }],
+          [],
+        ),
+      ),
+    ).toBe(`import type { a0, a1 } from "mod1";
+
+type Props = { one: a0; two: a1 };
 `);
   });
 

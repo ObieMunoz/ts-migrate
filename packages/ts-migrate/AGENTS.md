@@ -746,6 +746,11 @@ is restored byte for byte, so the diff holds only the types it recovered.
   annotation rather than gaining a printed one, which is the same bare
   declaration declare-missing-class-properties writes. TypeScript gives it the
   same type either way.
+- A replacement that names a type the file does not import brings the import
+  with it, added to the file's import of that module where there is one. The
+  `any` it replaces is often the reason nothing imported the type, so these are
+  the annotations a run recovers most of; before, they failed the re-check and
+  the site kept its `any`.
 - The suppression comments are rewritten with reignore's `FIXME` prefix, so a
   project migrated by `migrate` (which writes none) sees a one-word change on
   every one of them. Pass `-p ''` to keep them as `migrate` wrote them.

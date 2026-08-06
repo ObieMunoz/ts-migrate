@@ -638,8 +638,10 @@ carries no type at all.
 `retype` is reignore with those annotations retried. Each one is stripped, the
 inference engine is asked again, and the result is kept only where the file
 re-checks with no error it did not already have and the checker answers
-something other than `any` for the declaration. Anything it cannot improve is
-restored byte for byte, so the diff holds only the types it recovered.
+something other than `any` for the declaration. A type the file does not import
+brings the import with it, since the `any` being replaced is often the reason
+nothing imported it. Anything it cannot improve is restored byte for byte, so
+the diff holds only the types it recovered.
 
 Usage: `npx -p @obiemunoz/ts-migrate ts-migrate retype <folder>`.
 
