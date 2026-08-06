@@ -11,9 +11,13 @@ import {
 import {
   getInferenceChanges,
   inferableDiagnosticCodes,
+  InferenceChanges,
   inferenceFormatSettings,
+  InferredImport,
+  inferredImportKey,
   LintConfig,
 } from '../utils/inferFromUsage';
+import { withImportChanges } from './utils/annotationImports';
 
 export type { LintConfig };
 
@@ -60,21 +64,21 @@ const inferTypesPlugin: Plugin = {
     const formatSettings = inferenceFormatSettings(lintConfig);
 
     try {
-      const changes = getInferenceChanges(languageService, fileName, formatSettings, (error) =>
+      const inference = getInferenceChanges(languageService, fileName, formatSettings, (error) =>
         fileNoticeReporter(params, '[infer-types]')({
           reason: `Could not write every type it inferred: ${firstLine(error)}`,
           hint: 'The rest were written; explicit-any fills in what is left.',
           recovered: true,
         }),
       );
-      if (changes.length === 0) {
+      if (inference.annotations.length === 0) {
         return undefined;
       }
 
       const program = languageService.getProgram();
       const compilerOptions = getValidationOptions(program ? program.getCompilerOptions() : {});
 
-      return withBodyWins(fileName, text, changes, compilerOptions, formatSettings, program);
+      return withBodyWins(fileName, text, inference, compilerOptions, formatSettings, program);
     } catch (e) {
       fileNoticeReporter(params, '[infer-types]')({
         reason: firstLine(e),
@@ -94,11 +98,16 @@ function firstLine(error: unknown): string {
 function withBodyWins(
   fileName: string,
   text: string,
-  changes: TextChange[],
+  inference: InferenceChanges,
   compilerOptions: ts.CompilerOptions,
   formatSettings: ts.FormatCodeSettings,
   projectProgram: ts.Program | undefined,
 ): string | undefined {
+  const { annotations } = inference;
+  // Grows with whatever the body-only pass turns out to name.
+  const imports = [...inference.imports];
+  const changes = [...annotations, ...inference.importEdits].sort((a, b) => a.start - b.start);
+
   const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
   const candidateText = applyTextChanges(text, changes);
   const candidate = createFileLanguageService(
@@ -115,8 +124,12 @@ function withBodyWins(
 
   const originalSource = getSourceFileOrThrow(baseline, fileName);
 
+  // Imports are left out of the grouping: they belong to no function, and an
+  // import dropped with the scope it happens to sit in leaves the annotations
+  // that still name it unresolvable. They are written back from `imports`
+  // once the annotations are settled.
   const changesByFunction = new Map<ts.Node | null, TextChange[]>();
-  changes.forEach((change) => {
+  annotations.forEach((change) => {
     const fn = enclosingFunctionLike(originalSource, change.start);
     const group = changesByFunction.get(fn);
     if (group) {
@@ -138,7 +151,7 @@ function withBodyWins(
 
   // Hide call sites of contested functions from the inference engine so
   // their annotations are recomputed from body evidence alone.
-  const bodyOnlyChanges = inferBodyOnly(
+  const bodyOnly = inferBodyOnly(
     [...contested].filter((fn): fn is ts.Node => fn != null && changesByFunction.has(fn)),
     baseline,
     fileName,
@@ -148,6 +161,14 @@ function withBodyWins(
     originalSource,
     projectProgram,
   );
+  const bodyOnlyChanges = bodyOnly.changes;
+  const seenImports = new Set(imports.map(inferredImportKey));
+  bodyOnly.imports.forEach((inferredImport) => {
+    const key = inferredImportKey(inferredImport);
+    if (seenImports.has(key)) return;
+    seenImports.add(key);
+    imports.push(inferredImport);
+  });
 
   const assemble = (dropped: Set<ts.Node | null>): TextChange[] => {
     const result: TextChange[] = [];
@@ -162,24 +183,28 @@ function withBodyWins(
     return result.sort((a, b) => a.start - b.start);
   };
 
-  let finalChanges = assemble(new Set());
-  if (isNoOp(finalChanges)) {
+  let finalAnnotations = assemble(new Set());
+  if (isNoOp(finalAnnotations)) {
     return undefined;
   }
 
   // assemble() returns the original set untouched when every contested scope
   // held no annotations (errors attributed to un-annotated functions or the
-  // top level); the candidate service already validated exactly that text.
-  const originalChanges = new Set(changes);
+  // top level); the candidate service already validated exactly that text,
+  // imports and all.
+  const originalAnnotations = new Set(annotations);
   const reassembled =
-    finalChanges.length !== changes.length ||
-    finalChanges.some((change) => !originalChanges.has(change));
+    finalAnnotations.length !== annotations.length ||
+    finalAnnotations.some((change) => !originalAnnotations.has(change));
 
   // Body-only annotations may still contradict the body (a TS expressiveness
   // limit); drop those rather than suppressing inside the function. When the
   // conflict is a call to one specific annotated parameter (e.g. a redux
   // dispatch inferred too narrowly from heterogeneous calls), only that
   // parameter's annotation is dropped.
+  let finalChanges = reassembled
+    ? withImportChanges(fileName, text, finalAnnotations, imports)
+    : changes;
   let finalText = reassembled ? applyTextChanges(text, finalChanges) : candidateText;
   const finalService = reassembled
     ? createFileLanguageService(fileName, finalText, compilerOptions, projectProgram)
@@ -196,10 +221,11 @@ function withBodyWins(
     annotatedFns,
   );
   if (dropped.size > 0) {
-    finalChanges = finalChanges.filter((change) => !dropped.has(change));
-    if (isNoOp(finalChanges)) {
+    finalAnnotations = finalAnnotations.filter((change) => !dropped.has(change));
+    if (isNoOp(finalAnnotations)) {
       return undefined;
     }
+    finalChanges = withImportChanges(fileName, text, finalAnnotations, imports);
     finalText = applyTextChanges(text, finalChanges);
   }
 
@@ -289,10 +315,10 @@ function inferBodyOnly(
   formatSettings: ts.FormatCodeSettings,
   originalSource: ts.SourceFile,
   projectProgram: ts.Program | undefined,
-): Map<ts.Node, TextChange[]> {
+): { changes: Map<ts.Node, TextChange[]>; imports: InferredImport[] } {
   const bodyOnlyChanges = new Map<ts.Node, TextChange[]>();
   if (contestedFunctions.length === 0) {
-    return bodyOnlyChanges;
+    return { changes: bodyOnlyChanges, imports: [] };
   }
 
   // In-file call sites are hidden by renaming the references; cross-file call
@@ -318,11 +344,17 @@ function inferBodyOnly(
   const decoyText = applyTextChanges(text, renames);
   const decoy = createFileLanguageService(fileName, decoyText, compilerOptions, projectProgram);
   let decoyChanges: TextChange[] = [];
+  // The decoy's own import edits are written for the decoy's positions and
+  // for annotations most of which are thrown away here, so only what they
+  // import is kept; the caller writes them against the file it assembles.
+  let decoyImports: InferredImport[] = [];
   try {
     // Nothing to report from here: the decoy is an implementation detail of
     // the attribution below, and the pass over the real service has already
     // said whatever there was to say about this file.
-    decoyChanges = getInferenceChanges(decoy, fileName, formatSettings, () => {});
+    const inference = getInferenceChanges(decoy, fileName, formatSettings, () => {});
+    decoyChanges = inference.annotations;
+    decoyImports = inference.imports;
   } catch {
     // The decoy only refines which changes count as body evidence. Letting it
     // throw would discard the inferences the real service already produced,
@@ -340,7 +372,7 @@ function inferBodyOnly(
       bodyOnlyChanges.set(fn, [mapped]);
     }
   });
-  return bodyOnlyChanges;
+  return { changes: bodyOnlyChanges, imports: decoyImports };
 }
 
 function attributeErrors(

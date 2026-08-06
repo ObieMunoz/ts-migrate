@@ -3,7 +3,13 @@ import { SourceTextUpdate } from '../../utils/updateSourceText';
 import { getTextPreservingWhitespace } from './text';
 
 export type DefaultImport = { defaultImport: string; moduleSpecifier: string };
-export type NamedImport = { namedImport: string; moduleSpecifier: string };
+/**
+ * `isTypeOnly` writes the name as `{ type Foo }` rather than `{ Foo }`, which
+ * is what a project with `verbatimModuleSyntax` needs for a name that is only
+ * ever a type. It is dropped where the declaration the name joins is already
+ * an `import type`, since the two spellings cannot be combined.
+ */
+export type NamedImport = { namedImport: string; moduleSpecifier: string; isTypeOnly?: boolean };
 export type ModuleImport = { moduleSpecifier: string };
 
 type AddImport = DefaultImport | NamedImport;
@@ -154,7 +160,7 @@ export function updateImports(
             : []),
           ...namedToAdd.map((cur) =>
             ts.factory.createImportSpecifier(
-              false,
+              !importClause.isTypeOnly && (cur.isTypeOnly ?? false),
               undefined,
               ts.factory.createIdentifier(cur.namedImport),
             ),
@@ -226,7 +232,7 @@ export function updateImports(
           ? ts.factory.createNamedImports(
               namedToAdd.map((cur) =>
                 ts.factory.createImportSpecifier(
-                  false,
+                  cur.isTypeOnly ?? false,
                   undefined,
                   ts.factory.createIdentifier(cur.namedImport),
                 ),
@@ -274,12 +280,13 @@ export function updateImports(
 
     const pos =
       importDeclarations.length > 0 ? importDeclarations[importDeclarations.length - 1].end : 0;
-    nodes.forEach((node, i) => {
-      let text = printer.printNode(ts.EmitHint.Unspecified, node, sourceFile);
-      if (pos > 0 || i > 0) text = `\n${text}`;
+    const printed = nodes
+      .map((node) => printer.printNode(ts.EmitHint.Unspecified, node, sourceFile))
+      .join('\n');
 
-      updates.push({ kind: 'insert', index: pos, text });
-    });
+    // After the last import there is a line to continue; at the top of a file
+    // that imports nothing there is the first statement to keep off.
+    updates.push({ kind: 'insert', index: pos, text: pos > 0 ? `\n${printed}` : `${printed}\n` });
   }
 
   return updates;

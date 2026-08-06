@@ -243,6 +243,14 @@ does:
   type and `propTypes` is one). The plugin then asks for them one position
   at a time, writes the ones that come back, and the run reports at the end
   that the file got fewer types than it asked for.
+- An annotation brings the imports it needs with it. A file that imports a
+  value and not its type gets annotations naming that type
+  (`prefetch: (arg0: ServerOptions) => any` where only `serverOptions` was
+  imported), and the name is added to the file's import of that module, or a
+  new declaration is written where there is none. The imports follow the
+  annotations that survive: one whose annotation was recomputed from body
+  evidence is written for the type the second pass named, and one whose
+  annotation was dropped is not written at all.
 
 ## What widen-annotations will and will not write
 

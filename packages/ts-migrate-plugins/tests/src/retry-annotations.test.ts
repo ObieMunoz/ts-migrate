@@ -85,6 +85,22 @@ export function label(when: Date, extra: any) {
 `);
   });
 
+  it('imports the type it re-infers, which the annotation it replaces was hiding', () => {
+    const text = `import { record } from './types';
+
+export function keep(entry: any) {
+  record(entry);
+}
+`;
+
+    expect(runInFixture(text)).toBe(`import { record, Entry } from './types';
+
+export function keep(entry: Entry) {
+  record(entry);
+}
+`);
+  });
+
   it('changes nothing on a second run', () => {
     const text = `import { stamp } from './types';
 
