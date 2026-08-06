@@ -1,5 +1,6 @@
 import { Plugin as PluginType } from '@obiemunoz/ts-migrate-server';
 import addConversionsPlugin from './plugins/add-conversions';
+import addMissingImportsPlugin from './plugins/add-missing-imports';
 import convertCommonjsPlugin from './plugins/convert-commonjs';
 import declareEmptyObjectPropertiesPlugin from './plugins/declare-empty-object-properties';
 import declareMissingClassPropertiesPlugin from './plugins/declare-missing-class-properties';
@@ -96,6 +97,7 @@ export type TypePrintRefusal = TypePrintRefusalType;
 
 export {
   addConversionsPlugin,
+  addMissingImportsPlugin,
   convertCommonjsPlugin,
   declareEmptyObjectPropertiesPlugin,
   declareMissingClassPropertiesPlugin,

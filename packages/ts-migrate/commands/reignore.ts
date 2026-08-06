@@ -1,6 +1,7 @@
 import {
   createSuppressionExplainer,
   createTypesPackageDetector,
+  addMissingImportsPlugin,
   eslintFixPlugin,
   retryAnnotationsPlugin,
   retryConversionsPlugin,
@@ -32,6 +33,10 @@ interface ReignoreParams {
   projectEslint?: boolean;
   /** Declare modules with no types available instead of suppressing their imports (default). */
   declareUntypedModules?: boolean;
+  /** Import the names an earlier run suppressed as TS2304 instead (default). */
+  addMissingImports?: boolean;
+  /** What to do with a name several modules export. Defaults to taking the first. */
+  ambiguousImports?: 'first' | 'skip';
   /** Re-infer the any annotations an earlier run wrote. What `retype` adds. */
   annotations?: boolean;
   /** Retry the `as any` assertions add-conversions inserted. */
@@ -56,6 +61,8 @@ export default async function reignore({
   bootstrap = true,
   projectEslint,
   declareUntypedModules = true,
+  addMissingImports = true,
+  ambiguousImports,
   annotations = false,
   casts = false,
   dryRun,
@@ -94,6 +101,13 @@ export default async function reignore({
     .addPlugin(typesPackageDetector.plugin, {});
   if (declareUntypedModules) {
     config.addPlugin(typesPackageDetector.declarationsPlugin, {});
+  }
+  // With the suppressions off, the names an earlier run hid behind them are
+  // reported again, and the ones a module in the program exports are imported
+  // rather than re-suppressed. Before the retry passes below, which read the
+  // types those imports restore.
+  if (addMissingImports) {
+    config.addPlugin(withChangeTracking(addMissingImportsPlugin), { ambiguous: ambiguousImports });
   }
   // After the declarations the new types come from, and before the passes that
   // read and suppress what is left, so a removal that reintroduces an error

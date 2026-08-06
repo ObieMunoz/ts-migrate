@@ -220,6 +220,18 @@ function migrationFlags<T>(cmd: Argv<T>) {
       'declareGlobals',
       'Declare the properties the code assigns to window, global and globalThis in types/ts-migrate-globals.d.ts, instead of casting every read and write of them. The file is added to the tsconfig if it does not already match it. Disable with --declareGlobals=false.',
     )
+    .boolean('addMissingImports')
+    .default('addMissingImports', true)
+    .describe(
+      'addMissingImports',
+      "Import the names a file uses but never brings in, from the module TypeScript's own quick fix offers, instead of suppressing each one as TS2304. Disable with --addMissingImports=false.",
+    )
+    .choices('ambiguousImports', ['first', 'skip'] as const)
+    .default('ambiguousImports', 'first')
+    .describe(
+      'ambiguousImports',
+      'What to do with a name TypeScript offers from more than one module: take the module it ranks first and mark the import for review (first), or leave the name for a person and let ts-ignore suppress it (skip).',
+    )
     .string('typescript')
     .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
     .boolean('typesPreflight')
@@ -254,6 +266,8 @@ interface PipelineArgs {
   projectEslint?: boolean;
   declareUntypedModules?: boolean;
   declareGlobals?: boolean;
+  addMissingImports?: boolean;
+  ambiguousImports?: 'first' | 'skip';
 }
 
 function pluginParams(args: PipelineArgs): BuildMigrateConfigParams {
@@ -274,6 +288,8 @@ function pluginParams(args: PipelineArgs): BuildMigrateConfigParams {
     projectEslint: args.projectEslint,
     declareUntypedModules: args.declareUntypedModules,
     declareGlobals: args.declareGlobals,
+    addMissingImports: args.addMissingImports,
+    ambiguousImports: args.ambiguousImports,
   };
 }
 
@@ -526,6 +542,18 @@ function reignoreFlags<T>(cmd: Argv<T>, command: string) {
     .describe(
       'declareUntypedModules',
       'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --declareUntypedModules=false.',
+    )
+    .boolean('addMissingImports')
+    .default('addMissingImports', true)
+    .describe(
+      'addMissingImports',
+      "Import the names a file uses but never brings in, from the module TypeScript's own quick fix offers, instead of re-suppressing each one as TS2304. Disable with --addMissingImports=false.",
+    )
+    .choices('ambiguousImports', ['first', 'skip'] as const)
+    .default('ambiguousImports', 'first')
+    .describe(
+      'ambiguousImports',
+      'What to do with a name TypeScript offers from more than one module: take the module it ranks first and mark the import for review (first), or leave the name for a person and let ts-ignore suppress it (skip).',
     )
     .string('typescript')
     .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
@@ -801,6 +829,8 @@ cli
           bootstrap: args.bootstrap,
           projectEslint: args.projectEslint,
           declareUntypedModules: args.declareUntypedModules,
+          addMissingImports: args.addMissingImports,
+          ambiguousImports: args.ambiguousImports,
           casts: args.casts,
           typesPreflight: args.typesPreflight,
           suppressionReportFile: args.suppressionReportFile,
@@ -830,6 +860,8 @@ cli
           bootstrap: args.bootstrap,
           projectEslint: args.projectEslint,
           declareUntypedModules: args.declareUntypedModules,
+          addMissingImports: args.addMissingImports,
+          ambiguousImports: args.ambiguousImports,
           annotations: true,
           casts: args.casts,
           typesPreflight: args.typesPreflight,

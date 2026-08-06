@@ -650,6 +650,22 @@ relax-parameter-shapes` to keep those shapes as they were inferred.
   in the project's tsconfig, editing `"include"` or `"files"` when it has to;
   without a tsconfig it can read, it casts at each site instead, since a
   declaration file nothing includes would leave the project failing `tsc`.
+- `--addMissingImports=false`: suppress every name a file uses but never brings
+  in, instead of importing it. By default the run asks TypeScript for the same
+  import its quick fix menu offers and applies it, so the helpers and components
+  a bundler used to inject become real imports rather than a
+  `@ts-expect-error TS(2304)` per use site. This matters beyond the comment
+  count: a suppressed name is `any`, so every pass that reads types afterwards
+  infers from the `any` instead of the real type. Names no module in the
+  program exports are untouched and still get the comment.
+- `--ambiguousImports first|skip`: what to do with a name TypeScript offers from
+  more than one module. `first` (the default, and what "Add all missing imports"
+  does in an editor) takes the module TypeScript ranks first, marks the import
+  with the modules it passed over (see the follow-up markers below), and reports
+  the count; `skip` leaves those names alone, so they keep the suppression
+  comment and a person picks. A module and a barrel that re-exports it count as
+  one candidate, not two, so this only fires where the name genuinely has two
+  homes.
 - `--dryRun`: run every plugin pass but write nothing to disk. Prints each
   file a real run would update, with the suppression and `any` counts it
   would then contain. The report matches a real run exactly (with
@@ -698,6 +714,11 @@ existing suppression comments, then re-adds only the ones still needed.
 - `--gitignore=false`: same behavior as in `migrate`.
 - `--bootstrap=false`: same behavior as in `migrate`.
 - `--declareUntypedModules=false`: same behavior as in `migrate`.
+- `--addMissingImports=false`, `--ambiguousImports first|skip`: same behavior as
+  in `migrate`. This is the retroactive path for a project migrated before the
+  import pass existed: the suppressions come off, the `Cannot find name` errors
+  are reported again, and the names a module in the program exports become real
+  imports instead of the comments going back on.
 - `--dryRun`: same preview behavior as `migrate`.
 - `--jsonSummary <file>`: same machine-readable summary as `migrate`.
 - `--typescript <path>`: same compiler override as `migrate`. A scoped

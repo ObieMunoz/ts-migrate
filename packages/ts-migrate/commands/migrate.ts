@@ -1,5 +1,6 @@
 import {
   addConversionsPlugin,
+  addMissingImportsPlugin,
   convertCommonjsPlugin,
   declareEmptyObjectPropertiesPlugin,
   declareMissingClassPropertiesPlugin,
@@ -41,6 +42,7 @@ import log from 'updatable-log';
 
 export const availablePlugins = [
   addConversionsPlugin,
+  addMissingImportsPlugin,
   convertCommonjsPlugin,
   declareEmptyObjectPropertiesPlugin,
   declareMissingClassPropertiesPlugin,
@@ -91,6 +93,8 @@ export interface BuildMigrateConfigParams {
   projectEslint?: boolean;
   declareUntypedModules?: boolean;
   declareGlobals?: boolean;
+  addMissingImports?: boolean;
+  ambiguousImports?: 'first' | 'skip';
 }
 
 interface MigrateCommandConfig {
@@ -130,6 +134,7 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
 
   const options = new Map<Plugin<any>, unknown>([
     entry(addConversionsPlugin, { anyAlias }),
+    entry(addMissingImportsPlugin, { ambiguous: params.ambiguousImports }),
     entry(convertCommonjsPlugin, {}),
     entry(declareEmptyObjectPropertiesPlugin, { anyAlias }),
     entry(declareMissingClassPropertiesPlugin, { anyAlias }),
@@ -199,6 +204,8 @@ function inapplicableFlags(params: BuildMigrateConfigParams, options: unknown): 
   if (params.protectedRegex !== undefined) setFlags.push(['--protectedRegex', ['protectedRegex']]);
   if (params.publicRegex !== undefined) setFlags.push(['--publicRegex', ['publicRegex']]);
   if (params.projectEslint === false) setFlags.push(['--projectEslint=false', ['projectEslint']]);
+  if (params.ambiguousImports !== undefined)
+    setFlags.push(['--ambiguousImports', ['ambiguous']]);
 
   const accepted = new Set(Object.keys(options as object));
   return setFlags
@@ -278,6 +285,16 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     config
       .addPlugin(globalDeclarations.plugin, {})
       .addPlugin(globalDeclarations.declarationsPlugin, {});
+  }
+  if (params.addMissingImports ?? true) {
+    // Imports the names nothing in scope provides, from the module TypeScript's
+    // own quick fix offers. After the globals above, so a name the project
+    // really does hang off window is declared rather than imported from a
+    // module that happens to export it, and after jsdoc, whose annotations
+    // bring in type names of their own. Before every pass that reads types
+    // across files: a name left unimported is suppressed and reads as `any`,
+    // and each of those passes then infers from the `any` instead of the type.
+    config.addPlugin(addMissingImportsPlugin, optionsFor(addMissingImportsPlugin));
   }
   config
     .addPlugin(reactInlineImportedPropTypesPlugin, optionsFor(reactInlineImportedPropTypesPlugin))
