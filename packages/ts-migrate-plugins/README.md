@@ -257,6 +257,11 @@ does:
   be written with the name imported twice, which is a duplicate identifier
   rather than two imports; the first module named wins, and a name the file
   already imports keeps the import it has.
+- An import that would not compile anyway costs the file its annotations. A
+  name the file declares itself is a duplicate identifier rather than an
+  import, and the error it leaves sits on no annotation, so nothing else here
+  answers for it. The file is left as it was and the run reports what it
+  declined.
 
 ## What widen-annotations will and will not write
 

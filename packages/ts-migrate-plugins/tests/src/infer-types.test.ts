@@ -2,7 +2,7 @@ import fs from 'fs';
 import ts from 'typescript';
 import type { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
 import { createTmpDir } from '@obiemunoz/ts-migrate-test-utils';
-import { midRunProject, realPluginParams } from '../test-utils';
+import { midRunProject, realPluginParams, typeCheck } from '../test-utils';
 import inferTypesPlugin from '../../src/plugins/infer-types';
 import explicitAnyPlugin from '../../src/plugins/explicit-any';
 
@@ -380,6 +380,32 @@ register(wrap);
 declare function register(f: (s: string) => void): void;
 register(wrap);
 `);
+  });
+
+  it('keeps annotations when the conflict is a consumer that never calls them', async () => {
+    // The improper user of a body-derived type does not have to be a call.
+    // This one is an assignment at the top level, so the error it produces
+    // sits in no annotated function and nothing here attributes it - the same
+    // position an import error lands in. Only the imports are refused there;
+    // an annotation contradicting a consumer is the output this pass is for.
+    const text = `function wrap(cb) {
+  return cb(1);
+}
+const registered: (f: (s: string) => void) => void = wrap;
+export default registered;
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`function wrap(cb: (arg0: number) => any) {
+  return cb(1);
+}
+const registered: (f: (s: string) => void) => void = wrap;
+export default registered;
+`);
+    expect(typeCheck(result as string)).toEqual([
+      expect.stringContaining("TS2322: Type '(cb: (arg0: number) => any) => any'"),
+    ]);
   });
 
   it('retains body-derived types when the only conflict is a nested call as a dispatch argument', async () => {

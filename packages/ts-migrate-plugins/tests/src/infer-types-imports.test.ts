@@ -1,4 +1,5 @@
 import path from 'path';
+import type { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
 import { fixturePluginParams } from '../test-utils';
 import inferTypesPlugin from '../../src/plugins/infer-types';
 
@@ -7,8 +8,11 @@ import inferTypesPlugin from '../../src/plugins/infer-types';
 const rootDir = path.resolve(__dirname, '../fixtures/infer-types');
 const entryFile = path.join(rootDir, 'entry.ts');
 
-function run(text: string): string | void {
-  return inferTypesPlugin.run(fixturePluginParams({ rootDir, fileName: entryFile, text }));
+function run(text: string, reportFileNotice?: (notice: PluginFileNotice) => void): string | void {
+  return inferTypesPlugin.run({
+    ...fixturePluginParams({ rootDir, fileName: entryFile, text }),
+    reportFileNotice,
+  });
 }
 
 describe('infer-types plugin, the imports its annotations need', () => {
@@ -144,5 +148,64 @@ prefetchers.map(prefetch => prefetch(options));
     expect(result).toContain(
       'prefetchers.map((prefetch: (arg0: Options) => any) => prefetch(options));',
     );
+  });
+
+  it('writes nothing when an import it needs collides with a declaration in the file', () => {
+    // An import belongs to no function, so an error written into one reaches
+    // none of the grouping that answers for the annotations: it used to ride
+    // out of the pass with the rest of the file. Here the file already
+    // declares `Options`, so importing the type of that name is a duplicate
+    // identifier (TS2440) rather than an import.
+    const text = `import { options } from './types';
+
+export interface Options {
+  size: number;
+}
+
+declare const prefetchers: any;
+prefetchers.map(prefetch => prefetch(options));
+`;
+    const notices: PluginFileNotice[] = [];
+
+    expect(run(text, (notice) => notices.push(notice))).toBeUndefined();
+    expect(notices).toEqual([
+      {
+        reason: 'The imports its annotations need would not compile',
+        hint: 'The file keeps the annotations it had; explicit-any fills the rest in with any.',
+      },
+    ]);
+  });
+
+  it('keeps a file whose imports carried an error of their own before the pass', () => {
+    // Adding a name reprints the whole declaration, which puts a multi-line
+    // clause on one line and moves every name in it. The error the file
+    // already had on `NotThere` therefore comes back from the diff looking
+    // new, and lands inside the text this pass wrote - the one shape that
+    // would otherwise cost the file its annotations for a fault it had all
+    // along.
+    const text = `import {
+  NotThere,
+  connect,
+} from './types';
+
+export function open(target) {
+  connect(target);
+  return target.host.length;
+}
+
+open(1);
+export const missing = NotThere;
+`;
+
+    expect(run(text)).toBe(`import { NotThere, connect, Options } from './types';
+
+export function open(target: Options) {
+  connect(target);
+  return target.host.length;
+}
+
+open(1);
+export const missing = NotThere;
+`);
   });
 });

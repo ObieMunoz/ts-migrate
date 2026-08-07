@@ -1,5 +1,10 @@
 import ts from 'typescript';
-import { errorMessage, fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
+import {
+  errorMessage,
+  fileNoticeReporter,
+  Plugin,
+  PluginFileNotice,
+} from '@obiemunoz/ts-migrate-server';
 import {
   applyTextChanges,
   createFileLanguageService,
@@ -62,10 +67,11 @@ const inferTypesPlugin: Plugin = {
     }
 
     const formatSettings = inferenceFormatSettings(lintConfig);
+    const report = fileNoticeReporter(params, '[infer-types]');
 
     try {
       const inference = getInferenceChanges(languageService, fileName, formatSettings, (error) =>
-        fileNoticeReporter(params, '[infer-types]')({
+        report({
           reason: `Could not write every type it inferred: ${firstLine(error)}`,
           hint: 'The rest were written; explicit-any fills in what is left.',
           recovered: true,
@@ -78,9 +84,17 @@ const inferTypesPlugin: Plugin = {
       const program = languageService.getProgram();
       const compilerOptions = getValidationOptions(program ? program.getCompilerOptions() : {});
 
-      return withBodyWins(fileName, text, inference, compilerOptions, formatSettings, program);
+      return withBodyWins(
+        fileName,
+        text,
+        inference,
+        compilerOptions,
+        formatSettings,
+        program,
+        report,
+      );
     } catch (e) {
-      fileNoticeReporter(params, '[infer-types]')({
+      report({
         reason: firstLine(e),
         hint: 'The file keeps the annotations it had; explicit-any fills the rest in with any.',
       });
@@ -102,6 +116,7 @@ function withBodyWins(
   compilerOptions: ts.CompilerOptions,
   formatSettings: ts.FormatCodeSettings,
   projectProgram: ts.Program | undefined,
+  report: (notice: PluginFileNotice) => void,
 ): string | undefined {
   const { annotations } = inference;
   // Grows with whatever the body-only pass turns out to name.
@@ -209,7 +224,7 @@ function withBodyWins(
   const finalService = reassembled
     ? createFileLanguageService(fileName, finalText, compilerOptions, projectProgram)
     : candidate;
-  const finalErrors = reassembled
+  let finalErrors = reassembled
     ? findNewErrors(baseline, finalService, finalChanges, fileName)
     : newErrors;
   const dropped = collectBodyConflictDrops(
@@ -227,9 +242,87 @@ function withBodyWins(
     }
     finalChanges = withImportChanges(fileName, text, finalAnnotations, imports);
     finalText = applyTextChanges(text, finalChanges);
+    // Dropping an annotation rewrites the imports it needed, so the text
+    // leaving here is no longer the text that was checked.
+    finalErrors = findNewErrors(
+      baseline,
+      createFileLanguageService(fileName, finalText, compilerOptions, projectProgram),
+      finalChanges,
+      fileName,
+    );
+  }
+
+  if (brokeItsOwnImports(finalErrors, baseline, fileName, finalChanges, finalAnnotations)) {
+    report({
+      reason: 'The imports its annotations need would not compile',
+      hint: 'The file keeps the annotations it had; explicit-any fills the rest in with any.',
+    });
+    return undefined;
   }
 
   return finalText;
+}
+
+/**
+ * Whether the change set left an error inside an import it wrote.
+ *
+ * Every other new error names a scope this pass annotated, and the grouping
+ * above answers for it: the annotation is dropped, recomputed from the body
+ * alone, or left standing on purpose so that ts-ignore flags the caller that no
+ * longer matches. Imports name no scope - which is why they are kept out of the
+ * grouping - so an error written into one contests nothing and rides out of
+ * here with the rest of the file. A name imported twice (TS2300) is what that
+ * looked like in a user's file.
+ *
+ * A diagnostic the baseline already reports somewhere in the file does not
+ * count: an import declaration reprinted to hold one more name keeps the
+ * offsets inside it, so one that was there all along comes back from the diff
+ * looking new.
+ */
+function brokeItsOwnImports(
+  errors: ts.Diagnostic[],
+  baseline: ts.LanguageService,
+  fileName: string,
+  changes: TextChange[],
+  annotations: TextChange[],
+): boolean {
+  if (errors.length === 0) return false;
+  const written = writtenRanges(changes, new Set(annotations));
+  const inWritten = errors.filter((error) => {
+    const position = error.start;
+    return position != null && written.some(({ start, end }) => position >= start && position < end);
+  });
+  if (inWritten.length === 0) return false;
+
+  const key = (d: ts.Diagnostic) =>
+    `${d.code}:${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`;
+  const reported = new Set(
+    baseline
+      .getSemanticDiagnostics(fileName)
+      .filter((d) => d.category === ts.DiagnosticCategory.Error)
+      .map(key),
+  );
+  return inWritten.some((error) => !reported.has(key(error)));
+}
+
+/**
+ * Where the changes that are not annotations land in the text they produce.
+ * Everything this pass writes is either an annotation or an import.
+ */
+function writtenRanges(
+  changes: TextChange[],
+  annotations: Set<TextChange>,
+): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = [];
+  let shift = 0;
+  [...changes]
+    .sort((a, b) => a.start - b.start)
+    .forEach((change) => {
+      const start = change.start + shift;
+      shift += change.text.length - change.length;
+      if (!annotations.has(change)) ranges.push({ start, end: start + change.text.length });
+    });
+  return ranges;
 }
 
 function collectBodyConflictDrops(
