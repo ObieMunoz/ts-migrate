@@ -3,6 +3,18 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.20.1](https://github.com/ObieMunoz/ts-migrate/compare/v0.20.0...v0.20.1) (2026-08-07)
+
+
+### Bug Fixes
+
+* **ts-migrate-plugins:** import a name once where two modules declare it ([#349](https://github.com/ObieMunoz/ts-migrate/issues/349)) ([93460ae](https://github.com/ObieMunoz/ts-migrate/commit/93460aefe3dec6f1777cf091dfda24d6230435cd))
+* **ts-migrate-plugins:** write nothing when the imports it adds would not compile ([#348](https://github.com/ObieMunoz/ts-migrate/issues/348)) ([7efa58f](https://github.com/ObieMunoz/ts-migrate/commit/7efa58fe3883cb74ba53f760bfe8a356269b45ca))
+
+
+
+
+
 # [0.20.0](https://github.com/ObieMunoz/ts-migrate/compare/v0.19.1...v0.20.0) (2026-08-06)
 
 
