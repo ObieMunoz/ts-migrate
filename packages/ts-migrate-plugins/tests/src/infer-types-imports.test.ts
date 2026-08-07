@@ -84,6 +84,46 @@ open('a');
 `);
   });
 
+  it('binds a name once where two modules declare it', () => {
+    // What redux and the toolkit that re-exports it look like from here: one
+    // name, two modules, and an annotation that names it for both. The engine
+    // asks for an import per symbol, and writing both binds the name twice,
+    // which is a duplicate identifier rather than two imports.
+    const text = `import { action } from './redux';
+import { toolkitAction } from './toolkit';
+
+declare const prefetchers: any;
+prefetchers.map(prefetch => prefetch({ from: action, to: toolkitAction }));
+`;
+
+    expect(run(text)).toBe(`import { action, AnyAction } from './redux';
+import { toolkitAction } from './toolkit';
+
+declare const prefetchers: any;
+prefetchers.map((prefetch: (arg0: { from: AnyAction; to: AnyAction; }) => any) => prefetch({ from: action, to: toolkitAction }));
+`);
+  });
+
+  it('leaves a name the file already imports to the import it has', () => {
+    const text = `import { AnyAction } from './redux';
+import { toolkitAction } from './toolkit';
+
+declare const seen: AnyAction;
+declare const prefetchers: any;
+prefetchers.map(prefetch => prefetch(toolkitAction));
+console.log(seen);
+`;
+
+    expect(run(text)).toBe(`import { AnyAction } from './redux';
+import { toolkitAction } from './toolkit';
+
+declare const seen: AnyAction;
+declare const prefetchers: any;
+prefetchers.map((prefetch: (arg0: AnyAction) => any) => prefetch(toolkitAction));
+console.log(seen);
+`);
+  });
+
   it('writes a whole import declaration for a module the file does not import', () => {
     const text = `declare const options: import('./types').Options;
 
