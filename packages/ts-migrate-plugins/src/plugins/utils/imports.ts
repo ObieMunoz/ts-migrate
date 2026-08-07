@@ -308,15 +308,22 @@ function getUsedIdentifiers(sourceFile: ts.SourceFile) {
   return usedIdentifiers;
 }
 
+/** Every name the file's imports already bind, which is every name not to add. */
 function getPresentedImportIdentifiers(sourceFile: ts.SourceFile) {
   return sourceFile.statements.filter(ts.isImportDeclaration).reduce((presentedImports, item) => {
-    if (item.importClause) {
-      if (item.importClause.namedBindings && ts.isNamedImports(item.importClause.namedBindings)) {
-        item.importClause.namedBindings.elements.forEach(
-          (x) => x.name && presentedImports.add(x.name.escapedText.toString()),
-        );
-      } else if (item.importClause.name && ts.isIdentifier(item.importClause.name)) {
-        presentedImports.add(item.importClause.name.text);
+    const clause = item.importClause;
+    if (clause) {
+      if (clause.name && ts.isIdentifier(clause.name)) {
+        presentedImports.add(clause.name.text);
+      }
+      if (clause.namedBindings) {
+        if (ts.isNamespaceImport(clause.namedBindings)) {
+          presentedImports.add(clause.namedBindings.name.text);
+        } else {
+          clause.namedBindings.elements.forEach(
+            (x) => x.name && presentedImports.add(x.name.escapedText.toString()),
+          );
+        }
       }
     }
     return presentedImports;
@@ -339,39 +346,17 @@ function isModuleImport(update: AnyImport): update is ModuleImport {
   );
 }
 
+/**
+ * One add per name, since a name is what an import binds and a file binds each
+ * of its names once. Two modules offering one name is a duplicate identifier
+ * rather than two imports, so the first module asked for wins.
+ */
 function uniqAddImportUpdates(updates: AddImport[]): AddImport[] {
-  const seen: { [moduleSpecifier: string]: { name: Set<string>; namedImport: Set<string> } } = {};
-
-  const initSeen = (moduleSpecifier: string) => {
-    if (!seen[moduleSpecifier]) {
-      seen[moduleSpecifier] = { name: new Set(), namedImport: new Set() };
-    }
-  };
-
-  const isSeen = (update: DefaultImport | NamedImport) => {
-    initSeen(update.moduleSpecifier);
-    return (
-      (isDefaultImport(update) && seen[update.moduleSpecifier].name.has(update.defaultImport)) ||
-      (isNamedImport(update) && seen[update.moduleSpecifier].namedImport.has(update.namedImport))
-    );
-  };
-
-  const markAsSeen = (update: DefaultImport | NamedImport) => {
-    initSeen(update.moduleSpecifier);
-    if (isDefaultImport(update)) {
-      seen[update.moduleSpecifier].name.add(update.defaultImport);
-    } else if (isNamedImport(update)) {
-      seen[update.moduleSpecifier].namedImport.add(update.namedImport);
-    }
-  };
-
-  const newUpdates: AddImport[] = [];
-  for (const update of updates) {
-    if (!isSeen(update)) {
-      newUpdates.push(update);
-      markAsSeen(update);
-    }
-  }
-
-  return newUpdates;
+  const seen = new Set<string>();
+  return updates.filter((update) => {
+    const name = isDefaultImport(update) ? update.defaultImport : update.namedImport;
+    if (seen.has(name)) return false;
+    seen.add(name);
+    return true;
+  });
 }

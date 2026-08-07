@@ -139,7 +139,80 @@ export function getInferenceChanges(
         annotations.push({ start: span.start, length: span.length, text: annotation });
       });
     });
-  return { annotations, importEdits, imports: addedImports(sourceFile, importEdits) };
+  return { annotations, ...importsBoundOnce(sourceFile, importEdits) };
+}
+
+/**
+ * The import edits, minus any that would bind a name the file already binds,
+ * with what the survivors add.
+ *
+ * The fix writes an import for each type symbol an annotation names, and two
+ * symbols can carry one name: `AnyAction` as `redux` declares it and as the
+ * toolkit re-exporting it does. Writing both binds the name twice, which is a
+ * duplicate identifier rather than two imports, so the first binding stands
+ * and the later edit is dropped whole. Where that leaves an annotation reading
+ * its name from the wrong module, the annotation stops checking and the
+ * caller's validation drops it, which is the answer it has for any other
+ * annotation the file rejects.
+ */
+function importsBoundOnce(
+  sourceFile: ts.SourceFile | undefined,
+  importEdits: TextChange[],
+): { importEdits: TextChange[]; imports: InferredImport[] } {
+  const imports = addedImports(sourceFile, importEdits);
+  if (!sourceFile || imports.length === 0 || !bindsTwice(sourceFile, imports)) {
+    return { importEdits, imports };
+  }
+
+  // Read an edit at a time, which the batch cannot be: an edit is kept or
+  // dropped by the name it adds, and only its own text says which that is.
+  const bound = boundNames(sourceFile);
+  const keptEdits: TextChange[] = [];
+  const kept: InferredImport[] = [];
+  importEdits.forEach((edit) => {
+    const added = addedImports(sourceFile, [edit]);
+    if (added.some((inferredImport) => bound.has(inferredImport.name))) return;
+    added.forEach((inferredImport) => {
+      bound.add(inferredImport.name);
+      kept.push(inferredImport);
+    });
+    keptEdits.push(edit);
+  });
+  return { importEdits: keptEdits, imports: kept };
+}
+
+function bindsTwice(sourceFile: ts.SourceFile, imports: InferredImport[]): boolean {
+  const bound = boundNames(sourceFile);
+  return imports.some((inferredImport) => {
+    if (bound.has(inferredImport.name)) return true;
+    bound.add(inferredImport.name);
+    return false;
+  });
+}
+
+/**
+ * Every name the file's imports bind. Wider than `importedNames`, which
+ * reports what can be written back: a namespace import is not something to
+ * write, but it is a name that is taken.
+ */
+function boundNames(sourceFile: ts.SourceFile): Set<string> {
+  const names = new Set<string>();
+  sourceFile.statements.forEach((statement) => {
+    if (ts.isImportEqualsDeclaration(statement)) {
+      names.add(statement.name.text);
+      return;
+    }
+    if (!ts.isImportDeclaration(statement) || !statement.importClause) return;
+    const { name, namedBindings } = statement.importClause;
+    if (name) names.add(name.text);
+    if (!namedBindings) return;
+    if (ts.isNamespaceImport(namedBindings)) {
+      names.add(namedBindings.name.text);
+    } else {
+      namedBindings.elements.forEach((element) => names.add(element.name.text));
+    }
+  });
+  return names;
 }
 
 /**

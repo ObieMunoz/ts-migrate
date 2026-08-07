@@ -251,7 +251,12 @@ does:
   new declaration is written where there is none. The imports follow the
   annotations that survive: one whose annotation was recomputed from body
   evidence is written for the type the second pass named, and one whose
-  annotation was dropped is not written at all.
+  annotation was dropped is not written at all. Each name is imported once. Two
+  modules can declare one name (`AnyAction` as `redux` declares it and as the
+  toolkit re-exporting it does), and an annotation naming both would otherwise
+  be written with the name imported twice, which is a duplicate identifier
+  rather than two imports; the first module named wins, and a name the file
+  already imports keeps the import it has.
 
 ## What widen-annotations will and will not write
 

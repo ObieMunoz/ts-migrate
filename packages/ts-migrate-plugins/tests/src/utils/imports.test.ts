@@ -249,6 +249,54 @@ import a1 from "modc"; type Props = WithStylesProps; console.log(a0, a1);
 `);
   });
 
+  it('binds a name once where two modules offer it', () => {
+    const sourceText = `type Props = { one: a0 };
+`;
+    expect(
+      updateSourceText(
+        sourceText,
+        updateImports(
+          ts.createSourceFile('file.ts', sourceText, ts.ScriptTarget.Latest),
+          [
+            { namedImport: 'a0', moduleSpecifier: 'mod1' },
+            { namedImport: 'a0', moduleSpecifier: 'mod2' },
+          ],
+          [],
+        ),
+      ),
+    ).toBe(`import { a0 } from "mod1";
+type Props = { one: a0 };
+`);
+  });
+
+  it('does not add a name a namespace import binds', () => {
+    const sourceText = `import * as a0 from 'mod1';
+
+type Props = { one: a0.Shape };
+`;
+    expect(
+      updateImports(
+        ts.createSourceFile('file.ts', sourceText, ts.ScriptTarget.Latest),
+        [{ namedImport: 'a0', moduleSpecifier: 'mod2' }],
+        [],
+      ),
+    ).toEqual([]);
+  });
+
+  it('does not add a name a default import binds beside named ones', () => {
+    const sourceText = `import a0, { a1 } from 'mod1';
+
+type Props = { one: a0; two: a1 };
+`;
+    expect(
+      updateImports(
+        ts.createSourceFile('file.ts', sourceText, ts.ScriptTarget.Latest),
+        [{ namedImport: 'a0', moduleSpecifier: 'mod2' }],
+        [],
+      ),
+    ).toEqual([]);
+  });
+
   it('writes a type-only name as a type-only specifier', () => {
     const sourceText = `import { a0 } from 'mod1';
 
