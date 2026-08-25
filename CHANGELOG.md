@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.20.2](https://github.com/ObieMunoz/ts-migrate/compare/v0.20.1...v0.20.2) (2026-08-25)
+
+
+### Bug Fixes
+
+* **ts-migrate-plugins:** leave a returned function's parameters for explicit-any ([#350](https://github.com/ObieMunoz/ts-migrate/issues/350)) ([98f128c](https://github.com/ObieMunoz/ts-migrate/commit/98f128cb18bf4695fb5196cdfdc1d74e2e8fe084))
+
+
+
+
+
 ## [0.20.1](https://github.com/ObieMunoz/ts-migrate/compare/v0.20.0...v0.20.1) (2026-08-07)
 
 
