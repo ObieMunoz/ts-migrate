@@ -22,7 +22,7 @@ import {
   inferredImportKey,
   LintConfig,
 } from '../utils/inferFromUsage';
-import { withImportChanges } from './utils/annotationImports';
+import { importChangesFor, withImportChanges } from './utils/annotationImports';
 
 export type { LintConfig };
 
@@ -70,12 +70,17 @@ const inferTypesPlugin: Plugin = {
     const report = fileNoticeReporter(params, '[infer-types]');
 
     try {
-      const inference = getInferenceChanges(languageService, fileName, formatSettings, (error) =>
-        report({
-          reason: `Could not write every type it inferred: ${firstLine(error)}`,
-          hint: 'The rest were written; explicit-any fills in what is left.',
-          recovered: true,
-        }),
+      const inference = withoutContextuallyTypedParameters(
+        getInferenceChanges(languageService, fileName, formatSettings, (error) =>
+          report({
+            reason: `Could not write every type it inferred: ${firstLine(error)}`,
+            hint: 'The rest were written; explicit-any fills in what is left.',
+            recovered: true,
+          }),
+        ),
+        params.sourceFile,
+        fileName,
+        text,
       );
       if (inference.annotations.length === 0) {
         return undefined;
@@ -453,12 +458,18 @@ function inferBodyOnly(
     // throw would discard the inferences the real service already produced,
     // which costs more than the attribution it buys.
   }
-  decoyChanges.forEach((change) => {
-    const originalStart = toOriginalPos(change.start, renames);
-    const fn = enclosingFunctionLike(originalSource, originalStart);
+  // Body evidence is exactly what a returned function's parameters must not be
+  // annotated from, so the decoy's answer for them is refused here as well.
+  const mappedChanges = decoyChanges.map((change) => ({
+    ...change,
+    start: toOriginalPos(change.start, renames),
+  }));
+  const refused = contextuallyTypedParameterAnnotations(originalSource, mappedChanges);
+  mappedChanges.forEach((mapped) => {
+    if (refused.has(mapped)) return;
+    const fn = enclosingFunctionLike(originalSource, mapped.start);
     if (fn == null || !contestedFunctions.includes(fn)) return;
     const group = bodyOnlyChanges.get(fn);
-    const mapped = { ...change, start: originalStart };
     if (group) {
       group.push(mapped);
     } else {
@@ -679,4 +690,82 @@ function getSourceFileOrThrow(service: ts.LanguageService, fileName: string): ts
     throw new Error(`Failed to load source file: ${fileName}`);
   }
   return source;
+}
+
+/**
+ * The annotations this pass must not write: parameters of a function that is
+ * returned from another function.
+ *
+ * A returned function's parameters are contextually typed by the return type
+ * of the function that returns them, so an implicit any there says the outer
+ * return type is missing, not that the parameter has no contract. The
+ * inference engine cannot see that contract - it belongs to whatever the
+ * returned function is eventually handed to - so it synthesizes one from the
+ * body's own uses, and a curried callback gets a signature narrowed to
+ * whatever that one body happens to do with it. A redux thunk is the case
+ * this was found on: `dispatch` came back typed to accept only the single
+ * action shape the body dispatched, so every other caller of it became an
+ * error. Left bare, the parameter reaches explicit-any and types as `any`,
+ * which claims nothing, and annotating the outer function's return type later
+ * types all of them at once.
+ */
+function contextuallyTypedParameterAnnotations(
+  source: ts.SourceFile,
+  annotations: TextChange[],
+): Set<TextChange> {
+  const refused = new Set<TextChange>();
+  if (annotations.length === 0) return refused;
+
+  const visit = (node: ts.Node) => {
+    if (isFunctionLikeWithBody(node) && isReturnedFunction(node)) {
+      (node as ts.SignatureDeclaration).parameters.forEach((parameter) => {
+        const start = parameter.getStart();
+        annotations.forEach((change) => {
+          // Inclusive of the end: the annotation and the closing paren a bare
+          // arrow parameter needs are both inserted there.
+          if (change.start >= start && change.start <= parameter.end) refused.add(change);
+        });
+      });
+    }
+    node.forEachChild(visit);
+  };
+  source.forEachChild(visit);
+  return refused;
+}
+
+/** Whether `fn` is the value another function hands back. */
+function isReturnedFunction(fn: ts.Node): boolean {
+  let node = fn;
+  // `() => ((dispatch) => {})` returns the arrow just as plainly.
+  while (node.parent && ts.isParenthesizedExpression(node.parent)) {
+    node = node.parent;
+  }
+  const { parent } = node;
+  if (!parent) return false;
+  if (ts.isReturnStatement(parent)) return true;
+  return ts.isArrowFunction(parent) && parent.body === node;
+}
+
+/**
+ * The inference minus the annotations it must not write, with the imports
+ * asked for again so one whose only annotation was refused is not left behind.
+ */
+function withoutContextuallyTypedParameters(
+  inference: InferenceChanges,
+  sourceFile: ts.SourceFile,
+  fileName: string,
+  text: string,
+): InferenceChanges {
+  const refused = contextuallyTypedParameterAnnotations(sourceFile, inference.annotations);
+  if (refused.size === 0) return inference;
+
+  const annotations = inference.annotations.filter((change) => !refused.has(change));
+  return {
+    annotations,
+    imports: inference.imports,
+    importEdits:
+      annotations.length === 0
+        ? []
+        : importChangesFor(fileName, text, annotations, inference.imports),
+  };
 }
