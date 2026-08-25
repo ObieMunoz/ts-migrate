@@ -225,6 +225,19 @@ does:
   TypeScript cannot express a type for (`a + b` with mixed callers), get no
   annotation rather than an arbitrary or suppression-generating one. The
   plugin never introduces suppressions inside a function body.
+- A returned function's parameters are left for explicit-any. In `() =>
+  (dispatch, getState, api) => {...}` those parameters are contextually typed
+  by the outer function's return type, so an implicit any there means that
+  return type is missing, not that the parameter has no contract. The body's
+  own uses are not evidence for a contract its caller owns: inferring from
+  them narrowed a redux thunk's `dispatch` to the single action shape that one
+  body dispatched, which rejects every other caller, and typed `getState` as
+  `() => any`, which erases the store. Annotating the outer return type
+  (`(): ThunkResult<Promise<T>> =>`) types all of them at once instead. A
+  function is returned when it is the concise body of an arrow or the
+  expression of a `return`, which covers middleware and HOCs as well;
+  functions in argument position and anything declared inside the returned
+  function's body are unaffected.
 - Members with no evidence are spelled `any`, not the empty object type or a
   bottom array type. TypeScript prints a member it knows nothing about as `{}`
   (banned by `@typescript-eslint/no-empty-object-type`) and an empty array
