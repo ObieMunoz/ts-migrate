@@ -337,11 +337,11 @@ add(1, '2');
   });
 
   it('drops only the parameter whose inferred type its own body contradicts', async () => {
-    const text = `const load = () => (dispatch) => {
+    const text = `const load = (dispatch) => {
   dispatch({ type: 'LOAD' });
 };
-const save = () => (dispatch, api) => {
-  dispatch(load());
+const save = (dispatch, api) => {
+  dispatch(load);
   dispatch({ type: 'SAVE', payload: 1 });
   api({ method: 'GET', url: '/x' });
 };
@@ -349,15 +349,86 @@ const save = () => (dispatch, api) => {
 
     const result = await inferTypesPlugin.run(await realPluginParams({ text }));
 
-    // save's dispatch is called with incompatible shapes (a thunk and a plain
-    // action), so no inferred type can satisfy its body; api keeps its type.
-    expect(result).toBe(`const load = () => (dispatch: (arg0: { type: string; }) => void) => {
+    // save's dispatch is called with incompatible shapes (a function and a
+    // plain action), so no inferred type can satisfy its body; api keeps its
+    // type.
+    expect(result).toBe(`const load = (dispatch: (arg0: { type: string; }) => void) => {
   dispatch({ type: 'LOAD' });
 };
-const save = () => (dispatch, api: (arg0: { method: string; url: string; }) => void) => {
-  dispatch(load());
+const save = (dispatch, api: (arg0: { method: string; url: string; }) => void) => {
+  dispatch(load);
   dispatch({ type: 'SAVE', payload: 1 });
   api({ method: 'GET', url: '/x' });
+};
+`);
+  });
+
+  it('leaves the parameters of a returned arrow function alone', async () => {
+    const text = `const load = () => (dispatch, getState, api) => {
+  const state = getState();
+  dispatch({ type: 'LOAD' });
+  return api({ method: 'GET', url: state.url });
+};
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    // The outer return type is what types these; inferring them from this one
+    // body would narrow dispatch to the single action it happens to send.
+    expect(result).toBeUndefined();
+  });
+
+  it('leaves the parameters of a function returned by a return statement alone', async () => {
+    const text = `function load() {
+  return function (dispatch) {
+    dispatch({ type: 'LOAD' });
+  };
+}
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBeUndefined();
+  });
+
+  it('annotates inside a returned function while leaving its parameters alone', async () => {
+    const text = `const load = () => (dispatch) => {
+  function fmt(n) {
+    return n.toFixed(2);
+  }
+  dispatch({ type: 'LOAD', total: fmt(1) });
+};
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    // fmt is called where it is declared, so its own call sites are the
+    // evidence for it; only the returned function's parameters are refused.
+    expect(result).toBe(`const load = () => (dispatch) => {
+  function fmt(n: number) {
+    return n.toFixed(2);
+  }
+  dispatch({ type: 'LOAD', total: fmt(1) });
+};
+`);
+  });
+
+  it('still annotates a function that is not returned from another one', async () => {
+    const text = `const send = (dispatch) => {
+  dispatch({ type: 'LOAD' });
+};
+const load = () => (dispatch) => {
+  dispatch({ type: 'LOAD' });
+};
+`;
+
+    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+
+    expect(result).toBe(`const send = (dispatch: (arg0: { type: string; }) => void) => {
+  dispatch({ type: 'LOAD' });
+};
+const load = () => (dispatch) => {
+  dispatch({ type: 'LOAD' });
 };
 `);
   });
