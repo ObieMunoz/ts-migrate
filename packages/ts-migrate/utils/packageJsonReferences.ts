@@ -3,7 +3,7 @@ import path from 'path';
 import log from 'updatable-log';
 import { errorMessage } from '@obiemunoz/ts-migrate-server';
 import { isJsExtension, JS_EXTENSION_REGEX } from './jsExtensions';
-import { toPosix } from './paths';
+import { relativeTo } from './paths';
 import { hasTypeScriptBuild } from './projectTooling';
 import { JSON5Path, replaceJSON5Strings } from './updateJSON5';
 
@@ -89,7 +89,7 @@ export function updatePackageJsonReferences(
     walkFiles(path.resolve(dir, staticPrefix(pattern)), walkCache)
       .map((file) => newByOld.get(file) ?? file)
       .filter((file) => isUnder(dir, file))
-      .map((file) => toPosix(path.relative(dir, file)));
+      .map((file) => relativeTo(dir, file));
 
   const rewritePath = (value: string, dir: string): string | undefined => {
     const extension = JS_EXTENSION_REGEX.exec(value);
@@ -108,7 +108,7 @@ export function updatePackageJsonReferences(
     const newExtensions = new Set<string>();
     renamedFiles.forEach(({ oldFile, newFile }) => {
       const resolved = path.resolve(oldFile);
-      if (!isUnder(dir, resolved) || !matches.test(toPosix(path.relative(dir, resolved)))) return;
+      if (!isUnder(dir, resolved) || !matches.test(relativeTo(dir, resolved))) return;
       newExtensions.add(path.extname(newFile).slice(1));
     });
     if (newExtensions.size === 0) return undefined;
@@ -157,14 +157,12 @@ export function updatePackageJsonReferences(
     const matches = globToRegExp(pattern);
     return renamedFiles
       .map(({ oldFile, newFile }) => ({ oldFile: path.resolve(oldFile), newFile }))
-      .filter(
-        ({ oldFile }) => isUnder(dir, oldFile) && matches.test(toPosix(path.relative(dir, oldFile))),
-      )
+      .filter(({ oldFile }) => isUnder(dir, oldFile) && matches.test(relativeTo(dir, oldFile)))
       .map(({ newFile }) => newFile)[0];
   };
 
   const unchanged = (packageJsonFile: string): string =>
-    `Could not update the references in ${toPosix(path.relative(rootDir, packageJsonFile))}`;
+    `Could not update the references in ${relativeTo(rootDir, packageJsonFile)}`;
 
   packageJsonFiles(rootDir, renamedFiles).forEach((packageJsonFile) => {
     const dir = path.dirname(packageJsonFile);
@@ -180,13 +178,13 @@ export function updatePackageJsonReferences(
     let updatedText: string;
     try {
       updatedText = replaceJSON5Strings(sourceText, (keyPath, value) => {
-        const file = toPosix(path.relative(rootDir, packageJsonFile));
+        const file = relativeTo(rootDir, packageJsonFile);
         const key = formatKeyPath(keyPath);
 
         if (typeof keyPath[0] === 'string' && ENTRY_POINT_FIELDS.has(keyPath[0])) {
           const target = renamedTarget(value, dir);
           if (target) {
-            notices.push({ file, key, value, target: toPosix(path.relative(rootDir, target)) });
+            notices.push({ file, key, value, target: relativeTo(rootDir, target) });
           }
           return undefined;
         }
