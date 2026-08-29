@@ -4,6 +4,7 @@ import { isDiagnosticWithLinePosition } from '../utils/type-guards';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 import { hasParameterParentheses } from './utils/arrow';
+import { findNodeAtSpan } from './utils/token-pos';
 
 type Options = AnyAliasOptions;
 
@@ -102,23 +103,6 @@ function withExplicitAny(
 }
 
 type Insert = (index: number, text: string) => void;
-
-function findNodeAtSpan(
-  sourceFile: ts.SourceFile,
-  diagnostic: ts.DiagnosticWithLocation,
-): ts.Node | undefined {
-  const end = diagnostic.start + diagnostic.length;
-  let result: ts.Node | undefined;
-  const visit = (node: ts.Node): void => {
-    if (node.getStart(sourceFile) > diagnostic.start || node.end < end) return;
-    if (node.getStart(sourceFile) === diagnostic.start && node.end === end) {
-      result = node;
-    }
-    node.forEachChild(visit);
-  };
-  visit(sourceFile);
-  return result;
-}
 
 function annotateThis(
   sourceFile: ts.SourceFile,
