@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
+import pluralize from './pluralize';
 
 /** Where a declaration has to go for the assignment that produced it to resolve. */
 export type GlobalTarget = 'window' | 'globalThis';
@@ -516,10 +517,6 @@ export interface GlobalDeclarationsReport {
   properties: { name: string; assignments: number; reads: number; fileCount: number }[];
   /** A file at the generated path that ts-migrate did not write. */
   foreignFile?: string;
-}
-
-function pluralize(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
 function evidenceSummary({

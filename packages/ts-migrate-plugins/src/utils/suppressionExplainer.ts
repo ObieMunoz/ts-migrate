@@ -1,6 +1,7 @@
 import path from 'path';
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
+import pluralize from './pluralize';
 import { isDiagnosticWithLinePosition } from './type-guards';
 import typeOnlyImportRepairs from './typeOnlyImportRepair';
 
@@ -979,10 +980,6 @@ function groupUnresolvedTypes(sites: readonly SuppressionSite[]): UnresolvedType
         .map(([file]) => file),
     }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-}
-
-function pluralize(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
 function formatLocation(location: SourceLocation): string {
