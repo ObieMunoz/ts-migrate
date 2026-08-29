@@ -2,7 +2,7 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
-import { relativeTo } from './paths';
+import { isUnder, relativeTo } from './paths';
 
 export interface GitignorePartition {
   kept: string[];
@@ -30,11 +30,6 @@ function runGit(
     return null;
   }
   return { status: result.status, stdout: result.stdout };
-}
-
-function isUnder(parentDir: string, candidate: string): boolean {
-  const rel = path.relative(parentDir, candidate);
-  return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel));
 }
 
 function gitRoots(rootDir: string): { toplevel: string; realRootDir: string } | null {

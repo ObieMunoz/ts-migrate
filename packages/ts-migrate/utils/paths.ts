@@ -9,3 +9,9 @@ export function toPosix(filePath: string): string {
 export function relativeTo(rootDir: string, file: string): string {
   return toPosix(path.relative(rootDir, file));
 }
+
+/** Whether candidate is parentDir itself or sits inside it. */
+export function isUnder(parentDir: string, candidate: string): boolean {
+  const rel = path.relative(parentDir, candidate);
+  return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel));
+}
