@@ -20,7 +20,7 @@ import { availablePlugins, BuildMigrateConfigParams } from './commands/migrate';
 import rename from './commands/rename';
 import report from './commands/report';
 import runMigrate from './commands/runMigrate';
-import runReignore from './commands/runReignore';
+import runReignore, { RunReignoreParams } from './commands/runReignore';
 import readAgentsPlaybook from './utils/agentsPlaybook';
 import {
   CONFIG_FLAG_DESCRIPTION,
@@ -290,6 +290,56 @@ function pluginParams(args: PipelineArgs): BuildMigrateConfigParams {
     declareGlobals: args.declareGlobals,
     addMissingImports: args.addMissingImports,
     ambiguousImports: args.ambiguousImports,
+  };
+}
+
+/**
+ * The flags the strip-and-re-add pipeline reads, as the shape `runReignore`
+ * takes. `reignore` and `retype` declare the same set through `reignoreFlags`,
+ * so both read it back through here and neither can pass a different subset.
+ */
+interface ReignoreArgs {
+  folder: string;
+  sources?: string | string[];
+  ambientSources?: boolean;
+  messagePrefix?: string;
+  gitignore?: boolean;
+  bootstrap?: boolean;
+  projectEslint?: boolean;
+  declareUntypedModules?: boolean;
+  addMissingImports?: boolean;
+  ambiguousImports?: 'first' | 'skip';
+  casts?: boolean;
+  typesPreflight?: boolean;
+  suppressionReportFile?: string;
+  dryRun?: boolean;
+  jsonSummary?: string;
+}
+
+function reignoreParams(
+  command: RunReignoreParams['command'],
+  rootDir: string,
+  args: ReignoreArgs,
+): RunReignoreParams {
+  return {
+    command,
+    rootDir,
+    folder: args.folder,
+    typeScript: typeScriptDecision(),
+    sources: args.sources,
+    ambientSources: args.ambientSources,
+    messagePrefix: args.messagePrefix,
+    gitignore: args.gitignore,
+    bootstrap: args.bootstrap,
+    projectEslint: args.projectEslint,
+    declareUntypedModules: args.declareUntypedModules,
+    addMissingImports: args.addMissingImports,
+    ambiguousImports: args.ambiguousImports,
+    casts: args.casts,
+    typesPreflight: args.typesPreflight,
+    suppressionReportFile: args.suppressionReportFile,
+    dryRun: args.dryRun,
+    jsonSummary: args.jsonSummary,
   };
 }
 
@@ -816,28 +866,7 @@ cli
     async (args) => {
       const rootDir = resolveRootDir(args.folder);
       logConfigFile(args.config);
-      process.exit(
-        await runReignore({
-          command: 'reignore',
-          rootDir,
-          folder: args.folder,
-          typeScript: typeScriptDecision(),
-          sources: args.sources,
-          ambientSources: args.ambientSources,
-          messagePrefix: args.messagePrefix,
-          gitignore: args.gitignore,
-          bootstrap: args.bootstrap,
-          projectEslint: args.projectEslint,
-          declareUntypedModules: args.declareUntypedModules,
-          addMissingImports: args.addMissingImports,
-          ambiguousImports: args.ambiguousImports,
-          casts: args.casts,
-          typesPreflight: args.typesPreflight,
-          suppressionReportFile: args.suppressionReportFile,
-          dryRun: args.dryRun,
-          jsonSummary: args.jsonSummary,
-        }),
-      );
+      process.exit(await runReignore(reignoreParams('reignore', rootDir, args)));
     },
   )
   .command(
@@ -849,25 +878,8 @@ cli
       logConfigFile(args.config);
       process.exit(
         await runReignore({
-          command: 'retype',
-          rootDir,
-          folder: args.folder,
-          typeScript: typeScriptDecision(),
-          sources: args.sources,
-          ambientSources: args.ambientSources,
-          messagePrefix: args.messagePrefix,
-          gitignore: args.gitignore,
-          bootstrap: args.bootstrap,
-          projectEslint: args.projectEslint,
-          declareUntypedModules: args.declareUntypedModules,
-          addMissingImports: args.addMissingImports,
-          ambiguousImports: args.ambiguousImports,
+          ...reignoreParams('retype', rootDir, args),
           annotations: true,
-          casts: args.casts,
-          typesPreflight: args.typesPreflight,
-          suppressionReportFile: args.suppressionReportFile,
-          dryRun: args.dryRun,
-          jsonSummary: args.jsonSummary,
           debtChange: true,
         }),
       );
