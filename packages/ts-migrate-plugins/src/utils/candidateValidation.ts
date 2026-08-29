@@ -107,6 +107,13 @@ const sharedDocumentRegistry = ts.createDocumentRegistry(
   ts.sys.useCaseSensitiveFileNames,
   ts.sys.getCurrentDirectory(),
 );
+const memo = <T>(cache: Map<string, T>, key: string, compute: (key: string) => T): T => {
+  if (!cache.has(key)) {
+    cache.set(key, compute(key));
+  }
+  return cache.get(key) as T;
+};
+
 const diskFileText = new Map<string, string | undefined>();
 const diskFilePresence = new Map<string, boolean>();
 const diskDirectoryPresence = new Map<string, boolean>();
@@ -114,51 +121,21 @@ const diskDirectoryNames = new Map<string, string[]>();
 const diskRealpaths = new Map<string, string>();
 let overrideVersion = 0;
 
-function readFileCached(name: string): string | undefined {
-  if (!diskFileText.has(name)) {
-    diskFileText.set(name, ts.sys.readFile(name));
-  }
-  return diskFileText.get(name);
-}
+const readFileCached = (name: string): string | undefined =>
+  memo(diskFileText, name, ts.sys.readFile);
 
-function fileExistsCached(name: string): boolean {
-  let exists = diskFilePresence.get(name);
-  if (exists === undefined) {
-    exists = ts.sys.fileExists(name);
-    diskFilePresence.set(name, exists);
-  }
-  return exists;
-}
+const fileExistsCached = (name: string): boolean =>
+  memo(diskFilePresence, name, ts.sys.fileExists);
 
-function directoryExistsCached(name: string): boolean {
-  let exists = diskDirectoryPresence.get(name);
-  if (exists === undefined) {
-    exists = ts.sys.directoryExists(name);
-    diskDirectoryPresence.set(name, exists);
-  }
-  return exists;
-}
+const directoryExistsCached = (name: string): boolean =>
+  memo(diskDirectoryPresence, name, ts.sys.directoryExists);
 
-function getDirectoriesCached(name: string): string[] {
-  let directories = diskDirectoryNames.get(name);
-  if (directories === undefined) {
-    directories = ts.sys.getDirectories(name);
-    diskDirectoryNames.set(name, directories);
-  }
-  return directories;
-}
+const getDirectoriesCached = (name: string): string[] =>
+  memo(diskDirectoryNames, name, ts.sys.getDirectories);
 
 const sysRealpath = ts.sys.realpath;
 const realpathCached =
-  sysRealpath &&
-  ((name: string): string => {
-    let real = diskRealpaths.get(name);
-    if (real === undefined) {
-      real = sysRealpath(name);
-      diskRealpaths.set(name, real);
-    }
-    return real;
-  });
+  sysRealpath && ((name: string): string => memo(diskRealpaths, name, sysRealpath));
 
 // A ModuleResolutionCache assumes every lookup uses the options it was
 // created with, so caches are keyed by options object; run() derives one
