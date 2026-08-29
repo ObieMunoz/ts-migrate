@@ -1,6 +1,7 @@
 import path from 'path';
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
+import findEnclosingNode from './enclosingNode';
 import pluralize from './pluralize';
 import { isDiagnosticWithLinePosition } from './type-guards';
 import typeOnlyImportRepairs from './typeOnlyImportRepair';
@@ -320,21 +321,6 @@ function inProject(fileName: string, rootDir: string): boolean {
   );
 }
 
-/** Innermost node whose span contains the diagnostic's. */
-function findNodeAtSpan(file: ts.SourceFile, start: number, length: number): ts.Node | undefined {
-  let best: ts.Node | undefined;
-  const end = start + length;
-  const visit = (node: ts.Node): void => {
-    if (node.getStart(file) > start || end > node.getEnd()) return;
-    if (!best || node.getEnd() - node.getStart(file) <= best.getEnd() - best.getStart(file)) {
-      best = node;
-    }
-    ts.forEachChild(node, visit);
-  };
-  ts.forEachChild(file, visit);
-  return best;
-}
-
 function enclosingCall(node: ts.Node): ts.CallExpression | ts.NewExpression | undefined {
   let current: ts.Node | undefined = node;
   for (let depth = 0; current && depth < MAX_CALL_DEPTH; depth += 1) {
@@ -357,7 +343,7 @@ function enrichDiagnostic({
   program: ts.Program;
   rootDir: string;
 }): SuppressionEvidence | undefined {
-  const node = findNodeAtSpan(file, diagnostic.start, diagnostic.length);
+  const node = findEnclosingNode(file, diagnostic.start, diagnostic.length);
   if (!node) return undefined;
 
   switch (diagnostic.code) {

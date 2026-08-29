@@ -9,6 +9,7 @@ import {
   TextChange,
   toCandidatePos,
 } from '../utils/candidateValidation';
+import findEnclosingNode from '../utils/enclosingNode';
 import { DEFAULT_MAX_UNION_MEMBERS, printType } from '../utils/typePrinter';
 import { createValidate, Properties } from '../utils/validateOptions';
 
@@ -147,7 +148,7 @@ function collectCandidates(
   const byDeclaration = new Map<WidenableDeclaration, Contradictions>();
 
   diagnostics.forEach((diagnostic) => {
-    const node = findNodeAtSpan(source, diagnostic.start, diagnostic.length);
+    const node = findEnclosingNode(source, diagnostic.start, diagnostic.length);
     const site = node && resolveSite(checker, node, source);
     if (!site) return;
     let group = byDeclaration.get(site.declaration);
@@ -357,21 +358,6 @@ function widenable(declaration: ts.Declaration | undefined): WidenableDeclaratio
     return declaration;
   }
   return undefined;
-}
-
-/** Innermost node whose span contains the diagnostic's. */
-function findNodeAtSpan(source: ts.SourceFile, start: number, length: number): ts.Node | undefined {
-  const end = start + length;
-  let best: ts.Node | undefined;
-  const visit = (node: ts.Node): void => {
-    if (node.getStart(source) > start || end > node.getEnd()) return;
-    if (!best || node.getEnd() - node.getStart(source) <= best.getEnd() - best.getStart(source)) {
-      best = node;
-    }
-    ts.forEachChild(node, visit);
-  };
-  ts.forEachChild(source, visit);
-  return best;
 }
 
 /**
