@@ -10,6 +10,7 @@ import {
   getValidationOptions,
   TextChange,
 } from '../utils/candidateValidation';
+import { isMigratableFile } from '../utils/sourceFiles';
 
 type Options = AnyAliasOptions;
 
@@ -98,7 +99,7 @@ function plan(languageService: ts.LanguageService): Pass {
 
   const refutations = new Map<ts.ParameterDeclaration, Refutation>();
   program.getSourceFiles().forEach((file) => {
-    if (!isMigratable(file)) return;
+    if (!isMigratableFile(file)) return;
     pass.known.add(file.fileName);
     languageService.getSemanticDiagnostics(file.fileName).forEach((diagnostic) => {
       if (!argumentDiagnosticCodes.has(diagnostic.code) || diagnostic.start == null) return;
@@ -130,10 +131,6 @@ function plan(languageService: ts.LanguageService): Pass {
     });
   });
   return pass;
-}
-
-function isMigratable(file: ts.SourceFile): boolean {
-  return !file.isDeclarationFile && !file.fileName.includes('/node_modules/');
 }
 
 interface ArgumentSite {
@@ -214,7 +211,7 @@ function namesProjectType(type: ts.TypeNode, checker: ts.TypeChecker): boolean {
     if (found) return;
     if (ts.isTypeReferenceNode(node)) {
       const declarations = resolved(node.typeName, checker)?.declarations ?? [];
-      if (declarations.some((declaration) => isMigratable(declaration.getSourceFile()))) {
+      if (declarations.some((declaration) => isMigratableFile(declaration.getSourceFile()))) {
         found = true;
         return;
       }
@@ -244,7 +241,7 @@ function relaxableParameter(
   const declaration = checker.getResolvedSignature(site.call)?.declaration;
   if (!declaration || ts.isJSDocSignature(declaration)) return undefined;
   if (!(declaration as ts.FunctionLikeDeclaration).body) return undefined;
-  if (!isMigratable(declaration.getSourceFile())) return undefined;
+  if (!isMigratableFile(declaration.getSourceFile())) return undefined;
   if (isOverloaded(declaration, checker)) return undefined;
 
   const parameter = declaration.parameters[site.index];

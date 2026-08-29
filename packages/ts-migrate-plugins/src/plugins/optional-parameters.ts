@@ -9,6 +9,7 @@ import {
   getValidationOptions,
   TextChange,
 } from '../utils/candidateValidation';
+import { isMigratableFile } from '../utils/sourceFiles';
 
 // Expected {0} arguments, but got {1}.
 const ARGUMENT_ARITY = 2554;
@@ -71,7 +72,7 @@ function plan(languageService: ts.LanguageService): Pass {
 
   const fewestArguments = new Map<ts.SignatureDeclaration, number>();
   program.getSourceFiles().forEach((file) => {
-    if (!isMigratable(file)) return;
+    if (!isMigratableFile(file)) return;
     pass.known.add(file.fileName);
     languageService.getSemanticDiagnostics(file.fileName).forEach((diagnostic) => {
       if (diagnostic.code !== ARGUMENT_ARITY || diagnostic.start == null) return;
@@ -110,10 +111,6 @@ function plan(languageService: ts.LanguageService): Pass {
     });
   });
   return pass;
-}
-
-function isMigratable(file: ts.SourceFile): boolean {
-  return !file.isDeclarationFile && !file.fileName.includes('/node_modules/');
 }
 
 /** The call the arity diagnostic blames: its span covers the callee expression. */
@@ -155,7 +152,7 @@ function relaxableDeclaration(
   // A signature with no body is a contract some other declaration has to
   // keep, so relaxing it says nothing about what that declaration accepts.
   if (!(declaration as ts.FunctionLikeDeclaration).body) return undefined;
-  if (!isMigratable(declaration.getSourceFile())) return undefined;
+  if (!isMigratableFile(declaration.getSourceFile())) return undefined;
   if (isOverloaded(declaration, checker)) return undefined;
   return declaration;
 }

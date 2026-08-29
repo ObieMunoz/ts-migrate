@@ -5,10 +5,7 @@
  * pass edits is the one the checker reads at the call site.
  */
 import ts from 'typescript';
-
-export function isMigratableFile(file: ts.SourceFile): boolean {
-  return !file.isDeclarationFile && !file.fileName.includes('/node_modules/');
-}
+import { isMigratableFile } from './sourceFiles';
 
 export function aliasedSymbol(
   symbol: ts.Symbol | undefined,
