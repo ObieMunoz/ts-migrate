@@ -243,11 +243,8 @@ export default class MigrationProject {
    * plugin add a declaration file the rest of the run then sees.
    */
   addVirtualSourceFile(fileName: string, text: string): void {
-    const normalized = normalizeSlashes(fileName);
-    const previousVersion = this.overlays.get(normalized)?.version ?? 0;
-    this.overlays.set(normalized, { text, version: previousVersion + 1 });
+    const normalized = this.writeOverlay(fileName, text);
     this.rootFileNames.add(normalized);
-    this.projectVersion += 1;
   }
 
   /** The text the project reads for a file: the overlay if it has one, otherwise the disk. */
@@ -315,10 +312,16 @@ export default class MigrationProject {
   }
 
   updateSourceFile(fileName: string, text: string): void {
+    this.writeOverlay(fileName, text);
+  }
+
+  /** Writes a file's text into the overlay and returns the name it is stored under. */
+  private writeOverlay(fileName: string, text: string): string {
     const normalized = normalizeSlashes(fileName);
     const previousVersion = this.overlays.get(normalized)?.version ?? 0;
     this.overlays.set(normalized, { text, version: previousVersion + 1 });
     this.projectVersion += 1;
+    return normalized;
   }
 
   private readFile(fileName: string): string | undefined {
