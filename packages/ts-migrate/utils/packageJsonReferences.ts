@@ -3,6 +3,7 @@ import path from 'path';
 import log from 'updatable-log';
 import { errorMessage } from '@obiemunoz/ts-migrate-server';
 import { isJsExtension, JS_EXTENSION_REGEX } from './jsExtensions';
+import { toPosix } from './paths';
 import { hasTypeScriptBuild } from './projectTooling';
 import { JSON5Path, replaceJSON5Strings } from './updateJSON5';
 
@@ -282,10 +283,6 @@ function formatKeyPath(keyPath: JSON5Path): string {
       return i === 0 ? key : `.${key}`;
     })
     .join('');
-}
-
-function toPosix(filePath: string): string {
-  return filePath.split(path.sep).join('/');
 }
 
 function isUnder(parentDir: string, candidate: string): boolean {

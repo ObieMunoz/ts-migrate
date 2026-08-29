@@ -1,5 +1,4 @@
 import fs from 'fs';
-import path from 'path';
 import log from 'updatable-log';
 
 import { GeneratedFileParseError } from '@obiemunoz/ts-migrate-plugins';
@@ -7,6 +6,7 @@ import { errorMessage, MigrateResult } from '@obiemunoz/ts-migrate-server';
 import { BootstrapFile } from './bootstrapFiles';
 import { PackageJsonNotice, PackageJsonRewrite } from './packageJsonReferences';
 import packageVersion from './packageVersion';
+import { relativeTo } from './paths';
 import { FileDebt, scanTypeDebtForFiles } from './typeDebt';
 
 /**
@@ -131,10 +131,6 @@ export interface FullRunSummary extends RunSummaryBase {
 }
 
 export type RunSummary = RenameRunSummary | MigrateRunSummary | FullRunSummary;
-
-function relativeTo(rootDir: string, fileName: string): string {
-  return path.relative(rootDir, fileName).split(path.sep).join('/');
-}
 
 function summarizeBootstrapFiles(
   rootDir: string,
