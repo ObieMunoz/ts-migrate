@@ -16,6 +16,7 @@ import { detectBundler, hasViteClientTypes } from '../utils/bundler';
 import { listGitignoredDirectories, partitionGitignored } from '../utils/gitignore';
 import { JS_EXTENSION_REGEX } from '../utils/jsExtensions';
 import { detectPathAliases, logPathAliases, renderPathAliases } from '../utils/pathAliases';
+import { relativeTo } from '../utils/paths';
 import isIncludedByTsConfig from '../utils/tsConfigIncludes';
 
 interface InitParams {
@@ -123,7 +124,7 @@ function detectBootstrapFiles(rootDir: string, ignoredDirectories: string[]): Bo
   logApplicationEntries(rootDir, partition.applicationEntries);
   return {
     bootstrapFiles: partition.bootstrap
-      .map(({ file }) => path.relative(rootDir, file).split(path.sep).join('/'))
+      .map(({ file }) => relativeTo(rootDir, file))
       .sort(),
     migratedFiles: partition.kept,
   };

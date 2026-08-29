@@ -6,6 +6,7 @@ import { collectModuleSpecifiers } from '@obiemunoz/ts-migrate-plugins';
 import { sampleIgnoredPaths } from './gitignore';
 import { isConfigName } from './configNames';
 import { JS_EXTENSION_REGEX } from './jsExtensions';
+import { relativeTo } from './paths';
 
 export interface BootstrapFile {
   file: string;
@@ -80,10 +81,6 @@ function nodeScriptPaths(command: string): string[] {
     }
   });
   return paths;
-}
-
-function relativeTo(rootDir: string, file: string): string {
-  return path.relative(rootDir, file).split(path.sep).join('/');
 }
 
 function readPackageJson(dir: string): { scripts?: Record<string, unknown> } | null {

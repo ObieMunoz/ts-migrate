@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import ts from 'typescript';
+import { relativeTo } from './paths';
 import { appendJSON5ArrayItem } from './updateJSON5';
 
 const canonical = (fileName: string): string =>
@@ -135,7 +136,7 @@ export function ensureIncludedByTsConfig(
       : matchesFile(candidate, rootDir, filePath);
   if (matches(config)) return { kind: 'included' };
 
-  const entry = `./${path.relative(rootDir, filePath).split(path.sep).join('/')}`;
+  const entry = `./${relativeTo(rootDir, filePath)}`;
   const keys: TsConfigListKey[] = hasOwnInclude ? ['include', 'files'] : ['files'];
 
   for (const key of keys) {

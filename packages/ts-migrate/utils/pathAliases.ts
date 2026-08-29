@@ -3,6 +3,7 @@ import path from 'path';
 import log from 'updatable-log';
 import ts from 'typescript';
 import { BundlerDetection } from './bundler';
+import { toPosix } from './paths';
 
 /** A mapping the project declares and this cannot translate. */
 export interface SkippedAlias {
@@ -184,7 +185,7 @@ function collectResolveObjects(sourceFile: ts.SourceFile): ts.ObjectLiteralExpre
 function insideRoot(rootDir: string, target: string): string | null {
   const relative = path.relative(rootDir, target);
   if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
-  return relative === '' ? '.' : relative.split(path.sep).join('/');
+  return relative === '' ? '.' : toPosix(relative);
 }
 
 function statOf(target: string): fs.Stats | null {
