@@ -152,7 +152,7 @@ function argumentAt(file: ts.SourceFile, start: number, length: number): Argumen
   for (let node = spanning; node; node = node.parent) {
     const { parent } = node;
     if (parent && (ts.isCallExpression(parent) || ts.isNewExpression(parent))) {
-      const args = parent.arguments ?? ([] as unknown as ts.NodeArray<ts.Expression>);
+      const args: readonly ts.Expression[] = parent.arguments ?? [];
       // A spread argument makes the position of everything after it unknown,
       // so no argument in such a call identifies a parameter.
       if (args.some(ts.isSpreadElement)) return undefined;
