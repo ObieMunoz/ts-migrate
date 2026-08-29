@@ -595,15 +595,36 @@ function confirmedUntypedModules(
     .sort((a, b) => b.module.errorCount - a.module.errorCount);
 }
 
-export function summarizeTypesEvidence(
-  evidence: TypesEvidence,
-  rootDir: string,
-): TypesPackageReport {
+interface ProjectInstallContext {
+  nearest: { dir: string; packageJson: PackageJson } | undefined;
+  installDir: string;
+  detected: PackageManagerDetection;
+  /** Dependencies and devDependencies together: both declare the package. */
+  declaredDeps: { [name: string]: string };
+}
+
+function projectInstallContext(rootDir: string): ProjectInstallContext {
   const nearest = findNearestPackageJson(rootDir);
   // The install lands in the package the migration root belongs to, which is
   // the directory that decides both the workspace flag and the "run from" line.
   const installDir = nearest?.dir ?? rootDir;
   const detected = detectPackageManager(rootDir, installDir);
+  return {
+    nearest,
+    installDir,
+    detected,
+    declaredDeps: {
+      ...nearest?.packageJson.dependencies,
+      ...nearest?.packageJson.devDependencies,
+    },
+  };
+}
+
+export function summarizeTypesEvidence(
+  evidence: TypesEvidence,
+  rootDir: string,
+): TypesPackageReport {
+  const { nearest, installDir, detected, declaredDeps } = projectInstallContext(rootDir);
   const report: TypesPackageReport = {
     packageManager: detected.packageManager,
     packageManagerVersion: detected.version,
@@ -616,11 +637,6 @@ export function summarizeTypesEvidence(
     redundant: [],
     notes: [],
     typesPinned: evidence.compilerTypes !== undefined,
-  };
-
-  const declaredDeps: { [name: string]: string } = {
-    ...nearest?.packageJson.dependencies,
-    ...nearest?.packageJson.devDependencies,
   };
 
   const addEnvRecommendation = (env: EnvEvidence, packageName: string) => {
@@ -801,9 +817,7 @@ export interface TypesPackagePreflight {
  * packages are missing.
  */
 export function preflightTypesPackages(rootDir: string): TypesPackagePreflight {
-  const nearest = findNearestPackageJson(rootDir);
-  const installDir = nearest?.dir ?? rootDir;
-  const detected = detectPackageManager(rootDir, installDir);
+  const { installDir, detected, declaredDeps } = projectInstallContext(rootDir);
   const preflight: TypesPackagePreflight = {
     installCommand:
       INSTALL_COMMANDS[detected.packageManager] +
@@ -812,10 +826,6 @@ export function preflightTypesPackages(rootDir: string): TypesPackagePreflight {
     suggested: [],
   };
 
-  const declaredDeps: { [name: string]: string } = {
-    ...nearest?.packageJson.dependencies,
-    ...nearest?.packageJson.devDependencies,
-  };
   const resolves = (packageName: string) =>
     findInstalledPackage(rootDir, packageName) !== undefined;
   if (!Object.keys(declaredDeps).some(resolves)) return preflight;
