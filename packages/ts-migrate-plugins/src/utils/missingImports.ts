@@ -416,13 +416,8 @@ function blockWithout(
   statements: ts.ImportDeclaration[],
   allowed: ReadonlySet<string>,
 ): SourceTextUpdate | undefined {
-  const asUpdate = (text: string): SourceTextUpdate =>
-    change.span.length === 0
-      ? { kind: 'insert', index: change.span.start, text }
-      : { kind: 'replace', index: change.span.start, length: change.span.length, text };
-
   if (statements.every((statement) => keepsEveryBinding(statement, allowed))) {
-    return asUpdate(change.newText);
+    return changeAsUpdate(change, change.newText);
   }
 
   const block = statements[0].getSourceFile();
@@ -443,7 +438,7 @@ function blockWithout(
   });
   if (kept === 0) return undefined;
 
-  return asUpdate(updateSourceText(block.text, updates));
+  return changeAsUpdate(change, updateSourceText(block.text, updates));
 }
 
 /**
@@ -462,14 +457,7 @@ function extensionWithout(
 
   const { declaration, statement, added } = extended;
   if (added.every((binding) => allowed.has(binding.local))) {
-    return change.span.length === 0
-      ? { kind: 'insert', index: change.span.start, text: change.newText }
-      : {
-          kind: 'replace',
-          index: change.span.start,
-          length: change.span.length,
-          text: change.newText,
-        };
+    return changeAsUpdate(change, change.newText);
   }
   if (!added.some((binding) => allowed.has(binding.local))) return undefined;
 
@@ -489,6 +477,13 @@ function extensionWithout(
     length: declaration.getEnd() - start,
     text: updateSourceText(statement.getSourceFile().text, rewritten),
   };
+}
+
+/** Text written where a change asks for it: an empty span is an insertion. */
+function changeAsUpdate(change: ts.TextChange, text: string): SourceTextUpdate {
+  return change.span.length === 0
+    ? { kind: 'insert', index: change.span.start, text }
+    : { kind: 'replace', index: change.span.start, length: change.span.length, text };
 }
 
 function keepsEveryBinding(statement: ts.ImportDeclaration, allowed: ReadonlySet<string>): boolean {
