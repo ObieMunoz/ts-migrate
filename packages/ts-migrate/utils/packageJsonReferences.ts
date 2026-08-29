@@ -94,7 +94,7 @@ export function updatePackageJsonReferences(
   const rewritePath = (value: string, dir: string): string | undefined => {
     const extension = JS_EXTENSION_REGEX.exec(value);
     if (!extension) return undefined;
-    const newFile = newByOld.get(resolveReference(dir, value));
+    const newFile = newByOld.get(path.resolve(dir, value));
     if (!newFile) return undefined;
     return value.slice(0, -extension[0].length) + path.extname(newFile);
   };
@@ -152,7 +152,7 @@ export function updatePackageJsonReferences(
 
   /** The renamed file an entry point field names, either directly or through a glob. */
   const renamedTarget = (value: string, dir: string): string | undefined => {
-    if (!GLOB_CHARS.test(value)) return newByOld.get(resolveReference(dir, value));
+    if (!GLOB_CHARS.test(value)) return newByOld.get(path.resolve(dir, value));
     const { pattern } = splitRootDir(value);
     const matches = globToRegExp(pattern);
     return renamedFiles
@@ -293,10 +293,6 @@ function splitRootDir(value: string): { prefix: string; pattern: string } {
   const match = /^<rootDir>\/?/.exec(value);
   if (!match) return { prefix: '', pattern: value };
   return { prefix: match[0], pattern: value.slice(match[0].length) };
-}
-
-function resolveReference(dir: string, value: string): string {
-  return path.resolve(dir, value);
 }
 
 /** A command token split into its flag prefix, the path or glob, and any closing quote. */
