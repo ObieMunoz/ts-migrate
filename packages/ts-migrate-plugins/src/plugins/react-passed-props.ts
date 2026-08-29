@@ -9,10 +9,10 @@ import {
 import {
   attributeValue,
   isClosedType,
-  isMigratableFile,
   literalMember,
   propsAnnotationOfTag,
 } from '../utils/componentProps';
+import { isMigratableFile } from '../utils/sourceFiles';
 import { DEFAULT_MAX_UNION_MEMBERS, printType } from '../utils/typePrinter';
 import { createValidate, Properties } from '../utils/validateOptions';
 
