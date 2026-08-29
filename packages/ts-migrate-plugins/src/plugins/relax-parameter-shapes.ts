@@ -1,6 +1,7 @@
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import getTokenAtPosition from './utils/token-pos';
+import { contestedSpans, isOverloaded } from './utils/signature-relaxation';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 import {
   applyTextChanges,
@@ -8,7 +9,6 @@ import {
   findNewErrors,
   getValidationOptions,
   TextChange,
-  toOriginalPos,
 } from '../utils/candidateValidation';
 
 type Options = AnyAliasOptions;
@@ -152,7 +152,7 @@ function argumentAt(file: ts.SourceFile, start: number, length: number): Argumen
   for (let node = spanning; node; node = node.parent) {
     const { parent } = node;
     if (parent && (ts.isCallExpression(parent) || ts.isNewExpression(parent))) {
-      const args = parent.arguments ?? ([] as unknown as ts.NodeArray<ts.Expression>);
+      const args: readonly ts.Expression[] = parent.arguments ?? [];
       // A spread argument makes the position of everything after it unknown,
       // so no argument in such a call identifies a parameter.
       if (args.some(ts.isSpreadElement)) return undefined;
@@ -261,14 +261,6 @@ function relaxableParameter(
   return editable ? parameter : undefined;
 }
 
-function isOverloaded(declaration: ts.SignatureDeclaration, checker: ts.TypeChecker): boolean {
-  const { name } = declaration;
-  if (!name) return false;
-  const symbol = checker.getSymbolAtLocation(name);
-  if (!symbol?.declarations) return false;
-  return symbol.declarations.filter(ts.isFunctionLike).length > 1;
-}
-
 function relaxation(
   { literal, missing, mismatched }: Refutation,
   checker: ts.TypeChecker,
@@ -337,24 +329,4 @@ function proven(
     kept = remaining;
   }
   return undefined;
-}
-
-function contestedSpans(
-  errors: ts.Diagnostic[],
-  changes: TextChange[],
-  sourceFile: ts.SourceFile,
-): ts.TextRange[] {
-  const spans: ts.TextRange[] = [];
-  errors.forEach((error) => {
-    if (error.start == null) return;
-    let node: ts.Node | undefined = getTokenAtPosition(
-      sourceFile,
-      toOriginalPos(error.start, changes),
-    );
-    while (node) {
-      if (ts.isFunctionLike(node)) spans.push({ pos: node.pos, end: node.end });
-      node = node.parent;
-    }
-  });
-  return spans;
 }
