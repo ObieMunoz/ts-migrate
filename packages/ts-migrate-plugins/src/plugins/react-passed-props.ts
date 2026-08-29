@@ -6,7 +6,13 @@ import {
   annotationGroup,
   applyProvenAdditions,
 } from '../utils/annotationAdditions';
-import { isClosedType, isMigratableFile, propsAnnotationOfTag } from '../utils/componentProps';
+import {
+  attributeValue,
+  isClosedType,
+  isMigratableFile,
+  literalMember,
+  propsAnnotationOfTag,
+} from '../utils/componentProps';
 import { DEFAULT_MAX_UNION_MEMBERS, printType } from '../utils/typePrinter';
 import { createValidate, Properties } from '../utils/validateOptions';
 
@@ -154,22 +160,6 @@ function collect(
 
 function attributeName(attribute: ts.JsxAttribute): string | undefined {
   return ts.isIdentifier(attribute.name) ? attribute.name.text : undefined;
-}
-
-function literalMember(value: ts.Expression): string | undefined {
-  if (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value)) return 'string';
-  if (ts.isTemplateExpression(value)) return 'string';
-  if (ts.isNumericLiteral(value)) return 'number';
-  if (value.kind === ts.SyntaxKind.TrueKeyword || value.kind === ts.SyntaxKind.FalseKeyword) {
-    return 'boolean';
-  }
-  return undefined;
-}
-
-function attributeValue(attribute: ts.JsxAttribute): ts.Expression | undefined {
-  const { initializer } = attribute;
-  if (!initializer) return undefined;
-  return ts.isJsxExpression(initializer) ? initializer.expression : initializer;
 }
 
 function memberType(

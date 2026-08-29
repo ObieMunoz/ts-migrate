@@ -128,3 +128,19 @@ function componentTypeArgument(node: ts.ClassLikeDeclaration): ts.TypeNode | und
   );
   return heritage?.types[0]?.typeArguments?.[0];
 }
+
+export function literalMember(value: ts.Expression): string | undefined {
+  if (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value)) return 'string';
+  if (ts.isTemplateExpression(value)) return 'string';
+  if (ts.isNumericLiteral(value)) return 'number';
+  if (value.kind === ts.SyntaxKind.TrueKeyword || value.kind === ts.SyntaxKind.FalseKeyword) {
+    return 'boolean';
+  }
+  return undefined;
+}
+
+export function attributeValue(attribute: ts.JsxAttribute): ts.Expression | undefined {
+  const { initializer } = attribute;
+  if (!initializer) return undefined;
+  return ts.isJsxExpression(initializer) ? initializer.expression : initializer;
+}
