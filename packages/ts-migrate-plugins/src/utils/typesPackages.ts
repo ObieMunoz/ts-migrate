@@ -3,6 +3,7 @@ import path from 'path';
 import { builtinModules } from 'module';
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
+import pluralize from './pluralize';
 
 type EnvKey = 'node' | 'testRunner' | 'jquery' | 'bun';
 
@@ -1022,10 +1023,6 @@ export function createTypesPackageDetector(): TypesPackageDetector {
       return report;
     },
   };
-}
-
-function pluralize(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
 export function formatTypesPackageReport(
