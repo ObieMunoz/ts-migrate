@@ -22,6 +22,7 @@ import {
   Property,
   Write,
 } from './utils/empty-object-properties';
+import { findNodeAtSpan } from './utils/token-pos';
 
 type Options = AnyAliasOptions;
 
@@ -574,24 +575,6 @@ function thisAccesses(node: ts.Node): ts.PropertyAccessExpression[] {
   };
   visit(node);
   return accesses;
-}
-
-/** The innermost node whose span matches the diagnostic exactly. */
-function findNodeAtSpan(
-  sourceFile: ts.SourceFile,
-  diagnostic: ts.DiagnosticWithLocation,
-): ts.Node | undefined {
-  const end = diagnostic.start + diagnostic.length;
-  let result: ts.Node | undefined;
-  const visit = (node: ts.Node): void => {
-    if (node.getStart(sourceFile) > diagnostic.start || node.end < end) return;
-    if (node.getStart(sourceFile) === diagnostic.start && node.end === end) {
-      result = node;
-    }
-    node.forEachChild(visit);
-  };
-  visit(sourceFile);
-  return result;
 }
 
 function findEnclosingClass(node: ts.Node): ts.ClassLikeDeclaration | undefined {
