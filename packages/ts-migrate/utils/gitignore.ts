@@ -2,6 +2,7 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
+import { relativeTo } from './paths';
 
 export interface GitignorePartition {
   kept: string[];
@@ -91,7 +92,7 @@ export function partitionGitignored(rootDir: string, files: string[]): Gitignore
       kept.push(file);
       return;
     }
-    fileByRelPath.set(path.relative(toplevel, resolved).split(path.sep).join('/'), file);
+    fileByRelPath.set(relativeTo(toplevel, resolved), file);
   });
 
   if (fileByRelPath.size === 0) {
@@ -162,7 +163,7 @@ export function listGitignoredDirectories(rootDir: string): string[] {
     if (resolved === realRootDir || !isUnder(realRootDir, resolved)) {
       return;
     }
-    directories.add(path.relative(realRootDir, resolved).split(path.sep).join('/'));
+    directories.add(relativeTo(realRootDir, resolved));
   });
   return [...directories].sort();
 }
@@ -175,7 +176,7 @@ export function sampleIgnoredPaths(
 ): string {
   const samples = ignored
     .slice(0, max)
-    .map((file) => path.relative(rootDir, file).split(path.sep).join('/'));
+    .map((file) => relativeTo(rootDir, file));
   if (ignored.length > max) {
     samples.push('...');
   }

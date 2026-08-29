@@ -3,6 +3,7 @@ import path from 'path';
 import ts from 'typescript';
 import isDeclarationFile from './declarationFiles';
 import { partitionGitignored } from './gitignore';
+import { relativeTo } from './paths';
 
 export interface FileDebt {
   tsExpectError: number;
@@ -231,7 +232,7 @@ function collectDebt(
     const debt = scanFileDebt(fileName, text, aliasNameSet);
     addDebt(totals, debt);
     if (debtTotal(debt) > 0) {
-      scanned.push({ file: path.relative(rootDir, fileName).split(path.sep).join('/'), debt });
+      scanned.push({ file: relativeTo(rootDir, fileName), debt });
     }
   });
 

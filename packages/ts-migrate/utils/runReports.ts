@@ -18,6 +18,7 @@ import {
 } from '@obiemunoz/ts-migrate-plugins';
 import { errorMessage, MigrateResult } from '@obiemunoz/ts-migrate-server';
 import formatFollowUpReport from './followUpReport';
+import { relativeTo } from './paths';
 import { describeTypeScript, TypeScriptDecision, typeScriptWarning } from './resolveTypeScript';
 import { ensureIncludedByTsConfig } from './tsConfigIncludes';
 import {
@@ -440,7 +441,7 @@ export function printDryRunSummary(
       `(nothing was written):`,
   ];
   [...updatedSourceFiles]
-    .map((fileName) => path.relative(rootDir, fileName).split(path.sep).join('/'))
+    .map((fileName) => relativeTo(rootDir, fileName))
     .sort()
     .forEach((file) => {
       const debt = debtByFile[file];

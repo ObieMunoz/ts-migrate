@@ -18,6 +18,7 @@ import {
   logPackageJsonReferences,
   updatePackageJsonReferences,
 } from '../utils/packageJsonReferences';
+import { relativeTo } from '../utils/paths';
 import { replaceJSON5Strings } from '../utils/updateJSON5';
 
 interface RenameParams {
@@ -92,7 +93,7 @@ export default function rename({
       skippedBootstrapFiles = partition.bootstrap;
       const lines = partition.bootstrap.map(
         ({ file, reason }) =>
-          `  ${path.relative(rootDir, file).split(path.sep).join('/')} (${reason})`,
+          `  ${relativeTo(rootDir, file)} (${reason})`,
       );
       log.info(
         `Keeping ${partition.bootstrap.length} build system file(s) as JavaScript so the ` +
@@ -143,7 +144,7 @@ export default function rename({
   if (skippedModuleFiles.length > 0) {
     const lines = skippedModuleFiles.map(
       ({ file, reason }) =>
-        `  ${path.relative(rootDir, file).split(path.sep).join('/')} (${reason})`,
+        `  ${relativeTo(rootDir, file)} (${reason})`,
     );
     log.info(
       `Keeping ${skippedModuleFiles.length} .mjs/.cjs file(s) at their current extension:\n` +
