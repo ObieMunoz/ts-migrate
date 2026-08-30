@@ -107,14 +107,14 @@ function findJsFiles(rootDir: string, skippedDirectories: string[]): string[] {
   return files;
 }
 
-interface BootstrapPartition {
+interface InitBootstrapFiles {
   /** rootDir-relative paths for the tsconfig "exclude". */
   bootstrapFiles: string[];
   /** The files the migration will convert. */
   migratedFiles: string[];
 }
 
-function detectBootstrapFiles(rootDir: string, ignoredDirectories: string[]): BootstrapPartition {
+function detectBootstrapFiles(rootDir: string, ignoredDirectories: string[]): InitBootstrapFiles {
   const candidates = partitionGitignored(
     rootDir,
     findJsFiles(rootDir, ignoredDirectories),
