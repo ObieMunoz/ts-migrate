@@ -7,6 +7,7 @@ import {
   replaceHeritageTypeArguments,
 } from './utils/react';
 import { collectIdentifiers } from './utils/identifiers';
+import { uniqueTypeName } from './utils/react-props';
 import { isStatic } from './utils/modifiers';
 import { anyTypeNode } from './utils/anyTypes';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
@@ -73,16 +74,7 @@ const reactClassStatePlugin: Plugin<Options> = {
           name = 'State';
         }
 
-        if (!usedIdentifiers.has(name)) {
-          return name;
-        }
-
-        // Ensure name is unused.
-        let i = 1;
-        while (usedIdentifiers.has(name + i)) {
-          i += 1;
-        }
-        return name + i;
+        return uniqueTypeName(name, usedIdentifiers);
       };
 
       const stateTypeName = getStateTypeName();
