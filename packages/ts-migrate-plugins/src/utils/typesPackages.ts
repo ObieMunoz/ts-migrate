@@ -1055,6 +1055,9 @@ export function createTypesPackageDetector(): TypesPackageDetector {
   };
 
   let declared: ModuleDeclarations | null = null;
+  // No mutationsPreserveTypes: the flag defers a plugin's returned file text,
+  // and this returns none. The declarations go in through addGeneratedFile,
+  // which has to reach the program in the same pass for ts-ignore to see them.
   const declarationsPlugin = oncePerRun({
     name: 'declare-untyped-modules',
     run({ rootDir, addGeneratedFile }) {

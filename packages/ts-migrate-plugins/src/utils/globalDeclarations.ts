@@ -629,7 +629,6 @@ export function createGlobalDeclarations(
   let result: GlobalDeclarationsResult = { kind: 'nothing' };
   const declarationsPlugin = oncePerRun({
     name: 'declare-globals',
-    mutationsPreserveTypes: true,
     run({ rootDir, addGeneratedFile, reportFileNotice }) {
       if (!addGeneratedFile) return undefined;
 
