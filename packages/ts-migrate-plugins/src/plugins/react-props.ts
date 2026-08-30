@@ -648,6 +648,21 @@ function isPropTypesStatement(
   );
 }
 
+function findPropTypesStatement(
+  componentName: string | undefined,
+  sourceFile: ts.SourceFile,
+): ts.ExpressionStatement | undefined {
+  if (!componentName) return undefined;
+
+  for (const statement of sourceFile.statements) {
+    if (isPropTypesStatement(statement, componentName)) {
+      return statement;
+    }
+  }
+
+  return undefined;
+}
+
 function findClassPropTypesNode(
   classDeclaration: ts.ClassDeclaration,
   sourceFile: ts.SourceFile,
@@ -658,28 +673,11 @@ function findClassPropTypesNode(
     }
   }
 
-  const componentName = classDeclaration.name && classDeclaration.name.text;
-  for (const statement of sourceFile.statements) {
-    if (componentName && isPropTypesStatement(statement, componentName)) {
-      return statement;
-    }
-  }
-
-  return undefined;
+  return findPropTypesStatement(classDeclaration.name && classDeclaration.name.text, sourceFile);
 }
 
-function findSfcPropTypesNode(
-  node: ReactSfcNode,
-  sourceFile: ts.SourceFile,
-): ts.PropertyDeclaration | ts.ExpressionStatement | undefined {
-  const componentName = getComponentName(node);
-  for (const statement of sourceFile.statements) {
-    if (componentName && isPropTypesStatement(statement, componentName)) {
-      return statement;
-    }
-  }
-
-  return undefined;
+function findSfcPropTypesNode(node: ReactSfcNode, sourceFile: ts.SourceFile) {
+  return findPropTypesStatement(getComponentName(node), sourceFile);
 }
 
 function findPropTypesObjectLiteral(
