@@ -114,6 +114,17 @@ const memo = <T>(cache: Map<string, T>, key: string, compute: (key: string) => T
   return cache.get(key) as T;
 };
 
+const weakMemo = <K extends object, V>(
+  cache: WeakMap<K, V>,
+  key: K,
+  compute: (key: K) => V,
+): V => {
+  if (!cache.has(key)) {
+    cache.set(key, compute(key));
+  }
+  return cache.get(key) as V;
+};
+
 const diskFileText = new Map<string, string | undefined>();
 const diskFilePresence = new Map<string, boolean>();
 const diskDirectoryPresence = new Map<string, boolean>();
@@ -148,41 +159,38 @@ interface ResolutionCaches {
 }
 const resolutionCachesByOptions = new WeakMap<ts.CompilerOptions, ResolutionCaches>();
 
-function getResolutionCaches(compilerOptions: ts.CompilerOptions): ResolutionCaches {
-  let caches = resolutionCachesByOptions.get(compilerOptions);
-  if (!caches) {
-    const currentDirectory = ts.sys.getCurrentDirectory();
-    const getCanonicalFileName = ts.sys.useCaseSensitiveFileNames
-      ? (fileName: string) => fileName
-      : (fileName: string) => fileName.toLowerCase();
-    const moduleResolutionCache = ts.createModuleResolutionCache(
+function createResolutionCaches(compilerOptions: ts.CompilerOptions): ResolutionCaches {
+  const currentDirectory = ts.sys.getCurrentDirectory();
+  const getCanonicalFileName = ts.sys.useCaseSensitiveFileNames
+    ? (fileName: string) => fileName
+    : (fileName: string) => fileName.toLowerCase();
+  const moduleResolutionCache = ts.createModuleResolutionCache(
+    currentDirectory,
+    getCanonicalFileName,
+    compilerOptions,
+  );
+  return {
+    moduleResolutionCache,
+    typeReferenceDirectiveResolutionCache: ts.createTypeReferenceDirectiveResolutionCache(
       currentDirectory,
       getCanonicalFileName,
       compilerOptions,
-    );
-    caches = {
-      moduleResolutionCache,
-      typeReferenceDirectiveResolutionCache: ts.createTypeReferenceDirectiveResolutionCache(
-        currentDirectory,
-        getCanonicalFileName,
-        compilerOptions,
-        moduleResolutionCache.getPackageJsonInfoCache(),
-      ),
-    };
-    resolutionCachesByOptions.set(compilerOptions, caches);
-  }
-  return caches;
+      moduleResolutionCache.getPackageJsonInfoCache(),
+    ),
+  };
+}
+
+function getResolutionCaches(compilerOptions: ts.CompilerOptions): ResolutionCaches {
+  return weakMemo(resolutionCachesByOptions, compilerOptions, createResolutionCaches);
 }
 
 const validationOptionsByProgramOptions = new WeakMap<ts.CompilerOptions, ts.CompilerOptions>();
 
 export function getValidationOptions(programOptions: ts.CompilerOptions): ts.CompilerOptions {
-  let options = validationOptionsByProgramOptions.get(programOptions);
-  if (!options) {
-    options = { ...programOptions, skipLibCheck: true };
-    validationOptionsByProgramOptions.set(programOptions, options);
-  }
-  return options;
+  return weakMemo(validationOptionsByProgramOptions, programOptions, (options) => ({
+    ...options,
+    skipLibCheck: true,
+  }));
 }
 
 // The language service reads host.getModuleResolutionCache at runtime (the
@@ -251,13 +259,18 @@ export function createFileLanguageService(
   const { moduleResolutionCache, typeReferenceDirectiveResolutionCache } =
     getResolutionCaches(compilerOptions);
   const getCurrentDirectory = () => path.dirname(fileName);
-  const resolutionHost: ts.ModuleResolutionHost = {
+  // Shared by both hosts. `useCaseSensitiveFileNames` stays out: a module
+  // resolution host takes a boolean, a language service host a method.
+  const diskHost = {
     fileExists: fileExistsCached,
     readFile: readFileCached,
     directoryExists: directoryExistsCached,
     getDirectories: getDirectoriesCached,
     ...(realpathCached ? { realpath: realpathCached } : undefined),
     getCurrentDirectory,
+  };
+  const resolutionHost: ts.ModuleResolutionHost = {
+    ...diskHost,
     useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
   };
   const host: LanguageServiceHostWithCache = {
@@ -269,13 +282,11 @@ export function createFileLanguageService(
       const contents = name === fileName ? content : dependencyText(name);
       return contents !== undefined ? ts.ScriptSnapshot.fromString(contents) : undefined;
     },
-    getCurrentDirectory,
     getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
+    ...diskHost,
+    // The overlay for the file under migration: must follow the spread.
     fileExists: (name) => name === fileName || fileExistsCached(name),
     readFile: (name) => (name === fileName ? content : dependencyText(name)),
-    directoryExists: directoryExistsCached,
-    getDirectories: getDirectoriesCached,
-    ...(realpathCached ? { realpath: realpathCached } : undefined),
     resolveModuleNameLiterals: (
       moduleLiterals,
       containingFile,
