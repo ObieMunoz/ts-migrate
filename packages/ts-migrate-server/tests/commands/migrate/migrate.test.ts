@@ -907,6 +907,37 @@ describe('migrate command', () => {
       // The second file processed sees the first file's already-committed edit.
       expect(sawSiblingEdit).toContain(true);
     });
+
+    it('defers only returned text, so a generated file still reaches the program', async () => {
+      const generated = path.resolve(rootDir, 'types', 'generated.d.ts');
+      const sawGeneratedFile: boolean[] = [];
+      let added = false;
+      const config = new MigrateConfig().addPlugin(
+        {
+          name: 'generate-declarations',
+          mutationsPreserveTypes: true,
+          run({ addGeneratedFile, getLanguageService }) {
+            const program = getLanguageService().getProgram();
+            sawGeneratedFile.push(
+              Boolean(program && program.getSourceFiles().some((sf) => sf.fileName === generated)),
+            );
+            if (!added) {
+              added = true;
+              addGeneratedFile?.(generated, "declare module 'untyped-lib';\n");
+            }
+            return undefined;
+          },
+        },
+        {},
+      );
+
+      const { exitCode } = await migrate({ rootDir, config });
+
+      expect(exitCode).toBe(0);
+      // The flag holds back a plugin's returned file text and nothing else, so
+      // the file the first call generated is in the program by the second.
+      expect(sawGeneratedFile).toEqual([false, true]);
+    });
   });
 
   describe('independentFiles', () => {
