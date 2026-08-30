@@ -78,6 +78,28 @@ const TYPES_PREFLIGHT_FLAG_DESCRIPTION =
   'the pipeline starts, so they can be installed instead of suppressed. Disable with ' +
   '--typesPreflight=false.';
 
+const AMBIENT_SOURCES_FLAG_DESCRIPTION =
+  'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types ' +
+  'still resolve. Disable with --ambientSources=false.';
+
+const DECLARE_UNTYPED_MODULES_FLAG_DESCRIPTION =
+  'Declare the imported packages that ship no type definitions in ' +
+  'types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is ' +
+  'added to the tsconfig if it does not already match it. Disable with ' +
+  '--declareUntypedModules=false.';
+
+const AMBIGUOUS_IMPORTS_FLAG_DESCRIPTION =
+  'What to do with a name TypeScript offers from more than one module: take the module it ' +
+  'ranks first and mark the import for review (first), or leave the name for a person and let ' +
+  'ts-ignore suppress it (skip).';
+
+const DRY_RUN_FLAG_DESCRIPTION =
+  'Run every plugin pass but write nothing to disk; print the files a real run would update. ' +
+  'Takes as long as a real run.';
+
+const JSON_SUMMARY_FLAG_DESCRIPTION =
+  'Write a machine-readable JSON summary of the run to this file.';
+
 /**
  * The <folder> positional every command takes, resolved against the working
  * directory. A path that is not a directory holds no tsconfig.json, so the
@@ -165,10 +187,7 @@ function migrationFlags<T>(cmd: Argv<T>) {
     .describe('sources', 'Path to a subset of your project to migrate (globs are ok).')
     .boolean('ambientSources')
     .default('ambientSources', true)
-    .describe(
-      'ambientSources',
-      'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --ambientSources=false.',
-    )
+    .describe('ambientSources', AMBIENT_SOURCES_FLAG_DESCRIPTION)
     .boolean('gitignore')
     .default('gitignore', true)
     .describe(
@@ -210,10 +229,7 @@ function migrationFlags<T>(cmd: Argv<T>) {
     )
     .boolean('declareUntypedModules')
     .default('declareUntypedModules', true)
-    .describe(
-      'declareUntypedModules',
-      'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --declareUntypedModules=false.',
-    )
+    .describe('declareUntypedModules', DECLARE_UNTYPED_MODULES_FLAG_DESCRIPTION)
     .boolean('declareGlobals')
     .default('declareGlobals', true)
     .describe(
@@ -228,10 +244,7 @@ function migrationFlags<T>(cmd: Argv<T>) {
     )
     .choices('ambiguousImports', ['first', 'skip'] as const)
     .default('ambiguousImports', 'first')
-    .describe(
-      'ambiguousImports',
-      'What to do with a name TypeScript offers from more than one module: take the module it ranks first and mark the import for review (first), or leave the name for a person and let ts-ignore suppress it (skip).',
-    )
+    .describe('ambiguousImports', AMBIGUOUS_IMPORTS_FLAG_DESCRIPTION)
     .string('typescript')
     .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
     .boolean('typesPreflight')
@@ -504,7 +517,7 @@ const renameBuilder = (cmd: Argv) =>
     .default('dryRun', false)
     .describe('dryRun', 'Print the rename mapping without renaming any file.')
     .string('jsonSummary')
-    .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
+    .describe('jsonSummary', JSON_SUMMARY_FLAG_DESCRIPTION)
     .example('$0 rename /frontend/foo', 'Rename all the files in /frontend/foo')
     .example('$0 rename /frontend/foo -s "bar/**/*"', 'Rename all the files in /frontend/foo/bar')
     .require(['folder']);
@@ -528,12 +541,9 @@ const migrateBuilder = (cmd: Argv) =>
     )
     .boolean('dryRun')
     .default('dryRun', false)
-    .describe(
-      'dryRun',
-      'Run every plugin pass but write nothing to disk; print the files a real run would update. Takes as long as a real run.',
-    )
+    .describe('dryRun', DRY_RUN_FLAG_DESCRIPTION)
     .string('jsonSummary')
-    .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
+    .describe('jsonSummary', JSON_SUMMARY_FLAG_DESCRIPTION)
     .example('$0 migrate /frontend/foo', 'Migrate all the files in /frontend/foo')
     .example(
       '$0 migrate /frontend/foo -s "bar/**/*"',
@@ -568,10 +578,7 @@ function reignoreFlags<T>(cmd: Argv<T>, command: string) {
     .describe('sources', 'Path to a subset of your project to run over (globs are ok).')
     .boolean('ambientSources')
     .default('ambientSources', true)
-    .describe(
-      'ambientSources',
-      'With --sources, keep the .d.ts files from your tsconfig in the program so ambient types still resolve. Disable with --ambientSources=false.',
-    )
+    .describe('ambientSources', AMBIENT_SOURCES_FLAG_DESCRIPTION)
     .boolean('gitignore')
     .default('gitignore', true)
     .describe(
@@ -589,10 +596,7 @@ function reignoreFlags<T>(cmd: Argv<T>, command: string) {
     .describe('projectEslint', PROJECT_ESLINT_FLAG_DESCRIPTION)
     .boolean('declareUntypedModules')
     .default('declareUntypedModules', true)
-    .describe(
-      'declareUntypedModules',
-      'Declare the imported packages that ship no type definitions in types/ts-migrate-modules.d.ts, instead of suppressing every import of them. The file is added to the tsconfig if it does not already match it. Disable with --declareUntypedModules=false.',
-    )
+    .describe('declareUntypedModules', DECLARE_UNTYPED_MODULES_FLAG_DESCRIPTION)
     .boolean('addMissingImports')
     .default('addMissingImports', true)
     .describe(
@@ -601,10 +605,7 @@ function reignoreFlags<T>(cmd: Argv<T>, command: string) {
     )
     .choices('ambiguousImports', ['first', 'skip'] as const)
     .default('ambiguousImports', 'first')
-    .describe(
-      'ambiguousImports',
-      'What to do with a name TypeScript offers from more than one module: take the module it ranks first and mark the import for review (first), or leave the name for a person and let ts-ignore suppress it (skip).',
-    )
+    .describe('ambiguousImports', AMBIGUOUS_IMPORTS_FLAG_DESCRIPTION)
     .string('typescript')
     .describe('typescript', TYPESCRIPT_FLAG_DESCRIPTION)
     .boolean('typesPreflight')
@@ -617,12 +618,9 @@ function reignoreFlags<T>(cmd: Argv<T>, command: string) {
     )
     .boolean('dryRun')
     .default('dryRun', false)
-    .describe(
-      'dryRun',
-      'Run every plugin pass but write nothing to disk; print the files a real run would update. Takes as long as a real run.',
-    )
+    .describe('dryRun', DRY_RUN_FLAG_DESCRIPTION)
     .string('jsonSummary')
-    .describe('jsonSummary', 'Write a machine-readable JSON summary of the run to this file.')
+    .describe('jsonSummary', JSON_SUMMARY_FLAG_DESCRIPTION)
     .require(['folder']);
 }
 
