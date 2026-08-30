@@ -56,7 +56,7 @@ function sortedFiles(files: Record<string, BaselineCounts>): Record<string, Base
  * rather than letting one reach the process. The path can come from
  * --baselineFile, and a parent directory that does not exist or a checkout the
  * job cannot write to is a bad argument, not a bug in ts-migrate. Returns the
- * message to report, or undefined on success: the two callers that write to
+ * message to report, or undefined on success: the two paths that write to
  * deliver the baseline treat a failure as fatal, and the one that lowers an
  * existing baseline does not.
  */
@@ -121,22 +121,23 @@ export default function check({
     return -1;
   }
 
-  if (updateBaseline) {
+  const deliverBaseline = (): boolean => {
     const writeError = writeBaseline(baselinePath, current);
     if (writeError) {
       log.error(writeError);
-      return -1;
+      return false;
     }
+    return true;
+  };
+
+  if (updateBaseline) {
+    if (!deliverBaseline()) return -1;
     log.info(`Baseline updated: ${displayPath}. Commit it.`);
     return 0;
   }
 
   if (!fs.existsSync(baselinePath)) {
-    const writeError = writeBaseline(baselinePath, current);
-    if (writeError) {
-      log.error(writeError);
-      return -1;
-    }
+    if (!deliverBaseline()) return -1;
     log.info(
       `No baseline found; wrote ${displayPath} (${Object.keys(current).length} files with debt). ` +
         `Commit it; later runs exit nonzero if any per-file count grows.`,
