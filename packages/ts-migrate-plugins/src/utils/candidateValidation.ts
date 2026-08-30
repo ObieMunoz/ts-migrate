@@ -327,3 +327,55 @@ export function createFileLanguageService(
   };
   return ts.createLanguageService(host, sharedDocumentRegistry);
 }
+
+export interface CheckedChanges {
+  /** The candidate service, for the questions the error diff does not answer. */
+  service: ts.LanguageService;
+  changes: TextChange[];
+  newErrors: ts.Diagnostic[];
+}
+
+export interface ChangeValidator {
+  /**
+   * The candidate a set of changes produces, or `undefined` once the budget is
+   * spent. The changes are built behind the budget check, so a caller past its
+   * budget pays nothing for the set it was about to propose.
+   */
+  check(buildChanges: () => TextChange[]): CheckedChanges | undefined;
+  /** Gives a second pass over the same file its own budget. */
+  resetBudget(): void;
+}
+
+/**
+ * The baseline a file's proposed edits are re-checked against, and a cap on how
+ * many programs proving them may cost. What a caller does with a candidate that
+ * carries no new error is its own: an edit is only proven once whatever it was
+ * made for is gone, and only the caller knows what that was.
+ */
+export function createChangeValidator(
+  fileName: string,
+  text: string,
+  compilerOptions: ts.CompilerOptions,
+  projectProgram: ts.Program | undefined,
+  budget: number,
+): ChangeValidator {
+  const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
+  let programsLeft = budget;
+  return {
+    check: (buildChanges) => {
+      if (programsLeft <= 0) return undefined;
+      programsLeft -= 1;
+      const changes = buildChanges();
+      const service = createFileLanguageService(
+        fileName,
+        applyTextChanges(text, changes),
+        compilerOptions,
+        projectProgram,
+      );
+      return { service, changes, newErrors: findNewErrors(baseline, service, changes, fileName) };
+    },
+    resetBudget: () => {
+      programsLeft = budget;
+    },
+  };
+}

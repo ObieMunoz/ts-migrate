@@ -2,8 +2,8 @@ import ts from 'typescript';
 import { fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
 import {
   applyTextChanges,
+  createChangeValidator,
   createFileLanguageService,
-  findNewErrors,
   getValidationOptions,
   TextChange,
   toCandidatePos,
@@ -264,8 +264,13 @@ function retriedChanges(
     return [];
   }
 
-  const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
-  let programsLeft = maxValidationPrograms;
+  const { check } = createChangeValidator(
+    fileName,
+    text,
+    compilerOptions,
+    projectProgram,
+    maxValidationPrograms,
+  );
 
   // A retried annotation may name a type the file no longer imports, since
   // the annotation it replaces was the reason nothing did. The import goes in
@@ -279,18 +284,10 @@ function retriedChanges(
     );
 
   const checksClean = (group: Proposal[]): boolean => {
-    if (programsLeft <= 0) return false;
-    programsLeft -= 1;
-    const changes = withImports(group);
-    const candidate = createFileLanguageService(
-      fileName,
-      applyTextChanges(text, changes),
-      compilerOptions,
-      projectProgram,
-    );
-    if (findNewErrors(baseline, candidate, changes, fileName).length > 0) return false;
+    const checked = check(() => withImports(group));
+    if (!checked || checked.newErrors.length > 0) return false;
     return group.every(({ candidate: retried }) =>
-      isTyped(candidate, fileName, toCandidatePos(retried.nameEnd, changes)),
+      isTyped(checked.service, fileName, toCandidatePos(retried.nameEnd, checked.changes)),
     );
   };
 

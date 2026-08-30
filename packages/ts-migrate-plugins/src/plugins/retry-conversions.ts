@@ -2,8 +2,7 @@ import ts from 'typescript';
 import { fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
 import {
   applyTextChanges,
-  createFileLanguageService,
-  findNewErrors,
+  createChangeValidator,
   getValidationOptions,
   TextChange,
   toCandidatePos,
@@ -242,23 +241,22 @@ function retriedChanges(
   projectProgram: ts.Program,
   narrowingsFor: (node: ts.AsExpression) => TextChange[],
 ): TextChange[] {
-  const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
-  let programsLeft = maxValidationPrograms;
+  const { check, resetBudget } = createChangeValidator(
+    fileName,
+    text,
+    compilerOptions,
+    projectProgram,
+    maxValidationPrograms,
+  );
 
   // `retyped` holds the ends, in the original text, of the assertions the
   // group gives a new type to.
   const checksClean = (changes: TextChange[], retyped: number[]): boolean => {
-    if (programsLeft <= 0) return false;
-    programsLeft -= 1;
-    const sorted = [...changes].sort((a, b) => a.start - b.start);
-    const candidate = createFileLanguageService(
-      fileName,
-      applyTextChanges(text, sorted),
-      compilerOptions,
-      projectProgram,
+    const checked = check(() => [...changes].sort((a, b) => a.start - b.start));
+    if (!checked || checked.newErrors.length > 0) return false;
+    return retyped.every((end) =>
+      isNarrowed(checked.service, fileName, toCandidatePos(end, checked.changes)),
     );
-    if (findNewErrors(baseline, candidate, sorted, fileName).length > 0) return false;
-    return retyped.every((end) => isNarrowed(candidate, fileName, toCandidatePos(end, sorted)));
   };
 
   const removals = candidates.map((candidate) => candidate.change);
@@ -276,7 +274,7 @@ function retriedChanges(
     }
   });
 
-  programsLeft = maxValidationPrograms;
+  resetBudget();
   const retyped: number[] = [];
   kept.forEach((candidate) => {
     const { end } = candidate.node;
