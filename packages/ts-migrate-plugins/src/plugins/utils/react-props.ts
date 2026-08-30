@@ -253,6 +253,10 @@ function getTypeFromPropTypeExpression(
   params: Params,
 ): ts.TypeNode {
   const { anyAlias, anyFunctionAlias } = params;
+  const anyTypeNode = () =>
+    anyAlias
+      ? ts.factory.createTypeReferenceNode(anyAlias, undefined)
+      : ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
 
   let text = node.getText(sourceFile).replace(/React\.PropTypes\./, '');
   const isDestructuredProptypeImport =
@@ -279,31 +283,15 @@ function getTypeFromPropTypeExpression(
     if (/string/.test(text)) {
       result = ts.factory.createKeywordTypeNode(ts.SyntaxKind.StringKeyword);
     } else if (/any/.test(text)) {
-      if (anyAlias) {
-        result = ts.factory.createTypeReferenceNode(anyAlias, undefined);
-      } else {
-        result = ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
-      }
+      result = anyTypeNode();
     } else if (/array/.test(text)) {
-      if (anyAlias) {
-        result = ts.factory.createArrayTypeNode(
-          ts.factory.createTypeReferenceNode(anyAlias, undefined),
-        );
-      } else {
-        result = ts.factory.createArrayTypeNode(
-          ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
-        );
-      }
+      result = ts.factory.createArrayTypeNode(anyTypeNode());
     } else if (/bool/.test(text)) {
       result = ts.factory.createKeywordTypeNode(ts.SyntaxKind.BooleanKeyword);
     } else if (/number/.test(text)) {
       result = ts.factory.createKeywordTypeNode(ts.SyntaxKind.NumberKeyword);
     } else if (/object/.test(text)) {
-      if (anyAlias) {
-        result = ts.factory.createTypeReferenceNode(anyAlias, undefined);
-      } else {
-        result = ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
-      }
+      result = anyTypeNode();
     } else if (/node/.test(text)) {
       result = ts.factory.createTypeReferenceNode('React.ReactNode', undefined);
     } else if (/elementType/.test(text)) {
@@ -313,23 +301,6 @@ function getTypeFromPropTypeExpression(
     } else if (/func/.test(text)) {
       if (anyFunctionAlias) {
         result = ts.factory.createTypeReferenceNode(anyFunctionAlias, undefined);
-      } else if (anyAlias) {
-        result = ts.factory.createFunctionTypeNode(
-          undefined,
-          [
-            ts.factory.createParameterDeclaration(
-              undefined,
-              ts.factory.createToken(ts.SyntaxKind.DotDotDotToken),
-              'args',
-              undefined,
-              ts.factory.createArrayTypeNode(
-                ts.factory.createTypeReferenceNode(anyAlias, undefined),
-              ),
-              undefined,
-            ),
-          ],
-          ts.factory.createTypeReferenceNode(anyAlias, undefined),
-        );
       } else {
         result = ts.factory.createFunctionTypeNode(
           undefined,
@@ -339,13 +310,11 @@ function getTypeFromPropTypeExpression(
               ts.factory.createToken(ts.SyntaxKind.DotDotDotToken),
               'args',
               undefined,
-              ts.factory.createArrayTypeNode(
-                ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
-              ),
+              ts.factory.createArrayTypeNode(anyTypeNode()),
               undefined,
             ),
           ],
-          ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
+          anyTypeNode(),
         );
       }
     }
@@ -439,11 +408,7 @@ function getTypeFromPropTypeExpression(
    * anything others
    */
   if (!result) {
-    if (anyAlias) {
-      result = ts.factory.createTypeReferenceNode(anyAlias, undefined);
-    } else {
-      result = ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
-    }
+    result = anyTypeNode();
 
     // Add comment about what the original proptype was.
     result = ts.addSyntheticTrailingComment(
