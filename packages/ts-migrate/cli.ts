@@ -817,16 +817,7 @@ cli
       if (args.jsonSummary) {
         const exitCode = writeRunSummary(
           args.jsonSummary,
-          buildRenameRunSummary({
-            rootDir,
-            exitCode: 0,
-            dryRun,
-            renamedFiles: result.renamedFiles,
-            skippedGitignoredFiles: result.skippedGitignoredFiles,
-            skippedBootstrapFiles: result.skippedBootstrapFiles,
-            packageJsonRewrites: result.packageJsonRewrites,
-            packageJsonNotices: result.packageJsonNotices,
-          }),
+          buildRenameRunSummary({ ...result, rootDir, exitCode: 0, dryRun }),
         );
         if (exitCode !== 0) process.exit(exitCode);
       }
