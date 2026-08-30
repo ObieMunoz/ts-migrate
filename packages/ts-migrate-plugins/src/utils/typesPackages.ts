@@ -219,14 +219,16 @@ function isProjectRoot(dir: string): boolean {
   return readJson(path.join(dir, 'package.json'))?.workspaces !== undefined;
 }
 
+function packageAt(dir: string): { dir: string; packageJson: PackageJson } | undefined {
+  const packageJson = readJson(path.join(dir, 'package.json'));
+  return packageJson ? { dir, packageJson } : undefined;
+}
+
 /** The migration root may be a subfolder of the package. */
 function findNearestPackageJson(
   startDir: string,
 ): { dir: string; packageJson: PackageJson } | undefined {
-  return findUp(startDir, (dir) => {
-    const packageJson = readJson(path.join(dir, 'package.json'));
-    return packageJson ? { dir, packageJson } : undefined;
-  });
+  return findUp(startDir, packageAt);
 }
 
 /** Resolve an installed package the way node would, honoring hoisted installs. */
@@ -234,11 +236,9 @@ function findInstalledPackage(
   startDir: string,
   packageName: string,
 ): { dir: string; packageJson: PackageJson } | undefined {
-  return findUp(startDir, (dir) => {
-    const packageDir = path.join(dir, 'node_modules', ...packageName.split('/'));
-    const packageJson = readJson(path.join(packageDir, 'package.json'));
-    return packageJson ? { dir: packageDir, packageJson } : undefined;
-  });
+  return findUp(startDir, (dir) =>
+    packageAt(path.join(dir, 'node_modules', ...packageName.split('/'))),
+  );
 }
 
 type PackageManager = 'npm' | 'yarn' | 'pnpm' | 'bun';
@@ -486,6 +486,10 @@ const INSTALL_COMMANDS: { [key in PackageManager]: string } = {
   pnpm: 'pnpm add -D',
   bun: 'bun add -d',
 };
+
+function installCommand(packageManager: PackageManager, workspaceRootFlag?: string): string {
+  return INSTALL_COMMANDS[packageManager] + (workspaceRootFlag ? ` ${workspaceRootFlag}` : '');
+}
 
 function firstMajor(version: string | undefined): number | undefined {
   const match = /(\d+)/.exec(version ?? '');
@@ -877,9 +881,7 @@ export interface TypesPackagePreflight {
 export function preflightTypesPackages(rootDir: string): TypesPackagePreflight {
   const { installDir, detected, declaredDeps } = projectInstallContext(rootDir);
   const preflight: TypesPackagePreflight = {
-    installCommand:
-      INSTALL_COMMANDS[detected.packageManager] +
-      (detected.workspaceRootFlag ? ` ${detected.workspaceRootFlag}` : ''),
+    installCommand: installCommand(detected.packageManager, detected.workspaceRootFlag),
     installDir: installDirLabel(installDir),
     suggested: [],
   };
@@ -1080,6 +1082,9 @@ export function formatTypesPackageReport(
   folder = '<folder>',
 ): string | null {
   const lines: string[] = [];
+  const hasMissing = report.missing.length > 0;
+  const hasUntyped = report.untyped.length > 0;
+  const hasInstall = hasMissing || hasUntyped;
   const recommendationLine = (rec: TypesPackageRecommendation) => {
     const names = rec.exampleNames.length ? ` (${rec.exampleNames.join(', ')})` : '';
     return `    ${rec.packageName} — ${pluralize(rec.errorCount, 'error')} in ${pluralize(
@@ -1088,26 +1093,24 @@ export function formatTypesPackageReport(
     )}${names}`;
   };
 
-  if (report.missing.length > 0) {
+  if (hasMissing) {
     lines.push('  Missing type definitions:');
     report.missing.forEach((rec) => lines.push(recommendationLine(rec)));
   }
-  if (report.untyped.length > 0) {
+  if (hasUntyped) {
     lines.push('  Untyped imports (@types packages may exist for them):');
     report.untyped.forEach((rec) => lines.push(recommendationLine(rec)));
   }
 
-  const install =
-    INSTALL_COMMANDS[report.packageManager] +
-    (report.workspaceRootFlag ? ` ${report.workspaceRootFlag}` : '');
-  if (report.missing.length > 0) {
+  const install = installCommand(report.packageManager, report.workspaceRootFlag);
+  if (hasMissing) {
     lines.push(`  Install: ${install} ${report.missing.map((rec) => rec.packageName).join(' ')}`);
   }
-  if (report.untyped.length > 0) {
-    const verb = report.missing.length > 0 ? 'Then try' : 'Try';
+  if (hasUntyped) {
+    const verb = hasMissing ? 'Then try' : 'Try';
     lines.push(`  ${verb}: ${install} ${report.untyped.map((rec) => rec.packageName).join(' ')}`);
   }
-  if (report.installDir && (report.missing.length > 0 || report.untyped.length > 0)) {
+  if (report.installDir && hasInstall) {
     lines.push(`  Run from: ${report.installDir}`);
   }
   const declaredCount = report.declared?.moduleNames.length;
@@ -1124,7 +1127,7 @@ export function formatTypesPackageReport(
         'and can be deleted.',
     );
   }
-  if (report.typesPinned && (report.missing.length > 0 || report.untyped.length > 0)) {
+  if (report.typesPinned && hasInstall) {
     lines.push(
       '  Then add each installed package to the "types" array in tsconfig.json' +
         ' (drop the "@types/" prefix).',
@@ -1151,7 +1154,7 @@ export function formatTypesPackageReport(
   }
   report.notes.forEach((note) => lines.push(`  Note: ${note}`));
 
-  if (report.missing.length > 0 || report.untyped.length > 0 || report.notLoaded.length > 0) {
+  if (hasInstall || report.notLoaded.length > 0) {
     lines.push(
       '  After installing type definitions, rerun: ' +
         `npx -p @obiemunoz/ts-migrate ts-migrate reignore ${folder}`,
