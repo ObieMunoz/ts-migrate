@@ -239,7 +239,8 @@ export async function realPluginParams<TOptions = unknown>(params: {
   };
 }
 
-const defaultCompilerOptions: ts.CompilerOptions = {
+/** The options the helpers here compile an in-memory program with. */
+export const defaultCompilerOptions: ts.CompilerOptions = {
   strict: true,
   noEmit: true,
   target: ts.ScriptTarget.ES2020,

@@ -15,7 +15,7 @@ import {
   parseGlobalDeclarations,
   renderGlobalDeclarations,
 } from '../../../src/utils/globalDeclarations';
-import { mockPluginParams } from '../../test-utils';
+import { defaultCompilerOptions, mockPluginParams } from '../../test-utils';
 
 const fixtureDirs: string[] = [];
 
@@ -33,14 +33,6 @@ function makeFixture(files: { [filePath: string]: string } = {}): string {
 afterAll(() => {
   fixtureDirs.forEach((dir) => fs.rmSync(dir, { recursive: true, force: true }));
 });
-
-const COMPILER_OPTIONS: ts.CompilerOptions = {
-  strict: true,
-  noEmit: true,
-  target: ts.ScriptTarget.ES2020,
-  module: ts.ModuleKind.ESNext,
-  moduleResolution: ts.ModuleResolutionKind.Bundler,
-};
 
 /** Compiles the given files in memory, resolving the lib files from disk. */
 function programFor(files: { [fileName: string]: string }): ts.Program {
@@ -60,7 +52,7 @@ function programFor(files: { [fileName: string]: string }): ts.Program {
     fileExists: (fileName) => fileName in files || ts.sys.fileExists(fileName),
     readFile: (fileName) => files[fileName] ?? ts.sys.readFile(fileName),
   };
-  return ts.createProgram(Object.keys(files), COMPILER_OPTIONS, host);
+  return ts.createProgram(Object.keys(files), defaultCompilerOptions, host);
 }
 
 function diagnosticsOf(files: { [fileName: string]: string }): string[] {

@@ -1,15 +1,8 @@
 import ts from 'typescript';
 import { printType, PrintTypeOptions, TypePrintRefusal } from '../../../src/utils/typePrinter';
+import { defaultCompilerOptions } from '../../test-utils';
 
 const fileName = '/print.ts';
-
-const compilerOptions: ts.CompilerOptions = {
-  strict: true,
-  noEmit: true,
-  target: ts.ScriptTarget.ES2020,
-  module: ts.ModuleKind.ESNext,
-  moduleResolution: ts.ModuleResolutionKind.Bundler,
-};
 
 /** Prints the type of `const value = <expression>` from the file's own scope. */
 function print(
@@ -38,7 +31,7 @@ function print(
     fileExists: (name) => name in files || ts.sys.fileExists(name),
     readFile: (name) => files[name] ?? ts.sys.readFile(name),
   };
-  const program = ts.createProgram([fileName], compilerOptions, host);
+  const program = ts.createProgram([fileName], defaultCompilerOptions, host);
   const source = program.getSourceFile(fileName);
   if (!source) throw new Error('no source file');
 
