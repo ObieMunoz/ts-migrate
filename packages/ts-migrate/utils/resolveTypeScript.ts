@@ -96,7 +96,7 @@ export function findProjectTypeScript(
 }
 
 /** The compiler installed alongside ts-migrate, used when the project has none. */
-export function findBundledTypeScript(): { packageDir: string; version: string } {
+function findBundledTypeScript(): { packageDir: string; version: string } {
   // Resolved from this file, and only ever before the redirect below is
   // installed, so it names ts-migrate's own peer install.
   const packageDir = path.dirname(
