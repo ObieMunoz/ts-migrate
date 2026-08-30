@@ -602,26 +602,6 @@ function diagnoseEmptyMigrationSet({
 }
 
 /**
- * The union of the files a cause was already known for and the ones this pass
- * added. A repeated plugin group retries the files it changed, so the same
- * cause arrives from several passes, and one file reporting it twice is still
- * one file.
- */
-function mergeFiles(existing: { files: string[] } | undefined, files: string[]): string[] {
-  return [...new Set([...(existing?.files ?? []), ...files])].sort();
-}
-
-function findCause<T extends { pluginName: string; reason: string; ruleId?: string }>(
-  entries: T[],
-  pluginName: string,
-  { reason, ruleId }: FileNoticeGroup,
-): T | undefined {
-  return entries.find(
-    (entry) => entry.pluginName === pluginName && entry.reason === reason && entry.ruleId === ruleId,
-  );
-}
-
-/**
  * Folds one pass's groups into the run's entries: a cause already reported
  * takes the files this pass added, and a new one becomes an entry of its own.
  * `build` shapes that new entry, and `onExisting` carries over whatever else
@@ -643,8 +623,15 @@ function mergeFileNotices<
   onExisting?: (existing: T, group: FileNoticeGroup) => void,
 ): void {
   groups.forEach((group) => {
-    const existing = findCause(entries, pluginName, group);
-    const files = mergeFiles(existing, group.files);
+    const existing = entries.find(
+      (entry) =>
+        entry.pluginName === pluginName &&
+        entry.reason === group.reason &&
+        entry.ruleId === group.ruleId,
+    );
+    // A repeated plugin group retries the files it changed, so the same cause arrives
+    // from several passes, and one file reporting it twice is still one file.
+    const files = [...new Set([...(existing?.files ?? []), ...group.files])].sort();
     if (existing) {
       existing.files = files;
       existing.fileCount = files.length;
