@@ -3,7 +3,7 @@ import path from 'path';
 import log from 'updatable-log';
 import ts from 'typescript';
 import { collectModuleSpecifiers } from '@obiemunoz/ts-migrate-plugins';
-import { sampleIgnoredPaths } from './gitignore';
+import { createGitignoreMigrationFilter, sampleIgnoredPaths } from './gitignore';
 import { isConfigName } from './configNames';
 import { JS_EXTENSION_REGEX } from './jsExtensions';
 import { isUnder, relativeTo } from './paths';
@@ -333,4 +333,25 @@ export function combineFileFilters(
   if (active.length === 0) return undefined;
   return (fileNames) =>
     active.reduce((names, filter) => filter.filterMigrationFiles(names), fileNames);
+}
+
+export interface MigrationFileFilters {
+  filterMigrationFiles: ((fileNames: string[]) => string[]) | undefined;
+  /** Read after the migration: the filters fill their lists as it walks the file set. */
+  skippedGitignoredFiles: () => number;
+  skippedBootstrapFiles: () => BootstrapFile[];
+}
+
+/** The optional file filters a migration run builds from its gitignore/bootstrap flags. */
+export function createMigrationFileFilters(
+  rootDir: string,
+  { gitignore = true, bootstrap = true }: { gitignore?: boolean; bootstrap?: boolean },
+): MigrationFileFilters {
+  const gitignoreFilter = gitignore ? createGitignoreMigrationFilter(rootDir) : undefined;
+  const bootstrapFilter = bootstrap ? createBootstrapMigrationFilter(rootDir) : undefined;
+  return {
+    filterMigrationFiles: combineFileFilters([gitignoreFilter, bootstrapFilter]),
+    skippedGitignoredFiles: () => gitignoreFilter?.skippedFiles().length ?? 0,
+    skippedBootstrapFiles: () => bootstrapFilter?.skippedFiles() ?? [],
+  };
 }

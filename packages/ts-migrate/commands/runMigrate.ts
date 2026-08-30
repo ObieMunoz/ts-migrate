@@ -10,8 +10,7 @@ import {
 import { errorMessage, migrate, MigrateConfig } from '@obiemunoz/ts-migrate-server';
 import buildMigrateConfig, { BuildMigrateConfigParams } from './migrate';
 import ensureAliasDeclarations from '../utils/aliasDeclarations';
-import { combineFileFilters, createBootstrapMigrationFilter } from '../utils/bootstrapFiles';
-import { createGitignoreMigrationFilter } from '../utils/gitignore';
+import { createMigrationFileFilters } from '../utils/bootstrapFiles';
 import { TypeScriptDecision } from '../utils/resolveTypeScript';
 import { canKeepGeneratedDeclarations } from '../utils/tsConfigIncludes';
 import {
@@ -135,12 +134,10 @@ export default async function runMigrate(params: RunMigrateParams): Promise<RunM
     return { exitCode: 1 };
   }
 
-  const gitignoreFilter = (params.gitignore ?? true)
-    ? createGitignoreMigrationFilter(rootDir)
-    : undefined;
-  const bootstrapFilter = (params.bootstrap ?? true)
-    ? createBootstrapMigrationFilter(rootDir)
-    : undefined;
+  const fileFilters = createMigrationFileFilters(rootDir, {
+    gitignore: params.gitignore,
+    bootstrap: params.bootstrap,
+  });
   const {
     exitCode,
     filesToMigrate,
@@ -159,7 +156,7 @@ export default async function runMigrate(params: RunMigrateParams): Promise<RunM
     config,
     sources: params.sources,
     ambientSources: params.ambientSources,
-    filterMigrationFiles: combineFileFilters([gitignoreFilter, bootstrapFilter]),
+    filterMigrationFiles: fileFilters.filterMigrationFiles,
     maxStablePasses: params.maxStablePasses,
     incrementalPasses: params.incrementalPasses,
     dryRun,
@@ -248,8 +245,8 @@ export default async function runMigrate(params: RunMigrateParams): Promise<RunM
     pluginErrors,
     generatedFiles,
     generatedFileParseErrors,
-    skippedGitignoredFiles: gitignoreFilter?.skippedFiles().length ?? 0,
-    skippedBootstrapFiles: bootstrapFilter?.skippedFiles() ?? [],
+    skippedGitignoredFiles: fileFilters.skippedGitignoredFiles(),
+    skippedBootstrapFiles: fileFilters.skippedBootstrapFiles(),
   });
 
   return {
