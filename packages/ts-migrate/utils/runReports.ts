@@ -230,8 +230,6 @@ export function reportGeneratedFileInclusion(
           `run. Add "${repair.entry}" to "files" in ${repair.configFile} by hand.`,
       );
       break;
-    default:
-      break;
   }
 }
 
