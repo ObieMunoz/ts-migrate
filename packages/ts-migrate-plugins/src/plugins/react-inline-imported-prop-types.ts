@@ -229,42 +229,46 @@ type Candidate = {
 function collectImportBindings(sourceFile: ts.SourceFile): Map<string, ImportBinding> {
   const bindings = new Map<string, ImportBinding>();
   for (const statement of sourceFile.statements) {
-    if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
-      const moduleSpecifier = statement.moduleSpecifier.text;
-      const { importClause } = statement;
-      if (importClause) {
-        if (importClause.name) {
-          bindings.set(importClause.name.text, {
-            kind: 'default',
-            localName: importClause.name.text,
-            importedName: 'default',
-            moduleSpecifier,
-            aliased: false,
-          });
-        }
-        if (importClause.namedBindings) {
-          if (ts.isNamespaceImport(importClause.namedBindings)) {
-            bindings.set(importClause.namedBindings.name.text, {
-              kind: 'namespace',
-              localName: importClause.namedBindings.name.text,
-              importedName: '*',
-              moduleSpecifier,
-              aliased: false,
-            });
-          } else {
-            importClause.namedBindings.elements.forEach((specifier) => {
-              bindings.set(specifier.name.text, {
-                kind: 'named',
-                localName: specifier.name.text,
-                importedName: (specifier.propertyName ?? specifier.name).text,
-                moduleSpecifier,
-                aliased: specifier.propertyName != null,
-              });
-            });
-          }
-        }
-      }
+    if (!ts.isImportDeclaration(statement)) continue;
+    if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const moduleSpecifier = statement.moduleSpecifier.text;
+
+    const { importClause } = statement;
+    if (!importClause) continue;
+
+    if (importClause.name) {
+      bindings.set(importClause.name.text, {
+        kind: 'default',
+        localName: importClause.name.text,
+        importedName: 'default',
+        moduleSpecifier,
+        aliased: false,
+      });
     }
+
+    const { namedBindings } = importClause;
+    if (!namedBindings) continue;
+
+    if (ts.isNamespaceImport(namedBindings)) {
+      bindings.set(namedBindings.name.text, {
+        kind: 'namespace',
+        localName: namedBindings.name.text,
+        importedName: '*',
+        moduleSpecifier,
+        aliased: false,
+      });
+      continue;
+    }
+
+    namedBindings.elements.forEach((specifier) => {
+      bindings.set(specifier.name.text, {
+        kind: 'named',
+        localName: specifier.name.text,
+        importedName: (specifier.propertyName ?? specifier.name).text,
+        moduleSpecifier,
+        aliased: specifier.propertyName != null,
+      });
+    });
   }
   return bindings;
 }
