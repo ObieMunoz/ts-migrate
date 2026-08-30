@@ -1,23 +1,17 @@
 import fs from 'fs';
-import ts from 'typescript';
 import { createTmpDir } from '@obiemunoz/ts-migrate-test-utils';
 import {
   midRunProject,
   mockDiagnostic,
   mockPluginParams,
-  realPluginParams,
+  realPluginRunner,
   typeCheck,
 } from '../test-utils';
 import declareMissingClassPropertiesPlugin from '../../src/plugins/declare-missing-class-properties';
 
-async function runReal(
-  text: string,
-  compilerOptions?: ts.CompilerOptions,
-): Promise<string | undefined> {
-  return declareMissingClassPropertiesPlugin.run(
-    await realPluginParams({ text, options: { anyAlias: '$TSFixMe' }, compilerOptions }),
-  );
-}
+const runReal = realPluginRunner(declareMissingClassPropertiesPlugin, {
+  options: { anyAlias: '$TSFixMe' },
+});
 
 describe('declare-missing-class-properties plugin', () => {
   it.each([2339, 2551])(
@@ -383,7 +377,7 @@ class Box {
 }
 `;
 
-      expect(await runReal(text, { strict: false })).toBe(`class Counter {
+      expect(await runReal(text, { compilerOptions: { strict: false } })).toBe(`class Counter {
   count: $TSFixMe;
   constructor() {
     this.count = 0;
@@ -509,9 +503,9 @@ class C {
 }
 `;
 
-      expect(await runReal(text, { strict: false, noImplicitAny: false })).toContain(
-        'cache: { total?: number };',
-      );
+      expect(
+        await runReal(text, { compilerOptions: { strict: false, noImplicitAny: false } }),
+      ).toContain('cache: { total?: number };');
     });
 
     it('types the empty object property alongside an inferred one', async () => {
