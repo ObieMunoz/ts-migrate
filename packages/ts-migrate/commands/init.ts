@@ -17,6 +17,7 @@ import { listGitignoredDirectories, partitionGitignored } from '../utils/gitigno
 import { JS_EXTENSION_REGEX } from '../utils/jsExtensions';
 import { detectPathAliases, logPathAliases, renderPathAliases } from '../utils/pathAliases';
 import { relativeTo } from '../utils/paths';
+import { directoriesToRepoRoot } from '../utils/repoRoot';
 import isIncludedByTsConfig from '../utils/tsConfigIncludes';
 
 interface InitParams {
@@ -47,7 +48,7 @@ function installedTypesPackages(rootDir: string): string[] {
   // project directory and its ancestors), but stop at the repository
   // boundary: an entry found above it exists only on this machine, and a
   // pinned entry that fails to resolve is a hard TS2688 everywhere else.
-  for (let dir = path.resolve(rootDir); ; dir = path.dirname(dir)) {
+  directoriesToRepoRoot(rootDir).forEach((dir) => {
     const typesDir = path.join(dir, 'node_modules', '@types');
     let entries: string[] = [];
     try {
@@ -75,8 +76,7 @@ function installedTypesPackages(rootDir: string): string[] {
       }
       names.add(entry);
     });
-    if (fs.existsSync(path.join(dir, '.git')) || path.dirname(dir) === dir) break;
-  }
+  });
   return [...names].sort();
 }
 
