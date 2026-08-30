@@ -847,10 +847,10 @@ function relativizeLocation(rootDir: string, location: SourceLocation): SourceLo
   return { ...location, file: relativize(rootDir, location.file) };
 }
 
-function relativizeMember(rootDir: string, member: SuppressionMember): SuppressionMember {
-  return member.location
-    ? { ...member, location: relativizeLocation(rootDir, member.location) }
-    : member;
+function relativizeLocated<T extends { location?: SourceLocation }>(rootDir: string, value: T): T {
+  return value.location
+    ? { ...value, location: relativizeLocation(rootDir, value.location) }
+    : value;
 }
 
 function relativizeSite(rootDir: string, site: CollectedSite): SuppressionSite {
@@ -858,11 +858,7 @@ function relativizeSite(rootDir: string, site: CollectedSite): SuppressionSite {
   return {
     ...rest,
     location: { file: relativize(rootDir, fileName), line, column },
-    related: site.related.map((related) =>
-      related.location
-        ? { ...related, location: relativizeLocation(rootDir, related.location) }
-        : related,
-    ),
+    related: site.related.map((related) => relativizeLocated(rootDir, related)),
     evidence: evidence
       ? {
           ...evidence,
@@ -870,10 +866,10 @@ function relativizeSite(rootDir: string, site: CollectedSite): SuppressionSite {
             ? relativizeLocation(rootDir, evidence.declaredAt)
             : undefined,
           baseMember: evidence.baseMember
-            ? relativizeMember(rootDir, evidence.baseMember)
+            ? relativizeLocated(rootDir, evidence.baseMember)
             : undefined,
           derivedMember: evidence.derivedMember
-            ? relativizeMember(rootDir, evidence.derivedMember)
+            ? relativizeLocated(rootDir, evidence.derivedMember)
             : undefined,
         }
       : undefined,
