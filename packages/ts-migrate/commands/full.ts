@@ -71,7 +71,13 @@ export interface FullParams {
   /** Forwarded to the migrate step, minus what this command decides itself. */
   migrateOptions: Omit<
     RunMigrateParams,
-    'rootDir' | 'folder' | 'typeScript' | 'dryRun' | 'jsonSummary' | 'holdTypesReport'
+    | 'rootDir'
+    | 'folder'
+    | 'typeScript'
+    | 'dryRun'
+    | 'jsonSummary'
+    | 'holdTypesReport'
+    | 'collectSummary'
   >;
   /** Absent under `--yes`, which is the path that answers without asking. */
   prompter?: Prompter;
