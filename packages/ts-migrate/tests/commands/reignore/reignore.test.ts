@@ -101,17 +101,22 @@ const alsoFine: number = 2;
     // The migrate result fields pass through for the --jsonSummary flag.
     expect([...updatedSourceFiles]).toEqual([path.resolve(rootDir, 'migrated/file.ts')]);
     expect(nonMigratedFilesWithSyntaxErrors).toEqual([]);
+    // eslint-fix-changed runs ahead of ts-ignore: a suppression comment only
+    // reaches the line directly below it, so reformatting after ts-ignore can
+    // move the comment off the error it was written for.
     expect(pluginStats.map(({ pluginName }) => pluginName)).toEqual([
       'strip-ts-ignore',
       'detect-types-packages',
       'declare-untyped-modules',
       'add-missing-imports',
+      'eslint-fix-changed',
       'explain-suppressions',
       'ts-ignore',
-      'eslint-fix-changed',
     ]);
-    expect(pluginStats[0].changedFileCount).toBe(1);
-    expect(pluginStats[5].changedFileCount).toBe(1);
+    const changedBy = (pluginName: string) =>
+      pluginStats.find((stat) => stat.pluginName === pluginName)?.changedFileCount;
+    expect(changedBy('strip-ts-ignore')).toBe(1);
+    expect(changedBy('ts-ignore')).toBe(1);
 
     // The evidence behind the suppression the run just wrote. Line 2 because
     // strip-ts-ignore removed the stale comment before the explainer ran.

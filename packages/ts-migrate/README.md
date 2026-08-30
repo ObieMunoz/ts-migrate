@@ -248,8 +248,7 @@ the most expensive part of a migration:
 Individual steps of the default pipeline can be skipped with
 `--excludePlugin <name>` (repeatable, validated against the same plugin names
 as `--plugin`; see `migrate --help` for the list). Every occurrence of the name
-is removed: excluding `eslint-fix` drops both the lint pass before `ts-ignore`
-and the one after it. Common uses:
+is removed. Common uses:
 
 ```sh
 # Staged migration: leave residual compiler errors visible for manual fixing
@@ -257,7 +256,7 @@ and the one after it. Common uses:
 npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> \
   --excludePlugin ts-ignore --excludePlugin strip-ts-ignore
 
-# Keep lint-autofix churn out of the migration diff (and skip two lint passes).
+# Keep lint-autofix churn out of the migration diff (and skip the lint pass).
 npx -p @obiemunoz/ts-migrate ts-migrate migrate <folder> --excludePlugin eslint-fix
 ```
 

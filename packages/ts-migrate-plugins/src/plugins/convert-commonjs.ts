@@ -5,6 +5,7 @@ import createFollowUpMarkers, { FollowUpMarkers } from '../utils/followUpMarker'
 import { createValidate, Properties } from '../utils/validateOptions';
 import { hasDefaultExport, isEsmSourceFile } from '../utils/moduleFormat';
 import {
+  collectBindingNames,
   collectIdentifiers,
   isAssignmentOperatorKind,
   isIdentifierName,
@@ -176,16 +177,15 @@ function declaredNamesAreStable(
   scope: Scope,
 ): boolean {
   return declarations.every((declaration) =>
-    bindingNames(declaration.name).every((name) => !scope.assigned.has(name)),
+    [...bindingNames(declaration.name)].every((name) => !scope.assigned.has(name)),
   );
 }
 
 /** Every name a binding introduces, flattening any destructuring pattern. */
-function bindingNames(name: ts.BindingName): string[] {
-  if (ts.isIdentifier(name)) return [name.text];
-  return name.elements.flatMap((element) =>
-    ts.isBindingElement(element) ? bindingNames(element.name) : [],
-  );
+function bindingNames(name: ts.BindingName): Set<string> {
+  const names = new Set<string>();
+  collectBindingNames(name, names);
+  return names;
 }
 
 /** A top level `module.exports = x` or `exports.foo = x` assignment. */
@@ -230,12 +230,11 @@ function convertExports(
 
   if (whole.length === 0 && named.length === 0) return [];
 
+  const markers = createFollowUpMarkers(sourceFile);
   // The first assignment: the decision is about the file's exports as a whole,
   // and that is where someone reading it would start.
-  const leave = leaveExports.bind(null, createFollowUpMarkers(sourceFile), report, [
-    ...whole,
-    ...named,
-  ][0].statement);
+  const site = (whole[0] ?? named[0]).statement;
+  const leave = (reason: string) => leaveExports(markers, report, site, reason);
 
   const structural = structuralBlockingReason(scope, whole, named);
   if (structural) return leave(structural);

@@ -118,9 +118,13 @@ export default async function reignore({
     config.addPlugin(withChangeTracking(retryConversionsPlugin), {});
   }
   config
+    // Formatting has to settle before ts-ignore, because a suppression comment
+    // only reaches the line directly below it and reformatting moves the line
+    // the error is on. This is the last pass that rewrites source, so nothing
+    // below it can move a comment off the error it was written for.
+    .addPlugin(eslintFixChangedPlugin, { projectEslint })
     .addPlugin(suppressionExplainer.plugin, {})
-    .addPlugin(withChangeTracking(tsIgnorePlugin), { messagePrefix })
-    .addPlugin(eslintFixChangedPlugin, { projectEslint });
+    .addPlugin(withChangeTracking(tsIgnorePlugin), { messagePrefix });
 
   const fileFilters = createMigrationFileFilters(rootDir, { gitignore, bootstrap });
   const result = await migrate({

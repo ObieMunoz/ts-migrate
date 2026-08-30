@@ -12,6 +12,7 @@ import { isStatic } from './utils/modifiers';
 import { anyTypeNode } from './utils/anyTypes';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
+import { getOrCreate } from '../utils/maps';
 
 type Options = AnyAliasOptions;
 
@@ -133,14 +134,8 @@ function collectStateEvidence(classDeclaration: ts.ClassDeclaration): StateEvide
     unknownMembers: false,
   };
 
-  const getMember = (name: string): StateMember => {
-    let member = evidence.members.get(name);
-    if (!member) {
-      member = { type: undefined, numInitializers: 0 };
-      evidence.members.set(name, member);
-    }
-    return member;
-  };
+  const getMember = (name: string): StateMember =>
+    getOrCreate(evidence.members, name, () => ({ type: undefined, numInitializers: 0 }));
 
   const readObjectLiteral = (objectLiteral: ts.ObjectLiteralExpression, isInitializer: boolean) => {
     objectLiteral.properties.forEach((property) => {

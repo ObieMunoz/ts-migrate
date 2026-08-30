@@ -11,13 +11,21 @@ function pluginOptions(config: MigrateConfig, name: string): unknown {
 }
 
 describe('buildMigrateConfig', () => {
-  it('builds the default pipeline with eslint-fix before and after ts-ignore', () => {
+  it('builds the default pipeline with eslint-fix before ts-ignore', () => {
     const { config, typesPackageDetector } = buildMigrateConfig({});
     const names = pluginNames(config);
-    expect(names.filter((name) => name === 'eslint-fix')).toHaveLength(2);
+    expect(names.filter((name) => name === 'eslint-fix')).toHaveLength(1);
+    expect(names.indexOf('eslint-fix')).toBeLessThan(names.indexOf('ts-ignore'));
     expect(names).toContain('infer-types');
-    expect(names).toContain('ts-ignore');
     expect(typesPackageDetector).toBeDefined();
+  });
+
+  // A suppression comment only reaches the line directly below it, so a pass
+  // that reformats after ts-ignore can move the comment off its error, leaving
+  // the error reported and the comment unused.
+  it('ends at ts-ignore, so nothing reformats the suppressions it wrote', () => {
+    const names = pluginNames(buildMigrateConfig({}).config);
+    expect(names[names.length - 1]).toBe('ts-ignore');
   });
 
   it('types empty object literals after inference and before add-conversions', () => {
@@ -236,19 +244,13 @@ describe('buildMigrateConfig', () => {
     expect(defaultPropsOptions({ modernizeDefaultProps: false }).modernizeDefaultProps).toBe(false);
   });
 
-  it('gives both eslint-fix passes the projectEslint choice', () => {
+  it('gives the eslint-fix pass the projectEslint choice', () => {
     const eslintFixOptions = (params: Parameters<typeof buildMigrateConfig>[0]) =>
       buildMigrateConfig(params)
         .config.plugins.filter(({ plugin }) => plugin.name === 'eslint-fix')
         .map(({ options }) => options as { projectEslint?: boolean });
-    expect(eslintFixOptions({ projectEslint: false })).toEqual([
-      { projectEslint: false },
-      { projectEslint: false },
-    ]);
-    expect(eslintFixOptions({})).toEqual([
-      { projectEslint: undefined },
-      { projectEslint: undefined },
-    ]);
+    expect(eslintFixOptions({ projectEslint: false })).toEqual([{ projectEslint: false }]);
+    expect(eslintFixOptions({})).toEqual([{ projectEslint: undefined }]);
   });
 
   it('passes projectEslint to a single --plugin eslint-fix run', () => {
