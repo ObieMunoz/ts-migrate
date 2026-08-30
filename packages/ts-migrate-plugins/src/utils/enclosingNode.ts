@@ -45,3 +45,33 @@ export function findNodeEndingAt<T extends ts.Node>(
   source.forEachChild(visit);
   return found;
 }
+
+/**
+ * The source file `fileName` holds in the service's current program, with that
+ * program's checker.
+ */
+export function programSourceAndChecker(
+  service: ts.LanguageService,
+  fileName: string,
+): { source: ts.SourceFile; checker: ts.TypeChecker } | undefined {
+  const program = service.getProgram();
+  const source = program && program.getSourceFile(fileName);
+  if (!program || !source) return undefined;
+  return { source, checker: program.getTypeChecker() };
+}
+
+/**
+ * The node `findNodeEndingAt` accepts in the re-checked `fileName`, paired with
+ * the checker that can answer questions about it.
+ */
+export function checkedNodeEndingAt<T extends ts.Node>(
+  service: ts.LanguageService,
+  fileName: string,
+  end: number,
+  match: (node: ts.Node) => node is T,
+): { node: T; checker: ts.TypeChecker } | undefined {
+  const checked = programSourceAndChecker(service, fileName);
+  if (!checked) return undefined;
+  const node = findNodeEndingAt(checked.source, end, match);
+  return node && { node, checker: checked.checker };
+}

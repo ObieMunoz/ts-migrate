@@ -13,6 +13,7 @@ import {
   TextChange,
   toOriginalPos,
 } from '../utils/candidateValidation';
+import { programSourceAndChecker } from '../utils/enclosingNode';
 import {
   getInferenceChanges,
   inferableDiagnosticCodes,
@@ -336,11 +337,9 @@ function collectBodyConflictDrops(
   annotatedFns: Set<ts.Node | null>,
 ): Set<TextChange> {
   const dropped = new Set<TextChange>();
-  const program = service.getProgram();
-  if (!program) return dropped;
-  const source = program.getSourceFile(fileName);
-  if (!source) return dropped;
-  const checker = program.getTypeChecker();
+  const checked = programSourceAndChecker(service, fileName);
+  if (!checked) return dropped;
+  const { source, checker } = checked;
 
   const dropWithin = (start: number, end: number) => {
     finalChanges.forEach((change) => {
@@ -356,15 +355,15 @@ function collectBodyConflictDrops(
     // A call that no longer matches an annotated *parameter* (e.g. a redux
     // dispatch inferred too narrowly from heterogeneous calls) is a conflict
     // of that parameter's annotation, wherever the call sits.
-    if (callArgumentErrorCodes.has(error.code)) {
-      const callee = calleeDeclarationAt(source, error.start, error.length ?? 0, checker);
-      if (callee && ts.isParameter(callee) && callee.getSourceFile() === source) {
-        const start = toOriginalPos(callee.getStart(), finalChanges);
-        const end = toOriginalPos(callee.end, finalChanges);
-        dropWithin(start, end + 1);
-        return;
-      }
+    const parameter = annotatedParameterCallee(error, source, checker);
+    if (parameter) {
+      const start = toOriginalPos(parameter.getStart(), finalChanges);
+      const end = toOriginalPos(parameter.end, finalChanges);
+      dropWithin(start, end + 1);
+      return;
+    }
 
+    if (callArgumentErrorCodes.has(error.code)) {
       // When the callee doesn't resolve to an annotated in-file parameter
       // (an external function, or an in-file declaration like a `declare
       // function`), the argument at the error position may itself be an
@@ -480,28 +479,24 @@ function attributeErrors(
   annotatedFns: Set<ts.Node | null>,
 ): Set<ts.Node | null> {
   const attributed = new Set<ts.Node | null>();
-  const program = service.getProgram();
-  if (!program) return attributed;
-  const source = program.getSourceFile(fileName);
-  if (!source) return attributed;
-  const checker = program.getTypeChecker();
+  const checked = programSourceAndChecker(service, fileName);
+  if (!checked) return attributed;
+  const { source, checker } = checked;
 
   errors.forEach((error) => {
     if (error.start == null) return;
 
     // A bad call to an annotated *parameter* (e.g. a redux dispatch) is a
     // conflict of the function owning that parameter.
-    if (callArgumentErrorCodes.has(error.code)) {
-      const callee = calleeDeclarationAt(source, error.start, error.length ?? 0, checker);
-      if (callee && ts.isParameter(callee) && callee.getSourceFile() === source) {
-        const owner = enclosingFunctionLike(
-          originalSource,
-          toOriginalPos(callee.getStart(), changes),
-        );
-        if (owner != null && annotatedFns.has(owner)) {
-          attributed.add(owner);
-          return;
-        }
+    const parameter = annotatedParameterCallee(error, source, checker);
+    if (parameter) {
+      const owner = enclosingFunctionLike(
+        originalSource,
+        toOriginalPos(parameter.getStart(), changes),
+      );
+      if (owner != null && annotatedFns.has(owner)) {
+        attributed.add(owner);
+        return;
       }
     }
 
@@ -534,6 +529,21 @@ function attributeErrors(
     attributed.add(enclosingFunctionLike(originalSource, toOriginalPos(error.start, changes)));
   });
   return attributed;
+}
+
+/**
+ * The in-file parameter a call-argument error blames, when the call it blames
+ * resolves to one.
+ */
+function annotatedParameterCallee(
+  error: ts.Diagnostic,
+  source: ts.SourceFile,
+  checker: ts.TypeChecker,
+): ts.ParameterDeclaration | undefined {
+  if (error.start == null || !callArgumentErrorCodes.has(error.code)) return undefined;
+  const callee = calleeDeclarationAt(source, error.start, error.length ?? 0, checker);
+  if (!callee || !ts.isParameter(callee) || callee.getSourceFile() !== source) return undefined;
+  return callee;
 }
 
 function calleeDeclarationAt(
