@@ -9,6 +9,7 @@ import {
   replaceHeritageTypeArguments,
 } from './utils/react';
 import { collectIdentifiers } from './utils/identifiers';
+import { innermostNodeAt } from './utils/token-pos';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { updateImports, NamedImport } from './utils/imports';
 import { collectImportSpecs, resolveSymbolImport } from './utils/importSpecs';
@@ -286,14 +287,6 @@ function unwrapImmerDraft(type: ts.Type): ts.Type {
   return type;
 }
 
-function findNodeAtPosition(sourceFile: ts.SourceFile, pos: number): ts.Node | undefined {
-  function find(node: ts.Node): ts.Node | undefined {
-    if (pos < node.getStart(sourceFile) || pos >= node.getEnd()) return undefined;
-    return ts.forEachChild(node, find) ?? node;
-  }
-  return find(sourceFile);
-}
-
 // When a call-site value's type would degrade to `any` (e.g. an action creator
 // with a large function signature), but that type is exactly the type of a
 // named, exported value, we can express the prop as `typeof <value>` — which is
@@ -379,7 +372,7 @@ function collectCallSiteProps(
       const refSourceFile = program.getSourceFile(ref.fileName);
       if (!refSourceFile) continue;
 
-      const refNode = findNodeAtPosition(refSourceFile, ref.textSpan.start);
+      const refNode = innermostNodeAt(refSourceFile, ref.textSpan.start);
       if (!refNode || !ts.isIdentifier(refNode)) continue;
 
       const parent = refNode.parent;
