@@ -37,6 +37,9 @@ const extendedConfig = `{
 }
 `;
 
+// The generated tsconfig excludes these, and the candidate walk skips them.
+const DEFAULT_EXCLUDES = ['node_modules', 'bower_components', 'jspm_packages'];
+
 // TypeScript 6 no longer loads node_modules/@types automatically when
 // "types" is unspecified (bulk inclusion requires types: ["*"], which
 // TypeScript 5 rejects). Pinning the packages present at init time makes
@@ -83,7 +86,7 @@ function installedTypesPackages(rootDir: string): string[] {
 // walk of rootDir mirroring the selection rename will make: dot-prefixed
 // names are invisible to the tsconfig include matcher and stay out.
 function findJsFiles(rootDir: string, skippedDirectories: string[]): string[] {
-  const skippedNames = new Set(['node_modules', 'bower_components', 'jspm_packages']);
+  const skippedNames = new Set(DEFAULT_EXCLUDES);
   const skippedPaths = new Set(skippedDirectories.map((dir) => path.resolve(rootDir, dir)));
   const files: string[] = [];
   const walk = (dir: string) => {
@@ -220,9 +223,8 @@ function defaultConfig(rootDir: string): DefaultConfig {
 
   // An explicit "exclude" replaces TypeScript's built-in one, so its entries
   // come along whenever gitignored directories or bootstrap files are added.
-  const defaultExcludes = ['node_modules', 'bower_components', 'jspm_packages'];
   const ignoredDirectories = listGitignoredDirectories(rootDir).filter(
-    (dir) => !defaultExcludes.includes(dir),
+    (dir) => !DEFAULT_EXCLUDES.includes(dir),
   );
   const { bootstrapFiles, migratedFiles } = detectBootstrapFiles(rootDir, ignoredDirectories);
   const excludeComments = [
@@ -241,7 +243,7 @@ function defaultConfig(rootDir: string): DefaultConfig {
   const excludeField =
     ignoredDirectories.length > 0 || bootstrapFiles.length > 0
       ? `,${excludeComments}
-  "exclude": [${[...defaultExcludes, ...ignoredDirectories, ...bootstrapFiles]
+  "exclude": [${[...DEFAULT_EXCLUDES, ...ignoredDirectories, ...bootstrapFiles]
     .map((entry) => `"${entry}"`)
     .join(', ')}]`
       : '';
