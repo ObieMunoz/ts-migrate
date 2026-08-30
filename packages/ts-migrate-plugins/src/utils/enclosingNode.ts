@@ -21,3 +21,27 @@ export default function findEnclosingNode(
   ts.forEachChild(file, visit);
   return best;
 }
+
+/**
+ * The first node in pre-order that ends at `end` and that `match` accepts. This
+ * is not the `findNodeAtSpan` in plugins/utils/token-pos, which wants both ends
+ * to line up. The walk skips a subtree that ends before `end` or starts after
+ * it, and stops descending once it has a hit.
+ */
+export function findNodeEndingAt<T extends ts.Node>(
+  source: ts.SourceFile,
+  end: number,
+  match: (node: ts.Node) => node is T,
+): T | undefined {
+  let found: T | undefined;
+  const visit = (node: ts.Node): void => {
+    if (found || node.end < end || node.getStart(source) > end) return;
+    if (node.end === end && match(node)) {
+      found = node;
+      return;
+    }
+    node.forEachChild(visit);
+  };
+  source.forEachChild(visit);
+  return found;
+}

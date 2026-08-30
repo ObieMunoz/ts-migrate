@@ -1,14 +1,8 @@
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import getTokenAtPosition from './utils/token-pos';
-import { contestedSpans, isOverloaded } from './utils/signature-relaxation';
-import {
-  applyTextChanges,
-  createFileLanguageService,
-  findNewErrors,
-  getValidationOptions,
-  TextChange,
-} from '../utils/candidateValidation';
+import { isOverloaded, provenChanges } from './utils/signature-relaxation';
+import { applyTextChanges, TextChange } from '../utils/candidateValidation';
 import { isMigratableFile } from '../utils/sourceFiles';
 import {
   addToFile,
@@ -44,7 +38,10 @@ const optionalParametersPlugin: Plugin = {
     const languageService = getLanguageService();
     const planned = pass.plannedFor(fileName, text, () => plan(languageService));
     if (!planned) return undefined;
-    return applyProven(fileName, text, sourceFile, planned.items, languageService);
+
+    const kept = provenChanges(fileName, text, sourceFile, planned.items, languageService);
+    if (!kept) return undefined;
+    return applyTextChanges(text, kept);
   },
 };
 
@@ -145,37 +142,4 @@ function optionalMarkers(declaration: ts.SignatureDeclaration, provided: number)
     changes.push({ start: parameter.name.end, length: 0, text: '?' });
   }
   return changes;
-}
-
-/**
- * The file's text with the markers that cost it nothing. A marker widens the
- * parameter to `T | undefined` inside the body, which an annotation more
- * specific than `any` can contradict; those are dropped and the rest kept.
- */
-function applyProven(
-  fileName: string,
-  text: string,
-  sourceFile: ts.SourceFile,
-  changes: TextChange[],
-  languageService: ts.LanguageService,
-): string | undefined {
-  const program = languageService.getProgram();
-  const compilerOptions = getValidationOptions(program ? program.getCompilerOptions() : {});
-  const baseline = createFileLanguageService(fileName, text, compilerOptions, program);
-
-  let kept = changes;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const candidateText = applyTextChanges(text, kept);
-    const candidate = createFileLanguageService(fileName, candidateText, compilerOptions, program);
-    const newErrors = findNewErrors(baseline, candidate, kept, fileName);
-    if (newErrors.length === 0) return candidateText;
-
-    const contested = contestedSpans(newErrors, kept, sourceFile);
-    const remaining = kept.filter(
-      (change) => !contested.some(({ pos, end }) => change.start >= pos && change.start <= end),
-    );
-    if (remaining.length === kept.length || remaining.length === 0) return undefined;
-    kept = remaining;
-  }
-  return undefined;
 }

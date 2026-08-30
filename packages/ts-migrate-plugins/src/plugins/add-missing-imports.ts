@@ -1,6 +1,7 @@
 import ts from 'typescript';
-import { fileNoticeReporter, LintConfig, Plugin } from '@obiemunoz/ts-migrate-server';
+import { fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
 import createFollowUpMarkers from '../utils/followUpMarker';
+import { inferenceFormatSettings } from '../utils/inferFromUsage';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import {
   applyImportChanges,
@@ -53,7 +54,7 @@ const addMissingImportsPlugin: Plugin<Options> = {
       languageService: getLanguageService(),
       fileName,
       sourceFile,
-      formatSettings: formatSettings(lintConfig),
+      formatSettings: inferenceFormatSettings(lintConfig, ts.sys.newLine),
       preferences: {
         quotePreference: 'auto',
         importModuleSpecifierEnding: 'auto',
@@ -109,19 +110,6 @@ const addMissingImportsPlugin: Plugin<Options> = {
 };
 
 export default addMissingImportsPlugin;
-
-function formatSettings(lintConfig?: LintConfig): ts.FormatCodeSettings {
-  return {
-    ...ts.getDefaultFormatCodeSettings(ts.sys.newLine),
-    ...(lintConfig != null
-      ? {
-          convertTabsToSpaces: !lintConfig.useTabs,
-          indentSize: lintConfig.tabWidth,
-          tabSize: lintConfig.tabWidth,
-        }
-      : undefined),
-  };
-}
 
 /**
  * A marker above each import that carries a name several modules export, naming

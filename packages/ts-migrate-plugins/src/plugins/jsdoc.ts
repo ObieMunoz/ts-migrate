@@ -213,11 +213,7 @@ const jsDocTransformerFactory =
       if (!typeNode) {
         return;
       }
-      const type = printer.printNode(
-        ts.EmitHint.Unspecified,
-        visitJSDocType(typeNode),
-        sourceFile,
-      );
+      const type = printJSDocType(typeNode);
       const questionToken = ts.isPropertyDeclaration(node) ? node.questionToken : undefined;
       const pos = (node.exclamationToken ?? questionToken ?? node.name).end;
       updates.replaceText(pos, pos, `: ${type}`);
@@ -255,11 +251,7 @@ const jsDocTransformerFactory =
         );
         return;
       }
-      const type = printer.printNode(
-        ts.EmitHint.Unspecified,
-        visitJSDocType(tag.typeExpression.type),
-        sourceFile,
-      );
+      const type = printJSDocType(tag.typeExpression.type);
       updates.replaceText(tag.parent.getStart(sourceFile), node.getStart(sourceFile), '');
       if (needsParentheses(expression)) {
         const start = expression.getStart(sourceFile);
@@ -473,35 +465,27 @@ const jsDocTransformerFactory =
 
       const members: ts.PropertySignature[] = [];
       const written = new Set<string>();
+      const addMember = (name: string, type: ts.TypeNode | undefined): void => {
+        if (written.has(name)) return;
+        written.add(name);
+        members.push(
+          factory.createPropertySignature(
+            undefined,
+            propertyName(name),
+            factory.createToken(ts.SyntaxKind.QuestionToken),
+            type,
+          ),
+        );
+      };
+
       memberTags.forEach((tag) => {
         const property = visitJSDocPropertyLikeTag(tag);
         if (!ts.isIdentifier(property.name) && !ts.isStringLiteral(property.name)) return;
-        const name = property.name.text;
-        if (written.has(name)) return;
-        written.add(name);
-        members.push(
-          factory.createPropertySignature(
-            undefined,
-            propertyName(name),
-            factory.createToken(ts.SyntaxKind.QuestionToken),
-            property.type,
-          ),
-        );
+        addMember(property.name.text, property.type);
       });
       // A binding the tags do not document still has to be readable, or the
       // annotation trades the wrong type for a missing property at every use.
-      bound.forEach((_element, name) => {
-        if (written.has(name)) return;
-        written.add(name);
-        members.push(
-          factory.createPropertySignature(
-            undefined,
-            propertyName(name),
-            factory.createToken(ts.SyntaxKind.QuestionToken),
-            anyType,
-          ),
-        );
-      });
+      bound.forEach((_element, name) => addMember(name, anyType));
       return members.length > 0 ? factory.createTypeLiteralNode(members) : undefined;
     }
 
@@ -534,12 +518,9 @@ const jsDocTransformerFactory =
     function declareTypeAliases(scan: JSDocTypeAliasScan): void {
       const byDoc = new Map<ts.JSDoc, JSDocTypeAlias[]>();
       scan.aliases.forEach((alias) => {
-        const group = byDoc.get(alias.doc);
-        if (group) {
-          group.push(alias);
-        } else {
-          byDoc.set(alias.doc, [alias]);
-        }
+        const group = byDoc.get(alias.doc) ?? [];
+        group.push(alias);
+        byDoc.set(alias.doc, group);
       });
 
       byDoc.forEach((aliases, doc) => {
@@ -591,6 +572,11 @@ const jsDocTransformerFactory =
     function printStatement(node: ts.Statement, indent: string): string {
       const text = printer.printNode(ts.EmitHint.Unspecified, node, sourceFile);
       return indent ? text.split('\n').join(`\n${indent}`) : text;
+    }
+
+    /** The text of the TypeScript type a JSDoc type node converts to. */
+    function printJSDocType(node: ts.Node): string {
+      return printer.printNode(ts.EmitHint.Unspecified, visitJSDocType(node), sourceFile);
     }
 
     function printComment(description: string, indent: string): string {
@@ -751,22 +737,20 @@ const jsDocTransformerFactory =
 
     function visitJSDocOptionalType(node: ts.JSDocOptionalType) {
       return factory.createUnionTypeNode([
-        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode) as ts.TypeNode,
+        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode),
         factory.createKeywordTypeNode(ts.SyntaxKind.UndefinedKeyword),
       ]);
     }
 
     function visitJSDocNullableType(node: ts.JSDocNullableType) {
       return factory.createUnionTypeNode([
-        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode) as ts.TypeNode,
+        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode),
         factory.createLiteralTypeNode(factory.createToken(ts.SyntaxKind.NullKeyword)),
       ]);
     }
 
     function visitJSDocVariadicType(node: ts.JSDocVariadicType) {
-      return factory.createArrayTypeNode(
-        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode) as ts.TypeNode,
-      );
+      return factory.createArrayTypeNode(ts.visitNode(node.type, visitJSDocType, ts.isTypeNode));
     }
 
     function visitJSDocFunctionType(node: ts.JSDocFunctionType) {
@@ -778,16 +762,9 @@ const jsDocTransformerFactory =
     }
 
     function visitJSDocTypeLiteral(node: ts.JSDocTypeLiteral) {
-      const propertySignatures: ts.PropertySignature[] = [];
-      if (node.jsDocPropertyTags) {
-        node.jsDocPropertyTags.forEach((tag) => {
-          const property = visitJSDocPropertyLikeTag(tag);
-          if (property) {
-            propertySignatures.push(property);
-          }
-        });
-      }
-      const type = factory.createTypeLiteralNode(propertySignatures);
+      const type = factory.createTypeLiteralNode(
+        (node.jsDocPropertyTags ?? []).map(visitJSDocPropertyLikeTag),
+      );
       return node.isArrayType ? factory.createArrayTypeNode(type) : type;
     }
 
@@ -828,7 +805,7 @@ const jsDocTransformerFactory =
         dotdotdot,
         name,
         node.questionToken,
-        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode) as ts.TypeNode,
+        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode),
         node.initializer,
       );
     }
