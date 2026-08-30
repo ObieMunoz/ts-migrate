@@ -16,6 +16,7 @@ import getTypeFromPropTypesObjectLiteral, {
   createInferPropsTypeNode,
   createPropsTypeNameGetter,
   getImportedEntityName,
+  isForbidExtraPropsCall,
   unpackInitializer,
 } from './utils/react-props';
 import { elementTypesByTag } from './utils/intrinsic-elements';
@@ -721,12 +722,7 @@ function findImportedPropTypes(
   let expression = propTypesExpression(propTypesNode);
   if (!expression) return undefined;
 
-  if (
-    ts.isCallExpression(expression) &&
-    ts.isIdentifier(expression.expression) &&
-    expression.expression.text === 'forbidExtraProps' &&
-    expression.arguments.length === 1
-  ) {
+  if (isForbidExtraPropsCall(expression)) {
     [expression] = expression.arguments;
   }
 

@@ -4,7 +4,7 @@ import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { updateImports, DefaultImport, NamedImport, ModuleImport } from './utils/imports';
 import { collectBindingNames, collectIdentifiers } from './utils/identifiers';
-import { unpackInitializer } from './utils/react-props';
+import { isForbidExtraPropsCall, unpackInitializer } from './utils/react-props';
 import { isStatic } from './utils/modifiers';
 
 /**
@@ -366,12 +366,7 @@ function unwrapForbidExtraProps(expression: ts.Expression): {
   inner: ts.Expression;
   wrapped: boolean;
 } {
-  if (
-    ts.isCallExpression(expression) &&
-    ts.isIdentifier(expression.expression) &&
-    expression.expression.text === 'forbidExtraProps' &&
-    expression.arguments.length === 1
-  ) {
+  if (isForbidExtraPropsCall(expression)) {
     return { inner: expression.arguments[0], wrapped: true };
   }
   return { inner: expression, wrapped: false };
