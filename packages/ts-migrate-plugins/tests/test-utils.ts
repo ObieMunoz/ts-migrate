@@ -247,6 +247,13 @@ const defaultCompilerOptions: ts.CompilerOptions = {
   moduleResolution: ts.ModuleResolutionKind.Bundler,
 };
 
+/** The options a suite needs for a fixture program that renders JSX. */
+export const reactCompilerOptions: ts.CompilerOptions = {
+  jsx: ts.JsxEmit.React,
+  esModuleInterop: true,
+  skipLibCheck: true,
+};
+
 /**
  * Params rooted in a real directory, for a plugin whose validation programs
  * read every file but the one under migration from disk. `realPluginParams`

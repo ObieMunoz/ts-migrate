@@ -1,16 +1,15 @@
 import path from 'path';
 import ts from 'typescript';
-import { createTypeChecker, fixturePluginParams, FileMap } from '../test-utils';
+import {
+  createTypeChecker,
+  fixturePluginParams,
+  reactCompilerOptions as compilerOptions,
+  FileMap,
+} from '../test-utils';
 import reactForwardedPropsPlugin from '../../src/plugins/react-forwarded-props';
 
 const rootDir = __dirname;
 const fixtureFile = path.join(rootDir, 'react-forwarded-props-fixture.tsx');
-
-const compilerOptions: ts.CompilerOptions = {
-  jsx: ts.JsxEmit.React,
-  esModuleInterop: true,
-  skipLibCheck: true,
-};
 
 const target = `\
 import React from 'react';

@@ -1,8 +1,8 @@
 import path from 'path';
-import ts from 'typescript';
 import {
   createTypeChecker,
   fixturePluginParams,
+  reactCompilerOptions as compilerOptions,
   FileMap,
   mockPluginParams,
 } from '../test-utils';
@@ -13,12 +13,6 @@ import reactDefaultPropsPlugin from '../../src/plugins/react-default-props';
 // here and in the single-file programs the plugin validates against.
 const rootDir = __dirname;
 const fixtureFile = path.join(rootDir, 'react-destructured-props-fixture.tsx');
-
-const compilerOptions: ts.CompilerOptions = {
-  jsx: ts.JsxEmit.React,
-  esModuleInterop: true,
-  skipLibCheck: true,
-};
 
 function run(text: string, options?: { anyAlias?: string }, extraFiles?: FileMap): string {
   const result = reactDestructuredPropsPlugin.run(
