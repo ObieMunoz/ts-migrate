@@ -89,7 +89,7 @@ export function updatePackageJsonReferences(
   const postRenamePaths = (dir: string, pattern: string): string[] =>
     walkFiles(path.resolve(dir, staticPrefix(pattern)), walkCache)
       .map((file) => newByOld.get(file) ?? file)
-      .filter((file) => isUnder(dir, file))
+      .filter((file) => isStrictlyUnder(dir, file))
       .map((file) => relativeTo(dir, file));
 
   const rewritePath = (value: string, dir: string): string | undefined => {
@@ -109,7 +109,7 @@ export function updatePackageJsonReferences(
     const newExtensions = new Set<string>();
     renamedFiles.forEach(({ oldFile, newFile }) => {
       const resolved = path.resolve(oldFile);
-      if (!isUnder(dir, resolved) || !matches.test(relativeTo(dir, resolved))) return;
+      if (!isStrictlyUnder(dir, resolved) || !matches.test(relativeTo(dir, resolved))) return;
       newExtensions.add(path.extname(newFile).slice(1));
     });
     if (newExtensions.size === 0) return undefined;
@@ -158,7 +158,9 @@ export function updatePackageJsonReferences(
     const matches = globToRegExp(pattern);
     return renamedFiles
       .map(({ oldFile, newFile }) => ({ oldFile: path.resolve(oldFile), newFile }))
-      .filter(({ oldFile }) => isUnder(dir, oldFile) && matches.test(relativeTo(dir, oldFile)))
+      .filter(
+        ({ oldFile }) => isStrictlyUnder(dir, oldFile) && matches.test(relativeTo(dir, oldFile)),
+      )
       .map(({ newFile }) => newFile)[0];
   };
 
@@ -280,7 +282,8 @@ function formatKeyPath(keyPath: JSON5Path): string {
     .join('');
 }
 
-function isUnder(parentDir: string, candidate: string): boolean {
+/** Strictly inside parentDir; not `paths.isUnder`, since a package dir is not under itself. */
+function isStrictlyUnder(parentDir: string, candidate: string): boolean {
   const rel = path.relative(parentDir, candidate);
   return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
@@ -398,7 +401,7 @@ function packageJsonFiles(
   const dirs = new Set<string>([root]);
   renamedFiles.forEach(({ oldFile }) => {
     let dir = path.dirname(path.resolve(oldFile));
-    while (dir !== root && isUnder(root, dir) && !dirs.has(dir)) {
+    while (dir !== root && isStrictlyUnder(root, dir) && !dirs.has(dir)) {
       dirs.add(dir);
       dir = path.dirname(dir);
     }
