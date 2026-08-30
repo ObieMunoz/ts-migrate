@@ -3,7 +3,14 @@ import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 import rename from '../../../commands/rename';
-import { createDir, copyDir, deleteDir, getDirData, hashDir } from '@obiemunoz/ts-migrate-test-utils';
+import {
+  createDir,
+  copyDir,
+  deleteDir,
+  getDirData,
+  hashDir,
+  writeFiles,
+} from '@obiemunoz/ts-migrate-test-utils';
 
 jest.mock('updatable-log', () => {
   const { mockUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
@@ -90,15 +97,12 @@ describe('rename command', () => {
   describe('gitignored files', () => {
     const setUpGitignoredProject = () => {
       execFileSync('git', ['init'], { cwd: rootDir, stdio: 'ignore' });
-      const writeFile = (relPath: string, text: string) => {
-        const filePath = path.resolve(rootDir, relPath);
-        fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        fs.writeFileSync(filePath, text);
-      };
-      writeFile('tsconfig.json', JSON.stringify({ include: ['./**/*'] }));
-      writeFile('.gitignore', 'dist/\n');
-      writeFile('src/app.js', 'const a = 1;\n');
-      writeFile('dist/bundle.js', 'const b = 2;\n');
+      writeFiles(rootDir, {
+        'tsconfig.json': JSON.stringify({ include: ['./**/*'] }),
+        '.gitignore': 'dist/\n',
+        'src/app.js': 'const a = 1;\n',
+        'dist/bundle.js': 'const b = 2;\n',
+      });
     };
 
     it('skips them by default', () => {
@@ -136,18 +140,15 @@ describe('rename command', () => {
 
   describe('.mjs and .cjs files', () => {
     const setUpModuleProject = () => {
-      const writeFile = (relPath: string, text: string) => {
-        const filePath = path.resolve(rootDir, relPath);
-        fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        fs.writeFileSync(filePath, text);
-      };
-      writeFile('tsconfig.json', JSON.stringify({ include: ['./**/*'] }));
-      writeFile('package.json', JSON.stringify({ type: 'module' }));
-      writeFile('postcss.config.cjs', 'module.exports = {};\n');
-      writeFile('eslint.config.mjs', 'export default [];\n');
-      writeFile('src/task.mjs', 'export const task = 1;\n');
-      writeFile('src/helper.cjs', 'module.exports = {};\n');
-      writeFile('src/Widget.mjs', "import React from 'react';\nexport const W = () => <div />;\n");
+      writeFiles(rootDir, {
+        'tsconfig.json': JSON.stringify({ include: ['./**/*'] }),
+        'package.json': JSON.stringify({ type: 'module' }),
+        'postcss.config.cjs': 'module.exports = {};\n',
+        'eslint.config.mjs': 'export default [];\n',
+        'src/task.mjs': 'export const task = 1;\n',
+        'src/helper.cjs': 'module.exports = {};\n',
+        'src/Widget.mjs': "import React from 'react';\nexport const W = () => <div />;\n",
+      });
     };
 
     const skippedRelativeTo = (result: ReturnType<typeof rename>) =>
@@ -210,17 +211,14 @@ describe('rename command', () => {
 
   describe('build system files', () => {
     const setUpBootstrapProject = () => {
-      const writeFile = (relPath: string, text: string) => {
-        const filePath = path.resolve(rootDir, relPath);
-        fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        fs.writeFileSync(filePath, text);
-      };
-      writeFile('tsconfig.json', JSON.stringify({ include: ['./**/*'] }));
-      writeFile('package.json', JSON.stringify({ scripts: { build: 'node scripts/build.js' } }));
-      writeFile('webpack.config.js', "const paths = require('./config/paths');\n");
-      writeFile('config/paths.js', 'module.exports = {};\n');
-      writeFile('scripts/build.js', "require('../webpack.config');\n");
-      writeFile('src/app.js', 'const a = 1;\n');
+      writeFiles(rootDir, {
+        'tsconfig.json': JSON.stringify({ include: ['./**/*'] }),
+        'package.json': JSON.stringify({ scripts: { build: 'node scripts/build.js' } }),
+        'webpack.config.js': "const paths = require('./config/paths');\n",
+        'config/paths.js': 'module.exports = {};\n',
+        'scripts/build.js': "require('../webpack.config');\n",
+        'src/app.js': 'const a = 1;\n',
+      });
     };
 
     it('keeps them as JavaScript by default', () => {
@@ -293,17 +291,14 @@ describe('rename command', () => {
     });
 
     it('keeps a config split per environment, and the script that names it', () => {
-      const writeFile = (relPath: string, text: string) => {
-        const filePath = path.resolve(rootDir, relPath);
-        fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        fs.writeFileSync(filePath, text);
-      };
       const build = 'rm -rf build && webpack --config webpack.config.production.js --progress';
-      writeFile('tsconfig.json', JSON.stringify({ include: ['./**/*'] }));
-      writeFile('package.json', JSON.stringify({ scripts: { build } }));
-      writeFile('webpack.config.js', 'module.exports = {};\n');
-      writeFile('webpack.config.production.js', 'module.exports = {};\n');
-      writeFile('src/app.js', 'const a = 1;\n');
+      writeFiles(rootDir, {
+        'tsconfig.json': JSON.stringify({ include: ['./**/*'] }),
+        'package.json': JSON.stringify({ scripts: { build } }),
+        'webpack.config.js': 'module.exports = {};\n',
+        'webpack.config.production.js': 'module.exports = {};\n',
+        'src/app.js': 'const a = 1;\n',
+      });
 
       const result = rename({ rootDir });
 
@@ -328,11 +323,6 @@ describe('rename command', () => {
   });
 
   describe('package.json references', () => {
-    const writeFile = (relPath: string, text: string) => {
-      const filePath = path.resolve(rootDir, relPath);
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      fs.writeFileSync(filePath, text);
-    };
     const readPackageJson = () => fs.readFileSync(path.resolve(rootDir, 'package.json'), 'utf-8');
 
     const packageJsonText = `{
@@ -359,14 +349,16 @@ describe('rename command', () => {
 `;
 
     const setUpProject = () => {
-      writeFile('tsconfig.json', JSON.stringify({ include: ['./**/*'] }));
-      writeFile('package.json', packageJsonText);
-      writeFile('scripts/build.js', 'console.log(1);\n');
-      writeFile('jest.setup.js', 'global.x = 1;\n');
-      writeFile('src/index.js', 'const a = 1;\n');
-      writeFile('src/cli.js', 'const b = 2;\n');
-      writeFile('src/util.spec.js', 'const c = 3;\n');
-      writeFile('test/unit.test.js', 'const d = 4;\n');
+      writeFiles(rootDir, {
+        'tsconfig.json': JSON.stringify({ include: ['./**/*'] }),
+        'package.json': packageJsonText,
+        'scripts/build.js': 'console.log(1);\n',
+        'jest.setup.js': 'global.x = 1;\n',
+        'src/index.js': 'const a = 1;\n',
+        'src/cli.js': 'const b = 2;\n',
+        'src/util.spec.js': 'const c = 3;\n',
+        'test/unit.test.js': 'const d = 4;\n',
+      });
     };
 
     it('repoints script paths and test globs, and preserves the formatting', () => {
@@ -421,7 +413,9 @@ describe('rename command', () => {
 
     it('does not ask a project that already compiles TypeScript for a build step', () => {
       setUpProject();
-      writeFile('package.json', packageJsonText.replace('node scripts/build.js', 'tsc -p .'));
+      writeFiles(rootDir, {
+        'package.json': packageJsonText.replace('node scripts/build.js', 'tsc -p .'),
+      });
       const infoSpy = jest.spyOn(log, 'info');
 
       rename({ rootDir });
@@ -455,10 +449,12 @@ describe('rename command', () => {
     });
 
     it('widens a glob that still matches unmigrated files', () => {
-      writeFile('tsconfig.json', JSON.stringify({ include: ['./**/*'], exclude: ['legacy'] }));
-      writeFile('package.json', JSON.stringify({ scripts: { test: 'mocha "**/*.test.js"' } }));
-      writeFile('src/a.test.js', 'const a = 1;\n');
-      writeFile('legacy/b.test.js', 'const b = 2;\n');
+      writeFiles(rootDir, {
+        'tsconfig.json': JSON.stringify({ include: ['./**/*'], exclude: ['legacy'] }),
+        'package.json': JSON.stringify({ scripts: { test: 'mocha "**/*.test.js"' } }),
+        'src/a.test.js': 'const a = 1;\n',
+        'legacy/b.test.js': 'const b = 2;\n',
+      });
 
       const result = rename({ rootDir });
 
@@ -469,13 +465,12 @@ describe('rename command', () => {
     });
 
     it('widens a glob whose matches renamed to more than one extension', () => {
-      writeFile('tsconfig.json', JSON.stringify({ include: ['./**/*'] }));
-      writeFile('package.json', JSON.stringify({ jest: { testMatch: ['**/*.test.js'] } }));
-      writeFile('src/a.test.js', 'const a = 1;\n');
-      writeFile(
-        'src/Widget.test.js',
-        "import React from 'react';\nexport const W = () => <div />;\n",
-      );
+      writeFiles(rootDir, {
+        'tsconfig.json': JSON.stringify({ include: ['./**/*'] }),
+        'package.json': JSON.stringify({ jest: { testMatch: ['**/*.test.js'] } }),
+        'src/a.test.js': 'const a = 1;\n',
+        'src/Widget.test.js': "import React from 'react';\nexport const W = () => <div />;\n",
+      });
 
       const result = rename({ rootDir });
 
@@ -485,10 +480,12 @@ describe('rename command', () => {
     });
 
     it('leaves a glob alone when the rename matched none of it', () => {
-      writeFile('tsconfig.json', JSON.stringify({ include: ['src/**/*'] }));
-      writeFile('package.json', JSON.stringify({ scripts: { test: 'mocha "test/**/*.js"' } }));
-      writeFile('src/a.js', 'const a = 1;\n');
-      writeFile('test/b.js', 'const b = 2;\n');
+      writeFiles(rootDir, {
+        'tsconfig.json': JSON.stringify({ include: ['src/**/*'] }),
+        'package.json': JSON.stringify({ scripts: { test: 'mocha "test/**/*.js"' } }),
+        'src/a.js': 'const a = 1;\n',
+        'test/b.js': 'const b = 2;\n',
+      });
 
       const result = rename({ rootDir });
 
@@ -498,12 +495,6 @@ describe('rename command', () => {
   });
 
   describe('files that cannot be written', () => {
-    const writeFile = (relPath: string, text: string) => {
-      const filePath = path.resolve(rootDir, relPath);
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      fs.writeFileSync(filePath, text);
-    };
-
     // A read-only checkout is the case. Mocking the write rather than
     // chmodding keeps the test off its own permissions, and off a directory
     // afterEach still has to delete.
@@ -512,10 +503,12 @@ describe('rename command', () => {
     };
 
     const writeProject = () => {
-      writeFile('tsconfig.json', JSON.stringify({ include: ['src/**/*'] }));
-      writeFile('package.json', JSON.stringify({ jest: { setupFiles: ['src/setup.js'] } }));
-      writeFile('project.json', JSON.stringify({ allowedImports: ['src/setup.js'] }));
-      writeFile('src/setup.js', 'const a = 1;\n');
+      writeFiles(rootDir, {
+        'tsconfig.json': JSON.stringify({ include: ['src/**/*'] }),
+        'package.json': JSON.stringify({ jest: { setupFiles: ['src/setup.js'] } }),
+        'project.json': JSON.stringify({ allowedImports: ['src/setup.js'] }),
+        'src/setup.js': 'const a = 1;\n',
+      });
     };
 
     it('reports a move it cannot make instead of throwing past the command', () => {

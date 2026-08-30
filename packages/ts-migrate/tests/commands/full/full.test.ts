@@ -3,7 +3,13 @@ import fs from 'fs';
 import path from 'path';
 import full, { FullParams, Prompter } from '../../../commands/full';
 import { TypeScriptDecision } from '../../../utils/resolveTypeScript';
-import { createTmpDir, deleteDir, hashDir, transcriptLines } from '@obiemunoz/ts-migrate-test-utils';
+import {
+  createTmpDir,
+  deleteDir,
+  hashDir,
+  transcriptLines,
+  writeFiles,
+} from '@obiemunoz/ts-migrate-test-utils';
 
 /**
  * The pipeline driven in process, the way a caller drives it, rather than
@@ -60,13 +66,7 @@ const decision = (): TypeScriptDecision => ({
   source: 'project',
 });
 
-function writeProject(files: Record<string, string>): void {
-  Object.entries(files).forEach(([file, text]) => {
-    const filePath = path.join(rootDir, file);
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, text);
-  });
-}
+const writeProject = (files: Record<string, string>) => writeFiles(rootDir, files);
 
 /** A project small enough that a real migration of it costs a second. */
 function writeSmallProject(): void {

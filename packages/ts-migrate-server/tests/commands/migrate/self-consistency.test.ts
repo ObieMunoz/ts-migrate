@@ -4,6 +4,7 @@ import path from 'path';
 import migrate, { MigrateConfig } from '../../../src/migrate';
 import MigrationProject from '../../../src/migrate/MigrationProject';
 import { Plugin } from '../../../types';
+import { writeFiles } from '@obiemunoz/ts-migrate-test-utils';
 
 jest.mock('updatable-log', () => ({
   error: () => {},
@@ -38,14 +39,6 @@ const suppressErrorsPlugin: Plugin = {
   },
 };
 
-function writeFixture(rootDir: string, files: { [filePath: string]: string }) {
-  Object.entries(files).forEach(([filePath, contents]) => {
-    const fullPath = path.join(rootDir, filePath);
-    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-    fs.writeFileSync(fullPath, contents);
-  });
-}
-
 describe('migrate self-consistency', () => {
   let rootDir: string;
 
@@ -60,7 +53,7 @@ describe('migrate self-consistency', () => {
   });
 
   it('adds no suppressions for globals that pinned @types packages provide, and a fresh check agrees with the migration', async () => {
-    writeFixture(rootDir, {
+    writeFiles(rootDir, {
       'tsconfig.json': JSON.stringify({
         compilerOptions: {
           target: 'esnext',

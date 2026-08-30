@@ -37,6 +37,14 @@ export function createTmpDir(prefix: string) {
   return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 }
 
+export function writeFiles(rootDir: string, files: Record<string, string>) {
+  Object.entries(files).forEach(([relPath, text]) => {
+    const filePath = path.resolve(rootDir, relPath);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, text);
+  });
+}
+
 export function copyDir(srcDir: string, destDir: string) {
   assertDirExists(srcDir);
   assertDirExists(destDir);

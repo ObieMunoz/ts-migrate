@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs';
-import { createDir, deleteDir } from '@obiemunoz/ts-migrate-test-utils';
+import { createDir, deleteDir, writeFiles } from '@obiemunoz/ts-migrate-test-utils';
 import computeDirtyFiles from '../../src/migrate/dirtyFiles';
 import MigrationProject from '../../src/migrate/MigrationProject';
 
@@ -34,11 +34,7 @@ describe('computeDirtyFiles', () => {
         include: ['**/*'],
       }),
     );
-    Object.entries(files).forEach(([fileName, text]) => {
-      const target = path.join(rootDir, fileName);
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.writeFileSync(target, text);
-    });
+    writeFiles(rootDir, files);
 
     const project = new MigrationProject({
       tsConfigFilePath: path.join(rootDir, 'tsconfig.json'),
