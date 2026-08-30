@@ -8,6 +8,7 @@ import {
 } from './utils/react';
 import { collectIdentifiers } from './utils/identifiers';
 import { isStatic } from './utils/modifiers';
+import { anyTypeNode } from './utils/anyTypes';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 
@@ -85,10 +86,7 @@ const reactClassStatePlugin: Plugin<Options> = {
       };
 
       const stateTypeName = getStateTypeName();
-      const createAnyType = (): ts.TypeNode =>
-        options.anyAlias != null
-          ? ts.factory.createTypeReferenceNode(options.anyAlias, undefined)
-          : ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
+      const createAnyType = (): ts.TypeNode => anyTypeNode(options.anyAlias);
       const stateTypeNode = createStateTypeNode(evidence, createAnyType);
       const newStateType = ts.factory.createTypeAliasDeclaration(
         undefined,

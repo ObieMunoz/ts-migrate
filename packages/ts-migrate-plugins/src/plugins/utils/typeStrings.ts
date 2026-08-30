@@ -1,4 +1,5 @@
 import ts from 'typescript';
+import { anyTypeNode } from './anyTypes';
 
 // Split a type string on `sep` only at depth 0 (not inside < > ( ) [ ] { } or a
 // string literal). The `>` of an arrow closes nothing, and a separator inside a
@@ -157,9 +158,7 @@ export function buildTypeNode(typeStr: string, anyAlias?: string): ts.TypeNode {
   }
 
   // Fallback: emit anyAlias / any
-  return anyAlias
-    ? ts.factory.createTypeReferenceNode(anyAlias, undefined)
-    : ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
+  return anyTypeNode(anyAlias);
 }
 
 // Reduce a list of observed type strings to a single canonical type string.

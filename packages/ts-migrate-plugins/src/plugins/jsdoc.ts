@@ -16,6 +16,7 @@ import {
   scanJSDocTypeAliases,
 } from './utils/jsdoc-type-aliases';
 import { hasParameterParentheses } from './utils/arrow';
+import { anyTypeNode } from './utils/anyTypes';
 
 type TypeMap = Record<string, TypeOptions>;
 
@@ -100,9 +101,7 @@ const jsDocTransformerFactory =
   (context: ts.TransformationContext) => {
     const { factory } = context;
     const printer = ts.createPrinter();
-    const anyType = anyAlias
-      ? factory.createTypeReferenceNode(anyAlias, undefined)
-      : factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
+    const anyType = anyTypeNode(anyAlias, factory);
     const typeMap: TypeMap = { ...defaultTypeMap, ...optionsTypeMap };
     // How deep the current visitJSDocType recursion is, so that only the type
     // a caller is about to write pays for the printability check.

@@ -7,6 +7,7 @@ import {
   collectIdentifierNodes,
   KnownDefinitionMap,
 } from './utils/identifiers';
+import { anyTypeNode } from './utils/anyTypes';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 
 type Options = AnyAliasOptions;
@@ -181,9 +182,7 @@ function hoistStaticClassProperties(
               [ts.factory.createModifier(ts.SyntaxKind.StaticKeyword)],
               propertyName,
               undefined,
-              options.anyAlias != null
-                ? ts.factory.createTypeReferenceNode(options.anyAlias, undefined)
-                : ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
+              anyTypeNode(options.anyAlias),
               undefined,
             ),
           );
