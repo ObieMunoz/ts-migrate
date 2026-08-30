@@ -45,13 +45,15 @@ import {
 /**
  * Runs one report. A report explains a run that has already done its work, so
  * it must never fail an otherwise successful run: what it cannot say becomes a
- * warning naming what went unsaid.
+ * warning naming what went unsaid, and undefined where the report had a value
+ * to return.
  */
-function bestEffort(what: string, report: () => void): void {
+function bestEffort<T>(what: string, report: () => T): T | undefined {
   try {
-    report();
+    return report();
   } catch (err) {
     log.warn(`Skipped ${what}: ${errorMessage(err)}`);
+    return undefined;
   }
 }
 
@@ -132,12 +134,10 @@ export function typesPackageReport(
   rootDir: string,
   folder: string,
 ): string | undefined {
-  try {
-    return formatTypesPackageReport(detector.summarize(rootDir), folder) || undefined;
-  } catch (err) {
-    log.warn(`Skipped type definition recommendations: ${errorMessage(err)}`);
-    return undefined;
-  }
+  return bestEffort(
+    'type definition recommendations',
+    () => formatTypesPackageReport(detector.summarize(rootDir), folder) || undefined,
+  );
 }
 
 /**
@@ -202,16 +202,11 @@ export function reportGeneratedFileInclusion(
   displayPath: string,
   dryRun: boolean,
 ): void {
-  let repair;
-  try {
-    repair = ensureIncludedByTsConfig(rootDir, filePath, { dryRun });
-  } catch (err) {
-    log.warn(
-      'Skipped checking whether tsconfig.json includes the generated declarations: ' +
-        errorMessage(err),
-    );
-    return;
-  }
+  const repair = bestEffort(
+    'checking whether tsconfig.json includes the generated declarations',
+    () => ensureIncludedByTsConfig(rootDir, filePath, { dryRun }),
+  );
+  if (!repair) return;
 
   switch (repair.kind) {
     case 'included':
@@ -428,12 +423,11 @@ export function printDryRunSummary(
     return;
   }
 
-  let debtByFile: Record<string, FileDebt> = {};
-  try {
-    debtByFile = scanTypeDebtForFiles(rootDir, [...updatedSourceFiles], fileContents).files;
-  } catch (err) {
-    log.warn(`Skipped the suppression counts of the dry run summary: ${errorMessage(err)}`);
-  }
+  const debtByFile: Record<string, FileDebt> =
+    bestEffort(
+      'the suppression counts of the dry run summary',
+      () => scanTypeDebtForFiles(rootDir, [...updatedSourceFiles], fileContents).files,
+    ) ?? {};
 
   const lines = [
     `Dry run: ${updatedSourceFiles.size} file(s) would be updated in ${folder} ` +
