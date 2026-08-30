@@ -1,6 +1,6 @@
 import ts from 'typescript';
 import { printType, PrintTypeOptions, TypePrintRefusal } from '../../../src/utils/typePrinter';
-import { defaultCompilerOptions } from '../../test-utils';
+import { createInMemoryProgram } from '../../test-utils';
 
 const fileName = '/print.ts';
 
@@ -15,23 +15,7 @@ function print(
     ...extraFiles,
     [fileName]: `${declarations}\nconst value = ${expression};\n`,
   };
-  const host: ts.CompilerHost = {
-    getSourceFile: (name, languageVersion) => {
-      const contents = files[name] ?? ts.sys.readFile(name);
-      return contents === undefined
-        ? undefined
-        : ts.createSourceFile(name, contents, languageVersion, true);
-    },
-    getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
-    writeFile: () => {},
-    getCurrentDirectory: () => '/',
-    getCanonicalFileName: (name) => name,
-    useCaseSensitiveFileNames: () => true,
-    getNewLine: () => '\n',
-    fileExists: (name) => name in files || ts.sys.fileExists(name),
-    readFile: (name) => files[name] ?? ts.sys.readFile(name),
-  };
-  const program = ts.createProgram([fileName], defaultCompilerOptions, host);
+  const program = createInMemoryProgram(files, { rootNames: [fileName] });
   const source = program.getSourceFile(fileName);
   if (!source) throw new Error('no source file');
 

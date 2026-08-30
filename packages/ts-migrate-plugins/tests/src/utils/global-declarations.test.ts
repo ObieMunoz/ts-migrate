@@ -15,7 +15,7 @@ import {
   parseGlobalDeclarations,
   renderGlobalDeclarations,
 } from '../../../src/utils/globalDeclarations';
-import { defaultCompilerOptions, mockPluginParams } from '../../test-utils';
+import { createInMemoryProgram, mockPluginParams } from '../../test-utils';
 
 const fixtureDirs: string[] = [];
 
@@ -34,29 +34,8 @@ afterAll(() => {
   fixtureDirs.forEach((dir) => fs.rmSync(dir, { recursive: true, force: true }));
 });
 
-/** Compiles the given files in memory, resolving the lib files from disk. */
-function programFor(files: { [fileName: string]: string }): ts.Program {
-  const host: ts.CompilerHost = {
-    getSourceFile: (fileName, languageVersion) => {
-      const text = files[fileName] ?? ts.sys.readFile(fileName);
-      return text === undefined
-        ? undefined
-        : ts.createSourceFile(fileName, text, languageVersion, true);
-    },
-    getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
-    writeFile: () => {},
-    getCurrentDirectory: () => '/',
-    getCanonicalFileName: (fileName) => fileName,
-    useCaseSensitiveFileNames: () => true,
-    getNewLine: () => '\n',
-    fileExists: (fileName) => fileName in files || ts.sys.fileExists(fileName),
-    readFile: (fileName) => files[fileName] ?? ts.sys.readFile(fileName),
-  };
-  return ts.createProgram(Object.keys(files), defaultCompilerOptions, host);
-}
-
 function diagnosticsOf(files: { [fileName: string]: string }): string[] {
-  const program = programFor(files);
+  const program = createInMemoryProgram(files);
   return [...program.getSyntacticDiagnostics(), ...program.getSemanticDiagnostics()].map(
     (diagnostic) =>
       `${diagnostic.file?.fileName} TS${diagnostic.code}: ${ts.flattenDiagnosticMessageText(
@@ -69,7 +48,7 @@ function diagnosticsOf(files: { [fileName: string]: string }): string[] {
 /** Collects from every file of a real program, the way the pipeline does. */
 function collectFrom(files: { [fileName: string]: string }): GlobalAssignmentEvidence {
   const evidence = createGlobalAssignmentEvidence();
-  const program = programFor(files);
+  const program = createInMemoryProgram(files);
   const checker = program.getTypeChecker();
   Object.keys(files).forEach((fileName) => {
     const sourceFile = program.getSourceFile(fileName)!;
