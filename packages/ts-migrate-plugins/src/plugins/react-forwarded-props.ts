@@ -268,10 +268,8 @@ function onlyTarget(targets: SpreadTarget[]): SpreadTarget | undefined {
   }
   const first = targets[0];
   const name = first.tagName.getText();
-  return targets.every((target) => target.tagName.getText() === name) &&
-    isNameableJsxTagName(first.tagName)
-    ? first
-    : undefined;
+  const sameTag = targets.every((target) => target.tagName.getText() === name);
+  return sameTag && isNameableJsxTagName(first.tagName) ? first : undefined;
 }
 
 function targetDeclaration(
