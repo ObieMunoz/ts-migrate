@@ -767,7 +767,6 @@ cli
           typesPreflight: args.typesPreflight,
           typesReportFile: args.typesReportFile,
           suppressionReportFile: args.suppressionReportFile,
-          collectSummary: true,
         },
         prompter: args.yes ? undefined : createPrompter(),
       });
