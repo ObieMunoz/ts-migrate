@@ -87,11 +87,6 @@ export default class PassNotices {
       .sort((a, b) => b.fileCount - a.fileCount);
   }
 
-  /** Files the plugin could not process, across every cause. */
-  failedFileCount(): number {
-    return this.failedFiles.size;
-  }
-
   /**
    * Prints the report. Call after the pass's progress counter is finished.
    *

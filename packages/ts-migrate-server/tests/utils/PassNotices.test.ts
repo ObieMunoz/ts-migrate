@@ -57,7 +57,13 @@ describe('PassNotices', () => {
     notices.add(file('a.ts'), { reason: 'first' });
     notices.add(file('a.ts'), { reason: 'second' });
 
-    expect(notices.failedFileCount()).toBe(1);
+    notices.report('[eslint-fix]');
+
+    expect(warnings()).toEqual([
+      '[eslint-fix] 1 file(s) could not be processed and were left unchanged:',
+      '[eslint-fix]   1 file(s): first. First: a.ts.',
+      '[eslint-fix]   1 file(s): second. First: a.ts.',
+    ]);
   });
 
   it('keeps a recovered notice out of the pass report, for the run to report at the end', () => {
@@ -66,7 +72,6 @@ describe('PassNotices', () => {
 
     notices.report('[eslint-fix]');
 
-    expect(notices.failedFileCount()).toBe(0);
     expect(mockedLog.warn).not.toHaveBeenCalled();
     expect(notices.groups()).toEqual([
       expect.objectContaining({ reason: 'linted in-process', recovered: true, fileCount: 1 }),
