@@ -771,16 +771,9 @@ const jsDocTransformerFactory =
     }
 
     function visitJSDocTypeLiteral(node: ts.JSDocTypeLiteral) {
-      const propertySignatures: ts.PropertySignature[] = [];
-      if (node.jsDocPropertyTags) {
-        node.jsDocPropertyTags.forEach((tag) => {
-          const property = visitJSDocPropertyLikeTag(tag);
-          if (property) {
-            propertySignatures.push(property);
-          }
-        });
-      }
-      const type = factory.createTypeLiteralNode(propertySignatures);
+      const type = factory.createTypeLiteralNode(
+        (node.jsDocPropertyTags ?? []).map(visitJSDocPropertyLikeTag),
+      );
       return node.isArrayType ? factory.createArrayTypeNode(type) : type;
     }
 
