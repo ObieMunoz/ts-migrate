@@ -337,8 +337,8 @@ interface CallSiteResult {
   neededImports: NamedImport[];
 }
 
-// The JSX element a reference tags, or undefined when the reference is not a
-// JSX tag name.
+// The JSX element whose tag name sits at this position, or undefined when the
+// position is not a JSX tag name.
 function jsxCallSiteAt(
   sourceFile: ts.SourceFile,
   position: number,
@@ -352,23 +352,163 @@ function jsxCallSiteAt(
   return undefined;
 }
 
+interface CallSiteOptions {
+  anyAlias?: string;
+  anyFunctionAlias?: string;
+  includeChildren: boolean;
+  skipOnSpread: boolean;
+}
+
+// The evidence gathered so far for one component, plus the context the
+// per-call-site helpers need to read a type.
+interface CallSiteScan {
+  fileName: string;
+  checker: ts.TypeChecker;
+  options: CallSiteOptions;
+  propMap: Map<string, PropInfo>;
+  neededImports: NamedImport[];
+}
+
+function recordChildrenProp(propMap: Map<string, PropInfo>) {
+  const info = propMap.get('children');
+  if (info) {
+    info.presentCount++;
+    info.thisPropsOnly = false;
+    return;
+  }
+
+  propMap.set('children', {
+    observedTypes: ['React.ReactNode'],
+    observedTsTypes: [null],
+    presentCount: 1,
+    optionalHint: true,
+    thisPropsOnly: false,
+  });
+}
+
+// The type observed for a single JSX attribute, along with any import the
+// emitted type string needs.
+function readAttributeType(
+  attr: ts.JsxAttribute,
+  refSourceFile: ts.SourceFile,
+  scan: CallSiteScan,
+): { typeStr: string; tsType: ts.Type | null } {
+  const { fileName, checker, options, neededImports } = scan;
+  const { anyAlias, anyFunctionAlias } = options;
+
+  // Boolean shorthand: <Foo disabled />
+  if (!attr.initializer) return { typeStr: 'boolean', tsType: null };
+  if (ts.isStringLiteral(attr.initializer)) {
+    return { typeStr: `"${attr.initializer.text}"`, tsType: null };
+  }
+  if (!ts.isJsxExpression(attr.initializer) || attr.initializer.expression == null) {
+    return { typeStr: anyAlias ?? 'any', tsType: null };
+  }
+
+  const tsType = unwrapImmerDraft(checker.getTypeAtLocation(attr.initializer.expression));
+  let typeStr = checker.typeToString(tsType);
+  // Strip any import() notation TypeScript may emit for types from
+  // external modules not imported in the component file.
+  const importPrefix = /^import\("[^"]+"\)\./.exec(typeStr);
+  if (importPrefix) {
+    typeStr = typeStr.slice(importPrefix[0].length);
+  }
+
+  if (!typeStrDegradesToAny(typeStr)) {
+    // Fallback: scan the call-site's own import declarations for the
+    // leading identifier of typeStr. This catches types that are
+    // re-exported through a barrel and have a bare FQN (no module
+    // prefix), so resolveSymbolImport / collectImportSpecs cannot
+    // determine which specifier to import from — but the call site
+    // already has the correct import and we can mirror it.
+    const baseTypeName = /^([A-Z][A-Za-z0-9_$]*)/.exec(typeStr)?.[1];
+    if (baseTypeName) {
+      const callSiteImport = findNamedImportInSourceFile(baseTypeName, refSourceFile, fileName);
+      if (callSiteImport) neededImports.push(callSiteImport);
+    }
+    return { typeStr, tsType };
+  }
+
+  // The type can't be reconstructed as anything better than `any` (typically a
+  // function type such as an action creator). If it is exactly the type of a
+  // named, exported value, express it as `typeof <value>` and import that value
+  // instead of emitting `any`.
+  const typeofImport = resolveTypeofValueImport(tsType, checker, fileName);
+  if (typeofImport) {
+    neededImports.push(typeofImport);
+    // The import is handled here; don't let collectImportSpecs run on the raw
+    // function type later (it would re-add the same import).
+    return { typeStr: `typeof ${typeofImport.namedImport}`, tsType: null };
+  }
+
+  // A signature that cannot be reconstructed, and no exported value to name it
+  // after, is what the function alias is for.
+  if (anyFunctionAlias != null && isFunctionTypeStr(typeStr)) {
+    return { typeStr: anyFunctionAlias, tsType: null };
+  }
+
+  return { typeStr, tsType };
+}
+
+function collectElementProps(
+  jsxElement: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
+  refSourceFile: ts.SourceFile,
+  scan: CallSiteScan,
+) {
+  const { options, propMap } = scan;
+
+  // Check children (only for opening elements, not self-closing).
+  if (
+    options.includeChildren &&
+    ts.isJsxOpeningElement(jsxElement) &&
+    ts.isJsxElement(jsxElement.parent) &&
+    jsxElement.parent.children.length > 0
+  ) {
+    recordChildrenProp(propMap);
+  }
+
+  // Collect explicit JSX attributes.
+  for (const attr of jsxElement.attributes.properties) {
+    if (!ts.isJsxAttribute(attr)) continue;
+    const propName = ts.isIdentifier(attr.name) ? attr.name.text : undefined;
+    if (!propName || propName === 'key' || propName === 'ref') continue;
+
+    const { typeStr, tsType } = readAttributeType(attr, refSourceFile, scan);
+
+    const existing = propMap.get(propName);
+    if (existing) {
+      existing.observedTypes.push(typeStr);
+      existing.observedTsTypes.push(tsType);
+      existing.presentCount++;
+      existing.thisPropsOnly = false;
+    } else {
+      propMap.set(propName, {
+        observedTypes: [typeStr],
+        observedTsTypes: [tsType],
+        presentCount: 1,
+        optionalHint: false,
+        thisPropsOnly: false,
+      });
+    }
+  }
+}
+
 function collectCallSiteProps(
   classDeclaration: ts.ClassDeclaration,
   sourceFile: ts.SourceFile,
   fileName: string,
   languageService: ts.LanguageService,
   checker: ts.TypeChecker,
-  options: {
-    anyAlias?: string;
-    anyFunctionAlias?: string;
-    includeChildren: boolean;
-    skipOnSpread: boolean;
-  },
+  options: CallSiteOptions,
   program: ts.Program,
 ): CallSiteResult {
-  const { anyAlias, anyFunctionAlias, includeChildren, skipOnSpread } = options;
-  const propMap = new Map<string, PropInfo>();
-  const neededImports: NamedImport[] = [];
+  const scan: CallSiteScan = {
+    fileName,
+    checker,
+    options,
+    propMap: new Map<string, PropInfo>(),
+    neededImports: [],
+  };
   let totalCallSites = 0;
   let shouldSkip = false;
 
@@ -386,119 +526,22 @@ function collectCallSiteProps(
       if (!jsxElement) continue;
 
       // Check for spread attributes before counting this as a call site.
-      if (skipOnSpread && jsxElement.attributes.properties.some(ts.isJsxSpreadAttribute)) {
+      if (options.skipOnSpread && jsxElement.attributes.properties.some(ts.isJsxSpreadAttribute)) {
         shouldSkip = true;
         break outer;
       }
 
       totalCallSites++;
-
-      // Check children (only for opening elements, not self-closing).
-      if (
-        includeChildren &&
-        ts.isJsxOpeningElement(jsxElement) &&
-        ts.isJsxElement(jsxElement.parent) &&
-        jsxElement.parent.children.length > 0
-      ) {
-        const info = propMap.get('children');
-        if (info) {
-          info.presentCount++;
-          info.thisPropsOnly = false;
-        } else {
-          propMap.set('children', {
-            observedTypes: ['React.ReactNode'],
-            observedTsTypes: [null],
-            presentCount: 1,
-            optionalHint: true,
-            thisPropsOnly: false,
-          });
-        }
-      }
-
-      // Collect explicit JSX attributes.
-      for (const attr of jsxElement.attributes.properties) {
-        if (!ts.isJsxAttribute(attr)) continue;
-        const propName = ts.isIdentifier(attr.name) ? attr.name.text : undefined;
-        if (!propName || propName === 'key' || propName === 'ref') continue;
-
-        let typeStr: string;
-        let tsType: ts.Type | null = null;
-        if (!attr.initializer) {
-          // Boolean shorthand: <Foo disabled />
-          typeStr = 'boolean';
-        } else if (ts.isStringLiteral(attr.initializer)) {
-          typeStr = `"${attr.initializer.text}"`;
-        } else if (
-          ts.isJsxExpression(attr.initializer) &&
-          attr.initializer.expression != null
-        ) {
-          tsType = unwrapImmerDraft(checker.getTypeAtLocation(attr.initializer.expression));
-          typeStr = checker.typeToString(tsType);
-          // Strip any import() notation TypeScript may emit for types from
-          // external modules not imported in the component file.
-          const importPrefix = /^import\("[^"]+"\)\./.exec(typeStr);
-          if (importPrefix) {
-            typeStr = typeStr.slice(importPrefix[0].length);
-          }
-          if (typeStrDegradesToAny(typeStr)) {
-            // The type can't be reconstructed as anything better than `any`
-            // (typically a function type such as an action creator). If it is
-            // exactly the type of a named, exported value, express it as
-            // `typeof <value>` and import that value instead of emitting `any`.
-            const typeofImport = resolveTypeofValueImport(tsType, checker, fileName);
-            if (typeofImport) {
-              typeStr = `typeof ${typeofImport.namedImport}`;
-              neededImports.push(typeofImport);
-              // The import is handled here; don't let collectImportSpecs run on
-              // the raw function type later (it would re-add the same import).
-              tsType = null;
-            } else if (anyFunctionAlias != null && isFunctionTypeStr(typeStr)) {
-              // A signature that cannot be reconstructed, and no exported value
-              // to name it after, is what the function alias is for.
-              typeStr = anyFunctionAlias;
-              tsType = null;
-            }
-          } else {
-            // Fallback: scan the call-site's own import declarations for the
-            // leading identifier of typeStr. This catches types that are
-            // re-exported through a barrel and have a bare FQN (no module
-            // prefix), so resolveSymbolImport / collectImportSpecs cannot
-            // determine which specifier to import from — but the call site
-            // already has the correct import and we can mirror it.
-            const baseTypeName = /^([A-Z][A-Za-z0-9_$]*)/.exec(typeStr)?.[1];
-            if (baseTypeName) {
-              const callSiteImport = findNamedImportInSourceFile(
-                baseTypeName,
-                refSourceFile,
-                fileName,
-              );
-              if (callSiteImport) neededImports.push(callSiteImport);
-            }
-          }
-        } else {
-          typeStr = anyAlias ?? 'any';
-        }
-
-        const existing = propMap.get(propName);
-        if (existing) {
-          existing.observedTypes.push(typeStr);
-          existing.observedTsTypes.push(tsType);
-          existing.presentCount++;
-          existing.thisPropsOnly = false;
-        } else {
-          propMap.set(propName, {
-            observedTypes: [typeStr],
-            observedTsTypes: [tsType],
-            presentCount: 1,
-            optionalHint: false,
-            thisPropsOnly: false,
-          });
-        }
-      }
+      collectElementProps(jsxElement, refSourceFile, scan);
     }
   }
 
-  return { propMap, totalCallSites, shouldSkip, neededImports };
+  return {
+    propMap: scan.propMap,
+    totalCallSites,
+    shouldSkip,
+    neededImports: scan.neededImports,
+  };
 }
 
 // ---------------------------------------------------------------------------
