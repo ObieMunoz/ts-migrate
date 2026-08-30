@@ -85,16 +85,7 @@ export function setJSON5Key(
   keyPath: ReadonlyArray<string>,
   value: string | number | boolean | null,
 ): string {
-  if (keyPath.length === 0) {
-    throw new Error('updateJSON5: keyPath must not be empty');
-  }
-
-  const root = parseDocument(sourceText);
-  if (root.kind !== 'object') {
-    throw new Error('updateJSON5: root value must be an object');
-  }
-
-  let node = root;
+  let node = parseObjectRoot(sourceText, keyPath);
   for (let i = 0; i < keyPath.length; i += 1) {
     const member = node.members.find((m) => m.key === keyPath[i]);
     if (!member) {
@@ -126,16 +117,7 @@ export function appendJSON5ArrayItem(
   keyPath: ReadonlyArray<string>,
   value: string,
 ): string {
-  if (keyPath.length === 0) {
-    throw new Error('updateJSON5: keyPath must not be empty');
-  }
-
-  const root = parseDocument(sourceText);
-  if (root.kind !== 'object') {
-    throw new Error('updateJSON5: root value must be an object');
-  }
-
-  let node = root;
+  let node = parseObjectRoot(sourceText, keyPath);
   for (let i = 0; i < keyPath.length; i += 1) {
     const member = node.members.find((m) => m.key === keyPath[i]);
     if (!member) {
@@ -157,6 +139,18 @@ export function appendJSON5ArrayItem(
   }
 
   throw new Error('updateJSON5: failed to resolve keyPath');
+}
+
+function parseObjectRoot(sourceText: string, keyPath: ReadonlyArray<string>): ObjectNode {
+  if (keyPath.length === 0) {
+    throw new Error('updateJSON5: keyPath must not be empty');
+  }
+
+  const root = parseDocument(sourceText);
+  if (root.kind !== 'object') {
+    throw new Error('updateJSON5: root value must be an object');
+  }
+  return root;
 }
 
 function appendElement(sourceText: string, node: ArrayNode, value: string): string {
