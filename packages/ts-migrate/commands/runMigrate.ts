@@ -204,8 +204,7 @@ export default async function runMigrate(params: RunMigrateParams): Promise<RunM
       } catch (err) {
         log.warn(`Skipped writing the type definition recommendations: ${errorMessage(err)}`);
       }
-    }
-    if (!params.typesReportFile && !params.holdTypesReport) {
+    } else if (!params.holdTypesReport) {
       log.info(typesReport);
     }
   }
