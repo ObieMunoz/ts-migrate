@@ -2,7 +2,7 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
-import { relativeTo } from './paths';
+import { isUnder, relativeTo } from './paths';
 
 export interface GitignorePartition {
   kept: string[];
@@ -32,9 +32,22 @@ function runGit(
   return { status: result.status, stdout: result.stdout };
 }
 
-function isUnder(parentDir: string, candidate: string): boolean {
-  const rel = path.relative(parentDir, candidate);
-  return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel));
+function gitRoots(rootDir: string): { toplevel: string; realRootDir: string } | null {
+  const toplevelResult = runGit(rootDir, ['rev-parse', '--show-toplevel']);
+  if (!toplevelResult || toplevelResult.status !== 0) {
+    return null;
+  }
+
+  // rev-parse answers with a fully resolved path; resolve rootDir the same
+  // way so the containment checks below compare like with like.
+  let realRootDir: string;
+  try {
+    realRootDir = fs.realpathSync(rootDir);
+  } catch {
+    realRootDir = path.resolve(rootDir);
+  }
+
+  return { toplevel: toplevelResult.stdout.trim(), realRootDir };
 }
 
 /**
@@ -52,20 +65,11 @@ export function partitionGitignored(rootDir: string, files: string[]): Gitignore
     return { kept: [], ignored: [] };
   }
 
-  const toplevelResult = runGit(rootDir, ['rev-parse', '--show-toplevel']);
-  if (!toplevelResult || toplevelResult.status !== 0) {
+  const roots = gitRoots(rootDir);
+  if (!roots) {
     return { kept: [...files], ignored: [], unfiltered: 'no-git-repo' };
   }
-  const toplevel = toplevelResult.stdout.trim();
-
-  // rev-parse answers with a fully resolved path; resolve rootDir the same
-  // way so the containment checks below compare like with like.
-  let realRootDir: string;
-  try {
-    realRootDir = fs.realpathSync(rootDir);
-  } catch {
-    realRootDir = path.resolve(rootDir);
-  }
+  const { toplevel, realRootDir } = roots;
 
   if (realRootDir !== toplevel && isUnder(toplevel, realRootDir)) {
     const rootCheck = runGit(toplevel, [
@@ -141,17 +145,11 @@ export function listGitignoredDirectories(rootDir: string): string[] {
   if (!status || status.status !== 0) {
     return [];
   }
-  const toplevelResult = runGit(rootDir, ['rev-parse', '--show-toplevel']);
-  if (!toplevelResult || toplevelResult.status !== 0) {
+  const roots = gitRoots(rootDir);
+  if (!roots) {
     return [];
   }
-  const toplevel = toplevelResult.stdout.trim();
-  let realRootDir: string;
-  try {
-    realRootDir = fs.realpathSync(rootDir);
-  } catch {
-    realRootDir = path.resolve(rootDir);
-  }
+  const { toplevel, realRootDir } = roots;
 
   const directories = new Set<string>();
   status.stdout.split('\0').forEach((entry) => {

@@ -6,7 +6,7 @@ import { collectModuleSpecifiers } from '@obiemunoz/ts-migrate-plugins';
 import { sampleIgnoredPaths } from './gitignore';
 import { isConfigName } from './configNames';
 import { JS_EXTENSION_REGEX } from './jsExtensions';
-import { relativeTo } from './paths';
+import { isUnder, relativeTo } from './paths';
 
 export interface BootstrapFile {
   file: string;
@@ -89,11 +89,6 @@ function readPackageJson(dir: string): { scripts?: Record<string, unknown> } | n
   } catch {
     return null;
   }
-}
-
-function isUnder(parentDir: string, candidate: string): boolean {
-  const rel = path.relative(parentDir, candidate);
-  return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel));
 }
 
 /** Every directory holding a candidate, all their ancestors up to rootDir, and rootDir. */
