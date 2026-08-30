@@ -4,6 +4,7 @@ import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import createFollowUpMarkers, { FollowUpMarkers } from '../utils/followUpMarker';
 import { createValidate, Properties } from '../utils/validateOptions';
 import { hasDefaultExport, isEsmSourceFile } from '../utils/moduleFormat';
+import { collectIdentifiers } from './utils/identifiers';
 
 /**
  * Rewrites the CommonJS module syntax a renamed file still carries into
@@ -668,21 +669,7 @@ function moduleAlias(specifier: string, scope: Scope): string | undefined {
     next ? next.toUpperCase() : '',
   );
   const name = bindableName(camelCased);
-  return name && !usesName(scope.sourceFile, name) ? name : undefined;
-}
-
-function usesName(sourceFile: ts.SourceFile, name: string): boolean {
-  let found = false;
-  const visit = (node: ts.Node) => {
-    if (found) return;
-    if (ts.isIdentifier(node) && node.text === name) {
-      found = true;
-      return;
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(sourceFile);
-  return found;
+  return name && !collectIdentifiers(scope.sourceFile).has(name) ? name : undefined;
 }
 
 function hasModifiers(statement: ts.Statement): boolean {
