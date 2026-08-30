@@ -108,6 +108,15 @@ export function readConfigFile({
   const flags = flagsByCommand[command] ?? new Set<string>();
   const everyFlag = new Set(Object.values(flagsByCommand).flatMap((keys) => [...keys]));
 
+  /** The declared spelling of a key, whichever half of the file it came from. */
+  const normalizeKey = (rawKey: string): string => {
+    const key = camelCase(rawKey);
+    if (RESERVED_KEYS.has(key)) {
+      throw new Error(`${configPath}: "${rawKey}" cannot be set from a config file.`);
+    }
+    return key;
+  };
+
   const shared: Record<string, unknown> = {};
   const sections: Record<string, unknown> = {};
   Object.entries(parsed).forEach(([rawKey, value]) => {
@@ -115,10 +124,7 @@ export function readConfigFile({
       sections[rawKey] = value;
       return;
     }
-    const key = camelCase(rawKey);
-    if (RESERVED_KEYS.has(key)) {
-      throw new Error(`${configPath}: "${rawKey}" cannot be set from a config file.`);
-    }
+    const key = normalizeKey(rawKey);
     if (!everyFlag.has(key)) {
       throw new Error(`${configPath}: "${rawKey}" is not a ts-migrate flag or command.`);
     }
@@ -133,10 +139,7 @@ export function readConfigFile({
 
   const result = { ...shared };
   Object.entries(section as Record<string, unknown>).forEach(([rawKey, value]) => {
-    const key = camelCase(rawKey);
-    if (RESERVED_KEYS.has(key)) {
-      throw new Error(`${configPath}: "${rawKey}" cannot be set from a config file.`);
-    }
+    const key = normalizeKey(rawKey);
     if (!flags.has(key)) {
       throw new Error(
         `${configPath}: "${rawKey}" in the "${command}" section is not a flag of ` +
