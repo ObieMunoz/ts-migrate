@@ -233,13 +233,8 @@ function collectThisPropsUsage(
       isThisPropsAccess(node.initializer)
     ) {
       for (const element of node.name.elements) {
-        const propName = element.propertyName
-          ? ts.isIdentifier(element.propertyName)
-            ? element.propertyName.text
-            : undefined
-          : ts.isIdentifier(element.name)
-          ? element.name.text
-          : undefined;
+        const key = element.propertyName ?? element.name;
+        const propName = ts.isIdentifier(key) ? key.text : undefined;
         if (propName) {
           markProp(propName, element.initializer != null);
         }
