@@ -245,12 +245,9 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
         ts.isIntersectionTypeNode(propsTypeAliasDeclaration.type)
           ? ts.factory.createIntersectionTypeNode([
               newPropsTypeValue,
-              ...propsTypeAliasDeclaration.type.types.filter((el, k) =>
-                propTypesAreOnlyReferences
-                  ? ts.isIntersectionTypeNode(updatedPropTypeAlias) &&
-                    !(updatedPropTypeAlias as ts.IntersectionTypeNode).types.includes(el)
-                  : indexOfTypeValue !== k,
-              ),
+              ...(propTypesAreOnlyReferences
+                ? []
+                : propsTypeAliasDeclaration.type.types.filter((_, k) => indexOfTypeValue !== k)),
             ])
           : newPropsTypeValue,
       );
