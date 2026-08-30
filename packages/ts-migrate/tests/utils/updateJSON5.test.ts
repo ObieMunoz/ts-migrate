@@ -221,4 +221,144 @@ describe('appendJSON5ArrayItem comment placement', () => {
   ]
 }`);
   });
+
+  it('keeps a comment after a trailing comma on its own line', () => {
+    const source = `{
+  "include": [
+    "./app/**/*", // everything under app
+  ]
+}`;
+    expect(appendJSON5ArrayItem(source, ['include'], './types/x.d.ts')).toBe(`{
+  "include": [
+    "./app/**/*", // everything under app
+    "./types/x.d.ts",
+  ]
+}`);
+  });
+
+  it('keeps a block comment on the line of the element it follows', () => {
+    const source = `{
+  "include": [
+    "./app/**/*" /* everything under app */
+  ]
+}`;
+    expect(appendJSON5ArrayItem(source, ['include'], './types/x.d.ts')).toBe(`{
+  "include": [
+    "./app/**/*", /* everything under app */
+    "./types/x.d.ts"
+  ]
+}`);
+  });
+
+  it('appends below a block comment that spans several lines', () => {
+    const source = `{
+  "include": [
+    "./app/**/*" /* everything
+       under app */
+  ]
+}`;
+    expect(appendJSON5ArrayItem(source, ['include'], './types/x.d.ts')).toBe(`{
+  "include": [
+    "./app/**/*", /* everything
+       under app */
+    "./types/x.d.ts"
+  ]
+}`);
+  });
+
+  it('leaves a comment on its own line below the array', () => {
+    const source = `{
+  "include": [
+    "./app/**/*"
+    // everything under app
+  ]
+}`;
+    expect(appendJSON5ArrayItem(source, ['include'], './types/x.d.ts')).toBe(`{
+  "include": [
+    "./app/**/*",
+    "./types/x.d.ts"
+    // everything under app
+  ]
+}`);
+  });
+});
+
+describe('setJSON5Key comment placement', () => {
+  it('keeps a comment on the line of the member it follows', () => {
+    const source = `{
+  "strict": true // no implicit any
+}`;
+    expect(setJSON5Key(source, ['noEmit'], true)).toBe(`{
+  "strict": true, // no implicit any
+  "noEmit": true
+}`);
+  });
+
+  it('keeps a comment after a trailing comma on its own line', () => {
+    const source = `{
+  "strict": true, // no implicit any
+}`;
+    expect(setJSON5Key(source, ['noEmit'], true)).toBe(`{
+  "strict": true, // no implicit any
+  "noEmit": true,
+}`);
+  });
+
+  it('keeps a block comment on the line of the member it follows', () => {
+    const source = `{
+  "strict": true /* no implicit any */
+}`;
+    expect(setJSON5Key(source, ['noEmit'], true)).toBe(`{
+  "strict": true, /* no implicit any */
+  "noEmit": true
+}`);
+  });
+
+  it('keeps a block comment written before the trailing comma', () => {
+    const source = `{
+  "strict": true /* no implicit any */,
+}`;
+    expect(setJSON5Key(source, ['noEmit'], true)).toBe(`{
+  "strict": true /* no implicit any */,
+  "noEmit": true,
+}`);
+  });
+
+  it('inserts below a block comment that spans several lines', () => {
+    const source = `{
+  "strict": true /* no
+     implicit any */
+}`;
+    expect(setJSON5Key(source, ['noEmit'], true)).toBe(`{
+  "strict": true, /* no
+     implicit any */
+  "noEmit": true
+}`);
+  });
+
+  it('leaves a comment on its own line below the object', () => {
+    const source = `{
+  "strict": true
+  // no implicit any
+}`;
+    expect(setJSON5Key(source, ['noEmit'], true)).toBe(`{
+  "strict": true,
+  "noEmit": true
+  // no implicit any
+}`);
+  });
+
+  it('places a nested key below the comment line too', () => {
+    const source = `{
+  "compilerOptions": {
+    "strict": true // no implicit any
+  }
+}`;
+    expect(setJSON5Key(source, ['compilerOptions', 'noEmit'], true)).toBe(`{
+  "compilerOptions": {
+    "strict": true, // no implicit any
+    "noEmit": true
+  }
+}`);
+  });
 });
