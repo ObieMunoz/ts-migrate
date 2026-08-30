@@ -2,6 +2,7 @@ import ts from 'typescript';
 import { fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
+import { getOrCreate } from '../utils/maps';
 import {
   applyTextChanges,
   createFileLanguageService,
@@ -137,12 +138,7 @@ function collectCandidates(
   const assignments = new Map<ts.Symbol, ts.Expression[]>();
 
   const record = <T>(map: Map<ts.Symbol, T[]>, symbol: ts.Symbol, value: T): void => {
-    const existing = map.get(symbol);
-    if (existing) {
-      existing.push(value);
-    } else {
-      map.set(symbol, [value]);
-    }
+    getOrCreate(map, symbol, (): T[] => []).push(value);
   };
 
   const visit = (node: ts.Node): void => {

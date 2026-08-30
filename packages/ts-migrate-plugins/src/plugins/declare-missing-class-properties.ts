@@ -4,6 +4,7 @@ import { isDiagnosticWithLinePosition } from '../utils/type-guards';
 import { isStatic } from './utils/modifiers';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
+import { getOrCreate } from '../utils/maps';
 import {
   applyTextChanges,
   createFileLanguageService,
@@ -140,12 +141,7 @@ function collectCandidates(
 
     const classDeclaration = findEnclosingClass(access);
     if (classDeclaration) {
-      let propertyNames = toAdd.get(classDeclaration);
-      if (!propertyNames) {
-        propertyNames = new Set();
-        toAdd.set(classDeclaration, propertyNames);
-      }
-      propertyNames.add(node.text);
+      getOrCreate(toAdd, classDeclaration, () => new Set<string>()).add(node.text);
     }
   });
 
@@ -184,12 +180,7 @@ function collectCandidates(
 function groupByClass(candidates: Candidate[]): Candidate[][] {
   const groups = new Map<ts.ClassLikeDeclaration, Candidate[]>();
   candidates.forEach((candidate) => {
-    const group = groups.get(candidate.classDeclaration);
-    if (group) {
-      group.push(candidate);
-    } else {
-      groups.set(candidate.classDeclaration, [candidate]);
-    }
+    getOrCreate(groups, candidate.classDeclaration, (): Candidate[] => []).push(candidate);
   });
   return Array.from(groups.values());
 }
@@ -448,15 +439,12 @@ function propertyKey(classPos: number, name: string): string {
 function collectThisProperties(source: ts.SourceFile): Map<string, ThisProperty> {
   const properties = new Map<string, ThisProperty>();
 
-  const entryFor = (classDeclaration: ts.ClassLikeDeclaration, name: string): ThisProperty => {
-    const key = propertyKey(classDeclaration.pos, name);
-    let property = properties.get(key);
-    if (!property) {
-      property = { assigned: [], constructed: false, writes: [] };
-      properties.set(key, property);
-    }
-    return property;
-  };
+  const entryFor = (classDeclaration: ts.ClassLikeDeclaration, name: string): ThisProperty =>
+    getOrCreate(properties, propertyKey(classDeclaration.pos, name), () => ({
+      assigned: [],
+      constructed: false,
+      writes: [],
+    }));
 
   const visit = (node: ts.Node): void => {
     const write = asWrite(node);
