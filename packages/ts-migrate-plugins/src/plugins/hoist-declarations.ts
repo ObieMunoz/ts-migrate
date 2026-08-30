@@ -129,24 +129,19 @@ function findEarliestReferences(
   byName: Map<string, Candidate[]>,
   checker: ts.TypeChecker,
 ): void {
-  const visit = (node: ts.Node) => {
-    if (ts.isIdentifier(node)) {
-      const list = byName.get(node.text);
-      if (list) {
-        list.forEach((candidate) => {
-          if (
-            node.end <= candidate.statementStart &&
-            (!candidate.earliest || node.end < candidate.earliest.end) &&
-            resolvesToDeclaration(node, candidate.declaration, checker)
-          ) {
-            candidate.earliest = node;
-          }
-        });
+  collectIdentifierNodes(sourceFile).forEach((node) => {
+    const list = byName.get(node.text);
+    if (!list) return;
+    list.forEach((candidate) => {
+      if (
+        node.end <= candidate.statementStart &&
+        (!candidate.earliest || node.end < candidate.earliest.end) &&
+        resolvesToDeclaration(node, candidate.declaration, checker)
+      ) {
+        candidate.earliest = node;
       }
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(sourceFile);
+    });
+  });
 }
 
 function planMove(
