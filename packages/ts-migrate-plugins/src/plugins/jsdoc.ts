@@ -474,35 +474,27 @@ const jsDocTransformerFactory =
 
       const members: ts.PropertySignature[] = [];
       const written = new Set<string>();
+      const addMember = (name: string, type: ts.TypeNode | undefined): void => {
+        if (written.has(name)) return;
+        written.add(name);
+        members.push(
+          factory.createPropertySignature(
+            undefined,
+            propertyName(name),
+            factory.createToken(ts.SyntaxKind.QuestionToken),
+            type,
+          ),
+        );
+      };
+
       memberTags.forEach((tag) => {
         const property = visitJSDocPropertyLikeTag(tag);
         if (!ts.isIdentifier(property.name) && !ts.isStringLiteral(property.name)) return;
-        const name = property.name.text;
-        if (written.has(name)) return;
-        written.add(name);
-        members.push(
-          factory.createPropertySignature(
-            undefined,
-            propertyName(name),
-            factory.createToken(ts.SyntaxKind.QuestionToken),
-            property.type,
-          ),
-        );
+        addMember(property.name.text, property.type);
       });
       // A binding the tags do not document still has to be readable, or the
       // annotation trades the wrong type for a missing property at every use.
-      bound.forEach((_element, name) => {
-        if (written.has(name)) return;
-        written.add(name);
-        members.push(
-          factory.createPropertySignature(
-            undefined,
-            propertyName(name),
-            factory.createToken(ts.SyntaxKind.QuestionToken),
-            anyType,
-          ),
-        );
-      });
+      bound.forEach((_element, name) => addMember(name, anyType));
       return members.length > 0 ? factory.createTypeLiteralNode(members) : undefined;
     }
 
