@@ -141,28 +141,6 @@ export function pluginRunner<TOptions = unknown>(
 }
 
 /**
- * The same, for a test that asserts on what the plugin reported as well as on
- * what it wrote.
- */
-export function pluginRunnerWithNotices<TOptions = unknown>(
-  plugin: Plugin<TOptions>,
-  defaults: MockParams<TOptions> = {},
-) {
-  return async (text: string, overrides: MockParams<TOptions> = {}) => {
-    const notices: PluginFileNotice[] = [];
-    const result = await plugin.run(
-      mockPluginParams<TOptions>({
-        ...defaults,
-        ...overrides,
-        text,
-        reportFileNotice: (notice) => notices.push(notice),
-      }),
-    );
-    return { result, notices };
-  };
-}
-
-/**
  * A plugin bound to the real params a file's tests all pass, so a test reads as
  * the text in and the text out and each `it` states only what it is about. The
  * overrides replace the bound values rather than merging into them, so a test

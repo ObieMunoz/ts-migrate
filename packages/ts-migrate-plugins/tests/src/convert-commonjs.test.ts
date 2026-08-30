@@ -1,6 +1,6 @@
 import path from 'path';
 import { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
-import { mockPluginParams, withoutMarkers } from '../test-utils';
+import { mockPluginParams, pluginRunner, withoutMarkers } from '../test-utils';
 import convertCommonjsPlugin from '../../src/plugins/convert-commonjs';
 
 const fixturesDir = path.resolve(__dirname, '../fixtures/convert-commonjs');
@@ -8,11 +8,7 @@ const cjsFile = path.join(fixturesDir, 'src', 'entry.ts');
 const mtsFile = path.join(fixturesDir, 'src', 'entry.mts');
 const esmFile = path.join(fixturesDir, 'esm', 'src', 'entry.ts');
 
-function run(text: string, over: { fileName?: string; options?: { esm?: boolean } } = {}) {
-  return convertCommonjsPlugin.run(
-    mockPluginParams({ text, fileName: over.fileName ?? cjsFile, options: over.options ?? {} }),
-  );
-}
+const run = pluginRunner(convertCommonjsPlugin, { fileName: cjsFile, options: {} });
 
 function runWithNotices(text: string, fileName = cjsFile) {
   const notices: PluginFileNotice[] = [];
