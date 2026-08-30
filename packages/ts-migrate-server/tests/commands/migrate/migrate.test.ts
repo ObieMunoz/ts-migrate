@@ -22,6 +22,23 @@ describe('migrate command', () => {
     deleteDir(rootDir);
   });
 
+  // Records the files it is handed and rewrites each one, so anything in the
+  // migration set is both named and edited.
+  const rewritingConfig = () => {
+    const visited: string[] = [];
+    const config = new MigrateConfig().addPlugin(
+      {
+        name: 'rewriting-plugin',
+        run({ fileName, text }) {
+          visited.push(path.relative(rootDir, fileName).split(path.sep).join('/'));
+          return `${text}// touched\n`;
+        },
+      },
+      {},
+    );
+    return { config, visited };
+  };
+
   it('Migrates project', async () => {
     const inputDir = path.resolve(fixturesDir, 'migrate/input');
     const outputDir = path.resolve(fixturesDir, 'migrate/output');
@@ -1294,23 +1311,6 @@ describe('migrate command', () => {
       });
     });
 
-    // Records the files it is handed and rewrites each one, so anything in the
-    // migration set is both named and edited.
-    const rewritingConfig = () => {
-      const visited: string[] = [];
-      const config = new MigrateConfig().addPlugin(
-        {
-          name: 'rewriting-plugin',
-          run({ fileName, text }) {
-            visited.push(path.relative(rootDir, fileName).split(path.sep).join('/'));
-            return `${text}// touched\n`;
-          },
-        },
-        {},
-      );
-      return { config, visited };
-    };
-
     it('leaves every JavaScript extension out of the migration set under allowJs', async () => {
       const { config, visited } = rewritingConfig();
 
@@ -1392,23 +1392,6 @@ describe('migrate command', () => {
         fs.writeFileSync(path.resolve(rootDir, relPath), text);
       });
     });
-
-    // Records the files it is handed and rewrites each one, so anything in the
-    // migration set is both named and edited.
-    const rewritingConfig = () => {
-      const visited: string[] = [];
-      const config = new MigrateConfig().addPlugin(
-        {
-          name: 'rewriting-plugin',
-          run({ fileName, text }) {
-            visited.push(path.relative(rootDir, fileName).split(path.sep).join('/'));
-            return `${text}// touched\n`;
-          },
-        },
-        {},
-      );
-      return { config, visited };
-    };
 
     it('leaves every declaration file extension out of the migration set', async () => {
       const { config, visited } = rewritingConfig();
