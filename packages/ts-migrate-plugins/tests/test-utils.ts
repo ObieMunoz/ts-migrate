@@ -335,6 +335,36 @@ export function fixturePluginParams<TOptions = unknown>(params: {
   };
 }
 
+/** Compiles the given files in memory, resolving the lib files from disk. */
+export function createInMemoryProgram(
+  files: FileMap,
+  params: {
+    /** Merged over the defaults. */
+    compilerOptions?: ts.CompilerOptions;
+    /** The files the program is built from. Defaults to every file given. */
+    rootNames?: string[];
+  } = {},
+): ts.Program {
+  const host: ts.CompilerHost = {
+    getSourceFile: (fileName, languageVersion) => {
+      const text = files[fileName] ?? ts.sys.readFile(fileName);
+      return text === undefined
+        ? undefined
+        : ts.createSourceFile(fileName, text, languageVersion, true);
+    },
+    getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
+    writeFile: () => {},
+    getCurrentDirectory: () => '/',
+    getCanonicalFileName: (fileName) => fileName,
+    useCaseSensitiveFileNames: () => true,
+    getNewLine: () => '\n',
+    fileExists: (fileName) => fileName in files || ts.sys.fileExists(fileName),
+    readFile: (fileName) => files[fileName] ?? ts.sys.readFile(fileName),
+  };
+  const options = { ...defaultCompilerOptions, ...params.compilerOptions };
+  return ts.createProgram(params.rootNames ?? Object.keys(files), options, host);
+}
+
 /** Parsed once: every check pulls in the same lib files. */
 const libSourceFiles = new Map<string, ts.SourceFile | undefined>();
 
