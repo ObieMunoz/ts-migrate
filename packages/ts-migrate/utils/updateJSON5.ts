@@ -89,7 +89,7 @@ export function setJSON5Key(
   for (let i = 0; i < keyPath.length; i += 1) {
     const member = node.members.find((m) => m.key === keyPath[i]);
     if (!member) {
-      return insertMember(sourceText, node, keyPath.slice(i), encodeValue(value));
+      return insertMember(sourceText, node, keyPath.slice(i), encodeJSON5(value));
     }
     if (i === keyPath.length - 1 || member.value.kind !== 'object') {
       const remainingPath = keyPath.slice(i + 1);
@@ -97,7 +97,7 @@ export function setJSON5Key(
         {
           start: member.value.start,
           end: member.value.end,
-          text: buildNestedValue(remainingPath, encodeValue(value)),
+          text: buildNestedValue(remainingPath, encodeJSON5(value)),
         },
       ]);
     }
@@ -121,7 +121,7 @@ export function appendJSON5ArrayItem(
   for (let i = 0; i < keyPath.length; i += 1) {
     const member = node.members.find((m) => m.key === keyPath[i]);
     if (!member) {
-      return insertMember(sourceText, node, keyPath.slice(i), `[${encodeValue(value)}]`);
+      return insertMember(sourceText, node, keyPath.slice(i), `[${encodeJSON5(value)}]`);
     }
     if (i === keyPath.length - 1) {
       if (member.value.kind !== 'array') {
@@ -211,7 +211,7 @@ function insertMember(
   keyPath: ReadonlyArray<string>,
   valueText: string,
 ): string {
-  const entryText = `${encodeKey(keyPath[0])}: ${buildNestedValue(keyPath.slice(1), valueText)}`;
+  const entryText = `${encodeJSON5(keyPath[0])}: ${buildNestedValue(keyPath.slice(1), valueText)}`;
   const isMultiline = sourceText.slice(node.start, node.end).includes('\n');
 
   if (node.members.length === 0) {
@@ -247,17 +247,13 @@ function insertMember(
 function buildNestedValue(keyPath: ReadonlyArray<string>, valueText: string): string {
   let result = valueText;
   for (let i = keyPath.length - 1; i >= 0; i -= 1) {
-    result = `{ ${encodeKey(keyPath[i])}: ${result} }`;
+    result = `{ ${encodeJSON5(keyPath[i])}: ${result} }`;
   }
   return result;
 }
 
-function encodeValue(value: string | number | boolean | null): string {
+function encodeJSON5(value: string | number | boolean | null): string {
   return json5.stringify(value, { quote: '"' });
-}
-
-function encodeKey(key: string): string {
-  return json5.stringify(key, { quote: '"' });
 }
 
 function applySplices(sourceText: string, splices: Splice[]): string {
