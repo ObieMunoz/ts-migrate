@@ -69,10 +69,7 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
 
     // class default props assigments
     const classDefaultPropsAssignment = classDeclarations.filter(
-      (classDeclaration) =>
-        classDeclaration.members
-          .filter(ts.isPropertyDeclaration)
-          .filter((declaration) => declaration.name.getText() === 'defaultProps').length > 0,
+      (classDeclaration) => !!findDefaultPropsMember(classDeclaration),
     );
 
     if (sfcsDefaultPropsAssignments.length === 0 && classDefaultPropsAssignment.length === 0) {
@@ -309,16 +306,10 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
         ? expression.right.getText()
         : `${componentName}.defaultProps`;
 
-      const variableDeclaration = variableStatements.find(
-        (variableStatement) =>
-          !!variableStatement.declarationList.declarations.find(
-            (declaration) => !!(declaration.name && declaration.name.getText() === componentName),
-          ),
+      const { variableDeclaration, variableInitializer } = findComponentVariableStatement(
+        variableStatements,
+        componentName,
       );
-
-      const variableInitializer = variableDeclaration
-        ? variableDeclaration.declarationList.declarations[0].initializer
-        : undefined;
 
       const componentDeclaration =
         functionDeclarations.find(
@@ -403,27 +394,15 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
     classDefaultPropsAssignment.forEach((classDeclaration) => {
       const componentName = classDeclaration.name && classDeclaration.name.getText();
 
-      const defaultPropsDeclaration = classDeclaration.members
-        .filter(ts.isPropertyDeclaration)
-        .filter((declaration) => declaration.name.getText() === 'defaultProps')[0];
-
-      if (!defaultPropsDeclaration) return;
-
-      const isObjectIdentifier =
-        defaultPropsDeclaration.initializer && ts.isIdentifier(defaultPropsDeclaration.initializer);
+      const defaultPropsInitializer = findDefaultPropsMember(classDeclaration)?.initializer;
       const defaultPropsTypeName =
-        isObjectIdentifier && defaultPropsDeclaration.initializer
-          ? defaultPropsDeclaration.initializer.getText()
+        defaultPropsInitializer && ts.isIdentifier(defaultPropsInitializer)
+          ? defaultPropsInitializer.getText()
           : `${componentName}.defaultProps`;
-      const variableDeclaration = variableStatements.find(
-        (variableStatement) =>
-          !!variableStatement.declarationList.declarations.find(
-            (declaration) => !!(declaration.name && declaration.name.getText() === componentName),
-          ),
+      const { variableDeclaration, variableInitializer } = findComponentVariableStatement(
+        variableStatements,
+        componentName,
       );
-      const variableInitializer = variableDeclaration
-        ? variableDeclaration.declarationList.declarations[0].initializer
-        : undefined;
       const heritageClause = classDeclaration.heritageClauses
         ? classDeclaration.heritageClauses.find((heritageClause) => heritageClause.types.length > 0)
         : undefined;
@@ -472,6 +451,34 @@ const reactDefaultPropsPlugin: Plugin<Options> = {
 
   validate: createValidate(optionProperties),
 };
+
+function findDefaultPropsMember(
+  classDeclaration: ts.ClassDeclaration,
+): ts.PropertyDeclaration | undefined {
+  return classDeclaration.members
+    .filter(ts.isPropertyDeclaration)
+    .find((declaration) => declaration.name.getText() === 'defaultProps');
+}
+
+/** The statement declaring the component, and the initializer its type comes from. */
+function findComponentVariableStatement(
+  variableStatements: ts.VariableStatement[],
+  componentName: string | undefined,
+): { variableDeclaration?: ts.VariableStatement; variableInitializer?: ts.Expression } {
+  const variableDeclaration = variableStatements.find(
+    (variableStatement) =>
+      !!variableStatement.declarationList.declarations.find(
+        (declaration) => !!(declaration.name && declaration.name.getText() === componentName),
+      ),
+  );
+
+  return {
+    variableDeclaration,
+    variableInitializer: variableDeclaration
+      ? variableDeclaration.declarationList.declarations[0].initializer
+      : undefined,
+  };
+}
 
 function createTypeQuery(name: string): ts.TypeQueryNode {
   return ts.factory.createTypeQueryNode(ts.factory.createIdentifier(name));
