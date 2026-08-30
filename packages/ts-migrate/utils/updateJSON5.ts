@@ -154,7 +154,6 @@ function parseObjectRoot(sourceText: string, keyPath: ReadonlyArray<string>): Ob
 }
 
 function appendElement(sourceText: string, node: ArrayNode, value: string): string {
-  const isMultiline = sourceText.slice(node.start, node.end).includes('\n');
   const lastElement = node.elements[node.elements.length - 1];
   // Match the quoting the array already uses rather than imposing this
   // module's own, since the whole array is read back as one list by eye.
@@ -171,18 +170,30 @@ function appendElement(sourceText: string, node: ArrayNode, value: string): stri
       : applySplices(sourceText, [{ start: node.end - 1, end: node.end - 1, text: `${entryText} ` }]);
   }
 
-  const triviaEnd = skipTrivia(sourceText, lastElement.end);
-  const hasTrailingComma = sourceText[triviaEnd] === ',';
-  const separator = isMultiline ? `\n${lineIndent(sourceText, lastElement.start)}` : ' ';
+  return appendEntry(sourceText, node, lastElement.start, lastElement.end, entryText);
+}
 
-  // A comment after the last element belongs to it, so the new entry starts
-  // below the whole line rather than between the element and its comment.
-  const afterLine = (offset: number): number => {
-    if (!isMultiline) return offset;
-    const lineEnd = sourceText.indexOf('\n', offset);
-    const limit = Math.min(lineEnd === -1 ? node.end - 1 : lineEnd, node.end - 1);
-    return limit > offset ? limit : offset;
-  };
+/**
+ * Inserts `entryText` after the last item of a non-empty object or array,
+ * keeping the container's comma style and indentation. `itemStart` is where the
+ * last item's line indent is measured from, `itemEnd` the end of its value.
+ */
+function appendEntry(
+  sourceText: string,
+  container: ObjectNode | ArrayNode,
+  itemStart: number,
+  itemEnd: number,
+  entryText: string,
+): string {
+  const isMultiline = sourceText.slice(container.start, container.end).includes('\n');
+  const triviaEnd = skipTrivia(sourceText, itemEnd);
+  const hasTrailingComma = sourceText[triviaEnd] === ',';
+  const separator = isMultiline ? `\n${lineIndent(sourceText, itemStart)}` : ' ';
+
+  // A comment after the last item belongs to it, so the new entry starts below
+  // the whole line rather than between the item and its comment.
+  const afterLine = (offset: number): number =>
+    isMultiline ? endOfCommentedLine(sourceText, offset, container.end - 1) : offset;
 
   if (hasTrailingComma) {
     const insertAt = afterLine(triviaEnd + 1);
@@ -191,18 +202,48 @@ function appendElement(sourceText: string, node: ArrayNode, value: string): stri
     ]);
   }
 
-  // The comma has to sit against the element it follows, so a comment between
-  // them does not swallow it; the entry itself still goes below the line.
-  const insertAt = afterLine(lastElement.end);
+  // The comma has to sit against the item it follows, so a comment between them
+  // does not swallow it; the entry itself still goes below the line.
+  const insertAt = afterLine(itemEnd);
   return applySplices(
     sourceText,
-    insertAt > lastElement.end
+    insertAt > itemEnd
       ? [
-          { start: lastElement.end, end: lastElement.end, text: ',' },
+          { start: itemEnd, end: itemEnd, text: ',' },
           { start: insertAt, end: insertAt, text: `${separator}${entryText}` },
         ]
-      : [{ start: lastElement.end, end: lastElement.end, text: `,${separator}${entryText}` }],
+      : [{ start: itemEnd, end: itemEnd, text: `,${separator}${entryText}` }],
   );
+}
+
+/**
+ * The end of the line `from` sits on, when trivia between `from` and the line
+ * end holds a comment; `from` itself otherwise. A block comment counts as part
+ * of the line it opens on however many lines it spans, so an insertion at the
+ * returned offset never lands inside one.
+ */
+function endOfCommentedLine(text: string, from: number, limit: number): number {
+  let pos = from;
+  let commentEnd = -1;
+  for (;;) {
+    while (pos < limit && (text[pos] === ' ' || text[pos] === '\t')) {
+      pos += 1;
+    }
+    if (text[pos] === '/' && text[pos + 1] === '/') {
+      const lineEnd = text.indexOf('\n', pos);
+      commentEnd = lineEnd === -1 ? limit : lineEnd;
+      break;
+    } else if (text[pos] === '/' && text[pos + 1] === '*') {
+      pos = text.indexOf('*/', pos + 2) + 2;
+      commentEnd = pos;
+    } else {
+      break;
+    }
+  }
+
+  if (commentEnd === -1) return from;
+  const lineEnd = text.indexOf('\n', commentEnd);
+  return Math.min(lineEnd === -1 ? commentEnd : lineEnd, limit);
 }
 
 function insertMember(
@@ -212,7 +253,6 @@ function insertMember(
   valueText: string,
 ): string {
   const entryText = `${encodeJSON5(keyPath[0])}: ${buildNestedValue(keyPath.slice(1), valueText)}`;
-  const isMultiline = sourceText.slice(node.start, node.end).includes('\n');
 
   if (node.members.length === 0) {
     const inner = sourceText.slice(node.start + 1, node.end - 1);
@@ -228,20 +268,7 @@ function insertMember(
   }
 
   const lastMember = node.members[node.members.length - 1];
-  const afterLastValue = lastMember.value.end;
-  const triviaEnd = skipTrivia(sourceText, afterLastValue);
-  const hasTrailingComma = sourceText[triviaEnd] === ',';
-  const separator = isMultiline ? `\n${lineIndent(sourceText, lastMember.keyStart)}` : ' ';
-
-  if (hasTrailingComma) {
-    const insertAt = triviaEnd + 1;
-    return applySplices(sourceText, [
-      { start: insertAt, end: insertAt, text: `${separator}${entryText},` },
-    ]);
-  }
-  return applySplices(sourceText, [
-    { start: afterLastValue, end: afterLastValue, text: `,${separator}${entryText}` },
-  ]);
+  return appendEntry(sourceText, node, lastMember.keyStart, lastMember.value.end, entryText);
 }
 
 function buildNestedValue(keyPath: ReadonlyArray<string>, valueText: string): string {
