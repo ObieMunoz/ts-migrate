@@ -17,6 +17,7 @@ import {
 } from './utils/jsdoc-type-aliases';
 import { hasParameterParentheses } from './utils/arrow';
 import { anyTypeNode } from './utils/anyTypes';
+import { isAssignmentOperatorKind, isIdentifierName } from './utils/identifiers';
 
 type TypeMap = Record<string, TypeOptions>;
 
@@ -490,7 +491,7 @@ const jsDocTransformerFactory =
     }
 
     function propertyName(name: string): ts.PropertyName {
-      return /^[A-Za-z_$][\w$]*$/.test(name)
+      return isIdentifierName(name)
         ? factory.createIdentifier(name)
         : factory.createStringLiteral(name);
     }
@@ -953,7 +954,7 @@ function isWriteTarget(node: ts.Expression): boolean {
     parent = current.parent;
   }
   if (ts.isBinaryExpression(parent)) {
-    return parent.left === current && isAssignmentOperator(parent.operatorToken.kind);
+    return parent.left === current && isAssignmentOperatorKind(parent.operatorToken.kind);
   }
   if (ts.isForInStatement(parent) || ts.isForOfStatement(parent)) {
     return parent.initializer === current;
@@ -965,10 +966,6 @@ function isWriteTarget(node: ts.Expression): boolean {
     );
   }
   return false;
-}
-
-function isAssignmentOperator(kind: ts.SyntaxKind): boolean {
-  return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment;
 }
 
 /** The binary operators that bind less tightly than `as`. */
@@ -994,7 +991,7 @@ const looseOperators = new Set<ts.SyntaxKind>([
 function needsParentheses(node: ts.Expression): boolean {
   if (ts.isBinaryExpression(node)) {
     const { kind } = node.operatorToken;
-    return looseOperators.has(kind) || isAssignmentOperator(kind);
+    return looseOperators.has(kind) || isAssignmentOperatorKind(kind);
   }
   return ts.isConditionalExpression(node) || ts.isArrowFunction(node) || ts.isYieldExpression(node);
 }

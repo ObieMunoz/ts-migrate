@@ -9,6 +9,7 @@ import {
 } from './utils/react';
 import { createPropsTypeNameGetter } from './utils/react-props';
 import { innermostNodeAt } from './utils/token-pos';
+import { isIdentifierName } from './utils/identifiers';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
 import firstErrorLine from '../utils/firstErrorLine';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
@@ -580,7 +581,7 @@ function memberLine(member: Member, anyType: string): string {
 }
 
 function renderKey(key: string): string {
-  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? key : JSON.stringify(key);
+  return isIdentifierName(key) ? key : JSON.stringify(key);
 }
 
 function forEachDescendant(node: ts.Node, visitor: (child: ts.Node) => void): void {
