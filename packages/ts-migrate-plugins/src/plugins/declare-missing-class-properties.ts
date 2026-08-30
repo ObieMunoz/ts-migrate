@@ -226,6 +226,8 @@ function declarationOf(candidate: Candidate, proven: boolean, anyType: string): 
 
 /** What one program says about the group it was built for. */
 interface CheckResult {
+  /** The changes the program was built from. */
+  changes: TextChange[];
   newErrors: ts.Diagnostic[];
   /** Declarations the checker resolved to `any`. */
   inferredAny: Set<Candidate>;
@@ -262,10 +264,11 @@ function validateCandidates(
   // named it keep reporting the error the baseline already has and read as
   // the same any the alias would give them.
   const check = (group: Candidate[]): CheckResult | undefined => {
-    if (group.length === 0) return { newErrors: [], inferredAny: new Set() };
+    if (group.length === 0) return { changes: [], newErrors: [], inferredAny: new Set() };
     const checked = checkChanges(() => changesOf(group));
     if (!checked) return undefined;
     return {
+      changes: checked.changes,
       newErrors: checked.newErrors,
       inferredAny: inferredAnyCandidates(checked.service, fileName, group, checked.changes),
     };
@@ -277,7 +280,7 @@ function validateCandidates(
   }
 
   if (result) {
-    const blamed = attributeErrors(result.newErrors, candidates, sourceFile);
+    const blamed = attributeErrors(result.newErrors, result.changes, candidates, sourceFile);
     result.inferredAny.forEach((candidate) => blamed.add(candidate));
     if (blamed.size >= candidates.length) {
       return [];
@@ -500,10 +503,10 @@ function insertedSpans(changes: TextChange[]): { start: number; end: number }[] 
  */
 function attributeErrors(
   errors: ts.Diagnostic[],
+  changes: TextChange[],
   candidates: Candidate[],
   sourceFile: ts.SourceFile,
 ): Set<Candidate> {
-  const changes = changesOf(candidates);
   const spans = insertedSpans(changes);
   const blamed = new Set<Candidate>();
 
