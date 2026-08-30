@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 import ts from 'typescript';
+import { DependencyManifest } from './dependencyManifest';
 import { readText } from './readText';
 
 /** Where the generated asset declarations live, relative to the migration root. */
@@ -61,10 +62,7 @@ const CODE_EXTENSION_REGEX = /^\.([cm]?[jt]sx?|json)$/;
 /** What a `*.ext` pattern can be written for at all. */
 const EXTENSION_REGEX = /^\.\w+$/;
 
-export interface AssetPackageJson {
-  dependencies?: Record<string, string>;
-  devDependencies?: Record<string, string>;
-}
+export type AssetPackageJson = DependencyManifest;
 
 /** How a project imports one extension, counted across its source files. */
 interface AssetUsage {

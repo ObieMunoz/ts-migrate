@@ -13,6 +13,7 @@ import {
 } from '../utils/assetModules';
 import { logApplicationEntries, partitionBootstrapFiles } from '../utils/bootstrapFiles';
 import { detectBundler, hasViteClientTypes } from '../utils/bundler';
+import { DependencyManifest } from '../utils/dependencyManifest';
 import { listGitignoredDirectories, partitionGitignored } from '../utils/gitignore';
 import { JS_EXTENSION_REGEX } from '../utils/jsExtensions';
 import { detectPathAliases, logPathAliases, renderPathAliases } from '../utils/pathAliases';
@@ -25,10 +26,8 @@ interface InitParams {
   isExtendedConfig: boolean;
 }
 
-interface PackageJson {
+interface PackageJson extends DependencyManifest {
   type?: string;
-  dependencies?: Record<string, string>;
-  devDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
 }
 
