@@ -209,147 +209,170 @@ function updatePropTypes(
   propTypeIdentifiers: PropTypesIdentifierMap,
   importedIdentifiers: Set<string>,
   options: Options,
-) {
-  const updates: SourceTextUpdate[] = [];
+): SourceTextUpdate[] {
+  return isReactSfcNode(node)
+    ? updateSfcPropTypes(
+        node,
+        propsTypeName,
+        sourceFile,
+        propTypeIdentifiers,
+        importedIdentifiers,
+        options,
+      )
+    : updateClassPropTypes(node, propsTypeName, sourceFile, importedIdentifiers, options);
+}
+
+// Returns undefined when there are no propTypes to convert, which is what tells
+// the callers to leave the component alone.
+function propsTypeAliasUpdates(
+  node: ReactNode,
+  propTypesNode: ts.PropertyDeclaration | ts.ExpressionStatement | undefined,
+  propsTypeName: string,
+  sourceFile: ts.SourceFile,
+  propTypeIdentifiers: PropTypesIdentifierMap,
+  importedIdentifiers: Set<string>,
+  options: Options,
+  implicitChildren: boolean,
+): SourceTextUpdate[] | undefined {
+  const objectLiteral = findPropTypesObjectLiteral(propTypesNode, sourceFile);
+  if (objectLiteral) {
+    return updateObjectLiteral(
+      node,
+      objectLiteral,
+      propsTypeName,
+      sourceFile,
+      propTypeIdentifiers,
+      importedIdentifiers,
+      options,
+      implicitChildren,
+    );
+  }
+
+  const importedPropTypes = findImportedPropTypes(propTypesNode, importedIdentifiers);
+  return importedPropTypes
+    ? [insertInferPropsTypeAlias(node, importedPropTypes, propsTypeName, sourceFile)]
+    : undefined;
+}
+
+function updateSfcPropTypes(
+  node: ReactSfcNode,
+  propsTypeName: string,
+  sourceFile: ts.SourceFile,
+  propTypeIdentifiers: PropTypesIdentifierMap,
+  importedIdentifiers: Set<string>,
+  options: Options,
+): SourceTextUpdate[] {
+  const propsParam = getPropsParam(node);
+  if (!propsParam || propsParam.type) return [];
+
+  const updates = propsTypeAliasUpdates(
+    node,
+    findSfcPropTypesNode(node, sourceFile),
+    propsTypeName,
+    sourceFile,
+    propTypeIdentifiers,
+    importedIdentifiers,
+    options,
+    false,
+  );
+  if (!updates) return [];
+
   const printer = ts.createPrinter();
-
-  if (isReactSfcNode(node)) {
-    const propsParam = getPropsParam(node);
-    const forwardRefComponent = getReactForwardRefFuncExpression(node);
-
-    if (propsParam && !propsParam.type) {
-      const propTypesNode = findSfcPropTypesNode(node, sourceFile);
-      const objectLiteral = propTypesNode && findPropTypesObjectLiteral(propTypesNode, sourceFile);
-      const importedPropTypes = objectLiteral
-        ? undefined
-        : findImportedPropTypes(propTypesNode, importedIdentifiers);
-      if (objectLiteral || importedPropTypes) {
-        if (objectLiteral) {
-          updates.push(
-            ...updateObjectLiteral(
-              node,
-              objectLiteral,
-              propsTypeName,
-              sourceFile,
-              propTypeIdentifiers,
-              importedIdentifiers,
-              options,
-              false,
-            ),
-          );
-        } else if (importedPropTypes) {
-          updates.push(
-            insertInferPropsTypeAlias(node, importedPropTypes, propsTypeName, sourceFile),
-          );
-        }
-        if (forwardRefComponent) {
-          const { expression } = forwardRefComponent;
-          const index = expression.getStart(sourceFile);
-          const refTypeName =
-            getForwardRefElementType(forwardRefComponent) || options.anyAlias || 'any';
-          updates.push({
-            kind: 'replace',
-            index,
-            length: expression.end - index,
-            text: printer.printNode(
-              ts.EmitHint.Unspecified,
-              ts.factory.updateExpressionWithTypeArguments(
-                forwardRefComponent as any,
-                expression,
-                [
-                  ts.factory.createTypeReferenceNode(refTypeName, undefined),
-                  ts.factory.createTypeReferenceNode(propsTypeName, undefined),
-                ],
-              ),
-              sourceFile,
-            ),
-          });
-        } else {
-          let updateText = printer.printNode(
-            ts.EmitHint.Unspecified,
-            ts.factory.updateParameterDeclaration(
-              propsParam,
-              propsParam.modifiers,
-              propsParam.dotDotDotToken,
-              propsParam.name,
-              propsParam.questionToken,
-              ts.factory.createTypeReferenceNode(propsTypeName, undefined),
-              propsParam.initializer,
-            ),
-            sourceFile,
-          );
-
-          const signature = propsParam.parent;
-          if (
-            ts.isArrowFunction(signature) &&
-            signature.parameters.length === 1 &&
-            !hasParameterParentheses(signature, sourceFile)
-          ) {
-            // Special case: when an arrow function has a single parameter and no parentheses,
-            // add parentheses.
-            updateText = `(${updateText})`;
-          }
-
-          updates.push({
-            kind: 'replace',
-            index: propsParam.pos,
-            length: propsParam.end - propsParam.pos,
-            text: updateText,
-          });
-        }
-
-        if (!options.shouldKeepPropTypes) {
-          updates.push(...deleteSfcPropTypes(node, sourceFile));
-        }
-      }
-    }
+  const forwardRefComponent = getReactForwardRefFuncExpression(node);
+  if (forwardRefComponent) {
+    const { expression } = forwardRefComponent;
+    const index = expression.getStart(sourceFile);
+    const refTypeName = getForwardRefElementType(forwardRefComponent) || options.anyAlias || 'any';
+    updates.push({
+      kind: 'replace',
+      index,
+      length: expression.end - index,
+      text: printer.printNode(
+        ts.EmitHint.Unspecified,
+        ts.factory.updateExpressionWithTypeArguments(forwardRefComponent as any, expression, [
+          ts.factory.createTypeReferenceNode(refTypeName, undefined),
+          ts.factory.createTypeReferenceNode(propsTypeName, undefined),
+        ]),
+        sourceFile,
+      ),
+    });
   } else {
-    const heritageType = getReactComponentHeritageType(node)!;
-    const heritageTypeArgs = heritageType.typeArguments || [];
-    const propsType = heritageTypeArgs[0];
-    const stateType = heritageTypeArgs[1];
-    if (!propsType || isEmptyPropsType(propsType)) {
-      const propTypesNode = findClassPropTypesNode(node, sourceFile);
-      const objectLiteral = propTypesNode && findPropTypesObjectLiteral(propTypesNode, sourceFile);
-      const importedPropTypes = objectLiteral
-        ? undefined
-        : findImportedPropTypes(propTypesNode, importedIdentifiers);
-      if (objectLiteral || importedPropTypes) {
-        if (objectLiteral) {
-          updates.push(
-            ...updateObjectLiteral(
-              node,
-              objectLiteral,
-              propsTypeName,
-              sourceFile,
-              {},
-              importedIdentifiers,
-              options,
-              true,
-            ),
-          );
-        } else if (importedPropTypes) {
-          updates.push(
-            insertInferPropsTypeAlias(node, importedPropTypes, propsTypeName, sourceFile),
-          );
-        }
+    let updateText = printer.printNode(
+      ts.EmitHint.Unspecified,
+      ts.factory.updateParameterDeclaration(
+        propsParam,
+        propsParam.modifiers,
+        propsParam.dotDotDotToken,
+        propsParam.name,
+        propsParam.questionToken,
+        ts.factory.createTypeReferenceNode(propsTypeName, undefined),
+        propsParam.initializer,
+      ),
+      sourceFile,
+    );
 
-        updates.push(
-          replaceHeritageTypeArguments(
-            heritageType,
-            [ts.factory.createTypeReferenceNode(propsTypeName, undefined), stateType].filter(
-              isNotNull,
-            ) as any,
-            printer,
-            sourceFile,
-          ),
-        );
-
-        if (!options.shouldKeepPropTypes) {
-          updates.push(...deleteClassPropTypes(node, sourceFile));
-        }
-      }
+    const signature = propsParam.parent;
+    if (
+      ts.isArrowFunction(signature) &&
+      signature.parameters.length === 1 &&
+      !hasParameterParentheses(signature, sourceFile)
+    ) {
+      // Special case: when an arrow function has a single parameter and no parentheses,
+      // add parentheses.
+      updateText = `(${updateText})`;
     }
+
+    updates.push({
+      kind: 'replace',
+      index: propsParam.pos,
+      length: propsParam.end - propsParam.pos,
+      text: updateText,
+    });
+  }
+
+  if (!options.shouldKeepPropTypes) {
+    updates.push(...deleteSfcPropTypes(node, sourceFile));
+  }
+
+  return updates;
+}
+
+function updateClassPropTypes(
+  node: ts.ClassDeclaration,
+  propsTypeName: string,
+  sourceFile: ts.SourceFile,
+  importedIdentifiers: Set<string>,
+  options: Options,
+): SourceTextUpdate[] {
+  const heritageType = getReactComponentHeritageType(node)!;
+  const [propsType, stateType] = heritageType.typeArguments || [];
+  if (propsType && !isEmptyPropsType(propsType)) return [];
+
+  const updates = propsTypeAliasUpdates(
+    node,
+    findClassPropTypesNode(node, sourceFile),
+    propsTypeName,
+    sourceFile,
+    {},
+    importedIdentifiers,
+    options,
+    true,
+  );
+  if (!updates) return [];
+
+  updates.push(
+    replaceHeritageTypeArguments(
+      heritageType,
+      [ts.factory.createTypeReferenceNode(propsTypeName, undefined), stateType].filter(
+        isNotNull,
+      ) as any,
+      ts.createPrinter(),
+      sourceFile,
+    ),
+  );
+
+  if (!options.shouldKeepPropTypes) {
+    updates.push(...deleteClassPropTypes(node, sourceFile));
   }
 
   return updates;
