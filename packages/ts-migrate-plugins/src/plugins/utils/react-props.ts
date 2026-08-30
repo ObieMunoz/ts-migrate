@@ -46,6 +46,17 @@ export function createInferPropsTypeNode(entityName: ts.EntityName): ts.TypeRefe
   ]);
 }
 
+export function isForbidExtraPropsCall(
+  expression: ts.Expression,
+): expression is ts.CallExpression {
+  return (
+    ts.isCallExpression(expression) &&
+    ts.isIdentifier(expression.expression) &&
+    expression.expression.text === 'forbidExtraProps' &&
+    expression.arguments.length === 1
+  );
+}
+
 export function unpackInitializer(
   initializer: ts.Expression | undefined,
   sourceFile: ts.SourceFile,
@@ -58,12 +69,7 @@ export function unpackInitializer(
     return initializer;
   }
 
-  if (
-    ts.isCallExpression(initializer) &&
-    ts.isIdentifier(initializer.expression) &&
-    initializer.expression.text === 'forbidExtraProps' &&
-    initializer.arguments.length === 1
-  ) {
+  if (isForbidExtraPropsCall(initializer)) {
     const arg = initializer.arguments[0];
     if (ts.isObjectLiteralExpression(arg)) {
       return arg;
