@@ -1,4 +1,5 @@
 import ts from 'typescript';
+import { getOrCreate } from '../../utils/maps';
 
 export type KnownDefinitionMap = { [key: string]: { pos: number; end: number } };
 
@@ -45,6 +46,20 @@ export function collectBindingNames(name: ts.BindingName, out: Set<string>): voi
       collectBindingNames(element.name, out);
     }
   }
+}
+
+/**
+ * Groups items that each carry a binding name by that name, keeping the order
+ * they were given in both across the keys and within each group.
+ */
+export function groupByName<T extends { name: ts.Identifier }>(
+  items: readonly T[],
+): Map<string, T[]> {
+  const byName = new Map<string, T[]>();
+  items.forEach((item) => {
+    getOrCreate(byName, item.name.text, (): T[] => []).push(item);
+  });
+  return byName;
 }
 
 /**

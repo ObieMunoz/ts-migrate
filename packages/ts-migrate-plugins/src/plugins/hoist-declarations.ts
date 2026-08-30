@@ -1,7 +1,11 @@
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
-import { collectIdentifierNodes, resolvesToDeclaration } from './utils/identifiers';
+import {
+  collectIdentifierNodes,
+  groupByName,
+  resolvesToDeclaration,
+} from './utils/identifiers';
 
 /**
  * Moves a top-level `const`/`let` statement above its first use when the binding
@@ -56,15 +60,7 @@ function hoistDeclarations(
   const candidates = findCandidates(sourceFile);
   if (candidates.length === 0) return sourceText;
 
-  const byName = new Map<string, Candidate[]>();
-  candidates.forEach((candidate) => {
-    const list = byName.get(candidate.name.text);
-    if (list) {
-      list.push(candidate);
-    } else {
-      byName.set(candidate.name.text, [candidate]);
-    }
-  });
+  const byName = groupByName(candidates);
 
   findEarliestReferences(sourceFile, byName, checker);
 
