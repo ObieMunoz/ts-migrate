@@ -24,6 +24,9 @@ const MAX_NAMESPACE_DEPTH = 3;
 /** Files listed per unresolved name before the rest are counted instead. */
 const MAX_NAME_FILES = 5;
 
+/** Entries listed per summary section before the rest are counted instead. */
+const MAX_SUMMARY_ENTRIES = 5;
+
 export interface SourceLocation {
   /** Relative to rootDir when inside it, absolute otherwise. */
   file: string;
@@ -1113,6 +1116,34 @@ export function formatSuppressionReport(report: SuppressionReport): string {
   return lines.join('\n').trimEnd();
 }
 
+/** The capped entries of one summary section, with a count of what it left out. */
+function topLines<T>(
+  items: readonly T[],
+  render: (item: T) => string,
+  moreLabel: string,
+): string[] {
+  const lines = items.slice(0, MAX_SUMMARY_ENTRIES).map(render);
+  if (items.length > MAX_SUMMARY_ENTRIES) {
+    lines.push(`    and ${pluralize(items.length - MAX_SUMMARY_ENTRIES, moreLabel)}`);
+  }
+  return lines;
+}
+
+/** One code and, when it has a named one, the shape most of its fixes took. */
+function summaryCodeLine(group: SuppressionCodeGroup): string {
+  const top = group.fixShapes[0];
+  const shape = top && top.shape !== UNKNOWN_FIX_SHAPE ? ` — ${top.count} ${top.shape}` : '';
+  return `    TS${group.code} x${group.count}${shape}`;
+}
+
+/** One unresolved name, its reach, and why it found nothing. */
+function summaryNameLine(group: UnresolvedTypeGroup): string {
+  return (
+    `    ${group.name} x${group.count} in ${pluralize(group.fileCount, 'file')} — ` +
+    unresolvedTypeCause(group)
+  );
+}
+
 /** How many suppressions of which shape, short enough for the run log. */
 export function formatSuppressionSummary(
   report: SuppressionReport,
@@ -1127,14 +1158,7 @@ export function formatSuppressionSummary(
         ? `, ${report.sharedLine} of them sharing a line with another and left uncommented.`
         : '.'),
   ];
-  report.codes.slice(0, 5).forEach((group) => {
-    const top = group.fixShapes[0];
-    const shape = top && top.shape !== UNKNOWN_FIX_SHAPE ? ` — ${top.count} ${top.shape}` : '';
-    lines.push(`    TS${group.code} x${group.count}${shape}`);
-  });
-  if (report.codes.length > 5) {
-    lines.push(`    and ${pluralize(report.codes.length - 5, 'other code')}`);
-  }
+  lines.push(...topLines(report.codes, summaryCodeLine, 'other code'));
 
   const names = report.unresolvedTypes;
   if (names.length > 0) {
@@ -1144,15 +1168,7 @@ export function formatSuppressionSummary(
       `  ${pluralize(names.length, 'type name')} in the annotations resolve to nothing, across ` +
         `${pluralize(sites, 'diagnostic')}; the comments write ${documented} of them.`,
     );
-    names.slice(0, 5).forEach((group) => {
-      lines.push(
-        `    ${group.name} x${group.count} in ${pluralize(group.fileCount, 'file')} — ` +
-          unresolvedTypeCause(group),
-      );
-    });
-    if (names.length > 5) {
-      lines.push(`    and ${pluralize(names.length - 5, 'other name')}`);
-    }
+    lines.push(...topLines(names, summaryNameLine, 'other name'));
   }
 
   lines.push(
