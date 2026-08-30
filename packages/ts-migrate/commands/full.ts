@@ -445,16 +445,7 @@ ${warning}
       return this.failStep('rename', `Step 2 of ${STEP_COUNT} (rename)`, 255);
     }
 
-    this.renameSummary = buildRenameRunSummary({
-      rootDir,
-      exitCode: 0,
-      dryRun,
-      renamedFiles: result.renamedFiles,
-      skippedGitignoredFiles: result.skippedGitignoredFiles,
-      skippedBootstrapFiles: result.skippedBootstrapFiles,
-      packageJsonRewrites: result.packageJsonRewrites,
-      packageJsonNotices: result.packageJsonNotices,
-    });
+    this.renameSummary = buildRenameRunSummary({ ...result, rootDir, exitCode: 0, dryRun });
     return this.finishStep(
       'rename',
       `Step 2 of ${STEP_COUNT} (rename)`,
