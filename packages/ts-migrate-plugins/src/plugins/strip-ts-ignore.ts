@@ -16,8 +16,6 @@ function getTextWithoutIgnores(sourceFile: ts.SourceFile): string {
   const updates: SourceTextUpdate[] = [];
 
   const printerWithoutComments = ts.createPrinter({ removeComments: true });
-  const printWithoutComments = (node: ts.Node) =>
-    printerWithoutComments.printNode(ts.EmitHint.Unspecified, node, sourceFile);
 
   const { text } = sourceFile;
   const regExp = /(\/\/|\/\*) *@ts-(?:ignore|expect-error)\b/g;
@@ -28,7 +26,7 @@ function getTextWithoutIgnores(sourceFile: ts.SourceFile): string {
     const { line } = ts.getLineAndCharacterOfPosition(sourceFile, matchPos);
     const lineStart = ts.getPositionOfLineAndCharacter(sourceFile, line, 0);
     const lineEnd = ts.getPositionOfLineAndCharacter(sourceFile, line + 1, 0);
-    const lineText = sourceFile.text.slice(lineStart, lineEnd);
+    const lineText = text.slice(lineStart, lineEnd);
 
     const node = findNodeAtPos(sourceFile, matchPos);
     if (node && !ts.isJsxText(node)) {
@@ -42,9 +40,11 @@ function getTextWithoutIgnores(sourceFile: ts.SourceFile): string {
           updates.push({ kind: 'delete', index: pos, length: end - pos });
         });
       } else {
-        const printedWithoutComments = printWithoutComments(node);
         const inTemplate = ts.isTemplateLiteralToken(node);
-        if (ts.isJsxExpression(node) && printedWithoutComments === '') {
+        if (
+          ts.isJsxExpression(node) &&
+          printerWithoutComments.printNode(ts.EmitHint.Unspecified, node, sourceFile) === ''
+        ) {
           const { pos, end } = expandToWhitespace(text, node);
           updates.push({ kind: 'delete', index: pos, length: end - pos });
         } else if (!inTemplate && /^ *\/\/ *@ts-(?:ignore|expect-error)\b/.test(lineText)) {
