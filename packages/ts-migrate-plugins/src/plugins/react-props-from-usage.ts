@@ -337,6 +337,21 @@ interface CallSiteResult {
   neededImports: NamedImport[];
 }
 
+// The JSX element a reference tags, or undefined when the reference is not a
+// JSX tag name.
+function jsxCallSiteAt(
+  sourceFile: ts.SourceFile,
+  position: number,
+): ts.JsxOpeningElement | ts.JsxSelfClosingElement | undefined {
+  const node = innermostNodeAt(sourceFile, position);
+  if (!node || !ts.isIdentifier(node)) return undefined;
+
+  const parent = node.parent;
+  if (ts.isJsxOpeningElement(parent) && parent.tagName === node) return parent;
+  if (ts.isJsxSelfClosingElement(parent) && parent.tagName === node) return parent;
+  return undefined;
+}
+
 function collectCallSiteProps(
   classDeclaration: ts.ClassDeclaration,
   sourceFile: ts.SourceFile,
@@ -367,26 +382,13 @@ function collectCallSiteProps(
       const refSourceFile = program.getSourceFile(ref.fileName);
       if (!refSourceFile) continue;
 
-      const refNode = innermostNodeAt(refSourceFile, ref.textSpan.start);
-      if (!refNode || !ts.isIdentifier(refNode)) continue;
-
-      const parent = refNode.parent;
-      let jsxElement: ts.JsxOpeningElement | ts.JsxSelfClosingElement | undefined;
-
-      if (ts.isJsxOpeningElement(parent) && parent.tagName === refNode) {
-        jsxElement = parent;
-      } else if (ts.isJsxSelfClosingElement(parent) && parent.tagName === refNode) {
-        jsxElement = parent;
-      }
-
+      const jsxElement = jsxCallSiteAt(refSourceFile, ref.textSpan.start);
       if (!jsxElement) continue;
 
       // Check for spread attributes before counting this as a call site.
-      for (const attr of jsxElement.attributes.properties) {
-        if (ts.isJsxSpreadAttribute(attr) && skipOnSpread) {
-          shouldSkip = true;
-          break outer;
-        }
+      if (skipOnSpread && jsxElement.attributes.properties.some(ts.isJsxSpreadAttribute)) {
+        shouldSkip = true;
+        break outer;
       }
 
       totalCallSites++;
