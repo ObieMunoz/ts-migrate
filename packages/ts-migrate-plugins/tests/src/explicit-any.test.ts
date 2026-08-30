@@ -1,6 +1,13 @@
 import ts from 'typescript';
-import { mockPluginParams, mockDiagnostic, realPluginParams } from '../test-utils';
+import {
+  mockPluginParams,
+  mockDiagnostic,
+  realPluginParams,
+  realPluginRunner,
+} from '../test-utils';
 import explicitAnyPlugin from '../../src/plugins/explicit-any';
+
+const run = realPluginRunner(explicitAnyPlugin);
 
 describe('explicit-any plugin', () => {
   it('adds explicit any', async () => {
@@ -37,11 +44,7 @@ const { varA, varB: {
 } = {} } = {};
 `;
 
-    const result = await explicitAnyPlugin.run(
-      await realPluginParams({
-        text,
-      }),
-    );
+    const result = await run(text);
 
     expect(result).toBe(`let somePromise: any;
 somePromise.then((res1: any) => res1.default || res1);
@@ -85,11 +88,7 @@ function f3() { return () => this; }
 function f4() { this.a = 1; this.b = 2; }
 `;
 
-    const result = await explicitAnyPlugin.run(
-      await realPluginParams({
-        text,
-      }),
-    );
+    const result = await run(text);
 
     expect(result).toBe(`\
 function f1(this: any, a: any) { return this; }
@@ -119,11 +118,7 @@ function f4(this: any) { this.a = 1; this.b = 2; }
   it('handles arrow functions returning object literals', async () => {
     const text = `const fn = (b) => ({});`;
 
-    const result = await explicitAnyPlugin.run(
-      await realPluginParams({
-        text,
-      }),
-    );
+    const result = await run(text);
 
     expect(result).toBe(`const fn = (b: any) => ({});`);
   });
@@ -134,11 +129,7 @@ function f4(this: any) { this.a = 1; this.b = 2; }
 }
 `;
 
-    const result = await explicitAnyPlugin.run(
-      await realPluginParams({
-        text,
-      }),
-    );
+    const result = await run(text);
 
     expect(result).toBe(`export function firstOf([head, ...tail]: any, [a, b]: any = []) {
   return head || a || tail.length || b;
@@ -152,11 +143,7 @@ function f4(this: any) { this.a = 1; this.b = 2; }
 }
 `;
 
-    const result = await explicitAnyPlugin.run(
-      await realPluginParams({
-        text,
-      }),
-    );
+    const result = await run(text);
 
     expect(result).toBe(`export function pluck({ items: [first] }: any) {
   return first;
@@ -170,11 +157,7 @@ function f4(this: any) { this.a = 1; this.b = 2; }
 }
 `;
 
-    const result = await explicitAnyPlugin.run(
-      await realPluginParams({
-        text,
-      }),
-    );
+    const result = await run(text);
 
     expect(result).toBe(`export function pick([{ x }]: any) {
   return x;
@@ -189,11 +172,7 @@ function f4(this: any) { this.a = 1; this.b = 2; }
 });
 `;
 
-    const result = await explicitAnyPlugin.run(
-      await realPluginParams({
-        text,
-      }),
-    );
+    const result = await run(text);
 
     expect(result).toBe(`export const trackEvent = (name: any, payload: any) => ({
   type: 'TRACK',
@@ -218,12 +197,7 @@ export const config = { retries: 3 } satisfies Record<string, number>;
 export const strip = (input) => input.replace(EMOJI_RE, '');
 `;
 
-    const result = await explicitAnyPlugin.run(
-      await realPluginParams({
-        text,
-        compilerOptions: { target: ts.ScriptTarget.ESNext },
-      }),
-    );
+    const result = await run(text, { compilerOptions: { target: ts.ScriptTarget.ESNext } });
 
     expect(result).toBe(`export class Cache {
   static registry: any;
@@ -250,12 +224,7 @@ export let x;
 x = 1;
 `;
 
-    const result = await explicitAnyPlugin.run(
-      await realPluginParams({
-        text,
-        compilerOptions: { strict: false, noImplicitAny: true },
-      }),
-    );
+    const result = await run(text, { compilerOptions: { strict: false, noImplicitAny: true } });
 
     expect(result).toBe(`export const xs: any[] = [];
 xs.push(1);
@@ -271,13 +240,10 @@ x = 1;
 xs.push(1);
 `;
 
-    const result = await explicitAnyPlugin.run(
-      await realPluginParams({
-        options: { anyAlias: '$TSFixMe' },
-        text,
-        compilerOptions: { strict: false, noImplicitAny: true },
-      }),
-    );
+    const result = await run(text, {
+      options: { anyAlias: '$TSFixMe' },
+      compilerOptions: { strict: false, noImplicitAny: true },
+    });
 
     expect(result).toBe(`export const xs: $TSFixMe[] = [];
 xs.push(1);
@@ -288,13 +254,10 @@ xs.push(1);
     const text = `h.doThing();
 `;
 
-    const result = await explicitAnyPlugin.run(
-      await realPluginParams({
-        text,
-        compilerOptions: { strict: false, noImplicitAny: true },
-        extraFiles: { 'globals.ts': 'var h;\n' },
-      }),
-    );
+    const result = await run(text, {
+      compilerOptions: { strict: false, noImplicitAny: true },
+      extraFiles: { 'globals.ts': 'var h;\n' },
+    });
 
     expect(result).toBe(text);
   });
@@ -349,11 +312,7 @@ export const again = function repeat(n: number) {
 export const fib = (n: number) => (n <= 1 ? n : fib(n - 1) + fib(n - 2));
 `;
 
-    const result = await explicitAnyPlugin.run(
-      await realPluginParams({
-        text,
-      }),
-    );
+    const result = await run(text);
 
     expect(result).toBe(`export function fact(n: number): any {
   return n <= 1 ? 1 : n * fact(n - 1);
@@ -370,11 +329,7 @@ export const fib = (n: number): any => (n <= 1 ? n : fib(n - 1) + fib(n - 2));
 export default f;
 `;
 
-    const result = await explicitAnyPlugin.run(
-      await realPluginParams({
-        text,
-      }),
-    );
+    const result = await run(text);
 
     expect(result).toBe(`const f: any = (n: any) => f(n - 1);
 export default f;
@@ -395,11 +350,7 @@ export default f;
 };
 `;
 
-    const result = await explicitAnyPlugin.run(
-      await realPluginParams({
-        text,
-      }),
-    );
+    const result = await run(text);
 
     expect(result).toBe(`export const obj = {
   walk(n: number): any {
@@ -427,11 +378,7 @@ export default f;
 }
 `;
 
-    const result = await explicitAnyPlugin.run(
-      await realPluginParams({
-        text,
-      }),
-    );
+    const result = await run(text);
 
     expect(result).toBe(`export class Tree {
   depth(n: number): any {
@@ -451,7 +398,7 @@ declare function source(): { kept: string };
 const { gone, alsoGone } = source();
 `;
 
-    const result = await explicitAnyPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`\
 declare function source(): { kept: string };
@@ -465,7 +412,7 @@ declare function source(): { kept: string };
 const { kept, gone } = source();
 `;
 
-    const result = await explicitAnyPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(text);
   });
@@ -477,7 +424,7 @@ const { outer: { kept, gone } } = source();
 const { outer: { gone: onlyGone } } = source();
 `;
 
-    const result = await explicitAnyPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`\
 declare function source(): { outer: { kept: string } };
