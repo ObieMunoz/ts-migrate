@@ -1,6 +1,7 @@
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import { collectIdentifiers } from './utils/identifiers';
+import { isNameableJsxTagName, jsxTagNameTypeArgument } from './utils/jsx-tag-names';
 import getTokenAtPosition from './utils/token-pos';
 import {
   AnnotationGroup,
@@ -395,20 +396,10 @@ function isTypedPosition(use: ts.Node): boolean {
 function forwardedPropsOf(spread: ts.JsxSpreadAttribute, at: ts.Node): string | undefined {
   const element = spread.parent.parent;
   const { tagName } = element;
-  if (!isNameable(tagName)) return undefined;
+  if (!isNameableJsxTagName(tagName)) return undefined;
   if (!collectIdentifiers(at.getSourceFile()).has('React')) return undefined;
-  const text = tagName.getText();
-  const target = ts.isIdentifier(tagName) && /^[a-z]/.test(text) ? `'${text}'` : `typeof ${text}`;
+  const target = jsxTagNameTypeArgument(tagName);
   return `Partial<React.ComponentProps<${target}>>`;
-}
-
-function isNameable(tagName: ts.JsxTagNameExpression): boolean {
-  if (ts.isIdentifier(tagName)) return true;
-  return (
-    ts.isPropertyAccessExpression(tagName) &&
-    ts.isIdentifier(tagName.name) &&
-    isNameable(tagName.expression as ts.JsxTagNameExpression)
-  );
 }
 
 function printed(

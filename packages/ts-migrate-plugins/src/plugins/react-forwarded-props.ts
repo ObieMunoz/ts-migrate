@@ -1,6 +1,7 @@
 import ts from 'typescript';
 import { errorMessage, fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
 import { updateImports } from './utils/imports';
+import { isNameableJsxTagName, jsxTagNameTypeArgument } from './utils/jsx-tag-names';
 import updateSourceText from '../utils/updateSourceText';
 import {
   applyTextChanges,
@@ -221,7 +222,7 @@ function candidateFor(
     parameter,
     declaredType: parameter.type,
     consumed,
-    target: targetArgument(target.tagName),
+    target: jsxTagNameTypeArgument(target.tagName),
   };
 }
 
@@ -267,23 +268,8 @@ function onlyTarget(targets: SpreadTarget[]): SpreadTarget | undefined {
   }
   const first = targets[0];
   const name = first.tagName.getText();
-  return targets.every((target) => target.tagName.getText() === name) && isNameable(first.tagName)
-    ? first
-    : undefined;
-}
-
-function isNameable(tagName: ts.JsxTagNameExpression): boolean {
-  if (ts.isIdentifier(tagName)) return true;
-  return (
-    ts.isPropertyAccessExpression(tagName) &&
-    ts.isIdentifier(tagName.name) &&
-    isNameable(tagName.expression as ts.JsxTagNameExpression)
-  );
-}
-
-function targetArgument(tagName: ts.JsxTagNameExpression): string {
-  const text = tagName.getText();
-  return ts.isIdentifier(tagName) && /^[a-z]/.test(text) ? `'${text}'` : `typeof ${text}`;
+  const sameTag = targets.every((target) => target.tagName.getText() === name);
+  return sameTag && isNameableJsxTagName(first.tagName) ? first : undefined;
 }
 
 function targetDeclaration(
