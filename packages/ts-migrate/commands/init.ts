@@ -13,6 +13,7 @@ import {
 } from '../utils/assetModules';
 import { logApplicationEntries, partitionBootstrapFiles } from '../utils/bootstrapFiles';
 import { detectBundler, hasViteClientTypes } from '../utils/bundler';
+import { DependencyManifest } from '../utils/dependencyManifest';
 import { listGitignoredDirectories, partitionGitignored } from '../utils/gitignore';
 import { JS_EXTENSION_REGEX } from '../utils/jsExtensions';
 import { detectPathAliases, logPathAliases, renderPathAliases } from '../utils/pathAliases';
@@ -25,10 +26,8 @@ interface InitParams {
   isExtendedConfig: boolean;
 }
 
-interface PackageJson {
+interface PackageJson extends DependencyManifest {
   type?: string;
-  dependencies?: Record<string, string>;
-  devDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
 }
 
@@ -108,14 +107,14 @@ function findJsFiles(rootDir: string, skippedDirectories: string[]): string[] {
   return files;
 }
 
-interface BootstrapPartition {
+interface InitBootstrapFiles {
   /** rootDir-relative paths for the tsconfig "exclude". */
   bootstrapFiles: string[];
   /** The files the migration will convert. */
   migratedFiles: string[];
 }
 
-function detectBootstrapFiles(rootDir: string, ignoredDirectories: string[]): BootstrapPartition {
+function detectBootstrapFiles(rootDir: string, ignoredDirectories: string[]): InitBootstrapFiles {
   const candidates = partitionGitignored(
     rootDir,
     findJsFiles(rootDir, ignoredDirectories),
