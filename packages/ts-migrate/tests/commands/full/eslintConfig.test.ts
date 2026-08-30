@@ -1,8 +1,7 @@
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import full from '../../../commands/full';
-import { deleteDir, transcriptLines } from '@obiemunoz/ts-migrate-test-utils';
+import { createTmpDir, deleteDir, transcriptLines } from '@obiemunoz/ts-migrate-test-utils';
 
 /**
  * What the migrate step finds on disk where an ESLint config would be. The run
@@ -43,13 +42,12 @@ jest.mock('../../../commands/runMigrate', () => ({
 let rootDir: string;
 let compilerDir: string;
 
-const createDir = () => fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-full-'));
 
 beforeEach(() => {
   transcriptLines.length = 0;
   seenDuringMigrate.length = 0;
-  rootDir = createDir();
-  compilerDir = createDir();
+  rootDir = createTmpDir('ts-migrate-full-');
+  compilerDir = createTmpDir('ts-migrate-full-');
   fs.mkdirSync(path.join(compilerDir, 'bin'), { recursive: true });
   fs.writeFileSync(
     path.join(compilerDir, 'package.json'),

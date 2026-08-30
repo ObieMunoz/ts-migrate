@@ -1,7 +1,7 @@
 import { spawnSync } from 'child_process';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
+import { createTmpDir } from '@obiemunoz/ts-migrate-test-utils';
 
 /**
  * The parser as it ships: the built CLI in a child process, so exit codes and
@@ -18,7 +18,7 @@ beforeAll(() => {
   if (!fs.existsSync(cliPath)) {
     throw new Error(`${cliPath} does not exist. Run \`pnpm run build\` before the tests.`);
   }
-  projectDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-cli-'));
+  projectDir = createTmpDir('ts-migrate-cli-');
   fs.writeFileSync(path.join(projectDir, 'tsconfig.json'), '{ "include": ["."] }\n');
   fs.writeFileSync(path.join(projectDir, 'a.ts'), 'export const a: any = 1;\n');
 });
@@ -177,7 +177,7 @@ describe('a <folder> that is not a directory', () => {
 // will need, so it is not the missing-folder case.
 describe('a <folder> that exists', () => {
   it('initializes an empty one', () => {
-    const emptyDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-empty-'));
+    const emptyDir = createTmpDir('ts-migrate-empty-');
 
     try {
       const { status, output } = runCli(['init', emptyDir]);
@@ -284,7 +284,7 @@ describe('flag spelling', () => {
   // a dashed flag onto its camelCase key, and this is what holds it to that:
   // each still has to reach the handler, not merely parse.
   it('still renames nothing under the dashed --dry-run', () => {
-    const dryRunDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-dashed-'));
+    const dryRunDir = createTmpDir('ts-migrate-dashed-');
 
     try {
       fs.writeFileSync(path.join(dryRunDir, 'tsconfig.json'), '{ "include": ["."] }\n');
@@ -411,7 +411,7 @@ describe('the config file', () => {
   }
 
   beforeEach(() => {
-    configDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-config-'));
+    configDir = createTmpDir('ts-migrate-config-');
     writeProject(configDir);
   });
 
@@ -458,7 +458,7 @@ describe('the config file', () => {
   }, 30000);
 
   it('reads the file --config names instead of searching', () => {
-    const elsewhere = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-cfg-'));
+    const elsewhere = createTmpDir('ts-migrate-cfg-');
 
     try {
       const baselineFile = path.join(configDir, 'from-named.json');
@@ -551,7 +551,7 @@ describe('the type package preflight', () => {
   }
 
   beforeEach(() => {
-    preflightDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-preflight-'));
+    preflightDir = createTmpDir('ts-migrate-preflight-');
   });
 
   afterEach(() => {
@@ -622,7 +622,7 @@ describe('a retype run', () => {
   let retypeDir: string;
 
   beforeEach(() => {
-    retypeDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-retype-'));
+    retypeDir = createTmpDir('ts-migrate-retype-');
     fs.writeFileSync(
       path.join(retypeDir, 'tsconfig.json'),
       JSON.stringify({ compilerOptions: { noEmit: true, strict: true, types: [] }, include: ['.'] }),
@@ -683,7 +683,7 @@ describe('a migrate run with nothing to migrate', () => {
   let emptyDir: string;
 
   beforeAll(() => {
-    emptyDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-unrenamed-'));
+    emptyDir = createTmpDir('ts-migrate-unrenamed-');
     fs.writeFileSync(
       path.join(emptyDir, 'tsconfig.json'),
       '{ "compilerOptions": { "types": [] }, "include": ["**/*.ts"] }\n',
@@ -715,7 +715,7 @@ describe('a migrate run that fails', () => {
   let brokenDir: string;
 
   beforeAll(() => {
-    brokenDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-broken-'));
+    brokenDir = createTmpDir('ts-migrate-broken-');
     fs.writeFileSync(
       path.join(brokenDir, 'tsconfig.json'),
       '{ "compilerOptions": { "types": [] }, "include": ["**/*.ts"] }\n',
@@ -746,7 +746,7 @@ describe('a migrate run that fails', () => {
   }, 180000);
 
   it('prints no failure line for a run that succeeds', () => {
-    const okDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-ok-'));
+    const okDir = createTmpDir('ts-migrate-ok-');
     try {
       fs.writeFileSync(
         path.join(okDir, 'tsconfig.json'),
@@ -780,7 +780,7 @@ describe('a run that cannot write a file it was asked for', () => {
   let outputDir: string;
 
   beforeAll(() => {
-    outputDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-output-'));
+    outputDir = createTmpDir('ts-migrate-output-');
     fs.writeFileSync(
       path.join(outputDir, 'tsconfig.json'),
       '{ "compilerOptions": { "types": [] }, "include": ["**/*.ts"] }\n',
