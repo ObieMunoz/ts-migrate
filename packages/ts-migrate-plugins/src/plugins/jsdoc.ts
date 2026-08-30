@@ -214,11 +214,7 @@ const jsDocTransformerFactory =
       if (!typeNode) {
         return;
       }
-      const type = printer.printNode(
-        ts.EmitHint.Unspecified,
-        visitJSDocType(typeNode),
-        sourceFile,
-      );
+      const type = printJSDocType(typeNode);
       const questionToken = ts.isPropertyDeclaration(node) ? node.questionToken : undefined;
       const pos = (node.exclamationToken ?? questionToken ?? node.name).end;
       updates.replaceText(pos, pos, `: ${type}`);
@@ -256,11 +252,7 @@ const jsDocTransformerFactory =
         );
         return;
       }
-      const type = printer.printNode(
-        ts.EmitHint.Unspecified,
-        visitJSDocType(tag.typeExpression.type),
-        sourceFile,
-      );
+      const type = printJSDocType(tag.typeExpression.type);
       updates.replaceText(tag.parent.getStart(sourceFile), node.getStart(sourceFile), '');
       if (needsParentheses(expression)) {
         const start = expression.getStart(sourceFile);
@@ -584,6 +576,11 @@ const jsDocTransformerFactory =
     function printStatement(node: ts.Statement, indent: string): string {
       const text = printer.printNode(ts.EmitHint.Unspecified, node, sourceFile);
       return indent ? text.split('\n').join(`\n${indent}`) : text;
+    }
+
+    /** The text of the TypeScript type a JSDoc type node converts to. */
+    function printJSDocType(node: ts.Node): string {
+      return printer.printNode(ts.EmitHint.Unspecified, visitJSDocType(node), sourceFile);
     }
 
     function printComment(description: string, indent: string): string {
