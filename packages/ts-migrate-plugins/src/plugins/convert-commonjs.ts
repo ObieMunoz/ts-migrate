@@ -4,7 +4,7 @@ import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import createFollowUpMarkers, { FollowUpMarkers } from '../utils/followUpMarker';
 import { createValidate, Properties } from '../utils/validateOptions';
 import { hasDefaultExport, isEsmSourceFile } from '../utils/moduleFormat';
-import { collectIdentifiers } from './utils/identifiers';
+import { collectBindingNames, collectIdentifiers } from './utils/identifiers';
 
 /**
  * Rewrites the CommonJS module syntax a renamed file still carries into
@@ -172,16 +172,15 @@ function declaredNamesAreStable(
   scope: Scope,
 ): boolean {
   return declarations.every((declaration) =>
-    bindingNames(declaration.name).every((name) => !scope.assigned.has(name)),
+    [...bindingNames(declaration.name)].every((name) => !scope.assigned.has(name)),
   );
 }
 
 /** Every name a binding introduces, flattening any destructuring pattern. */
-function bindingNames(name: ts.BindingName): string[] {
-  if (ts.isIdentifier(name)) return [name.text];
-  return name.elements.flatMap((element) =>
-    ts.isBindingElement(element) ? bindingNames(element.name) : [],
-  );
+function bindingNames(name: ts.BindingName): Set<string> {
+  const names = new Set<string>();
+  collectBindingNames(name, names);
+  return names;
 }
 
 /** A top level `module.exports = x` or `exports.foo = x` assignment. */
