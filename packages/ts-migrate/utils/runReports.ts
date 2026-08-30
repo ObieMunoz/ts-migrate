@@ -43,6 +43,19 @@ import {
  */
 
 /**
+ * Runs one report. A report explains a run that has already done its work, so
+ * it must never fail an otherwise successful run: what it cannot say becomes a
+ * warning naming what went unsaid.
+ */
+function bestEffort(what: string, report: () => void): void {
+  try {
+    report();
+  } catch (err) {
+    log.warn(`Skipped ${what}: ${errorMessage(err)}`);
+  }
+}
+
+/**
  * Printed twice: with the banner, and again on the last screen. The banner is
  * in the first three lines of a run that can take many minutes, so by the time
  * the suppressions this qualifies exist it has long scrolled away.
@@ -96,19 +109,16 @@ function tsConfigPinsTypes(rootDir: string): boolean {
  * What package.json and the install layout alone say about missing type
  * packages, printed with the banner so it is read before the pipeline turns the
  * errors those packages would resolve into suppressions. It claims no counts,
- * so it cannot contradict the end of run report. Advice, and so it must never
- * fail an otherwise successful run.
+ * so it cannot contradict the end of run report.
  */
 export function printTypesPackagePreflight(rootDir: string): void {
-  try {
+  bestEffort('the type package preflight', () => {
     const preflightText = formatTypesPackagePreflight(
       preflightTypesPackages(rootDir),
       tsConfigPinsTypes(rootDir),
     );
     if (preflightText) log.warn(preflightText);
-  } catch (err) {
-    log.warn(`Skipped the type package preflight: ${errorMessage(err)}`);
-  }
+  });
 }
 
 /**
@@ -133,40 +143,35 @@ export function typesPackageReport(
 /**
  * The evidence the compiler had for every diagnostic ts-ignore suppressed. Only
  * the grouped counts reach the log; the per-site detail goes to reportFile,
- * since stdout is the progress log. Must never fail an otherwise successful run.
+ * since stdout is the progress log.
  */
 export function printSuppressionReport(
   explainer: SuppressionExplainer,
   rootDir: string,
   reportFile?: string,
 ): void {
-  try {
+  bestEffort('the suppression report', () => {
     const report = explainer.summarize(rootDir);
     if (reportFile) {
       fs.writeFileSync(reportFile, `${formatSuppressionReport(report)}\n`);
     }
     const summary = formatSuppressionSummary(report, reportFile);
     if (summary) log.info(summary);
-  } catch (err) {
-    log.warn(`Skipped the suppression report: ${errorMessage(err)}`);
-  }
+  });
 }
 
 /**
  * What the run declared on `window` and `globalThis`, and what it found but
  * could not declare. Printed rather than written to a file: it is one line per
- * global, and each one names an edit worth making now. Must never fail an
- * otherwise successful run.
+ * global, and each one names an edit worth making now.
  */
 export function printGlobalDeclarationsReport(
   globalDeclarations: GlobalDeclarationsCollector,
 ): void {
-  try {
+  bestEffort('the global declarations report', () => {
     const reportText = formatGlobalDeclarationsReport(globalDeclarations.summarize());
     if (reportText) log.info(reportText);
-  } catch (err) {
-    log.warn(`Skipped the global declarations report: ${errorMessage(err)}`);
-  }
+  });
 }
 
 /**
@@ -294,15 +299,13 @@ export async function reportGeneratedFileLinting(
 /**
  * What the run left for a person to do. Printed at the end because that is the
  * only point the whole list is known and the only part of a long run's output
- * anyone reliably reads. Must never fail an otherwise successful run.
+ * anyone reliably reads.
  */
 export function printFollowUpReport(pluginNotices: MigrateResult['pluginNotices']): void {
-  try {
+  bestEffort('the follow-up report', () => {
     const reportText = formatFollowUpReport(pluginNotices);
     if (reportText) log.warn(reportText);
-  } catch (err) {
-    log.warn(`Skipped the follow-up report: ${errorMessage(err)}`);
-  }
+  });
 }
 
 /**
@@ -370,13 +373,11 @@ export function describeEmptyMigrationSet(
   return [...lines, ...diagnostics].join('\n');
 }
 
-/** The end-of-run debt summary must never fail an otherwise successful run. */
+/** The counts as they stand at the end of a run. */
 export function printTypeDebtSummary(rootDir: string, folder: string, gitignore?: boolean): void {
-  try {
+  bestEffort('type debt summary', () => {
     log.info(formatTypeDebtSummary(scanTypeDebt(rootDir, gitignore), folder));
-  } catch (err) {
-    log.warn(`Skipped type debt summary: ${errorMessage(err)}`);
-  }
+  });
 }
 
 /**
@@ -406,11 +407,9 @@ export function printTypeDebtChange(
     printTypeDebtSummary(rootDir, folder, gitignore);
     return;
   }
-  try {
+  bestEffort('type debt summary', () => {
     log.info(formatTypeDebtDelta(before, scanTypeDebt(rootDir, gitignore), folder));
-  } catch (err) {
-    log.warn(`Skipped type debt summary: ${errorMessage(err)}`);
-  }
+  });
 }
 
 /**
