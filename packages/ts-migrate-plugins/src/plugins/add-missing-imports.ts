@@ -12,6 +12,7 @@ import {
   MissingImportContext,
 } from '../utils/missingImports';
 import { createValidate, Properties } from '../utils/validateOptions';
+import { importClauseNames } from './utils/imports';
 
 /**
  * Imports the names a file uses but never brings in, from the module
@@ -130,7 +131,7 @@ function markAmbiguousImports(
   let marked = false;
 
   parsed.statements.filter(ts.isImportDeclaration).forEach((declaration) => {
-    const carried = importedNames(declaration)
+    const carried = importClauseNames(declaration.importClause)
       .map((name) => byName.get(name))
       .filter((missing): missing is MissingImport => missing !== undefined);
     if (carried.length === 0) return;
@@ -160,20 +161,4 @@ function describeChoice({ name, candidates }: MissingImport, taken: string): str
   return passed.length > 0
     ? `${name} was taken from ${taken}, over ${passed.join(' and ')}.`
     : `${name} was taken from ${taken}, over a module exporting the same name.`;
-}
-
-function importedNames(declaration: ts.ImportDeclaration): string[] {
-  const clause = declaration.importClause;
-  if (!clause) return [];
-
-  const names: string[] = [];
-  if (clause.name) names.push(clause.name.text);
-  if (clause.namedBindings) {
-    if (ts.isNamespaceImport(clause.namedBindings)) {
-      names.push(clause.namedBindings.name.text);
-    } else {
-      clause.namedBindings.elements.forEach((element) => names.push(element.name.text));
-    }
-  }
-  return names;
 }

@@ -283,6 +283,20 @@ type Props = { one: a0.Shape };
     ).toEqual([]);
   });
 
+  it('does not add a name written with leading underscores', () => {
+    const sourceText = `import { __a0 } from 'mod1';
+
+type Props = { one: __a0 };
+`;
+    expect(
+      updateImports(
+        ts.createSourceFile('file.ts', sourceText, ts.ScriptTarget.Latest),
+        [{ namedImport: '__a0', moduleSpecifier: 'mod2' }],
+        [],
+      ),
+    ).toEqual([]);
+  });
+
   it('does not add a name a default import binds beside named ones', () => {
     const sourceText = `import a0, { a1 } from 'mod1';
 
