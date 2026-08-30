@@ -483,12 +483,13 @@ function assignmentEvidence(node: ts.Node, checker: ts.TypeChecker): Suppression
   let expected: ts.Type | undefined;
   let actualNode: ts.Node | undefined;
 
-  if (parent && ts.isVariableDeclaration(parent) && parent.name === node) {
+  if (
+    parent &&
+    (ts.isVariableDeclaration(parent) || ts.isPropertyDeclaration(parent)) &&
+    parent.name === node
+  ) {
     // getTypeAtLocation on the name yields the declared type, so the initializer
     // has to be asked separately or both sides read the same.
-    expected = parent.type ? checker.getTypeFromTypeNode(parent.type) : undefined;
-    actualNode = parent.initializer;
-  } else if (parent && ts.isPropertyDeclaration(parent) && parent.name === node) {
     expected = parent.type ? checker.getTypeFromTypeNode(parent.type) : undefined;
     actualNode = parent.initializer;
   } else if (parent && ts.isPropertyAssignment(parent) && parent.name === node) {
