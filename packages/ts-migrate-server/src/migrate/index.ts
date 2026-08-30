@@ -621,23 +621,53 @@ function findCause<T extends { pluginName: string; reason: string; ruleId?: stri
   );
 }
 
+/**
+ * Folds one pass's groups into the run's entries: a cause already reported
+ * takes the files this pass added, and a new one becomes an entry of its own.
+ * `build` shapes that new entry, and `onExisting` carries over whatever else
+ * the entry kind promotes when the cause is already there.
+ */
+function mergeFileNotices<
+  T extends {
+    pluginName: string;
+    reason: string;
+    ruleId?: string;
+    files: string[];
+    fileCount: number;
+  },
+>(
+  entries: T[],
+  pluginName: string,
+  groups: FileNoticeGroup[],
+  build: (group: FileNoticeGroup, files: string[]) => T,
+  onExisting?: (existing: T, group: FileNoticeGroup) => void,
+): void {
+  groups.forEach((group) => {
+    const existing = findCause(entries, pluginName, group);
+    const files = mergeFiles(existing, group.files);
+    if (existing) {
+      existing.files = files;
+      existing.fileCount = files.length;
+      onExisting?.(existing, group);
+    } else {
+      entries.push(build(group, files));
+    }
+  });
+}
+
 /** Folds one pass's failures into the run's. */
 function mergePluginFailures(
   failures: MigrateResult['pluginFailures'],
   pluginName: string,
   groups: FileNoticeGroup[],
 ): void {
-  groups.forEach((group) => {
-    const existing = findCause(failures, pluginName, group);
-    const files = mergeFiles(existing, group.files);
-    if (existing) {
-      existing.files = files;
-      existing.fileCount = files.length;
-    } else {
-      const { reason, ruleId } = group;
-      failures.push({ pluginName, reason, ruleId, fileCount: files.length, files });
-    }
-  });
+  mergeFileNotices(failures, pluginName, groups, ({ reason, ruleId }, files) => ({
+    pluginName,
+    reason,
+    ruleId,
+    fileCount: files.length,
+    files,
+  }));
 }
 
 /** Folds one pass's recovered notices into the run's. */
@@ -646,19 +676,24 @@ function mergePluginNotices(
   pluginName: string,
   groups: FileNoticeGroup[],
 ): void {
-  groups.forEach((group) => {
-    const existing = findCause(notices, pluginName, group);
-    const files = mergeFiles(existing, group.files);
-    if (existing) {
-      existing.files = files;
-      existing.fileCount = files.length;
+  mergeFileNotices(
+    notices,
+    pluginName,
+    groups,
+    ({ reason, ruleId, hint, marked }, files) => ({
+      pluginName,
+      reason,
+      hint,
+      ruleId,
+      marked,
+      fileCount: files.length,
+      files,
+    }),
+    (existing, group) => {
       // A later pass can mark a site an earlier one only reported.
       existing.marked = existing.marked || group.marked;
-    } else {
-      const { reason, ruleId, hint, marked } = group;
-      notices.push({ pluginName, reason, hint, ruleId, marked, fileCount: files.length, files });
-    }
-  });
+    },
+  );
 }
 
 /** A declaration file in any of its module formats: .d.ts, .d.mts, .d.cts. */
