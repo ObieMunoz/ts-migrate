@@ -43,54 +43,64 @@ function withExplicitAny(
   };
 
   diagnostics.forEach((diagnostic) => {
+    const node = findNodeAtSpan(sourceFile, diagnostic);
+    if (!node) return;
+
     switch (diagnostic.code) {
       // TS2683: "'this' implicitly has type 'any' because it does not have a type annotation."
       case 2683:
-        annotateThis(sourceFile, diagnostic, anyType, insert);
+        annotateThis(node, anyType, insert);
         break;
       // TS7006: "Parameter '{0}' implicitly has an '{1}' type."
       // TS7008: "Member '{0}' implicitly has an '{1}' type."
       case 7006:
       case 7008:
-        annotateIdentifierDeclaration(sourceFile, diagnostic, anyType, insert);
+        annotateIdentifierDeclaration(sourceFile, node, anyType, insert);
         break;
       // TS7019: "Rest parameter '{0}' implicitly has an 'any[]' type."
       case 7019:
-        annotateRestParameter(sourceFile, diagnostic, anyType, insert);
+        annotateRestParameter(node, anyType, insert);
         break;
       // TS7031: "Binding element '{0}' implicitly has an '{1}' type."
       case 7031:
-        annotateBindingPattern(sourceFile, diagnostic, anyType, insert);
+        annotateBindingPattern(node, anyType, insert);
         break;
       // TS2339: "Property '{0}' does not exist on type '{1}'."
       // On TS5, destructuring a missing property from a known type (e.g. `= {}`)
       // is reported as TS2339 instead of TS7031. Only binding-pattern keys are
       // matched, so member-access errors (e.g. `a.b`) are ignored.
       case 2339:
-        collectDestructuredKey(sourceFile, diagnostic, missingKeys);
+        collectDestructuredKey(node, missingKeys);
         break;
       // TS7034: "Variable '{0}' implicitly has type '{1}' in some locations where its type cannot be determined."
       case 7034:
-        annotateVariable(sourceFile, diagnostic, anyType, insert);
+        annotateVariable(node, anyType, insert);
         break;
       // TS7005: "Variable '{0}' implicitly has an '{1}' type."
       case 7005:
-        annotateImplicitAnyVariable(sourceFile, diagnostic, anyType, insert, getLanguageService);
+        annotateImplicitAnyVariable(
+          sourceFile,
+          node,
+          diagnostic,
+          anyType,
+          insert,
+          getLanguageService,
+        );
         break;
       // TS7023: "'{0}' implicitly has return type 'any' because it does not have a return type
       // annotation and is referenced directly or indirectly in one of its return expressions."
       // TS7024: same message for functions with no name to report.
       case 7023:
       case 7024:
-        annotateCircularReturn(sourceFile, diagnostic, anyType, insert);
+        annotateCircularReturn(sourceFile, node, anyType, insert);
         break;
       // TS2459: "Type '{0}' has no property '{1}' and no string index signature."
       case 2459:
-        annotateEmptyObjectParameter(sourceFile, diagnostic, anyType, insert, getLanguageService);
+        annotateEmptyObjectParameter(node, anyType, insert, getLanguageService);
         break;
       // TS2525: "Initializer provides no value for this binding element and the binding element has no default value."
       case 2525:
-        annotateDefaultedPattern(sourceFile, diagnostic, anyType, insert);
+        annotateDefaultedPattern(node, anyType, insert);
         break;
       default:
         break;
@@ -104,14 +114,8 @@ function withExplicitAny(
 
 type Insert = (index: number, text: string) => void;
 
-function annotateThis(
-  sourceFile: ts.SourceFile,
-  diagnostic: ts.DiagnosticWithLocation,
-  anyType: string,
-  insert: Insert,
-) {
-  const node = findNodeAtSpan(sourceFile, diagnostic);
-  if (!node || node.kind !== ts.SyntaxKind.ThisKeyword) return;
+function annotateThis(node: ts.Node, anyType: string, insert: Insert) {
+  if (node.kind !== ts.SyntaxKind.ThisKeyword) return;
 
   // Find the containing function declaration/expression. Arrow functions
   // cannot declare `this`, so climb past them.
@@ -127,12 +131,11 @@ function annotateThis(
 
 function annotateIdentifierDeclaration(
   sourceFile: ts.SourceFile,
-  diagnostic: ts.DiagnosticWithLocation,
+  node: ts.Node,
   anyType: string,
   insert: Insert,
 ) {
-  const node = findNodeAtSpan(sourceFile, diagnostic);
-  if (!node || !ts.isIdentifier(node)) return;
+  if (!ts.isIdentifier(node)) return;
   const parent = node.parent as ts.Node;
 
   if (ts.isParameter(parent) && parent.name === node && parent.type == null) {
@@ -156,14 +159,8 @@ function annotateIdentifierDeclaration(
   }
 }
 
-function annotateRestParameter(
-  sourceFile: ts.SourceFile,
-  diagnostic: ts.DiagnosticWithLocation,
-  anyType: string,
-  insert: Insert,
-) {
-  const node = findNodeAtSpan(sourceFile, diagnostic);
-  if (!node || !ts.isParameter(node) || node.dotDotDotToken == null || node.type != null) return;
+function annotateRestParameter(node: ts.Node, anyType: string, insert: Insert) {
+  if (!ts.isParameter(node) || node.dotDotDotToken == null || node.type != null) return;
   insert(node.name.end, `: ${anyType}[]`);
 }
 
@@ -190,28 +187,17 @@ function annotatePattern(pattern: ts.BindingPattern, anyType: string, insert: In
   }
 }
 
-function annotateBindingPattern(
-  sourceFile: ts.SourceFile,
-  diagnostic: ts.DiagnosticWithLocation,
-  anyType: string,
-  insert: Insert,
-) {
-  let node = findNodeAtSpan(sourceFile, diagnostic);
-  if (!node) return;
-  if (ts.isIdentifier(node) && ts.isBindingElement(node.parent)) node = node.parent;
-  if (!ts.isBindingElement(node)) return;
+function annotateBindingPattern(node: ts.Node, anyType: string, insert: Insert) {
+  let current = node;
+  if (ts.isIdentifier(current) && ts.isBindingElement(current.parent)) current = current.parent;
+  if (!ts.isBindingElement(current)) return;
 
-  const pattern = getOutermostPattern(node);
+  const pattern = getOutermostPattern(current);
   if (pattern) annotatePattern(pattern, anyType, insert);
 }
 
-function collectDestructuredKey(
-  sourceFile: ts.SourceFile,
-  diagnostic: ts.DiagnosticWithLocation,
-  into: ts.BindingElement[],
-) {
-  const node = findNodeAtSpan(sourceFile, diagnostic);
-  if (!node || !ts.isIdentifier(node)) return;
+function collectDestructuredKey(node: ts.Node, into: ts.BindingElement[]) {
+  if (!ts.isIdentifier(node)) return;
   const element = node.parent;
   if (!ts.isBindingElement(element) || !ts.isObjectBindingPattern(element.parent)) return;
   const isKey = element.propertyName != null ? element.propertyName === node : element.name === node;
@@ -279,14 +265,8 @@ function bindsKnownProperty(
   });
 }
 
-function annotateVariable(
-  sourceFile: ts.SourceFile,
-  diagnostic: ts.DiagnosticWithLocation,
-  anyType: string,
-  insert: Insert,
-) {
-  const node = findNodeAtSpan(sourceFile, diagnostic);
-  if (!node || !ts.isIdentifier(node)) return;
+function annotateVariable(node: ts.Node, anyType: string, insert: Insert) {
+  if (!ts.isIdentifier(node)) return;
   const decl = node.parent;
   if (ts.isVariableDeclaration(decl) && decl.name === node && decl.type == null) {
     insert(node.end, `: ${anyType}`);
@@ -302,13 +282,13 @@ function implicitTypeFromMessage(diagnostic: ts.DiagnosticWithLocation, anyType:
 
 function annotateImplicitAnyVariable(
   sourceFile: ts.SourceFile,
+  node: ts.Node,
   diagnostic: ts.DiagnosticWithLocation,
   anyType: string,
   insert: Insert,
   getLanguageService: () => ts.LanguageService,
 ) {
-  const node = findNodeAtSpan(sourceFile, diagnostic);
-  if (!node || !ts.isIdentifier(node)) return;
+  if (!ts.isIdentifier(node)) return;
 
   // Declaration-site report (e.g. an exported variable, which is exempt from
   // evolving-type analysis and never gets a companion TS7034).
@@ -335,13 +315,10 @@ function annotateImplicitAnyVariable(
 
 function annotateCircularReturn(
   sourceFile: ts.SourceFile,
-  diagnostic: ts.DiagnosticWithLocation,
+  node: ts.Node,
   anyType: string,
   insert: Insert,
 ) {
-  const node = findNodeAtSpan(sourceFile, diagnostic);
-  if (!node) return;
-
   // TS7024 reports the function itself; TS7023 reports the name of the
   // function, or of the variable or property it is assigned to.
   let fn: ts.Node | undefined;
@@ -392,14 +369,12 @@ function isNameOfParent(node: ts.Node): boolean {
 }
 
 function annotateEmptyObjectParameter(
-  sourceFile: ts.SourceFile,
-  diagnostic: ts.DiagnosticWithLocation,
+  node: ts.Node,
   anyType: string,
   insert: Insert,
   getLanguageService: () => ts.LanguageService,
 ) {
-  const node = findNodeAtSpan(sourceFile, diagnostic);
-  if (!node || !ts.isIdentifier(node)) return;
+  if (!ts.isIdentifier(node)) return;
 
   // The error is on the left hand side of a variable declaration; the fix
   // belongs on the parameter the right hand side identifier refers to.
@@ -428,14 +403,8 @@ function annotateEmptyObjectParameter(
   }
 }
 
-function annotateDefaultedPattern(
-  sourceFile: ts.SourceFile,
-  diagnostic: ts.DiagnosticWithLocation,
-  anyType: string,
-  insert: Insert,
-) {
-  const node = findNodeAtSpan(sourceFile, diagnostic);
-  if (!node || !ts.isIdentifier(node) || !ts.isBindingElement(node.parent)) return;
+function annotateDefaultedPattern(node: ts.Node, anyType: string, insert: Insert) {
+  if (!ts.isIdentifier(node) || !ts.isBindingElement(node.parent)) return;
   const pattern = node.parent.parent;
   // To prevent annotating an object destructuring pattern nested inside
   // another one, require the pattern to sit directly on the declaration.
