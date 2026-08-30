@@ -8,6 +8,7 @@ import {
   TextChange,
   toCandidatePos,
 } from '../utils/candidateValidation';
+import { findNodeEndingAt } from '../utils/enclosingNode';
 import { printType } from '../utils/typePrinter';
 import { isAnyOrAliasReference, isAnyType } from './utils/anyTypes';
 
@@ -300,21 +301,7 @@ function isNarrowed(service: ts.LanguageService, fileName: string, end: number):
   const program = service.getProgram();
   const source = program && program.getSourceFile(fileName);
   if (!program || !source) return false;
-  const node = findAssertionEndingAt(source, end);
+  const node = findNodeEndingAt(source, end, ts.isAsExpression);
   if (!node) return false;
   return (program.getTypeChecker().getTypeAtLocation(node).flags & ts.TypeFlags.Any) === 0;
-}
-
-function findAssertionEndingAt(source: ts.SourceFile, end: number): ts.AsExpression | undefined {
-  let found: ts.AsExpression | undefined;
-  const visit = (node: ts.Node): void => {
-    if (found || node.end < end || node.getStart(source) > end) return;
-    if (ts.isAsExpression(node) && node.end === end) {
-      found = node;
-      return;
-    }
-    node.forEachChild(visit);
-  };
-  source.forEachChild(visit);
-  return found;
 }
