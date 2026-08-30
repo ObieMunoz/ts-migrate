@@ -429,29 +429,27 @@ function getTypeFromPropTypeExpression(
   return result;
 }
 
+export function uniqueTypeName(base: string, usedIdentifiers: Set<string>): string {
+  if (!usedIdentifiers.has(base)) {
+    return base;
+  }
+
+  let i = 1;
+  while (usedIdentifiers.has(base + i)) {
+    i += 1;
+  }
+  return base + i;
+}
+
 export function createPropsTypeNameGetter(sourceFile: ts.SourceFile) {
   const numComponentsInFile = getNumComponentsInSourceFile(sourceFile);
   const usedIdentifiers = collectIdentifiers(sourceFile);
 
-  const getPropsTypeName = (componentName: string | undefined) => {
-    let name = '';
-    if (componentName && numComponentsInFile > 1) {
-      name = `${componentName}Props`;
-    } else {
-      name = 'Props';
-    }
-
-    if (!usedIdentifiers.has(name)) {
-      return name;
-    }
-
-    // Ensure name is unused.
-    let i = 1;
-    while (usedIdentifiers.has(name + i)) {
-      i += 1;
-    }
-    return name + i;
-  };
+  const getPropsTypeName = (componentName: string | undefined) =>
+    uniqueTypeName(
+      componentName && numComponentsInFile > 1 ? `${componentName}Props` : 'Props',
+      usedIdentifiers,
+    );
 
   return getPropsTypeName;
 }
