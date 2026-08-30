@@ -4,6 +4,7 @@ import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import {
   collectIdentifierNodes,
   groupByName,
+  isPropertyNamePosition,
   resolvesToDeclaration,
 } from './utils/identifiers';
 
@@ -222,10 +223,7 @@ function dependenciesDefinedBefore(
 
   return identifiers.every((identifier) => {
     // Property names (`a.b`, `{ b: ... }`) are not free variable references.
-    if (
-      (ts.isPropertyAccessExpression(identifier.parent) && identifier.parent.name === identifier) ||
-      (ts.isPropertyAssignment(identifier.parent) && identifier.parent.name === identifier)
-    ) {
+    if (isPropertyNamePosition(identifier)) {
       return true;
     }
 
