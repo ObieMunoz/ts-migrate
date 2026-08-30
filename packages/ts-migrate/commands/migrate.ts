@@ -40,40 +40,6 @@ import {
 import { MigrateConfig, Plugin } from '@obiemunoz/ts-migrate-server';
 import log from 'updatable-log';
 
-export const availablePlugins = [
-  addConversionsPlugin,
-  addMissingImportsPlugin,
-  convertCommonjsPlugin,
-  declareEmptyObjectPropertiesPlugin,
-  declareMissingClassPropertiesPlugin,
-  eslintFixPlugin,
-  explicitAnyPlugin,
-  hoistArrowFunctionsPlugin,
-  hoistClassStaticsPlugin,
-  hoistDeclarationsPlugin,
-  inferTypesPlugin,
-  jsDocPlugin,
-  memberAccessibilityPlugin,
-  optionalParametersPlugin,
-  reactClassLifecycleMethodsPlugin,
-  reactClassStatePlugin,
-  reactDefaultPropsPlugin,
-  reactDestructuredPropsPlugin,
-  reactForwardedPropsPlugin,
-  reactHookTypesPlugin,
-  reactInlineImportedPropTypesPlugin,
-  reactPassedPropsPlugin,
-  reactPropsPlugin,
-  reactPropsFromUsagePlugin,
-  reactReadPropsPlugin,
-  reactShapePlugin,
-  relaxParameterShapesPlugin,
-  stripTSIgnorePlugin,
-  tsIgnorePlugin,
-  updateImportPathsPlugin,
-  widenAnnotationsPlugin,
-];
-
 export interface BuildMigrateConfigParams {
   // yargs collects a repeated --plugin into an array, which is not a valid
   // selection but has to be recognized to be reported.
@@ -180,6 +146,12 @@ function pluginOptionsTable(params: BuildMigrateConfigParams) {
     entry(widenAnnotationsPlugin, {}),
   ]);
 }
+
+/**
+ * Every plugin `--plugin` accepts, in the order the table lists them, which is
+ * the order the CLI offers as its choices.
+ */
+export const availablePlugins = [...pluginOptionsTable({}).keys()];
 
 function buildPluginOptions(params: BuildMigrateConfigParams) {
   const options: Map<Plugin<any>, unknown> = pluginOptionsTable(params);
