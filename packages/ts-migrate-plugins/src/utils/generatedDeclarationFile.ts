@@ -34,7 +34,7 @@ export function readGeneratedDeclarations<T>(
 
 /**
  * The plugin, doing one file's worth of work for the whole run and nothing on
- * every file after it: the evidence a declarations plugin writes out covers
+ * the files after it: the evidence a declarations plugin writes out covers
  * every file already, and generating the file again per file would invalidate
  * the program each time.
  */
