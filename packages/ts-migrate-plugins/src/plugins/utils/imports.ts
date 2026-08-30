@@ -299,26 +299,29 @@ function getUsedIdentifiers(sourceFile: ts.SourceFile) {
   return usedIdentifiers;
 }
 
+/** Every name an import clause binds. A side effect only import binds none. */
+export function importClauseNames(clause: ts.ImportClause | undefined): string[] {
+  if (!clause) return [];
+
+  const names: string[] = [];
+  if (clause.name) names.push(clause.name.text);
+  if (clause.namedBindings) {
+    if (ts.isNamespaceImport(clause.namedBindings)) {
+      names.push(clause.namedBindings.name.text);
+    } else {
+      clause.namedBindings.elements.forEach((element) => names.push(element.name.text));
+    }
+  }
+  return names;
+}
+
 /** Every name the file's imports already bind, which is every name not to add. */
 function getPresentedImportIdentifiers(sourceFile: ts.SourceFile) {
-  return sourceFile.statements.filter(ts.isImportDeclaration).reduce((presentedImports, item) => {
-    const clause = item.importClause;
-    if (clause) {
-      if (clause.name && ts.isIdentifier(clause.name)) {
-        presentedImports.add(clause.name.text);
-      }
-      if (clause.namedBindings) {
-        if (ts.isNamespaceImport(clause.namedBindings)) {
-          presentedImports.add(clause.namedBindings.name.text);
-        } else {
-          clause.namedBindings.elements.forEach(
-            (x) => x.name && presentedImports.add(x.name.escapedText.toString()),
-          );
-        }
-      }
-    }
-    return presentedImports;
-  }, new Set<string>());
+  return new Set(
+    sourceFile.statements
+      .filter(ts.isImportDeclaration)
+      .flatMap((declaration) => importClauseNames(declaration.importClause)),
+  );
 }
 
 function isDefaultImport(update: AnyImport): update is DefaultImport {
