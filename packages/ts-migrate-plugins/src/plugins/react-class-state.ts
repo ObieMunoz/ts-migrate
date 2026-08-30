@@ -6,7 +6,7 @@ import {
   getNumComponentsInSourceFile,
   replaceHeritageTypeArguments,
 } from './utils/react';
-import { collectIdentifiers } from './utils/identifiers';
+import { collectIdentifiers, isIdentifierName } from './utils/identifiers';
 import { uniqueTypeName } from './utils/react-props';
 import { isStatic } from './utils/modifiers';
 import { anyTypeNode } from './utils/anyTypes';
@@ -34,8 +34,6 @@ type StateEvidence = {
   numInitializers: number;
   unknownMembers: boolean;
 };
-
-const identifierNamePattern = /^[A-Za-z_$][\w$]*$/;
 
 const reactClassStatePlugin: Plugin<Options> = {
   name: 'react-class-state',
@@ -306,7 +304,7 @@ function createStateTypeNode(
     Array.from(evidence.members, ([name, member]) =>
       ts.factory.createPropertySignature(
         undefined,
-        identifierNamePattern.test(name)
+        isIdentifierName(name)
           ? ts.factory.createIdentifier(name)
           : ts.factory.createStringLiteral(name),
         // Members an initializer does not set are undefined until setState writes them.

@@ -32,6 +32,21 @@ export function collectIdentifiers(sourceFile: ts.SourceFile): Set<string> {
   }, new Set<string>());
 }
 
+const identifierNamePattern = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+/**
+ * Whether the text can be written as an identifier, so a member takes it as a
+ * name rather than a string literal.
+ */
+export function isIdentifierName(text: string): boolean {
+  return identifierNamePattern.test(text);
+}
+
+/** Whether the operator assigns, `=` through `??=`. */
+export function isAssignmentOperatorKind(kind: ts.SyntaxKind): boolean {
+  return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment;
+}
+
 /**
  * Checks whether an identifier is a property name (`a.b`, `{ b: ... }`) rather
  * than a free reference.

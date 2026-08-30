@@ -4,7 +4,12 @@ import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import createFollowUpMarkers, { FollowUpMarkers } from '../utils/followUpMarker';
 import { createValidate, Properties } from '../utils/validateOptions';
 import { hasDefaultExport, isEsmSourceFile } from '../utils/moduleFormat';
-import { collectBindingNames, collectIdentifiers } from './utils/identifiers';
+import {
+  collectBindingNames,
+  collectIdentifiers,
+  isAssignmentOperatorKind,
+  isIdentifierName,
+} from './utils/identifiers';
 
 /**
  * Rewrites the CommonJS module syntax a renamed file still carries into
@@ -598,10 +603,7 @@ function collectAssignedNames(sourceFile: ts.SourceFile): Set<string> {
 }
 
 function isAssignmentOperator(node: ts.BinaryExpression): boolean {
-  return (
-    node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
-    node.operatorToken.kind <= ts.SyntaxKind.LastAssignment
-  );
+  return isAssignmentOperatorKind(node.operatorToken.kind);
 }
 
 function isModuleExports(node: ts.Node): node is ts.PropertyAccessExpression {
@@ -651,7 +653,7 @@ const reservedWords = new Set(
 
 /** The name if it can be declared as written, or undefined. */
 function bindableName(text: string): string | undefined {
-  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(text)) return undefined;
+  if (!isIdentifierName(text)) return undefined;
   return reservedWords.has(text) ? undefined : text;
 }
 

@@ -14,6 +14,7 @@
  * which declares the property a constructor assigns the literal to.
  */
 import ts from 'typescript';
+import { isIdentifierName } from './identifiers';
 
 // What a write to an unannotated `= {}` reports. TS2339 spans the property
 // name, TS7053 the whole element access.
@@ -27,8 +28,6 @@ export const blamableDiagnosticCodes = new Set([
 
 // How deep a type is walked looking for the spellings that mean "no evidence".
 const maxTypeDepth = 4;
-
-const identifierNameRegex = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 /** One property to declare, name and type already printed. */
 export interface Property {
@@ -114,7 +113,7 @@ export function declareProperties(writes: Write[], context: PrintContext): Prope
   });
 
   return Array.from(byKey, ([key, types]) => ({
-    name: identifierNameRegex.test(key) ? key : JSON.stringify(key),
+    name: isIdentifierName(key) ? key : JSON.stringify(key),
     ...(aliased.has(key) || types.length === 0 ? undefined : { type: types.join(' | ') }),
   }));
 }
