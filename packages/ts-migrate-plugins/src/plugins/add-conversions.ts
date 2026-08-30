@@ -3,6 +3,7 @@ import { Plugin } from '@obiemunoz/ts-migrate-server';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
 import getTokenAtPosition from './utils/token-pos';
 import { jestMockType } from './utils/mockTypes';
+import { anyTypeNode } from './utils/anyTypes';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 import UpdateTracker from './utils/update';
 
@@ -55,9 +56,7 @@ const addConversionsTransformerFactory =
   ) =>
   (context: ts.TransformationContext) => {
     const { factory } = context;
-    const anyType = anyAlias
-      ? factory.createTypeReferenceNode(anyAlias)
-      : factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
+    const anyType = anyTypeNode(anyAlias, factory);
 
     let nodesToConvert: Map<ts.Node, ts.TypeNode>;
     let replaceRegions: ReplaceRegion[];
@@ -218,16 +217,7 @@ type ReplaceRegion = { owner: ts.Node; pos: number; end: number };
 /** Only the outermost range is kept: a nested text update would duplicate part
  * of the enclosing one, so inner changes bubble up into the owner's. */
 function computeReplaceRegions(conversions: Iterable<ts.Node>): ReplaceRegion[] {
-  const regions: ReplaceRegion[] = [];
-  Array.from(conversions).forEach((conversion) => {
-    const region = findReplaceRegion(conversion);
-    if (
-      region &&
-      !regions.some((r) => r.owner === region.owner && r.pos === region.pos && r.end === region.end)
-    ) {
-      regions.push(region);
-    }
-  });
+  const regions = Array.from(conversions, findReplaceRegion).filter((region) => region !== null);
   return regions.filter(
     (region) =>
       !regions.some(

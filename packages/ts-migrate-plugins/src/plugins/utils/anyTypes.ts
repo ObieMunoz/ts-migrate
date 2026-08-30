@@ -36,3 +36,20 @@ export function isAnyType(typeNode: ts.TypeNode, checker: ts.TypeChecker): boole
       ts.isTypeAliasDeclaration(declaration) && declaration.type.kind === ts.SyntaxKind.AnyKeyword,
   );
 }
+
+/**
+ * The type node ts-migrate writes where it has no better answer, taking the
+ * alias the project configured when there is one so that a migration keeps a
+ * single searchable name for the types still owed.
+ *
+ * A transform that is already inside a transformation context passes its own
+ * factory; anything writing nodes outside one gets `ts.factory`.
+ */
+export function anyTypeNode(
+  anyAlias: string | undefined,
+  factory: ts.NodeFactory = ts.factory,
+): ts.TypeNode {
+  return anyAlias
+    ? factory.createTypeReferenceNode(anyAlias, undefined)
+    : factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
+}

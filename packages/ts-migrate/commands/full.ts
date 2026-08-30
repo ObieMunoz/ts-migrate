@@ -4,10 +4,15 @@ import os from 'os';
 import path from 'path';
 import log from 'updatable-log';
 
+import {
+  GLOBAL_DECLARATIONS_FILE,
+  MODULE_DECLARATIONS_FILE,
+} from '@obiemunoz/ts-migrate-plugins';
 import { errorMessage } from '@obiemunoz/ts-migrate-server';
 import init from './init';
 import rename from './rename';
 import runMigrate, { RunMigrateParams } from './runMigrate';
+import { GENERATED_FILE as ALIAS_DECLARATIONS_FILE } from '../utils/aliasDeclarations';
 import isIncludedByTsConfig from '../utils/tsConfigIncludes';
 import { eslintTypeScriptSupport, hasTypeScriptBuild } from '../utils/projectTooling';
 import { checkerSkewWarning, TypeScriptDecision } from '../utils/resolveTypeScript';
@@ -24,9 +29,9 @@ const STEP_COUNT = 4;
  * every name it declares as undefined.
  */
 const GENERATED_DECLARATIONS = [
-  'types/ts-migrate-globals.d.ts',
-  'types/ts-migrate-modules.d.ts',
-  'ts-migrate-aliases.d.ts',
+  GLOBAL_DECLARATIONS_FILE,
+  MODULE_DECLARATIONS_FILE,
+  ALIAS_DECLARATIONS_FILE,
 ];
 
 /**
@@ -66,7 +71,13 @@ export interface FullParams {
   /** Forwarded to the migrate step, minus what this command decides itself. */
   migrateOptions: Omit<
     RunMigrateParams,
-    'rootDir' | 'folder' | 'typeScript' | 'dryRun' | 'jsonSummary' | 'holdTypesReport'
+    | 'rootDir'
+    | 'folder'
+    | 'typeScript'
+    | 'dryRun'
+    | 'jsonSummary'
+    | 'holdTypesReport'
+    | 'collectSummary'
   >;
   /** Absent under `--yes`, which is the path that answers without asking. */
   prompter?: Prompter;

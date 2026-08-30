@@ -40,40 +40,6 @@ import {
 import { MigrateConfig, Plugin } from '@obiemunoz/ts-migrate-server';
 import log from 'updatable-log';
 
-export const availablePlugins = [
-  addConversionsPlugin,
-  addMissingImportsPlugin,
-  convertCommonjsPlugin,
-  declareEmptyObjectPropertiesPlugin,
-  declareMissingClassPropertiesPlugin,
-  eslintFixPlugin,
-  explicitAnyPlugin,
-  hoistArrowFunctionsPlugin,
-  hoistClassStaticsPlugin,
-  hoistDeclarationsPlugin,
-  inferTypesPlugin,
-  jsDocPlugin,
-  memberAccessibilityPlugin,
-  optionalParametersPlugin,
-  reactClassLifecycleMethodsPlugin,
-  reactClassStatePlugin,
-  reactDefaultPropsPlugin,
-  reactDestructuredPropsPlugin,
-  reactForwardedPropsPlugin,
-  reactHookTypesPlugin,
-  reactInlineImportedPropTypesPlugin,
-  reactPassedPropsPlugin,
-  reactPropsPlugin,
-  reactPropsFromUsagePlugin,
-  reactReadPropsPlugin,
-  reactShapePlugin,
-  relaxParameterShapesPlugin,
-  stripTSIgnorePlugin,
-  tsIgnorePlugin,
-  updateImportPathsPlugin,
-  widenAnnotationsPlugin,
-];
-
 export interface BuildMigrateConfigParams {
   // yargs collects a repeated --plugin into an array, which is not a valid
   // selection but has to be recognized to be reported.
@@ -113,17 +79,23 @@ function entry<P extends Plugin<any>>(plugin: P, options: PluginOptions<P>): [P,
   return [plugin, options];
 }
 
-/**
- * The options every plugin runs with, in one place. Both `--plugin <name>` and
- * the default pipeline read from here, so a flag cannot reach one and not the
- * other.
- */
-function buildPluginOptions(params: BuildMigrateConfigParams) {
+/** The `any` aliases a run writes, which the options table and its caller share. */
+function aliasesFor(params: BuildMigrateConfigParams) {
   const airbnbAnyAlias = '$TSFixMe';
   const airbnbAnyFunctionAlias = '$TSFixMeFunction';
   // by default, we're not going to use any aliases in ts-migrate
   const anyAlias = params.aliases === 'tsfixme' ? airbnbAnyAlias : undefined;
   const anyFunctionAlias = params.aliases === 'tsfixme' ? airbnbAnyFunctionAlias : undefined;
+  return { anyAlias, anyFunctionAlias };
+}
+
+/**
+ * The options every plugin runs with, in one place. Both `--plugin <name>` and
+ * the default pipeline read from here, so a flag cannot reach one and not the
+ * other, and `availablePlugins` below is this table's keys.
+ */
+function pluginOptionsTable(params: BuildMigrateConfigParams) {
+  const { anyAlias, anyFunctionAlias } = aliasesFor(params);
 
   let typeMap;
   try {
@@ -132,7 +104,7 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
     throw new Error(`--typeMap must be valid JSON: ${(err as Error).message}`);
   }
 
-  const options = new Map<Plugin<any>, unknown>([
+  return new Map([
     entry(addConversionsPlugin, { anyAlias }),
     entry(addMissingImportsPlugin, { ambiguous: params.ambiguousImports }),
     entry(convertCommonjsPlugin, {}),
@@ -173,10 +145,19 @@ function buildPluginOptions(params: BuildMigrateConfigParams) {
     entry(updateImportPathsPlugin, {}),
     entry(widenAnnotationsPlugin, {}),
   ]);
+}
+
+/**
+ * Every plugin `--plugin` accepts, in the order the table lists them, which is
+ * the order the CLI offers as its choices.
+ */
+export const availablePlugins = [...pluginOptionsTable({}).keys()];
+
+function buildPluginOptions(params: BuildMigrateConfigParams) {
+  const options: Map<Plugin<any>, unknown> = pluginOptionsTable(params);
 
   return {
-    anyAlias,
-    anyFunctionAlias,
+    ...aliasesFor(params),
     optionsFor: <P extends Plugin<any>>(plugin: P): PluginOptions<P> =>
       options.get(plugin) as PluginOptions<P>,
   };

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { isToolConfigFile } from './configNames';
+import { DependencyManifest } from './dependencyManifest';
 import { directoriesToRepoRoot } from './repoRoot';
 
 export type BundlerName = 'vite' | 'webpack';
@@ -9,11 +10,6 @@ export interface BundlerDetection {
   name: BundlerName;
   /** Human-readable evidence, with rootDir-relative paths. */
   evidence: string;
-}
-
-export interface BundlerPackageJson {
-  dependencies?: Record<string, string>;
-  devDependencies?: Record<string, string>;
 }
 
 // Vite first: a project holding both is a Vite project with webpack left
@@ -27,10 +23,10 @@ const BUNDLER_DEPENDENCIES: Record<BundlerName, string[]> = {
   webpack: ['webpack', 'react-scripts'],
 };
 
-const DEPENDENCY_FIELDS: Array<keyof BundlerPackageJson> = ['devDependencies', 'dependencies'];
+const DEPENDENCY_FIELDS: Array<keyof DependencyManifest> = ['devDependencies', 'dependencies'];
 
 function dependencyEvidence(
-  packageJson: BundlerPackageJson | null,
+  packageJson: DependencyManifest | null,
   name: BundlerName,
 ): string | undefined {
   if (!packageJson) return undefined;
@@ -51,7 +47,7 @@ function dependencyEvidence(
  */
 export function detectBundler(
   rootDir: string,
-  packageJson: BundlerPackageJson | null,
+  packageJson: DependencyManifest | null,
 ): BundlerDetection | null {
   let entries: string[] = [];
   try {

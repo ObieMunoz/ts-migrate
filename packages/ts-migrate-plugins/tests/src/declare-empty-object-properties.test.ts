@@ -1,20 +1,22 @@
 import ts from 'typescript';
-import { mockPluginParams, realPluginParams, typeCheck } from '../test-utils';
+import { mockPluginParams, realPluginRunner, typeCheck } from '../test-utils';
 import declareEmptyObjectPropertiesPlugin from '../../src/plugins/declare-empty-object-properties';
 import declareMissingClassPropertiesPlugin from '../../src/plugins/declare-missing-class-properties';
 
+const runPlugin = realPluginRunner(declareEmptyObjectPropertiesPlugin, {
+  options: { anyAlias: '$TSFixMe' },
+});
+const runDeclareMissingProperties = realPluginRunner(declareMissingClassPropertiesPlugin, {
+  options: { anyAlias: '$TSFixMe' },
+});
+
+// A test asserts on text, so a plugin that made no change reads as the input.
 async function run(text: string, compilerOptions?: ts.CompilerOptions): Promise<string> {
-  const result = await declareEmptyObjectPropertiesPlugin.run(
-    await realPluginParams({ text, options: { anyAlias: '$TSFixMe' }, compilerOptions }),
-  );
-  return result ?? text;
+  return (await runPlugin(text, { compilerOptions })) ?? text;
 }
 
 async function declareMissingProperties(text: string): Promise<string> {
-  const result = await declareMissingClassPropertiesPlugin.run(
-    await realPluginParams({ text, options: { anyAlias: '$TSFixMe' } }),
-  );
-  return result ?? text;
+  return (await runDeclareMissingProperties(text)) ?? text;
 }
 
 describe('declare-empty-object-properties plugin', () => {

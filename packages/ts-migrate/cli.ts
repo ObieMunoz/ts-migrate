@@ -14,7 +14,7 @@ import { hideBin } from 'yargs/helpers';
 
 import { errorMessage } from '@obiemunoz/ts-migrate-server';
 import check from './commands/check';
-import full, { Prompter } from './commands/full';
+import full, { FullParams, Prompter } from './commands/full';
 import init from './commands/init';
 import { availablePlugins, BuildMigrateConfigParams } from './commands/migrate';
 import rename from './commands/rename';
@@ -303,6 +303,38 @@ function pluginParams(args: PipelineArgs): BuildMigrateConfigParams {
     declareGlobals: args.declareGlobals,
     addMissingImports: args.addMissingImports,
     ambiguousImports: args.ambiguousImports,
+  };
+}
+
+/**
+ * The rest of what the pipeline reads, as the shape `runMigrate` takes minus
+ * what each command settles for itself. `migrate` and `full` read it back
+ * through here so neither can pass a different subset of the same flags.
+ */
+interface MigrateArgs extends PipelineArgs {
+  sources?: string | string[];
+  ambientSources?: boolean;
+  gitignore?: boolean;
+  bootstrap?: boolean;
+  maxStablePasses?: number;
+  incrementalPasses?: boolean;
+  typesPreflight?: boolean;
+  typesReportFile?: string;
+  suppressionReportFile?: string;
+}
+
+function migrateOptions(args: MigrateArgs): FullParams['migrateOptions'] {
+  return {
+    plugins: pluginParams(args),
+    sources: args.sources,
+    ambientSources: args.ambientSources,
+    gitignore: args.gitignore,
+    bootstrap: args.bootstrap,
+    maxStablePasses: args.maxStablePasses,
+    incrementalPasses: args.incrementalPasses,
+    typesPreflight: args.typesPreflight,
+    typesReportFile: args.typesReportFile,
+    suppressionReportFile: args.suppressionReportFile,
   };
 }
 
@@ -754,19 +786,7 @@ cli
           gitignore: args.gitignore,
           bootstrap: args.bootstrap,
         },
-        migrateOptions: {
-          plugins: pluginParams(args),
-          sources: args.sources,
-          ambientSources: args.ambientSources,
-          gitignore: args.gitignore,
-          bootstrap: args.bootstrap,
-          maxStablePasses: args.maxStablePasses,
-          incrementalPasses: args.incrementalPasses,
-          typesPreflight: args.typesPreflight,
-          typesReportFile: args.typesReportFile,
-          suppressionReportFile: args.suppressionReportFile,
-          collectSummary: true,
-        },
+        migrateOptions: migrateOptions(args),
         prompter: args.yes ? undefined : createPrompter(),
       });
       // Not process.exit: this command prints four steps' worth of reports, and
@@ -832,16 +852,7 @@ cli
         rootDir,
         folder: args.folder,
         typeScript: typeScriptDecision(),
-        plugins: pluginParams(args),
-        sources: args.sources,
-        ambientSources: args.ambientSources,
-        gitignore: args.gitignore,
-        bootstrap: args.bootstrap,
-        maxStablePasses: args.maxStablePasses,
-        incrementalPasses: args.incrementalPasses,
-        typesPreflight: args.typesPreflight,
-        typesReportFile: args.typesReportFile,
-        suppressionReportFile: args.suppressionReportFile,
+        ...migrateOptions(args),
         dryRun: args.dryRun,
         jsonSummary: args.jsonSummary,
       });

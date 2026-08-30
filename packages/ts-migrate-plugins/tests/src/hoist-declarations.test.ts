@@ -1,5 +1,7 @@
-import { realPluginParams } from '../test-utils';
+import { realPluginRunner } from '../test-utils';
 import hoistDeclarationsPlugin from '../../src/plugins/hoist-declarations';
+
+const run = realPluginRunner(hoistDeclarationsPlugin);
 
 describe('hoist-declarations plugin', () => {
   it('relocates an HOC-wrapped component used before it is defined', async () => {
@@ -23,9 +25,7 @@ const ConnectedWidget = connect(Widget, (state) => ({
 export default Panel;
 `;
 
-    const result = await hoistDeclarationsPlugin.run(
-      await realPluginParams({ text, fileName: 'file.tsx' }),
-    );
+    const result = await run(text, { fileName: 'file.tsx' });
 
     expect(result).toBe(`import React from 'react';
 import Widget from './Widget';
@@ -61,9 +61,7 @@ const ConnectedWidget = connect(Widget);
 export default App;
 `;
 
-    const result = await hoistDeclarationsPlugin.run(
-      await realPluginParams({ text, fileName: 'file.tsx' }),
-    );
+    const result = await run(text, { fileName: 'file.tsx' });
 
     expect(result).toBe(`import React from 'react';
 
@@ -84,9 +82,7 @@ export default App;
 const Panel = () => <ConnectedWidget />;
 `;
 
-    const result = await hoistDeclarationsPlugin.run(
-      await realPluginParams({ text, fileName: 'file.tsx' }),
-    );
+    const result = await run(text, { fileName: 'file.tsx' });
 
     expect(result).toBe(text);
   });
@@ -101,7 +97,7 @@ const config = { size: 1 };
 const build = () => config.size;
 `;
 
-    const result = await hoistDeclarationsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(text);
   });
@@ -113,7 +109,7 @@ const a = 1,
   b = 2;
 `;
 
-    const result = await hoistDeclarationsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(text);
   });
@@ -126,7 +122,7 @@ const a = 1,
 var cb = createCallback();
 `;
 
-    const result = await hoistDeclarationsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     // No candidates at all: the plugin short-circuits with undefined (no change).
     expect(result ?? text).toBe(text);
@@ -140,9 +136,7 @@ var cb = createCallback();
 const ConnectedWidget = connect(Widget);
 `;
 
-    const result = await hoistDeclarationsPlugin.run(
-      await realPluginParams({ text, fileName: 'file.tsx' }),
-    );
+    const result = await run(text, { fileName: 'file.tsx' });
 
     expect(result).toBe(text);
   });
@@ -157,12 +151,8 @@ const ConnectedWidget = connect(Widget, (state) => state);
 export default Panel;
 `;
 
-    const firstResult = await hoistDeclarationsPlugin.run(
-      await realPluginParams({ text, fileName: 'file.tsx' }),
-    );
-    const secondResult = await hoistDeclarationsPlugin.run(
-      await realPluginParams({ text: firstResult || '', fileName: 'file.tsx' }),
-    );
+    const firstResult = await run(text, { fileName: 'file.tsx' });
+    const secondResult = await run(firstResult || '', { fileName: 'file.tsx' });
 
     expect(secondResult).toBe(firstResult);
   });

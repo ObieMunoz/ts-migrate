@@ -8,6 +8,7 @@ import {
   TextChange,
   toCandidatePos,
 } from '../utils/candidateValidation';
+import { findNodeEndingAt } from '../utils/enclosingNode';
 import {
   getInferenceChanges,
   inferenceFormatSettings,
@@ -401,29 +402,14 @@ function isTyped(service: ts.LanguageService, fileName: string, nameEnd: number)
   const program = service.getProgram();
   const source = program && program.getSourceFile(fileName);
   if (!program || !source) return false;
-  const name = findNameEndingAt(source, nameEnd);
+  const name = findNodeEndingAt(source, nameEnd, isRetryableDeclarationName);
   if (!name) return false;
   const checker = program.getTypeChecker();
   return !saysNothing(checker, checker.getTypeAtLocation(name), 0, new Set());
 }
 
-function findNameEndingAt(source: ts.SourceFile, nameEnd: number): ts.Identifier | undefined {
-  let found: ts.Identifier | undefined;
-  const visit = (node: ts.Node): void => {
-    if (found || node.end < nameEnd || node.getStart(source) > nameEnd) return;
-    if (
-      ts.isIdentifier(node) &&
-      node.end === nameEnd &&
-      isRetryableDeclaration(node.parent) &&
-      node.parent.name === node
-    ) {
-      found = node;
-      return;
-    }
-    node.forEachChild(visit);
-  };
-  source.forEachChild(visit);
-  return found;
+function isRetryableDeclarationName(node: ts.Node): node is ts.Identifier {
+  return ts.isIdentifier(node) && isRetryableDeclaration(node.parent) && node.parent.name === node;
 }
 
 /**

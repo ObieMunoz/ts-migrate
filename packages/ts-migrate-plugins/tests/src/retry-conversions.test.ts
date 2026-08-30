@@ -1,11 +1,8 @@
 import path from 'path';
-import ts from 'typescript';
-import { fixturePluginParams, mockPluginParams, realPluginParams } from '../test-utils';
+import { fixturePluginParams, mockPluginParams, realPluginRunner } from '../test-utils';
 import retryConversionsPlugin from '../../src/plugins/retry-conversions';
 
-async function run(text: string, compilerOptions?: ts.CompilerOptions): Promise<string | void> {
-  return retryConversionsPlugin.run(await realPluginParams({ text, compilerOptions }));
-}
+const run = realPluginRunner(retryConversionsPlugin);
 
 const rootDir = path.resolve(__dirname, '../fixtures/retry-conversions');
 const entryFile = path.join(rootDir, 'entry.ts');

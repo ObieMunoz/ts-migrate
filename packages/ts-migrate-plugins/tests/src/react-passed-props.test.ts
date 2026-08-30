@@ -1,17 +1,15 @@
 import path from 'path';
-import ts from 'typescript';
-import { createTypeChecker, fixturePluginParams, FileMap } from '../test-utils';
+import {
+  createTypeChecker,
+  fixturePluginParams,
+  reactCompilerOptions as compilerOptions,
+  FileMap,
+} from '../test-utils';
 import reactPassedPropsPlugin from '../../src/plugins/react-passed-props';
 
 const rootDir = __dirname;
 const fixtureFile = path.join(rootDir, 'react-passed-props-fixture.tsx');
 const callsName = 'react-passed-props-calls.tsx';
-
-const compilerOptions: ts.CompilerOptions = {
-  jsx: ts.JsxEmit.React,
-  esModuleInterop: true,
-  skipLibCheck: true,
-};
 
 function run(text: string, extraFiles: FileMap = {}): string {
   const result = reactPassedPropsPlugin.run(

@@ -1,9 +1,8 @@
 import path from 'path';
-import ts from 'typescript';
 import {
   createTypeChecker,
   fixturePluginParams,
-  FileMap,
+  reactCompilerOptions as compilerOptions,
   mockPluginParams,
 } from '../test-utils';
 import reactDestructuredPropsPlugin from '../../src/plugins/react-destructured-props';
@@ -14,13 +13,7 @@ import reactDefaultPropsPlugin from '../../src/plugins/react-default-props';
 const rootDir = __dirname;
 const fixtureFile = path.join(rootDir, 'react-destructured-props-fixture.tsx');
 
-const compilerOptions: ts.CompilerOptions = {
-  jsx: ts.JsxEmit.React,
-  esModuleInterop: true,
-  skipLibCheck: true,
-};
-
-function run(text: string, options?: { anyAlias?: string }, extraFiles?: FileMap): string {
+function run(text: string, options?: { anyAlias?: string }): string {
   const result = reactDestructuredPropsPlugin.run(
     fixturePluginParams<{ anyAlias?: string }>({
       rootDir,
@@ -28,7 +21,6 @@ function run(text: string, options?: { anyAlias?: string }, extraFiles?: FileMap
       text,
       options,
       compilerOptions,
-      extraFiles,
     }),
   );
   return typeof result === 'string' ? result : text;

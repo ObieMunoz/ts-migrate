@@ -113,7 +113,7 @@ function run(overrides: Partial<FullParams> = {}) {
     renameOptions: {},
     // One plugin rather than the pipeline: this suite is about the sequence,
     // and the pipeline has its own tests.
-    migrateOptions: { plugins: { plugin: 'ts-ignore' }, collectSummary: true },
+    migrateOptions: { plugins: { plugin: 'ts-ignore' } },
     ...overrides,
   });
 }
@@ -643,7 +643,6 @@ describe('a full pipeline check that fails', () => {
       migrateOptions: {
         plugins: { plugin: 'ts-ignore', projectEslint: false },
         sources: 'src/**/*',
-        collectSummary: true,
       },
       typeScriptOverride: '/opt/ts',
     });
@@ -695,7 +694,7 @@ describe('the full pipeline type definition recommendations', () => {
   // The default pipeline rather than one plugin: the detector that produces the
   // report is part of it.
   const runWholePipeline = (overrides: Partial<FullParams> = {}) =>
-    run({ migrateOptions: { plugins: {}, collectSummary: true }, ...overrides });
+    run({ migrateOptions: { plugins: {} }, ...overrides });
 
   it('holds the report back to the end of a successful run and prints it once', async () => {
     writeProjectMissingTypes();

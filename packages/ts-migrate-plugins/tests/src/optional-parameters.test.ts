@@ -1,10 +1,7 @@
 import optionalParametersPlugin from '../../src/plugins/optional-parameters';
-import { realPluginParams } from '../test-utils';
+import { realPluginRunner } from '../test-utils';
 
-const run = async (text: string, extraFiles: { [fileName: string]: string } = {}) =>
-  optionalParametersPlugin.run(
-    await realPluginParams({ fileName: 'declares.ts', text, extraFiles }),
-  );
+const run = realPluginRunner(optionalParametersPlugin, { fileName: 'declares.ts' });
 
 describe('optional-parameters plugin', () => {
   it('marks a parameter a call in another file leaves off', async () => {
@@ -12,7 +9,9 @@ describe('optional-parameters plugin', () => {
   return source[key];
 }
 `;
-    const result = await run(text, { 'calls.ts': `import { pick } from './declares';\npick({});\n` });
+    const result = await run(text, {
+      extraFiles: { 'calls.ts': `import { pick } from './declares';\npick({});\n` },
+    });
 
     expect(result).toBe(`export function pick(source: any, key?: any) {
   return source[key];
@@ -26,7 +25,9 @@ describe('optional-parameters plugin', () => {
 }
 `;
     const result = await run(text, {
-      'calls.ts': `import { three } from './declares';\nthree(1, 2);\nthree(1);\n`,
+      extraFiles: {
+        'calls.ts': `import { three } from './declares';\nthree(1, 2);\nthree(1);\n`,
+      },
     });
 
     expect(result).toBe(`export function three(a: any, b?: any, c?: any) {
@@ -41,7 +42,9 @@ describe('optional-parameters plugin', () => {
 }
 `;
     const result = await run(text, {
-      'calls.ts': `import { pair } from './declares';\npair(1, 2);\n`,
+      extraFiles: {
+        'calls.ts': `import { pair } from './declares';\npair(1, 2);\n`,
+      },
     });
 
     expect(result).toBeUndefined();
@@ -51,7 +54,9 @@ describe('optional-parameters plugin', () => {
     const text = `export const render = (props: any) => props;
 `;
     const result = await run(text, {
-      'calls.ts': `import { render } from './declares';\nrender();\n`,
+      extraFiles: {
+        'calls.ts': `import { render } from './declares';\nrender();\n`,
+      },
     });
 
     expect(result).toBe(`export const render = (props?: any) => props;
@@ -66,7 +71,9 @@ describe('optional-parameters plugin', () => {
 }
 `;
     const result = await run(text, {
-      'calls.ts': `import { Store } from './declares';\nnew Store().put('a');\n`,
+      extraFiles: {
+        'calls.ts': `import { Store } from './declares';\nnew Store().put('a');\n`,
+      },
     });
 
     expect(result).toBe(`export class Store {
@@ -83,7 +90,9 @@ describe('optional-parameters plugin', () => {
 }
 `;
     const result = await run(text, {
-      'calls.ts': `import { greet } from './declares';\ngreet();\n`,
+      extraFiles: {
+        'calls.ts': `import { greet } from './declares';\ngreet();\n`,
+      },
     });
 
     expect(result).toBe(`export function greet(name?: any, greeting: any = 'hi') {
@@ -98,7 +107,9 @@ describe('optional-parameters plugin', () => {
 }
 `;
     const result = await run(text, {
-      'calls.ts': `import { unpack } from './declares';\nunpack(1);\n`,
+      extraFiles: {
+        'calls.ts': `import { unpack } from './declares';\nunpack(1);\n`,
+      },
     });
 
     expect(result).toBeUndefined();
@@ -112,7 +123,9 @@ export function size(value: any, deep?: any) {
 }
 `;
     const result = await run(text, {
-      'calls.ts': `import { size } from './declares';\nsize([], true);\nsize('a');\n`,
+      extraFiles: {
+        'calls.ts': `import { size } from './declares';\nsize([], true);\nsize('a');\n`,
+      },
     });
 
     expect(result).toBeUndefined();
@@ -124,7 +137,9 @@ export function size(value: any, deep?: any) {
 }
 `;
     const result = await run(text, {
-      'calls.ts': `import { shout } from './declares';\nshout();\n`,
+      extraFiles: {
+        'calls.ts': `import { shout } from './declares';\nshout();\n`,
+      },
     });
 
     expect(result).toBeUndefined();
@@ -139,7 +154,9 @@ export function echo(word: any) {
 }
 `;
     const result = await run(text, {
-      'calls.ts': `import { echo, shout } from './declares';\nshout();\necho();\n`,
+      extraFiles: {
+        'calls.ts': `import { echo, shout } from './declares';\nshout();\necho();\n`,
+      },
     });
 
     expect(result).toBe(`export function shout(word: string) {
@@ -157,7 +174,9 @@ export function echo(word?: any) {
 export const parsed = parse();
 `;
     const result = await run(text, {
-      'vendor.d.ts': `export declare function parse(input: string): unknown;\n`,
+      extraFiles: {
+        'vendor.d.ts': `export declare function parse(input: string): unknown;\n`,
+      },
     });
 
     expect(result).toBeUndefined();

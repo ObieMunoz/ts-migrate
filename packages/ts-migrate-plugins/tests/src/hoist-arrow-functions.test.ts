@@ -1,5 +1,7 @@
-import { realPluginParams } from '../test-utils';
+import { realPluginRunner } from '../test-utils';
 import hoistArrowFunctionsPlugin from '../../src/plugins/hoist-arrow-functions';
+
+const run = realPluginRunner(hoistArrowFunctionsPlugin);
 
 describe('hoist-arrow-functions plugin', () => {
   it('converts arrow functions used before they are defined', async () => {
@@ -18,7 +20,7 @@ const notHoisted = () => {
 notHoisted();
 `;
 
-    const result = await hoistArrowFunctionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`function init() {
   handleClick();
@@ -46,7 +48,7 @@ export const fetchData = async (id: string): Promise<string> => {
 };
 `;
 
-    const result = await hoistArrowFunctionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`export function run() {
   return fetchData('x');
@@ -64,7 +66,7 @@ export async function fetchData(id: string): Promise<string> {
 const toDouble = (n: number) => n * 2;
 `;
 
-    const result = await hoistArrowFunctionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`const double = (values: number[]) => values.map(toDouble);
 
@@ -84,7 +86,7 @@ function logAll() {
 const log = n => console.log(n);
 `;
 
-    const result = await hoistArrowFunctionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`logAll();
 
@@ -108,9 +110,7 @@ function App() {
 const Header = ({ title }: { title: string }) => <h1>{title}</h1>;
 `;
 
-    const result = await hoistArrowFunctionsPlugin.run(
-      await realPluginParams({ text, fileName: 'file.tsx' }),
-    );
+    const result = await run(text, { fileName: 'file.tsx' });
 
     expect(result).toBe(`import React from 'react';
 
@@ -134,7 +134,7 @@ function Header({ title }: { title: string }) {
 }
 `;
 
-    const result = await hoistArrowFunctionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`function outer() {
   attach();
@@ -157,7 +157,7 @@ const helper: () => void = () => {};
 const tracker = () => this.track();
 `;
 
-    const result = await hoistArrowFunctionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(text);
   });
@@ -170,7 +170,7 @@ const tracker = () => this.track();
 const format = (s: string) => s.toUpperCase();
 `;
 
-    const result = await hoistArrowFunctionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(text);
   });
@@ -185,7 +185,7 @@ const first = () => {},
   second = () => {};
 `;
 
-    const result = await hoistArrowFunctionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(text);
   });
@@ -199,7 +199,7 @@ const first = () => {},
 }
 `;
 
-    const result = await hoistArrowFunctionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(text);
   });
@@ -214,10 +214,8 @@ const handleClick = () => {
 };
 `;
 
-    const firstResult = await hoistArrowFunctionsPlugin.run(await realPluginParams({ text }));
-    const secondResult = await hoistArrowFunctionsPlugin.run(
-      await realPluginParams({ text: firstResult || '' }),
-    );
+    const firstResult = await run(text);
+    const secondResult = await run(firstResult || '');
 
     expect(secondResult).toBe(firstResult);
   });

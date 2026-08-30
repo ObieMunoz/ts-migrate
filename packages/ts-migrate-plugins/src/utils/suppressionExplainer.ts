@@ -321,6 +321,18 @@ function inProject(fileName: string, rootDir: string): boolean {
   );
 }
 
+function declarationEvidence(
+  declaration: ts.Node,
+  rootDir: string,
+): Pick<SuppressionEvidence, 'declaredAt' | 'declarationKind' | 'declaredInProject'> {
+  const declaredAt = declarationLocation(declaration);
+  return {
+    declaredAt,
+    declarationKind: ts.SyntaxKind[declaration.kind],
+    declaredInProject: declaredAt ? inProject(declaredAt.file, rootDir) : undefined,
+  };
+}
+
 function enclosingCall(node: ts.Node): ts.CallExpression | ts.NewExpression | undefined {
   let current: ts.Node | undefined = node;
   for (let depth = 0; current && depth < MAX_CALL_DEPTH; depth += 1) {
@@ -406,13 +418,7 @@ function calleeEvidence(
   rootDir: string,
 ): Pick<SuppressionEvidence, 'declaredAt' | 'declarationKind' | 'declaredInProject'> {
   const declaration = signature.declaration;
-  if (!declaration) return {};
-  const declaredAt = declarationLocation(declaration);
-  return {
-    declaredAt,
-    declarationKind: ts.SyntaxKind[declaration.kind],
-    declaredInProject: declaredAt ? inProject(declaredAt.file, rootDir) : undefined,
-  };
+  return declaration ? declarationEvidence(declaration, rootDir) : {};
 }
 
 function callEvidence(
@@ -704,13 +710,7 @@ function unresolvedNameEvidence(
   const declaration = typeDeclarationFinder(program, checker, rootDir)(name);
   if (!declaration) return evidence;
 
-  const declaredAt = declarationLocation(declaration);
-  return {
-    ...evidence,
-    declaredAt,
-    declarationKind: ts.SyntaxKind[declaration.kind],
-    declaredInProject: declaredAt ? inProject(declaredAt.file, rootDir) : undefined,
-  };
+  return { ...evidence, ...declarationEvidence(declaration, rootDir) };
 }
 
 /** `program.getResolvedModule` reports the paths tried even on a suppressed program. */
