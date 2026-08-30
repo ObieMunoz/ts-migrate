@@ -162,6 +162,20 @@ export function pluginRunnerWithNotices<TOptions = unknown>(
   };
 }
 
+/**
+ * A plugin bound to the real params a file's tests all pass, so a test reads as
+ * the text in and the text out and each `it` states only what it is about. The
+ * overrides replace the bound values rather than merging into them, so a test
+ * that passes `options: {}` is a test run with no options.
+ */
+export function realPluginRunner<TOptions = unknown>(
+  plugin: Plugin<TOptions>,
+  defaults: RealParams<TOptions> = {},
+) {
+  return async (text: string, overrides: RealParams<TOptions> = {}) =>
+    plugin.run(await realPluginParams<TOptions>({ ...defaults, ...overrides, text }));
+}
+
 export function mockDiagnostic(
   text: string,
   errorText: string,
@@ -182,13 +196,17 @@ export function mockDiagnostic(
   };
 }
 
-export async function realPluginParams<TOptions = unknown>(params: {
+export interface RealParams<TOptions = unknown> {
   fileName?: string;
   text?: string;
   options?: TOptions;
   compilerOptions?: ts.CompilerOptions;
   extraFiles?: { [fileName: string]: string };
-}): Promise<PluginParams<TOptions>> {
+}
+
+export async function realPluginParams<TOptions = unknown>(
+  params: RealParams<TOptions>,
+): Promise<PluginParams<TOptions>> {
   const {
     fileName = 'file.ts',
     text = '',

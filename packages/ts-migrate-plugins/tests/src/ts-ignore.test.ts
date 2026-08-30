@@ -1,7 +1,14 @@
 import ts from 'typescript';
 import { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
 import tsIgnorePlugin from '../../src/plugins/ts-ignore';
-import { mockPluginParams, mockDiagnostic, realPluginParams } from '../test-utils';
+import {
+  mockPluginParams,
+  mockDiagnostic,
+  realPluginParams,
+  realPluginRunner,
+} from '../test-utils';
+
+const run = realPluginRunner(tsIgnorePlugin);
 
 describe('ts-ignore plugin', () => {
   it('adds ignore comment', async () => {
@@ -442,13 +449,10 @@ export default Foo;
 );
 `;
 
-    const result = await tsIgnorePlugin.run(
-      await realPluginParams({
-        fileName: 'view.tsx',
-        text,
-        compilerOptions: { jsx: ts.JsxEmit.React },
-      }),
-    );
+    const result = await run(text, {
+      fileName: 'view.tsx',
+      compilerOptions: { jsx: ts.JsxEmit.React },
+    });
 
     const lines = (result as string).split('\n');
     const targetIndex = lines.findIndex((line) => line.includes('<DoesNotExist />'));
@@ -492,13 +496,10 @@ describe('ts-ignore plugin with ambient environment types', () => {
   it('suppresses nothing for globals that ambient declarations provide, and the output passes a fresh check', async () => {
     const text = "var lib = require('some-lib');\nconst count: number = 'oops';\n";
 
-    const result = (await tsIgnorePlugin.run(
-      await realPluginParams({
-        text,
-        compilerOptions: strictOptions,
-        extraFiles: typesFixture,
-      }),
-    )) as string;
+    const result = (await run(text, {
+      compilerOptions: strictOptions,
+      extraFiles: typesFixture,
+    })) as string;
 
     // `require` resolves through the ambient declaration — suppressing it
     // would leave an unused directive for any compiler that loads the types.
@@ -518,7 +519,7 @@ World'; id(1, 2);
 console.log(banner);
 `;
 
-    const result = (await tsIgnorePlugin.run(await realPluginParams({ text }))) as string;
+    const result = (await run(text)) as string;
 
     expect(result).toContain(`'Hello \\
 World'`);
@@ -534,7 +535,7 @@ const sql = \`SELECT *
 console.log(sql);
 `;
 
-    const result = (await tsIgnorePlugin.run(await realPluginParams({ text }))) as string;
+    const result = (await run(text)) as string;
 
     expect(result).toContain(`\`SELECT *
   FROM widgets\``);
@@ -548,7 +549,7 @@ const x = 1; /* note that
 console.log(x);
 `;
 
-    const result = (await tsIgnorePlugin.run(await realPluginParams({ text }))) as string;
+    const result = (await run(text)) as string;
 
     expect(result).toContain(`/* note that
    continues */`);
@@ -566,9 +567,7 @@ beta" data-x={fire(1, 2)}>hello</div>
 `;
     const compilerOptions = { jsx: ts.JsxEmit.React };
 
-    const result = (await tsIgnorePlugin.run(
-      await realPluginParams({ fileName: 'file.tsx', text, compilerOptions }),
-    )) as string;
+    const result = (await run(text, { fileName: 'file.tsx', compilerOptions })) as string;
 
     expect(result).toContain(`title="alpha
 beta"`);
@@ -593,9 +592,7 @@ beta" data-x={1}>hello</div>
 `;
     const compilerOptions = { jsx: ts.JsxEmit.React };
 
-    const result = (await tsIgnorePlugin.run(
-      await realPluginParams({ fileName: 'file.tsx', text, compilerOptions }),
-    )) as string;
+    const result = (await run(text, { fileName: 'file.tsx', compilerOptions })) as string;
 
     expect(result).toContain(`title="alpha
 beta"`);
@@ -675,9 +672,7 @@ const a = 1;
       target: ts.ScriptTarget.ES2020,
     };
 
-    const result = (await tsIgnorePlugin.run(
-      await realPluginParams({ text, compilerOptions }),
-    )) as string;
+    const result = (await run(text, { compilerOptions })) as string;
 
     expect(result).toContain('/* webpackChunkName: "lazy-mod" */');
     expect(await residualDiagnosticCodes('file.ts', result, compilerOptions)).not.toContain(2307);
@@ -713,9 +708,7 @@ export class ReadMore extends Component<object, State> {
 }
 `;
 
-    const result = (await tsIgnorePlugin.run(
-      await realPluginParams({ fileName: 'file.tsx', text, compilerOptions }),
-    )) as string;
+    const result = (await run(text, { fileName: 'file.tsx', compilerOptions })) as string;
 
     const lines = result.split('\n');
     ['const { html } = this.props;', 'const { text, title } = this.props;'].forEach((access) => {
@@ -760,9 +753,7 @@ describe('ts-ignore plugin with a value imported as a type', () => {
 export const classes = cn('a', 'b');
 `;
 
-    const result = (await tsIgnorePlugin.run(
-      await realPluginParams({ text, extraFiles }),
-    )) as string;
+    const result = (await run(text, { extraFiles })) as string;
 
     expect(result).toBe(`import { cn } from './cn';
 
@@ -778,9 +769,7 @@ export const map = { replace };
 export const go = () => replace('/');
 `;
 
-    const result = (await tsIgnorePlugin.run(
-      await realPluginParams({ text, extraFiles }),
-    )) as string;
+    const result = (await run(text, { extraFiles })) as string;
 
     expect(result).toContain("import { replace } from './nav';");
     expect(result).not.toContain('@ts-expect-error');
@@ -794,9 +783,7 @@ export const classes = cn('a');
 `;
     const files = { 'default-cn.ts': 'export default function cn(a: string) { return a; }\n' };
 
-    const result = (await tsIgnorePlugin.run(
-      await realPluginParams({ text, extraFiles: files }),
-    )) as string;
+    const result = (await run(text, { extraFiles: files })) as string;
 
     expect(result).toContain("import cn from './default-cn';");
     expect(await residualDiagnosticCodes('file.ts', result, undefined, files)).toEqual([]);
@@ -809,9 +796,7 @@ export const classes = cn('a');
 export const args: Args = ['a'];
 `;
 
-    const result = (await tsIgnorePlugin.run(
-      await realPluginParams({ text, extraFiles }),
-    )) as string;
+    const result = (await run(text, { extraFiles })) as string;
 
     expect(result).toContain("import { cn, type Args } from './cn';");
     expect(await residualDiagnosticCodes('file.ts', result, undefined, extraFiles)).toEqual([]);
@@ -824,9 +809,7 @@ export const classes = cn('a');
 export const count: number = 'oops';
 `;
 
-    const result = (await tsIgnorePlugin.run(
-      await realPluginParams({ text, extraFiles }),
-    )) as string;
+    const result = (await run(text, { extraFiles })) as string;
 
     expect(result).toContain("import { cn } from './cn';");
     expect(result).toContain('TS(2322)');
@@ -842,9 +825,7 @@ export const count: number = 'oops';
 export const args = Args;
 `;
 
-    const result = (await tsIgnorePlugin.run(
-      await realPluginParams({ text, extraFiles }),
-    )) as string;
+    const result = (await run(text, { extraFiles })) as string;
 
     expect(result).toContain("import type { Args } from './cn';");
     expect(result).toContain('TS(2693)');
