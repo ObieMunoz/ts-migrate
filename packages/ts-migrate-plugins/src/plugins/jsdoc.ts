@@ -738,22 +738,20 @@ const jsDocTransformerFactory =
 
     function visitJSDocOptionalType(node: ts.JSDocOptionalType) {
       return factory.createUnionTypeNode([
-        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode) as ts.TypeNode,
+        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode),
         factory.createKeywordTypeNode(ts.SyntaxKind.UndefinedKeyword),
       ]);
     }
 
     function visitJSDocNullableType(node: ts.JSDocNullableType) {
       return factory.createUnionTypeNode([
-        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode) as ts.TypeNode,
+        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode),
         factory.createLiteralTypeNode(factory.createToken(ts.SyntaxKind.NullKeyword)),
       ]);
     }
 
     function visitJSDocVariadicType(node: ts.JSDocVariadicType) {
-      return factory.createArrayTypeNode(
-        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode) as ts.TypeNode,
-      );
+      return factory.createArrayTypeNode(ts.visitNode(node.type, visitJSDocType, ts.isTypeNode));
     }
 
     function visitJSDocFunctionType(node: ts.JSDocFunctionType) {
@@ -808,7 +806,7 @@ const jsDocTransformerFactory =
         dotdotdot,
         name,
         node.questionToken,
-        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode) as ts.TypeNode,
+        ts.visitNode(node.type, visitJSDocType, ts.isTypeNode),
         node.initializer,
       );
     }
