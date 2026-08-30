@@ -46,3 +46,21 @@ export function findNodeAtSpan(
   visit(sourceFile);
   return result;
 }
+
+/**
+ * The innermost node the position falls inside, or undefined when it falls in
+ * trivia, which belongs to no node.
+ */
+export function innermostNodeAt(
+  sourceFile: ts.SourceFile,
+  position: number,
+): ts.Node | undefined {
+  let result: ts.Node | undefined;
+  const visit = (node: ts.Node): void => {
+    if (position < node.getStart(sourceFile) || position >= node.end) return;
+    result = node;
+    node.forEachChild(visit);
+  };
+  sourceFile.forEachChild(visit);
+  return result;
+}

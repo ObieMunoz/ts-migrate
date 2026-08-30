@@ -4,6 +4,7 @@ import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import createFollowUpMarkers, { FollowUpMarkers } from '../utils/followUpMarker';
 import { createValidate, Properties } from '../utils/validateOptions';
 import { hasDefaultExport, isEsmSourceFile } from '../utils/moduleFormat';
+import { collectIdentifiers } from './utils/identifiers';
 
 /**
  * Rewrites the CommonJS module syntax a renamed file still carries into
@@ -170,11 +171,17 @@ function declaredNamesAreStable(
   declarations: ts.NodeArray<ts.VariableDeclaration>,
   scope: Scope,
 ): boolean {
-  const isStable = (name: ts.BindingName): boolean => {
-    if (ts.isIdentifier(name)) return !scope.assigned.has(name.text);
-    return name.elements.every((element) => !ts.isBindingElement(element) || isStable(element.name));
-  };
-  return declarations.every((declaration) => isStable(declaration.name));
+  return declarations.every((declaration) =>
+    bindingNames(declaration.name).every((name) => !scope.assigned.has(name)),
+  );
+}
+
+/** Every name a binding introduces, flattening any destructuring pattern. */
+function bindingNames(name: ts.BindingName): string[] {
+  if (ts.isIdentifier(name)) return [name.text];
+  return name.elements.flatMap((element) =>
+    ts.isBindingElement(element) ? bindingNames(element.name) : [],
+  );
 }
 
 /** A top level `module.exports = x` or `exports.foo = x` assignment. */
@@ -478,21 +485,12 @@ function reexportSpecifier(
 
 function collectTopLevelNames(sourceFile: ts.SourceFile): Map<string, BindingKind> {
   const names = new Map<string, BindingKind>();
-  const addBindingName = (name: ts.BindingName, kind: BindingKind) => {
-    if (ts.isIdentifier(name)) {
-      names.set(name.text, kind);
-      return;
-    }
-    name.elements.forEach((element) => {
-      if (ts.isBindingElement(element)) addBindingName(element.name, kind);
-    });
-  };
 
   sourceFile.statements.forEach((statement) => {
     if (ts.isVariableStatement(statement)) {
       const kind = statement.declarationList.flags & ts.NodeFlags.Const ? 'stable' : 'mutable';
       statement.declarationList.declarations.forEach((declaration) =>
-        addBindingName(declaration.name, kind),
+        bindingNames(declaration.name).forEach((name) => names.set(name, kind)),
       );
     } else if (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) {
       if (statement.name) names.set(statement.name.text, 'stable');
@@ -536,13 +534,7 @@ function collectNestedBindingNames(sourceFile: ts.SourceFile): Set<string> {
 
   const add = (name: ts.BindingName) => {
     if (topLevel.has(name)) return;
-    if (ts.isIdentifier(name)) {
-      names.add(name.text);
-      return;
-    }
-    name.elements.forEach((element) => {
-      if (ts.isBindingElement(element)) add(element.name);
-    });
+    bindingNames(name).forEach((text) => names.add(text));
   };
 
   const visit = (node: ts.Node) => {
@@ -677,21 +669,7 @@ function moduleAlias(specifier: string, scope: Scope): string | undefined {
     next ? next.toUpperCase() : '',
   );
   const name = bindableName(camelCased);
-  return name && !usesName(scope.sourceFile, name) ? name : undefined;
-}
-
-function usesName(sourceFile: ts.SourceFile, name: string): boolean {
-  let found = false;
-  const visit = (node: ts.Node) => {
-    if (found) return;
-    if (ts.isIdentifier(node) && node.text === name) {
-      found = true;
-      return;
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(sourceFile);
-  return found;
+  return name && !collectIdentifiers(scope.sourceFile).has(name) ? name : undefined;
 }
 
 function hasModifiers(statement: ts.Statement): boolean {

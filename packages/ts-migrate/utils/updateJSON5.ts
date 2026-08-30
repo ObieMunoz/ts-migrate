@@ -85,20 +85,11 @@ export function setJSON5Key(
   keyPath: ReadonlyArray<string>,
   value: string | number | boolean | null,
 ): string {
-  if (keyPath.length === 0) {
-    throw new Error('updateJSON5: keyPath must not be empty');
-  }
-
-  const root = parseDocument(sourceText);
-  if (root.kind !== 'object') {
-    throw new Error('updateJSON5: root value must be an object');
-  }
-
-  let node = root;
+  let node = parseObjectRoot(sourceText, keyPath);
   for (let i = 0; i < keyPath.length; i += 1) {
     const member = node.members.find((m) => m.key === keyPath[i]);
     if (!member) {
-      return insertMember(sourceText, node, keyPath.slice(i), encodeValue(value));
+      return insertMember(sourceText, node, keyPath.slice(i), encodeJSON5(value));
     }
     if (i === keyPath.length - 1 || member.value.kind !== 'object') {
       const remainingPath = keyPath.slice(i + 1);
@@ -106,7 +97,7 @@ export function setJSON5Key(
         {
           start: member.value.start,
           end: member.value.end,
-          text: buildNestedValue(remainingPath, encodeValue(value)),
+          text: buildNestedValue(remainingPath, encodeJSON5(value)),
         },
       ]);
     }
@@ -126,20 +117,11 @@ export function appendJSON5ArrayItem(
   keyPath: ReadonlyArray<string>,
   value: string,
 ): string {
-  if (keyPath.length === 0) {
-    throw new Error('updateJSON5: keyPath must not be empty');
-  }
-
-  const root = parseDocument(sourceText);
-  if (root.kind !== 'object') {
-    throw new Error('updateJSON5: root value must be an object');
-  }
-
-  let node = root;
+  let node = parseObjectRoot(sourceText, keyPath);
   for (let i = 0; i < keyPath.length; i += 1) {
     const member = node.members.find((m) => m.key === keyPath[i]);
     if (!member) {
-      return insertMember(sourceText, node, keyPath.slice(i), `[${encodeValue(value)}]`);
+      return insertMember(sourceText, node, keyPath.slice(i), `[${encodeJSON5(value)}]`);
     }
     if (i === keyPath.length - 1) {
       if (member.value.kind !== 'array') {
@@ -157,6 +139,18 @@ export function appendJSON5ArrayItem(
   }
 
   throw new Error('updateJSON5: failed to resolve keyPath');
+}
+
+function parseObjectRoot(sourceText: string, keyPath: ReadonlyArray<string>): ObjectNode {
+  if (keyPath.length === 0) {
+    throw new Error('updateJSON5: keyPath must not be empty');
+  }
+
+  const root = parseDocument(sourceText);
+  if (root.kind !== 'object') {
+    throw new Error('updateJSON5: root value must be an object');
+  }
+  return root;
 }
 
 function appendElement(sourceText: string, node: ArrayNode, value: string): string {
@@ -217,7 +211,7 @@ function insertMember(
   keyPath: ReadonlyArray<string>,
   valueText: string,
 ): string {
-  const entryText = `${encodeKey(keyPath[0])}: ${buildNestedValue(keyPath.slice(1), valueText)}`;
+  const entryText = `${encodeJSON5(keyPath[0])}: ${buildNestedValue(keyPath.slice(1), valueText)}`;
   const isMultiline = sourceText.slice(node.start, node.end).includes('\n');
 
   if (node.members.length === 0) {
@@ -253,17 +247,13 @@ function insertMember(
 function buildNestedValue(keyPath: ReadonlyArray<string>, valueText: string): string {
   let result = valueText;
   for (let i = keyPath.length - 1; i >= 0; i -= 1) {
-    result = `{ ${encodeKey(keyPath[i])}: ${result} }`;
+    result = `{ ${encodeJSON5(keyPath[i])}: ${result} }`;
   }
   return result;
 }
 
-function encodeValue(value: string | number | boolean | null): string {
+function encodeJSON5(value: string | number | boolean | null): string {
   return json5.stringify(value, { quote: '"' });
-}
-
-function encodeKey(key: string): string {
-  return json5.stringify(key, { quote: '"' });
 }
 
 function applySplices(sourceText: string, splices: Splice[]): string {

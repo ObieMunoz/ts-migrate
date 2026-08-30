@@ -162,6 +162,20 @@ export function pluginRunnerWithNotices<TOptions = unknown>(
   };
 }
 
+/**
+ * A plugin bound to the real params a file's tests all pass, so a test reads as
+ * the text in and the text out and each `it` states only what it is about. The
+ * overrides replace the bound values rather than merging into them, so a test
+ * that passes `options: {}` is a test run with no options.
+ */
+export function realPluginRunner<TOptions = unknown>(
+  plugin: Plugin<TOptions>,
+  defaults: RealParams<TOptions> = {},
+) {
+  return async (text: string, overrides: RealParams<TOptions> = {}) =>
+    plugin.run(await realPluginParams<TOptions>({ ...defaults, ...overrides, text }));
+}
+
 export function mockDiagnostic(
   text: string,
   errorText: string,
@@ -182,13 +196,17 @@ export function mockDiagnostic(
   };
 }
 
-export async function realPluginParams<TOptions = unknown>(params: {
+export interface RealParams<TOptions = unknown> {
   fileName?: string;
   text?: string;
   options?: TOptions;
   compilerOptions?: ts.CompilerOptions;
   extraFiles?: { [fileName: string]: string };
-}): Promise<PluginParams<TOptions>> {
+}
+
+export async function realPluginParams<TOptions = unknown>(
+  params: RealParams<TOptions>,
+): Promise<PluginParams<TOptions>> {
   const {
     fileName = 'file.ts',
     text = '',
@@ -245,6 +263,13 @@ const defaultCompilerOptions: ts.CompilerOptions = {
   target: ts.ScriptTarget.ES2020,
   module: ts.ModuleKind.ESNext,
   moduleResolution: ts.ModuleResolutionKind.Bundler,
+};
+
+/** The options a suite needs for a fixture program that renders JSX. */
+export const reactCompilerOptions: ts.CompilerOptions = {
+  jsx: ts.JsxEmit.React,
+  esModuleInterop: true,
+  skipLibCheck: true,
 };
 
 /**
@@ -308,6 +333,36 @@ export function fixturePluginParams<TOptions = unknown>(params: {
     sourceFile,
     getLanguageService: () => languageService,
   };
+}
+
+/** Compiles the given files in memory, resolving the lib files from disk. */
+export function createInMemoryProgram(
+  files: FileMap,
+  params: {
+    /** Merged over the defaults. */
+    compilerOptions?: ts.CompilerOptions;
+    /** The files the program is built from. Defaults to every file given. */
+    rootNames?: string[];
+  } = {},
+): ts.Program {
+  const host: ts.CompilerHost = {
+    getSourceFile: (fileName, languageVersion) => {
+      const text = files[fileName] ?? ts.sys.readFile(fileName);
+      return text === undefined
+        ? undefined
+        : ts.createSourceFile(fileName, text, languageVersion, true);
+    },
+    getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
+    writeFile: () => {},
+    getCurrentDirectory: () => '/',
+    getCanonicalFileName: (fileName) => fileName,
+    useCaseSensitiveFileNames: () => true,
+    getNewLine: () => '\n',
+    fileExists: (fileName) => fileName in files || ts.sys.fileExists(fileName),
+    readFile: (fileName) => files[fileName] ?? ts.sys.readFile(fileName),
+  };
+  const options = { ...defaultCompilerOptions, ...params.compilerOptions };
+  return ts.createProgram(params.rootNames ?? Object.keys(files), options, host);
 }
 
 /** Parsed once: every check pulls in the same lib files. */

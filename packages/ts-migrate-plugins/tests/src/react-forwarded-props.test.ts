@@ -1,16 +1,14 @@
 import path from 'path';
 import ts from 'typescript';
-import { createTypeChecker, fixturePluginParams, FileMap } from '../test-utils';
+import {
+  createTypeChecker,
+  fixturePluginParams,
+  reactCompilerOptions as compilerOptions,
+} from '../test-utils';
 import reactForwardedPropsPlugin from '../../src/plugins/react-forwarded-props';
 
 const rootDir = __dirname;
 const fixtureFile = path.join(rootDir, 'react-forwarded-props-fixture.tsx');
-
-const compilerOptions: ts.CompilerOptions = {
-  jsx: ts.JsxEmit.React,
-  esModuleInterop: true,
-  skipLibCheck: true,
-};
 
 const target = `\
 import React from 'react';
@@ -26,14 +24,14 @@ export default function Icon({ name, size, className }: IconProps) {
 }
 `;
 
-function run(text: string, extraFiles?: FileMap): string {
+function run(text: string): string {
   const result = reactForwardedPropsPlugin.run(
     fixturePluginParams({
       rootDir,
       fileName: fixtureFile,
       text,
       compilerOptions,
-      extraFiles: { 'react-forwarded-props-target.tsx': target, ...extraFiles },
+      extraFiles: { 'react-forwarded-props-target.tsx': target },
     }),
   );
   return typeof result === 'string' ? result : text;

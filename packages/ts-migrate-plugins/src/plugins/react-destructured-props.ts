@@ -8,6 +8,7 @@ import {
   unwrapReactMemo,
 } from './utils/react';
 import { createPropsTypeNameGetter } from './utils/react-props';
+import { innermostNodeAt } from './utils/token-pos';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 import {
@@ -492,7 +493,7 @@ function blameMembers(
       return;
     }
 
-    const node = nodeAt(source, toOriginalPos(start, changes));
+    const node = innermostNodeAt(source, toOriginalPos(start, changes));
     const named = node && namedMembers(node, byKey, byBinding);
     if (named && named.length > 0) {
       named.forEach((member) => blamed.add(member));
@@ -589,17 +590,6 @@ function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   } else {
     map.set(key, [value]);
   }
-}
-
-function nodeAt(source: ts.SourceFile, position: number): ts.Node | undefined {
-  let result: ts.Node | undefined;
-  const visit = (node: ts.Node): void => {
-    if (position < node.getStart(source) || position >= node.end) return;
-    result = node;
-    node.forEachChild(visit);
-  };
-  source.forEachChild(visit);
-  return result;
 }
 
 function forEachDescendant(node: ts.Node, visitor: (child: ts.Node) => void): void {

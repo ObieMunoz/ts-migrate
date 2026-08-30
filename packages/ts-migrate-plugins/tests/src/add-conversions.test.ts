@@ -1,6 +1,8 @@
 import ts from 'typescript';
-import { realPluginParams } from '../test-utils';
+import { realPluginParams, realPluginRunner } from '../test-utils';
 import addConversionsPlugin from '../../src/plugins/add-conversions';
+
+const run = realPluginRunner(addConversionsPlugin);
 
 describe('add-conversions plugin', () => {
   const text = `\
@@ -25,7 +27,7 @@ console.log(a.c);
 `;
 
   it('adds conversions', async () => {
-    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`\
 const a = {};
@@ -50,9 +52,7 @@ console.log((a as any).c);
   });
 
   it('adds conversions with alias', async () => {
-    const result = addConversionsPlugin.run(
-      await realPluginParams({ text, options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await run(text, { options: { anyAlias: '$TSFixMe' } });
 
     expect(result).toBe(`\
 const a = {};
@@ -86,7 +86,7 @@ if (result) {
 }
 cache.other = 2
 `;
-    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`\
 const cache = {}
@@ -106,7 +106,7 @@ function f(u: unknown) {
 }
 `;
 
-    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`\
 function f(u: unknown) {
@@ -125,7 +125,7 @@ class PublishEvent {
   addEventListener = () => document.addEventListener(this._eventName, this.publish);
 }
 `;
-    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`\
 class PublishEvent {
@@ -140,7 +140,7 @@ class PublishEvent {
 
   it('Nested Expression Statements (issue #144) Part 1: Expression Statement -> Expression Statement', async () => {
     const text = `var window = { onResetData: function () { this.clearNextPush = function () { this.setState({ history: [] }); }; } };`;
-    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(
       `var window = { onResetData: function () { (this as any).clearNextPush = function () { (this as any).setState({ history: [] }); }; } };`,
@@ -149,7 +149,7 @@ class PublishEvent {
 
   it('Nested Expression Statements (issue #144) Part 2: Expression Statement -> If Statement -> Expression Statement', async () => {
     const text = `const window = { onResetData() { this.clearNextPush = function () {\n    if (this.setState) {\n    this.setState({ history: [] });\n} }; } };`;
-    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(
       `const window = { onResetData() { (this as any).clearNextPush = function () {\n    if ((this as any).setState) {\n        (this as any).setState({ history: [] });\n    }\n}; } };`,
@@ -170,7 +170,7 @@ function buildList(allowed) {
   }, []);
 }
 `;
-    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`\
 const registry = {};
@@ -195,7 +195,7 @@ export function pick(name: string) {
   return colors[name].toUpperCase();
 }
 `;
-    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`\
 const colors = { red: '#f00', blue: '#00f' };
@@ -216,7 +216,7 @@ export function read(key: string, code: number) {
   return byCode[code];
 }
 `;
-    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`\
 const config = { theme: { dark: 1, light: 2 } };
@@ -239,7 +239,7 @@ export function read(key: string) {
   return [cache[key], rows[key], mixed[key], globalThis.myGlobal];
 }
 `;
-    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`\
 const cache = {};
@@ -260,7 +260,7 @@ export function pick(index: number, get: () => { a: number }, key: string) {
   return [colors[index], get()[key]];
 }
 `;
-    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`\
 const colors = { red: 1, blue: 2 };
@@ -279,9 +279,7 @@ export function read(key: string) {
   return cache[key];
 }
 `;
-    const result = addConversionsPlugin.run(
-      await realPluginParams({ text, options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await run(text, { options: { anyAlias: '$TSFixMe' } });
 
     expect(result).toBe(`\
 const cache = {};
@@ -326,13 +324,12 @@ const a = <ns.Missing value={1} />;
 const b = <ns.Other>text</ns.Other>;
 const c = <ns.deep.Nested />;
 `;
-    const params = await realPluginParams({
+    const result = await run(text, {
       fileName: 'file.tsx',
-      text,
       compilerOptions: { jsx: ts.JsxEmit.React },
     });
 
-    expect(addConversionsPlugin.run(params)).toBe(text);
+    expect(result).toBe(text);
   });
 
   it('converts outside a tag name in a file that has one', async () => {
@@ -341,13 +338,12 @@ const ns = {};
 
 const a = <ns.Missing value={ns.count} />;
 `;
-    const params = await realPluginParams({
+    const result = await run(text, {
       fileName: 'file.tsx',
-      text,
       compilerOptions: { jsx: ts.JsxEmit.React },
     });
 
-    expect(addConversionsPlugin.run(params)).toBe(`\
+    expect(result).toBe(`\
 const ns = {};
 
 const a = <ns.Missing value={(ns as any).count}/>;
@@ -366,7 +362,7 @@ it("tests", () => {
   };
 });
 `;
-    const result = addConversionsPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`\
 import customUtils from "custom-utils";
@@ -417,9 +413,6 @@ export function useSettingsFlag<F extends keyof Settings>(flag: F): Settings[F] 
 export const settings = { code: 'USD' };
 `;
 
-  const run = async (text: string, extraFiles: { [fileName: string]: string }) =>
-    addConversionsPlugin.run(await realPluginParams({ text, extraFiles }));
-
   it('casts an import the test mocks to jest.Mock', async () => {
     const text = `import { useSettingsFlag } from './hooks';
 
@@ -431,7 +424,7 @@ test('reads the flag', () => {
   useSettingsFlag.mockReturnValue({ code: 'USD' });
 });
 `;
-    const result = await run(text, { 'jest.d.ts': jestTypes, 'hooks.ts': hooks });
+    const result = await run(text, { extraFiles: { 'jest.d.ts': jestTypes, 'hooks.ts': hooks } });
 
     expect(result).toBe(`import { useSettingsFlag } from './hooks';
 
@@ -458,7 +451,7 @@ test('reads the flag', () => {
   mockFlag.mockReturnValue({ code: 'USD' });
 });
 `;
-    const result = await run(text, { 'jest.d.ts': jestTypes, 'hooks.ts': hooks });
+    const result = await run(text, { extraFiles: { 'jest.d.ts': jestTypes, 'hooks.ts': hooks } });
 
     expect(result).toBe(`import { useSettingsFlag } from './hooks';
 
@@ -480,7 +473,7 @@ test('reads the flag', () => {
   settings.mockReturnValue({ code: 'USD' });
 });
 `;
-    const result = await run(text, { 'jest.d.ts': jestTypes, 'hooks.ts': hooks });
+    const result = await run(text, { extraFiles: { 'jest.d.ts': jestTypes, 'hooks.ts': hooks } });
 
     expect(result).toBe(`import { settings } from './hooks';
 
@@ -497,7 +490,7 @@ test('reads the flag', () => {
 
 useSettingsFlag.mockReturnValue({ code: 'USD' });
 `;
-    const result = await run(text, { 'hooks.ts': hooks });
+    const result = await run(text, { extraFiles: { 'hooks.ts': hooks } });
 
     expect(result).toBe(`import { useSettingsFlag } from './hooks';
 
@@ -514,7 +507,7 @@ test('reads the flag', () => {
   useSettingsFlag.notAMockMethod();
 });
 `;
-    const result = await run(text, { 'jest.d.ts': jestTypes, 'hooks.ts': hooks });
+    const result = await run(text, { extraFiles: { 'jest.d.ts': jestTypes, 'hooks.ts': hooks } });
 
     expect(result).toBe(`import { useSettingsFlag } from './hooks';
 

@@ -1,6 +1,8 @@
-import { mockPluginParams, realPluginParams } from '../test-utils';
+import { mockPluginParams, realPluginRunner } from '../test-utils';
 import reactInlineImportedPropTypesPlugin from '../../src/plugins/react-inline-imported-prop-types';
 import reactPropsPlugin from '../../src/plugins/react-props';
+
+const run = realPluginRunner(reactInlineImportedPropTypesPlugin);
 
 describe('react-inline-imported-prop-types plugin', () => {
   const messagePropTypesModule = `import PropTypes from 'prop-types';
@@ -24,13 +26,10 @@ MessageList.propTypes = messagePropTypes;
 export default MessageList;
 `;
 
-    const result = await reactInlineImportedPropTypesPlugin.run(
-      await realPluginParams({
-        fileName: 'components/MessageList.tsx',
-        text,
-        extraFiles: { 'components/messagePropTypes.ts': messagePropTypesModule },
-      }),
-    );
+    const result = await run(text, {
+      fileName: 'components/MessageList.tsx',
+      extraFiles: { 'components/messagePropTypes.ts': messagePropTypesModule },
+    });
 
     expect(result).toBe(`import React from 'react';
 import PropTypes from "prop-types";
@@ -61,13 +60,10 @@ MessageList.propTypes = messagePropTypes;
 export default MessageList;
 `;
 
-    const inlined = await reactInlineImportedPropTypesPlugin.run(
-      await realPluginParams({
-        fileName: 'components/MessageList.tsx',
-        text,
-        extraFiles: { 'components/messagePropTypes.ts': messagePropTypesModule },
-      }),
-    );
+    const inlined = await run(text, {
+      fileName: 'components/MessageList.tsx',
+      extraFiles: { 'components/messagePropTypes.ts': messagePropTypesModule },
+    });
 
     const result = await reactPropsPlugin.run(
       mockPluginParams({ text: inlined as string, fileName: 'MessageList.tsx' }),
@@ -99,12 +95,10 @@ const MessageList = (props) => {
 MessageList.propTypes = messageProps;
 `;
 
-    const result = await reactInlineImportedPropTypesPlugin.run(
-      await realPluginParams({
-        fileName: 'components/MessageList.tsx',
-        text,
-        extraFiles: {
-          'components/messagePropTypes.ts': `import PropTypes from 'prop-types';
+    const result = await run(text, {
+      fileName: 'components/MessageList.tsx',
+      extraFiles: {
+        'components/messagePropTypes.ts': `import PropTypes from 'prop-types';
 
 const messagePropTypes = {
   text: PropTypes.string,
@@ -112,9 +106,8 @@ const messagePropTypes = {
 
 export default messagePropTypes;
 `,
-        },
-      }),
-    );
+      },
+    });
 
     expect(result).toBe(`import React from 'react';
 import PropTypes from "prop-types";
@@ -138,20 +131,17 @@ const Foo = (props) => <div />;
 Foo.propTypes = propTypeShapes.fooPropTypes;
 `;
 
-    const result = await reactInlineImportedPropTypesPlugin.run(
-      await realPluginParams({
-        fileName: 'components/Foo.tsx',
-        text,
-        extraFiles: {
-          'components/shapes.ts': `import PropTypes from 'prop-types';
+    const result = await run(text, {
+      fileName: 'components/Foo.tsx',
+      extraFiles: {
+        'components/shapes.ts': `import PropTypes from 'prop-types';
 
 export const fooPropTypes = {
   foo: PropTypes.bool,
 };
 `,
-        },
-      }),
-    );
+      },
+    });
 
     expect(result).toBe(`import React from 'react';
 import PropTypes from "prop-types";
@@ -177,13 +167,10 @@ class MessageList extends React.Component {
 }
 `;
 
-    const result = await reactInlineImportedPropTypesPlugin.run(
-      await realPluginParams({
-        fileName: 'components/MessageList.tsx',
-        text,
-        extraFiles: { 'components/messagePropTypes.ts': messagePropTypesModule },
-      }),
-    );
+    const result = await run(text, {
+      fileName: 'components/MessageList.tsx',
+      extraFiles: { 'components/messagePropTypes.ts': messagePropTypesModule },
+    });
 
     expect(result).toBe(`import React from 'react';
 import PropTypes from "prop-types";
@@ -211,13 +198,10 @@ const MessageList = (props) => <div />;
 MessageList.propTypes = forbidExtraProps(messagePropTypes);
 `;
 
-    const result = await reactInlineImportedPropTypesPlugin.run(
-      await realPluginParams({
-        fileName: 'components/MessageList.tsx',
-        text,
-        extraFiles: { 'components/messagePropTypes.ts': messagePropTypesModule },
-      }),
-    );
+    const result = await run(text, {
+      fileName: 'components/MessageList.tsx',
+      extraFiles: { 'components/messagePropTypes.ts': messagePropTypesModule },
+    });
 
     expect(result).toBe(`import React from 'react';
 import { forbidExtraProps } from 'airbnb-prop-types';
@@ -241,21 +225,18 @@ const Row = (props) => <div />;
 Row.propTypes = rowPropTypes;
 `;
 
-    const result = await reactInlineImportedPropTypesPlugin.run(
-      await realPluginParams({
-        fileName: 'components/Row.tsx',
-        text,
-        extraFiles: {
-          'components/rowPropTypes.ts': `import PropTypes from 'prop-types';
+    const result = await run(text, {
+      fileName: 'components/Row.tsx',
+      extraFiles: {
+        'components/rowPropTypes.ts': `import PropTypes from 'prop-types';
 import { forbidExtraProps } from 'airbnb-prop-types';
 
 export const rowPropTypes = forbidExtraProps({
   id: PropTypes.number.isRequired,
 });
 `,
-        },
-      }),
-    );
+      },
+    });
 
     expect(result).toBe(`import React from 'react';
 import { forbidExtraProps } from "airbnb-prop-types";
@@ -284,20 +265,17 @@ const Foo = (props) => <div />;
 Foo.propTypes = propTypes;
 `;
 
-    const result = await reactInlineImportedPropTypesPlugin.run(
-      await realPluginParams({
-        fileName: 'components/Foo.tsx',
-        text,
-        extraFiles: {
-          'components/shared.ts': `import PropTypes from 'prop-types';
+    const result = await run(text, {
+      fileName: 'components/Foo.tsx',
+      extraFiles: {
+        'components/shared.ts': `import PropTypes from 'prop-types';
 
 export const sharedPropTypes = {
   baz: PropTypes.number,
 };
 `,
-        },
-      }),
-    );
+      },
+    });
 
     expect(result).toBe(`import React from 'react';
 import PropTypes from 'prop-types';
@@ -322,12 +300,10 @@ const Card = (props) => <div />;
 Card.propTypes = cardPropTypes;
 `;
 
-    const result = await reactInlineImportedPropTypesPlugin.run(
-      await realPluginParams({
-        fileName: 'components/Card.tsx',
-        text,
-        extraFiles: {
-          'shapes/cardPropTypes.ts': `import PropTypes from 'prop-types';
+    const result = await run(text, {
+      fileName: 'components/Card.tsx',
+      extraFiles: {
+        'shapes/cardPropTypes.ts': `import PropTypes from 'prop-types';
 import userShape from './userShape';
 
 export const cardPropTypes = {
@@ -335,9 +311,8 @@ export const cardPropTypes = {
   label: PropTypes.string,
 };
 `,
-        },
-      }),
-    );
+      },
+    });
 
     expect(result).toBe(`import React from 'react';
 import userShape from "../shapes/userShape";
@@ -363,13 +338,10 @@ MessageList.propTypes = messagePropTypes;
 export const keys = Object.keys(messagePropTypes);
 `;
 
-    const result = await reactInlineImportedPropTypesPlugin.run(
-      await realPluginParams({
-        fileName: 'components/MessageList.tsx',
-        text,
-        extraFiles: { 'components/messagePropTypes.ts': messagePropTypesModule },
-      }),
-    );
+    const result = await run(text, {
+      fileName: 'components/MessageList.tsx',
+      extraFiles: { 'components/messagePropTypes.ts': messagePropTypesModule },
+    });
 
     expect(result).toBe(`import React from 'react';
 import { messagePropTypes } from './messagePropTypes';
@@ -395,12 +367,10 @@ const Foo = (props) => <div />;
 Foo.propTypes = badPropTypes;
 `;
 
-    const result = await reactInlineImportedPropTypesPlugin.run(
-      await realPluginParams({
-        fileName: 'components/Foo.tsx',
-        text,
-        extraFiles: {
-          'components/badPropTypes.ts': `import PropTypes from 'prop-types';
+    const result = await run(text, {
+      fileName: 'components/Foo.tsx',
+      extraFiles: {
+        'components/badPropTypes.ts': `import PropTypes from 'prop-types';
 
 const validators = {
   custom: () => null,
@@ -411,9 +381,8 @@ export const badPropTypes = {
   other: PropTypes.string,
 };
 `,
-        },
-      }),
-    );
+      },
+    });
 
     expect(result).toBeUndefined();
   });
@@ -427,9 +396,7 @@ const Foo = (props) => <div />;
 Foo.propTypes = libPropTypes;
 `;
 
-    const result = await reactInlineImportedPropTypesPlugin.run(
-      await realPluginParams({ fileName: 'components/Foo.tsx', text }),
-    );
+    const result = await run(text, { fileName: 'components/Foo.tsx' });
 
     expect(result).toBeUndefined();
   });
@@ -445,20 +412,17 @@ const Card = (props) => <div />;
 Card.propTypes = cardPropTypes;
 `;
 
-    const result = await reactInlineImportedPropTypesPlugin.run(
-      await realPluginParams({
-        fileName: 'components/Card.tsx',
-        text,
-        extraFiles: {
-          'components/cardPropTypes.ts': `import userShape from './userShape';
+    const result = await run(text, {
+      fileName: 'components/Card.tsx',
+      extraFiles: {
+        'components/cardPropTypes.ts': `import userShape from './userShape';
 
 export const cardPropTypes = {
   user: userShape,
 };
 `,
-        },
-      }),
-    );
+      },
+    });
 
     expect(result).toBeUndefined();
   });

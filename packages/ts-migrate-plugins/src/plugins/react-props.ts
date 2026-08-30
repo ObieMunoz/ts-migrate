@@ -591,10 +591,6 @@ function deleteClassPropTypes(classDeclaration: ts.ClassDeclaration, sourceFile:
         index: member.pos,
         length: member.end - member.pos,
       });
-
-      if (member.initializer && ts.isIdentifier(member.initializer)) {
-        updates.push(...deleteIdRef(member.initializer, sourceFile));
-      }
     }
   }
 
@@ -621,41 +617,6 @@ function deletePropTypesStatements(componentName: string, sourceFile: ts.SourceF
         index: statement.pos,
         length: statement.end - statement.pos,
       });
-
-      if (
-        ts.isBinaryExpression(statement.expression) &&
-        ts.isIdentifier(statement.expression.right)
-      ) {
-        updates.push(...deleteIdRef(statement.expression.right, sourceFile));
-      }
-    }
-  }
-
-  return updates;
-}
-
-function deleteIdRef(idenifier: ts.Identifier, sourceFile: ts.SourceFile) {
-  const updates: SourceTextUpdate[] = [];
-
-  for (const statement of sourceFile.statements) {
-    if (ts.isVariableDeclarationList(statement) && statement.declarations.length === 1) {
-      const declaration = statement.declarations[0];
-      if (
-        ts.isVariableDeclaration(declaration) &&
-        ts.isIdentifier(declaration.name) &&
-        declaration.name.text === idenifier.text
-      ) {
-        if (declaration.initializer && ts.isIdentifier(declaration.initializer)) {
-          updates.push(
-            {
-              kind: 'delete',
-              index: declaration.pos,
-              length: declaration.end - declaration.pos,
-            },
-            ...deleteIdRef(declaration.initializer, sourceFile),
-          );
-        }
-      }
     }
   }
 

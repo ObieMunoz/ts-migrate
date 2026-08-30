@@ -1,15 +1,8 @@
 import ts from 'typescript';
 import { printType, PrintTypeOptions, TypePrintRefusal } from '../../../src/utils/typePrinter';
+import { createInMemoryProgram } from '../../test-utils';
 
 const fileName = '/print.ts';
-
-const compilerOptions: ts.CompilerOptions = {
-  strict: true,
-  noEmit: true,
-  target: ts.ScriptTarget.ES2020,
-  module: ts.ModuleKind.ESNext,
-  moduleResolution: ts.ModuleResolutionKind.Bundler,
-};
 
 /** Prints the type of `const value = <expression>` from the file's own scope. */
 function print(
@@ -22,23 +15,7 @@ function print(
     ...extraFiles,
     [fileName]: `${declarations}\nconst value = ${expression};\n`,
   };
-  const host: ts.CompilerHost = {
-    getSourceFile: (name, languageVersion) => {
-      const contents = files[name] ?? ts.sys.readFile(name);
-      return contents === undefined
-        ? undefined
-        : ts.createSourceFile(name, contents, languageVersion, true);
-    },
-    getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
-    writeFile: () => {},
-    getCurrentDirectory: () => '/',
-    getCanonicalFileName: (name) => name,
-    useCaseSensitiveFileNames: () => true,
-    getNewLine: () => '\n',
-    fileExists: (name) => name in files || ts.sys.fileExists(name),
-    readFile: (name) => files[name] ?? ts.sys.readFile(name),
-  };
-  const program = ts.createProgram([fileName], compilerOptions, host);
+  const program = createInMemoryProgram(files, { rootNames: [fileName] });
   const source = program.getSourceFile(fileName);
   if (!source) throw new Error('no source file');
 

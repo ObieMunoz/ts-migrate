@@ -1,8 +1,7 @@
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import full from '../../../commands/full';
-import { deleteDir, transcriptLines } from '@obiemunoz/ts-migrate-test-utils';
+import { createTmpDir, deleteDir, transcriptLines } from '@obiemunoz/ts-migrate-test-utils';
 
 /**
  * A plugin that throws is the one failure the migrate step cannot report on its
@@ -29,7 +28,7 @@ let rootDir: string;
 
 beforeEach(() => {
   transcriptLines.length = 0;
-  rootDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-full-throw-'));
+  rootDir = createTmpDir('ts-migrate-full-throw-');
   fs.mkdirSync(path.join(rootDir, 'src'));
   fs.writeFileSync(path.join(rootDir, 'package.json'), '{ "name": "demo" }\n');
   fs.writeFileSync(path.join(rootDir, 'src', 'index.js'), 'module.exports = 1;\n');

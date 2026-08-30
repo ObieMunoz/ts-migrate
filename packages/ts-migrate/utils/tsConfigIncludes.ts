@@ -9,6 +9,20 @@ import { appendJSON5ArrayItem } from './updateJSON5';
 const canonical = (fileName: string): string =>
   ts.sys.useCaseSensitiveFileNames ? path.resolve(fileName) : path.resolve(fileName).toLowerCase();
 
+/** The file set a parsed tsconfig object resolves to, or a throw naming what stopped it. */
+export function parseConfigFileNames(config: unknown, rootDir: string, configFile: string): string[] {
+  const { fileNames, errors } = ts.parseJsonConfigFileContent(config, ts.sys, rootDir);
+  if (errors.length > 0) {
+    const errorMessage = ts.formatDiagnostics(errors, {
+      getCanonicalFileName: (fileName) => fileName,
+      getCurrentDirectory: () => rootDir,
+      getNewLine: () => ts.sys.newLine,
+    });
+    throw new Error(`Errors parsing TypeScript config file content: ${configFile}\n${errorMessage}`);
+  }
+  return fileNames;
+}
+
 /** Whether a parsed tsconfig object resolves to a file set containing filePath. */
 function matchesFile(config: unknown, rootDir: string, filePath: string): boolean {
   const target = canonical(filePath);

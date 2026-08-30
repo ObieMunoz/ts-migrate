@@ -1,11 +1,8 @@
 import path from 'path';
-import ts from 'typescript';
-import { fixturePluginParams, mockPluginParams, realPluginParams } from '../test-utils';
+import { fixturePluginParams, mockPluginParams, realPluginRunner } from '../test-utils';
 import retryAnnotationsPlugin from '../../src/plugins/retry-annotations';
 
-async function run(text: string, compilerOptions?: ts.CompilerOptions): Promise<string | void> {
-  return retryAnnotationsPlugin.run(await realPluginParams({ text, compilerOptions }));
-}
+const run = realPluginRunner(retryAnnotationsPlugin);
 
 // The types a dependency brings, in a module the validation programs resolve
 // from disk the way they would resolve an installed @types package.
@@ -169,7 +166,9 @@ export const name = 'widget';
 `;
 
     expect(await run(text)).toBe(text);
-    expect(await run(text, { strict: false, noImplicitAny: false })).toBe(text);
+    expect(await run(text, { compilerOptions: { strict: false, noImplicitAny: false } })).toBe(
+      text,
+    );
   });
 
   it('leaves a class property to the type its constructor assignment gives it', async () => {
@@ -307,7 +306,9 @@ export declare const configured: any;
 }
 `;
 
-    expect(await run(text, { strict: false, noImplicitAny: false })).toBe(text);
+    expect(await run(text, { compilerOptions: { strict: false, noImplicitAny: false } })).toBe(
+      text,
+    );
   });
 
   it('does not query the language service for a file with no any annotation', () => {

@@ -1,5 +1,9 @@
-import { realPluginParams } from '../test-utils';
+import { realPluginRunner } from '../test-utils';
 import reactPropsFromUsagePlugin from '../../src/plugins/react-props-from-usage';
+
+const runPlugin = realPluginRunner(reactPropsFromUsagePlugin, {
+  compilerOptions: { jsx: 2 /* React */ },
+});
 
 /**
  * Params for the component file, with optional extra files visible to the
@@ -20,13 +24,5 @@ export async function runAs(
   extraFiles: Record<string, string> = {},
   options: Record<string, unknown> = {},
 ) {
-  return reactPropsFromUsagePlugin.run(
-    await realPluginParams({
-      fileName,
-      text,
-      options,
-      compilerOptions: { jsx: 2 /* React */ },
-      extraFiles,
-    }),
-  );
+  return runPlugin(text, { fileName, options, extraFiles });
 }

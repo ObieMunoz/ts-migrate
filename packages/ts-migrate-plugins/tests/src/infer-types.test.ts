@@ -2,9 +2,11 @@ import fs from 'fs';
 import ts from 'typescript';
 import type { PluginFileNotice } from '@obiemunoz/ts-migrate-server';
 import { createTmpDir } from '@obiemunoz/ts-migrate-test-utils';
-import { midRunProject, realPluginParams, typeCheck } from '../test-utils';
+import { midRunProject, realPluginParams, realPluginRunner, typeCheck } from '../test-utils';
 import inferTypesPlugin from '../../src/plugins/infer-types';
 import explicitAnyPlugin from '../../src/plugins/explicit-any';
+
+const run = realPluginRunner(inferTypesPlugin);
 
 describe('infer-types plugin', () => {
   it('infers parameter types from call sites', async () => {
@@ -14,7 +16,7 @@ describe('infer-types plugin', () => {
 add(1, 2);
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`function add(a: number, b: number) {
   return a + b;
@@ -29,7 +31,7 @@ add(1, 2);
 }
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`function greet(name: string) {
   return 'hello ' + name.toUpperCase();
@@ -42,7 +44,7 @@ add(1, 2);
 sum(1, 2, 3);
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`function sum(...rest: number[]) {}
 sum(1, 2, 3);
@@ -54,7 +56,7 @@ sum(1, 2, 3);
 somePromise.then(res1 => res1.default || res1);
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`declare const somePromise: any;
 somePromise.then((res1: { default: any; }) => res1.default || res1);
@@ -69,7 +71,7 @@ const c = new C();
 c.val = 42;
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`class C {
   set val(v: number) {}
@@ -85,7 +87,7 @@ c.val = 42;
 }
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBeUndefined();
   });
@@ -94,7 +96,7 @@ c.val = 42;
     const text = `function f4() { this.a = 1; }
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBeUndefined();
   });
@@ -106,7 +108,7 @@ c.val = 42;
 track({ name: 'add', metadata: {} });
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`function track(event: { name: any; metadata?: any; }) {
   return event.name;
@@ -122,7 +124,7 @@ track({ name: 'add', metadata: {} });
 mergeConfig({ id: 1 }, {});
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`function mergeConfig(base: { id: number; }, overrides) {
   return { ...base, overrides };
@@ -138,7 +140,7 @@ mergeConfig({ id: 1 }, {});
 track({ name: 'add', tags: [] });
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`function track(event: { name: any; tags?: any[]; }) {
   return event.name;
@@ -154,9 +156,7 @@ track({ name: 'add', tags: [] });
 track({ name: 'add', tags: [] });
 `;
 
-    const result = await inferTypesPlugin.run(
-      await realPluginParams({ text, compilerOptions: { strict: false, noImplicitAny: true } }),
-    );
+    const result = await run(text, { compilerOptions: { strict: false, noImplicitAny: true } });
 
     expect(result).toBe(`function track(event: { name: any; tags?: any[]; }) {
   return event.name;
@@ -172,7 +172,7 @@ track({ name: 'add', tags: [] });
 track({ name: 'add', tags: [undefined] });
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`function track(event: { name: any; tags?: undefined[]; }) {
   return event.name;
@@ -188,7 +188,7 @@ track({ name: 'add', tags: [undefined] });
 buildList([]);
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBeUndefined();
   });
@@ -200,7 +200,7 @@ buildList([]);
 keep({ '{}': 1, real: {} });
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`function keep(o: { '{}': number; real: any; }) {
   return o;
@@ -213,7 +213,7 @@ keep({ '{}': 1, real: {} });
     const text = `const x: number = 1;
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBeUndefined();
   });
@@ -225,9 +225,7 @@ keep({ '{}': 1, real: {} });
 add(1, 2);
 `;
 
-    const result = await inferTypesPlugin.run(
-      await realPluginParams({ text, compilerOptions: { strict: false, noImplicitAny: false } }),
-    );
+    const result = await run(text, { compilerOptions: { strict: false, noImplicitAny: false } });
 
     expect(result).toBe(`function add(a: number, b: number) {
   return a + b;
@@ -266,7 +264,7 @@ add(1, 2);
 logId(42);
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`function logId(id: number) {
   console.log(id);
@@ -283,7 +281,7 @@ greet('bob');
 greet(42);
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     // The improper call site becomes a type error for ts-ignore to flag.
     expect(result).toBe(`function greet(name: string) {
@@ -301,7 +299,7 @@ greet(42);
 fire(42);
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`function fire(h: { onReady: () => void; }) {
   h.onReady();
@@ -318,7 +316,7 @@ logId(42);
 logId({ name: 'outlier' });
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBeUndefined();
   });
@@ -331,7 +329,7 @@ add(1, 2);
 add(1, '2');
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBeUndefined();
   });
@@ -347,7 +345,7 @@ const save = (dispatch, api) => {
 };
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     // save's dispatch is called with incompatible shapes (a function and a
     // plain action), so no inferred type can satisfy its body; api keeps its
@@ -371,7 +369,7 @@ const save = (dispatch, api: (arg0: { method: string; url: string; }) => void) =
 };
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     // The outer return type is what types these; inferring them from this one
     // body would narrow dispatch to the single action it happens to send.
@@ -386,7 +384,7 @@ const save = (dispatch, api: (arg0: { method: string; url: string; }) => void) =
 }
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBeUndefined();
   });
@@ -400,7 +398,7 @@ const save = (dispatch, api: (arg0: { method: string; url: string; }) => void) =
 };
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     // fmt is called where it is declared, so its own call sites are the
     // evidence for it; only the returned function's parameters are refused.
@@ -422,7 +420,7 @@ const load = () => (dispatch) => {
 };
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`const send = (dispatch: (arg0: { type: string; }) => void) => {
   dispatch({ type: 'LOAD' });
@@ -441,7 +439,7 @@ declare function register(f: (s: string) => void): void;
 register(wrap);
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     // The mismatched register(wrap) call becomes a type error for ts-ignore
     // to flag; wrap's body-derived annotation stays.
@@ -466,7 +464,7 @@ const registered: (f: (s: string) => void) => void = wrap;
 export default registered;
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`function wrap(cb: (arg0: number) => any) {
   return cb(1);
@@ -509,7 +507,7 @@ function getItem(id) {
 getItem('abc');
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`declare function showErr(dispatch: (msg: string) => void): void;
 declare function setFlag(v: boolean): number;
@@ -539,7 +537,7 @@ function getItem(id) {
 getItem('abc');
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`declare function showErr(dispatch: (msg: string) => void): void;
 
@@ -572,7 +570,7 @@ function getItem(id) {
 getItem('abc');
 `;
 
-    const result = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const result = await run(text);
 
     expect(result).toBe(`declare function showErr(dispatch: (msg: string) => void): void;
 declare function each(items: string[], cb: (item: string) => void): void;
@@ -597,7 +595,7 @@ getItem('abc');
 }
 `;
 
-    const inferred = await inferTypesPlugin.run(await realPluginParams({ text }));
+    const inferred = await run(text);
     const result = await explicitAnyPlugin.run(
       await realPluginParams({
         text: typeof inferred === 'string' ? inferred : text,

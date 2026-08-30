@@ -1,7 +1,7 @@
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
-import { resolvesToDeclaration } from './utils/identifiers';
+import { collectIdentifierNodes, resolvesToDeclaration } from './utils/identifiers';
 
 /**
  * Converts arrow functions that are referenced before their declaration into
@@ -175,26 +175,21 @@ function findReferences(
   byName: Map<string, Candidate[]>,
   checker: ts.TypeChecker,
 ): void {
-  const visit = (node: ts.Node) => {
-    if (ts.isIdentifier(node)) {
-      const list = byName.get(node.text);
-      if (list) {
-        list.forEach((candidate) => {
-          if (node === candidate.name || candidate.escapesBlock) return;
-          const before = !candidate.usedBefore && node.end <= candidate.statementStart;
-          const escapes =
-            candidate.block != null &&
-            (node.pos < candidate.block.pos || node.end > candidate.block.end);
-          if ((before || escapes) && resolvesToDeclaration(node, candidate.declaration, checker)) {
-            if (before) candidate.usedBefore = true;
-            if (escapes) candidate.escapesBlock = true;
-          }
-        });
+  collectIdentifierNodes(sourceFile).forEach((node) => {
+    const list = byName.get(node.text);
+    if (!list) return;
+    list.forEach((candidate) => {
+      if (node === candidate.name || candidate.escapesBlock) return;
+      const before = !candidate.usedBefore && node.end <= candidate.statementStart;
+      const escapes =
+        candidate.block != null &&
+        (node.pos < candidate.block.pos || node.end > candidate.block.end);
+      if ((before || escapes) && resolvesToDeclaration(node, candidate.declaration, checker)) {
+        if (before) candidate.usedBefore = true;
+        if (escapes) candidate.escapesBlock = true;
       }
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(sourceFile);
+    });
+  });
 }
 
 function toFunctionDeclarationText(

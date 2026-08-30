@@ -7,6 +7,7 @@ import {
   collectIdentifierNodes,
   KnownDefinitionMap,
 } from './utils/identifiers';
+import { anyTypeNode } from './utils/anyTypes';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 
 type Options = AnyAliasOptions;
@@ -121,10 +122,6 @@ function hoistStaticClassProperties(
 ): string {
   const printer = ts.createPrinter();
   const updates: SourceTextUpdate[] = [];
-  const createAnyType = (): ts.TypeNode =>
-    options.anyAlias != null
-      ? ts.factory.createTypeReferenceNode(options.anyAlias, undefined)
-      : ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
 
   const classDeclarations = sourceFile.statements.filter(ts.isClassDeclaration);
   const knownDefinitions = {
@@ -169,7 +166,7 @@ function hoistStaticClassProperties(
             [ts.factory.createModifier(ts.SyntaxKind.StaticKeyword)],
             propertyName,
             undefined,
-            canHoist ? undefined : createAnyType(),
+            canHoist ? undefined : anyTypeNode(options.anyAlias),
             canHoist ? statement.expression.right : undefined,
           ),
         );

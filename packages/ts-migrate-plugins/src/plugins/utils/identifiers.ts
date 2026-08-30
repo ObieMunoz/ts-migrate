@@ -32,6 +32,22 @@ export function collectIdentifiers(sourceFile: ts.SourceFile): Set<string> {
 }
 
 /**
+ * Adds every name a binding introduces to `out`, descending through nested
+ * object and array patterns.
+ */
+export function collectBindingNames(name: ts.BindingName, out: Set<string>): void {
+  if (ts.isIdentifier(name)) {
+    out.add(name.text);
+    return;
+  }
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) {
+      collectBindingNames(element.name, out);
+    }
+  }
+}
+
+/**
  * Finds known imports
  * @param sourceFile
  */

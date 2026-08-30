@@ -1,15 +1,9 @@
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import getTokenAtPosition from './utils/token-pos';
-import { contestedSpans, isOverloaded } from './utils/signature-relaxation';
+import { isOverloaded, provenChanges } from './utils/signature-relaxation';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
-import {
-  applyTextChanges,
-  createFileLanguageService,
-  findNewErrors,
-  getValidationOptions,
-  TextChange,
-} from '../utils/candidateValidation';
+import { applyTextChanges, TextChange } from '../utils/candidateValidation';
 import { isMigratableFile } from '../utils/sourceFiles';
 import {
   addToFile,
@@ -56,7 +50,7 @@ const relaxParameterShapesPlugin: Plugin<Options> = {
     const planned = pass.plannedFor(fileName, text, () => plan(languageService));
     if (!planned) return undefined;
 
-    const kept = proven(fileName, text, sourceFile, planned.items, languageService);
+    const kept = provenChanges(fileName, text, sourceFile, planned.items, languageService);
     if (!kept) return undefined;
 
     const anyAlias = options.anyAlias ?? 'any';
@@ -263,37 +257,4 @@ function memberName(member: ts.TypeElement): string {
 
 function asAny(start: number, length: number): PlannedChange {
   return { start, length, text: 'any', writesAny: true };
-}
-
-/**
- * The relaxations that cost the declaring file nothing. An optional member
- * reads as `T | undefined` in the body, which the body can contradict; those
- * are dropped and the rest kept.
- */
-function proven(
-  fileName: string,
-  text: string,
-  sourceFile: ts.SourceFile,
-  changes: PlannedChange[],
-  languageService: ts.LanguageService,
-): PlannedChange[] | undefined {
-  const program = languageService.getProgram();
-  const compilerOptions = getValidationOptions(program ? program.getCompilerOptions() : {});
-  const baseline = createFileLanguageService(fileName, text, compilerOptions, program);
-
-  let kept = changes;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const candidateText = applyTextChanges(text, kept);
-    const candidate = createFileLanguageService(fileName, candidateText, compilerOptions, program);
-    const newErrors = findNewErrors(baseline, candidate, kept, fileName);
-    if (newErrors.length === 0) return kept;
-
-    const contested = contestedSpans(newErrors, kept, sourceFile);
-    const remaining = kept.filter(
-      (change) => !contested.some(({ pos, end }) => change.start >= pos && change.start <= end),
-    );
-    if (remaining.length === kept.length || remaining.length === 0) return undefined;
-    kept = remaining;
-  }
-  return undefined;
 }

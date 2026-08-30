@@ -260,10 +260,11 @@ function resolveSite(
   const { parent } = node;
   if (!parent) return undefined;
 
-  if (ts.isVariableDeclaration(parent) && parent.name === node && parent.initializer) {
-    return site(checker, parent, parent.initializer, source);
-  }
-  if (ts.isPropertyDeclaration(parent) && parent.name === node && parent.initializer) {
+  if (
+    (ts.isVariableDeclaration(parent) || ts.isPropertyDeclaration(parent)) &&
+    parent.name === node &&
+    parent.initializer
+  ) {
     return site(checker, parent, parent.initializer, source);
   }
   if (ts.isPropertyAssignment(parent) && parent.name === node) {
@@ -350,14 +351,11 @@ function assignedDeclaration(
  */
 function widenable(declaration: ts.Declaration | undefined): WidenableDeclaration | undefined {
   if (!declaration) return undefined;
-  if (
-    ts.isVariableDeclaration(declaration) ||
+  return ts.isVariableDeclaration(declaration) ||
     ts.isPropertyDeclaration(declaration) ||
     ts.isPropertySignature(declaration)
-  ) {
-    return declaration;
-  }
-  return undefined;
+    ? declaration
+    : undefined;
 }
 
 /**

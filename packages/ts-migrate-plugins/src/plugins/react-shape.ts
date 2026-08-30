@@ -46,6 +46,22 @@ const reactShapePlugin: Plugin<Options> = {
         shouldAddPropTypesImport = false;
       }
     };
+    const insertShapeType = (
+      index: number,
+      shapeNode: ts.CallExpression,
+      shapeName: string,
+      isArrayShapeType = false,
+    ) => {
+      updates.push({
+        kind: 'insert',
+        index,
+        text: `\n\n${printer.printNode(
+          ts.EmitHint.Unspecified,
+          getTypeForTheShape(shapeNode, shapeName, sourceFile, options, isArrayShapeType),
+          sourceFile,
+        )}`,
+      });
+    };
     // types are not exported in case if we direct export a variable, like export const Var = ...
     // we need to split export to the separate named export and remove modifier from the variable declaration
     const splitVariableExport = (
@@ -110,15 +126,7 @@ const reactShapePlugin: Plugin<Options> = {
             const shapeName = variableDeclaration.name.getText();
             // we are checking here, if there is existing interface/type with the same name in the file
             if (!declaresType(shapeName)) {
-              updates.push({
-                kind: 'insert',
-                index: node.pos,
-                text: `\n\n${printer.printNode(
-                  ts.EmitHint.Unspecified,
-                  getTypeForTheShape(shapeNode, shapeName, sourceFile, options),
-                  sourceFile,
-                )}`,
-              });
+              insertShapeType(node.pos, shapeNode, shapeName);
             }
             const updatedVariableDeclaration = ts.factory.updateVariableDeclaration(
               variableDeclaration,
@@ -153,15 +161,7 @@ const reactShapePlugin: Plugin<Options> = {
             // the declaration keeps no annotation naming the type, so this check is
             // all that stands between a rerun and a second declaration of the name
             if (!declaresType(shapeName)) {
-              updates.push({
-                kind: 'insert',
-                index: node.pos,
-                text: `\n\n${printer.printNode(
-                  ts.EmitHint.Unspecified,
-                  getTypeForTheShape(shapeNode, shapeName, sourceFile, options, true),
-                  sourceFile,
-                )}`,
-              });
+              insertShapeType(node.pos, shapeNode, shapeName, true);
             }
 
             if (exportModifier) {
@@ -182,15 +182,11 @@ const reactShapePlugin: Plugin<Options> = {
         const shapeNode = node.expression;
         const shapeName = baseName.split('.')[0];
 
-        updates.push({
-          kind: 'insert',
-          index: importDeclarations[importDeclarations.length - 1].end,
-          text: `\n\n${printer.printNode(
-            ts.EmitHint.Unspecified,
-            getTypeForTheShape(shapeNode, shapeName, sourceFile, options),
-            sourceFile,
-          )}`,
-        });
+        insertShapeType(
+          importDeclarations[importDeclarations.length - 1].end,
+          shapeNode,
+          shapeName,
+        );
 
         updates.push({
           kind: 'replace',

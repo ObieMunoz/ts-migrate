@@ -29,6 +29,14 @@ export function isReactClassComponent(classDeclaration: ts.ClassDeclaration): bo
   return false;
 }
 
+export function isThisPropsAccess(node: ts.Node): node is ts.PropertyAccessExpression {
+  return (
+    ts.isPropertyAccessExpression(node) &&
+    node.expression.kind === ts.SyntaxKind.ThisKeyword &&
+    node.name.text === 'props'
+  );
+}
+
 export function isReactSfcFunctionDeclaration(
   functionDeclaration: ts.FunctionDeclaration,
 ): boolean {

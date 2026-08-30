@@ -21,6 +21,14 @@ const CODE_TO_ENV: { [code: number]: EnvKey } = {
   2868: 'bun',
 };
 
+// The @types package each environment is typed by. `testRunner` is absent
+// because which runner wrote the tests is not something the diagnostic says.
+const ENV_TO_TYPES_PACKAGE: { [key in Exclude<EnvKey, 'testRunner'>]: string } = {
+  node: '@types/node',
+  jquery: '@types/jquery',
+  bun: '@types/bun',
+};
+
 // Environment globals the compiler reports as plain TS2304/TS2503 rather than
 // one of the dedicated codes above.
 const NAME_TO_ENV: { [name: string]: EnvKey } = {
@@ -537,6 +545,25 @@ export interface TypesPackageRecommendation {
   exampleNames: string[];
 }
 
+/** What a recommendation is counted from, whichever evidence it was gathered by. */
+interface RecommendationEvidence {
+  errorCount: number;
+  files: Set<string>;
+  names: Set<string>;
+}
+
+function recommendationFor(
+  packageName: string,
+  evidence: RecommendationEvidence,
+): TypesPackageRecommendation {
+  return {
+    packageName,
+    errorCount: evidence.errorCount,
+    fileCount: evidence.files.size,
+    exampleNames: exampleNames(evidence.names),
+  };
+}
+
 export interface TypesPackageReport {
   packageManager: PackageManager;
   /** The version off the `packageManager` pin, when the project has one. */
@@ -620,11 +647,138 @@ function projectInstallContext(rootDir: string): ProjectInstallContext {
   };
 }
 
+/**
+ * The @types package the test globals need, or the note to print instead when
+ * an install is not the answer. A note ends the matter for this environment:
+ * the caller prints it and moves on rather than recommending a package.
+ */
+function testRunnerRecommendation(
+  env: EnvEvidence,
+  rootDir: string,
+  declaredDeps: { [name: string]: string },
+): { packageName: string } | { note: string } {
+  // A runner the project declares names itself. One it does not declare
+  // still supplies these globals when a dependency brought it in, which is
+  // the shape create-react-app and a hoisting monorepo both leave behind,
+  // and the types it needs are the ones worth the most here. Falling back
+  // to what resolves is only unambiguous when a single runner does: a
+  // project holding two has no evidence here saying which one wrote the
+  // tests, and guessing would pin the wrong globals.
+  const declared = TEST_RUNNER_TYPES.find(([runner]) => declaredDeps[runner] !== undefined);
+  const installed = TEST_RUNNER_TYPES.filter(([runner]) => findInstalledPackage(rootDir, runner));
+  const runnerEntry = declared ?? (installed.length === 1 ? installed[0] : undefined);
+  if (!runnerEntry) {
+    return {
+      note:
+        `Test globals (${exampleNames(env.names).join(', ')}) caused ${env.errorCount} ` +
+        'error(s), but no test runner was found in package.json — install @types/jest or ' +
+        '@types/mocha to match your test runner.',
+    };
+  }
+  const [runner, typesPackage] = runnerEntry;
+  if (typesPackage === null) {
+    return {
+      note:
+        `Test globals (${exampleNames(env.names).join(', ')}) come from ${runner}: add ` +
+        `"${runner}/globals" to the "types" array in tsconfig.json (with globals: true in ` +
+        `the ${runner} config), or import them from '${runner}'.`,
+    };
+  }
+  return { packageName: typesPackage };
+}
+
+/** The untyped imports regrouped by the one @types package that would type them all. */
+function untypedRecommendations(
+  evidence: TypesEvidence,
+  rootDir: string,
+): TypesPackageRecommendation[] {
+  // Several specifiers can come from one package (`lodash/fp`, `lodash/get`),
+  // and one @types package would type them all.
+  const untypedPackages = new Map<string, RecommendationEvidence>();
+  confirmedUntypedModules(evidence, rootDir).forEach(({ moduleName, module }) => {
+    const packageName = typesPackageFor(moduleName);
+    const entry: RecommendationEvidence = untypedPackages.get(packageName) ?? {
+      errorCount: 0,
+      files: new Set(),
+      names: new Set(),
+    };
+    untypedPackages.set(packageName, entry);
+    entry.errorCount += module.errorCount;
+    module.files.forEach((file) => entry.files.add(file));
+    entry.names.add(`import '${moduleName}'`);
+  });
+  return Array.from(untypedPackages.entries())
+    .map(([packageName, entry]) => recommendationFor(packageName, entry))
+    .sort((a, b) => b.errorCount - a.errorCount);
+}
+
+/** What the `@types/*` the project already declares are worth saying about. */
+function auditInstalledTypes(
+  rootDir: string,
+  { nearest, declaredDeps }: ProjectInstallContext,
+): Pick<TypesPackageReport, 'outdated' | 'redundant'> {
+  const audit: Pick<TypesPackageReport, 'outdated' | 'redundant'> = {
+    outdated: [],
+    redundant: [],
+  };
+  Object.keys(declaredDeps)
+    .filter((name) => name.startsWith('@types/'))
+    .forEach((typesName) => {
+      const installedTypes = findInstalledPackage(rootDir, typesName);
+      const typesVersion = installedTypes?.packageJson.version;
+      const typesMajor = firstMajor(typesVersion);
+      if (!installedTypes || !typesVersion || typesMajor === undefined) return;
+
+      if (typesName === '@types/node') {
+        const nodeMajor = detectNodeMajor(rootDir, nearest?.packageJson);
+        if (nodeMajor !== undefined && nodeMajor > 0 && typesMajor < nodeMajor) {
+          audit.outdated.push({
+            packageName: typesName,
+            installedVersion: typesVersion,
+            suggestion: `the project targets Node ${nodeMajor}; consider @types/node@${nodeMajor}`,
+          });
+        }
+        return;
+      }
+
+      const libName = libPackageFor(typesName);
+      const installedLib = findInstalledPackage(rootDir, libName);
+      if (!installedLib) return;
+
+      const libVersion = installedLib.packageJson.version;
+      const libMajor = firstMajor(libVersion);
+      // Definitely Typed majors track the library's major; 0.x conventions
+      // are too loose to compare.
+      if (
+        libVersion &&
+        libMajor !== undefined &&
+        libMajor > 0 &&
+        typesMajor > 0 &&
+        typesMajor < libMajor
+      ) {
+        audit.outdated.push({
+          packageName: typesName,
+          installedVersion: typesVersion,
+          suggestion: `${libName}@${libVersion} is installed; consider ${typesName}@${libMajor}`,
+        });
+      }
+
+      if (
+        !GLOBAL_TYPES_PACKAGES.has(typesName) &&
+        packageShipsTypes(installedLib.dir, installedLib.packageJson)
+      ) {
+        audit.redundant.push({ packageName: typesName, libName });
+      }
+    });
+  return audit;
+}
+
 export function summarizeTypesEvidence(
   evidence: TypesEvidence,
   rootDir: string,
 ): TypesPackageReport {
-  const { nearest, installDir, detected, declaredDeps } = projectInstallContext(rootDir);
+  const context = projectInstallContext(rootDir);
+  const { installDir, detected, declaredDeps } = context;
   const report: TypesPackageReport = {
     packageManager: detected.packageManager,
     packageManagerVersion: detected.version,
@@ -650,141 +804,39 @@ export function summarizeTypesEvidence(
       report.notLoaded.push({ packageName, advice });
       return;
     }
-    report.missing.push({
-      packageName,
-      errorCount: env.errorCount + env.weakCount,
-      fileCount: env.files.size,
-      exampleNames: exampleNames(env.names),
-    });
+    report.missing.push(
+      recommendationFor(packageName, {
+        errorCount: env.errorCount + env.weakCount,
+        files: env.files,
+        names: env.names,
+      }),
+    );
   };
 
   evidence.env.forEach((env, key) => {
     if (env.errorCount === 0) return;
-
-    if (key === 'testRunner') {
-      // A runner the project declares names itself. One it does not declare
-      // still supplies these globals when a dependency brought it in, which is
-      // the shape create-react-app and a hoisting monorepo both leave behind,
-      // and the types it needs are the ones worth the most here. Falling back
-      // to what resolves is only unambiguous when a single runner does: a
-      // project holding two has no evidence here saying which one wrote the
-      // tests, and guessing would pin the wrong globals.
-      const declared = TEST_RUNNER_TYPES.find(([runner]) => declaredDeps[runner] !== undefined);
-      const installed = TEST_RUNNER_TYPES.filter(([runner]) =>
-        findInstalledPackage(rootDir, runner),
-      );
-      const runnerEntry = declared ?? (installed.length === 1 ? installed[0] : undefined);
-      if (!runnerEntry) {
-        report.notes.push(
-          `Test globals (${exampleNames(env.names).join(', ')}) caused ${env.errorCount} ` +
-            'error(s), but no test runner was found in package.json — install @types/jest or ' +
-            '@types/mocha to match your test runner.',
-        );
-        return;
-      }
-      const [runner, typesPackage] = runnerEntry;
-      if (typesPackage === null) {
-        report.notes.push(
-          `Test globals (${exampleNames(env.names).join(', ')}) come from ${runner}: add ` +
-            `"${runner}/globals" to the "types" array in tsconfig.json (with globals: true in ` +
-            `the ${runner} config), or import them from '${runner}'.`,
-        );
-        return;
-      }
-      addEnvRecommendation(env, typesPackage);
+    const outcome =
+      key === 'testRunner'
+        ? testRunnerRecommendation(env, rootDir, declaredDeps)
+        : { packageName: ENV_TO_TYPES_PACKAGE[key] };
+    if ('note' in outcome) {
+      report.notes.push(outcome.note);
       return;
     }
-
-    const packageName = { node: '@types/node', jquery: '@types/jquery', bun: '@types/bun' }[key];
-    addEnvRecommendation(env, packageName);
+    addEnvRecommendation(env, outcome.packageName);
   });
 
-  // Several specifiers can come from one package (`lodash/fp`, `lodash/get`),
-  // and one @types package would type them all.
-  interface UntypedPackage {
-    errorCount: number;
-    files: Set<string>;
-    names: Set<string>;
-  }
-  const untypedPackages = new Map<string, UntypedPackage>();
-  confirmedUntypedModules(evidence, rootDir).forEach(({ moduleName, module }) => {
-    const packageName = typesPackageFor(moduleName);
-    const entry: UntypedPackage = untypedPackages.get(packageName) ?? {
-      errorCount: 0,
-      files: new Set(),
-      names: new Set(),
-    };
-    untypedPackages.set(packageName, entry);
-    entry.errorCount += module.errorCount;
-    module.files.forEach((file) => entry.files.add(file));
-    entry.names.add(`import '${moduleName}'`);
-  });
-  const untypedRecommendations = Array.from(untypedPackages.entries())
-    .map(([packageName, entry]) => ({
-      packageName,
-      errorCount: entry.errorCount,
-      fileCount: entry.files.size,
-      exampleNames: exampleNames(entry.names),
-    }))
-    .sort((a, b) => b.errorCount - a.errorCount);
-  report.untyped.push(...untypedRecommendations.slice(0, MAX_UNTYPED_MODULES));
-  if (untypedRecommendations.length > MAX_UNTYPED_MODULES) {
-    report.notes.push(
-      `${untypedRecommendations.length - MAX_UNTYPED_MODULES} more untyped import(s) omitted.`,
-    );
+  const untyped = untypedRecommendations(evidence, rootDir);
+  report.untyped.push(...untyped.slice(0, MAX_UNTYPED_MODULES));
+  if (untyped.length > MAX_UNTYPED_MODULES) {
+    report.notes.push(`${untyped.length - MAX_UNTYPED_MODULES} more untyped import(s) omitted.`);
   }
 
   report.missing.sort((a, b) => b.errorCount - a.errorCount);
 
-  Object.keys(declaredDeps)
-    .filter((name) => name.startsWith('@types/'))
-    .forEach((typesName) => {
-      const installedTypes = findInstalledPackage(rootDir, typesName);
-      const typesVersion = installedTypes?.packageJson.version;
-      const typesMajor = firstMajor(typesVersion);
-      if (!installedTypes || !typesVersion || typesMajor === undefined) return;
-
-      if (typesName === '@types/node') {
-        const nodeMajor = detectNodeMajor(rootDir, nearest?.packageJson);
-        if (nodeMajor !== undefined && nodeMajor > 0 && typesMajor < nodeMajor) {
-          report.outdated.push({
-            packageName: typesName,
-            installedVersion: typesVersion,
-            suggestion: `the project targets Node ${nodeMajor}; consider @types/node@${nodeMajor}`,
-          });
-        }
-        return;
-      }
-
-      const libName = libPackageFor(typesName);
-      const installedLib = findInstalledPackage(rootDir, libName);
-      if (!installedLib) return;
-
-      const libVersion = installedLib.packageJson.version;
-      const libMajor = firstMajor(libVersion);
-      // Definitely Typed majors track the library's major; 0.x conventions
-      // are too loose to compare.
-      if (
-        libVersion &&
-        libMajor !== undefined &&
-        libMajor > 0 &&
-        typesMajor > 0 &&
-        typesMajor < libMajor
-      ) {
-        report.outdated.push({
-          packageName: typesName,
-          installedVersion: typesVersion,
-          suggestion: `${libName}@${libVersion} is installed; consider ${typesName}@${libMajor}`,
-        });
-      }
-
-      if (
-        !GLOBAL_TYPES_PACKAGES.has(typesName) &&
-        packageShipsTypes(installedLib.dir, installedLib.packageJson)
-      ) {
-        report.redundant.push({ packageName: typesName, libName });
-      }
-    });
+  const audit = auditInstalledTypes(rootDir, context);
+  report.outdated.push(...audit.outdated);
+  report.redundant.push(...audit.redundant);
 
   // Only worth saying when an install command is actually being printed.
   if (detected.note && (report.missing.length > 0 || report.untyped.length > 0)) {

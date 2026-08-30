@@ -3,7 +3,7 @@ import path from 'path';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { updateImports, DefaultImport, NamedImport, ModuleImport } from './utils/imports';
-import { collectIdentifiers } from './utils/identifiers';
+import { collectBindingNames, collectIdentifiers } from './utils/identifiers';
 import { unpackInitializer } from './utils/react-props';
 import { isStatic } from './utils/modifiers';
 
@@ -466,18 +466,6 @@ function buildModuleScope(moduleFile: ts.SourceFile): ModuleScope {
     }
   }
   return { locals, imports: collectImportBindings(moduleFile) };
-}
-
-function collectBindingNames(name: ts.BindingName, out: Set<string>): void {
-  if (ts.isIdentifier(name)) {
-    out.add(name.text);
-    return;
-  }
-  for (const element of name.elements) {
-    if (ts.isBindingElement(element)) {
-      collectBindingNames(element.name, out);
-    }
-  }
 }
 
 /**

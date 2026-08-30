@@ -19,6 +19,7 @@ import {
   updatePackageJsonReferences,
 } from '../utils/packageJsonReferences';
 import { relativeTo } from '../utils/paths';
+import { parseConfigFileNames } from '../utils/tsConfigIncludes';
 import { replaceJSON5Strings } from '../utils/updateJSON5';
 
 interface RenameParams {
@@ -155,32 +156,19 @@ export default function rename({
       `Dry run: ${toRename.length} JS/JSX file(s) would be renamed in ${rootDir} ` +
         `(nothing was written):\n${mapping}`,
     );
-    updateProjectJson(rootDir, dryRun);
-    const references = updatePackageJsonReferences(rootDir, toRename, { dryRun });
-    logPackageJsonReferences(rootDir, references, dryRun);
-    return {
-      renamedFiles: toRename,
-      skippedGitignoredFiles,
-      skippedBootstrapFiles,
-      skippedModuleFiles,
-      packageJsonRewrites: references.rewrites,
-      packageJsonNotices: references.notices,
-    };
+  } else {
+    log.info(`Renaming ${toRename.length} JS/JSX files in ${rootDir}...`);
+    if (renameFiles(rootDir, toRename) === null) return null;
   }
 
-  log.info(`Renaming ${toRename.length} JS/JSX files in ${rootDir}...`);
-
-  const renamed = renameFiles(rootDir, toRename);
-  if (renamed === null) return null;
-
-  updateProjectJson(rootDir);
+  updateProjectJson(rootDir, dryRun);
   // The mapping is final here: the gitignore, bootstrap, and .mjs/.cjs
   // partitions have all run, so a file that kept its .js extension is absent
   // from it and every reference to it is left alone.
-  const references = updatePackageJsonReferences(rootDir, toRename);
-  logPackageJsonReferences(rootDir, references);
+  const references = updatePackageJsonReferences(rootDir, toRename, { dryRun });
+  logPackageJsonReferences(rootDir, references, dryRun);
 
-  log.info('Done.');
+  if (!dryRun) log.info('Done.');
   return {
     renamedFiles: toRename,
     skippedGitignoredFiles,
@@ -258,7 +246,7 @@ function findJSFiles(rootDir: string, configFile: string, sources?: string | str
     delete config.files;
   }
 
-  const { fileNames, errors } = ts.parseJsonConfigFileContent(
+  const fileNames = parseConfigFileNames(
     {
       ...config,
       compilerOptions: {
@@ -268,20 +256,9 @@ function findJSFiles(rootDir: string, configFile: string, sources?: string | str
       },
       include,
     },
-    ts.sys,
     rootDir,
+    configFile,
   );
-
-  if (errors.length > 0) {
-    const errorMessage = ts.formatDiagnostics(errors, {
-      getCanonicalFileName: (fileName) => fileName,
-      getCurrentDirectory: () => rootDir,
-      getNewLine: () => ts.sys.newLine,
-    });
-    throw new Error(
-      `Errors parsing TypeScript config file content: ${configFile}\n${errorMessage}`,
-    );
-  }
 
   return fileNames.filter((fileName) => JS_EXTENSION_REGEX.test(fileName));
 }

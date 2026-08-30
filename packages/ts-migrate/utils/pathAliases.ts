@@ -293,6 +293,17 @@ function translate(rootDir: string, resolves: WebpackResolve[]): Translation {
   const skipped: SkippedAlias[] = [];
   const seenAliases = new Map<string, string>();
 
+  /** A readable entry's target, or null once it has been reported as skipped. */
+  const resolveEntry = (name: string, value: string) => {
+    const target = path.resolve(rootDir, value);
+    const relative = insideRoot(rootDir, target);
+    if (relative === null) {
+      skipped.push({ name, reason: `${value} is outside the migration root` });
+      return null;
+    }
+    return { relative, stats: statOf(target) };
+  };
+
   resolves.forEach(({ modules, aliases }) => {
     modules.forEach((value, index) => {
       const name = `resolve.modules[${index}]`;
@@ -302,13 +313,10 @@ function translate(rootDir: string, resolves: WebpackResolve[]): Translation {
       }
       // The bare name is node's own lookup, which the compiler already does.
       if (value === 'node_modules' || value.endsWith(`${path.sep}node_modules`)) return;
-      const target = path.resolve(rootDir, value);
-      const relative = insideRoot(rootDir, target);
-      if (relative === null) {
-        skipped.push({ name, reason: `${value} is outside the migration root` });
-        return;
-      }
-      if (!statOf(target)?.isDirectory()) {
+      const entry = resolveEntry(name, value);
+      if (entry === null) return;
+      const { relative, stats } = entry;
+      if (!stats?.isDirectory()) {
         skipped.push({ name, reason: `${relative} is not a directory` });
         return;
       }
@@ -321,13 +329,9 @@ function translate(rootDir: string, resolves: WebpackResolve[]): Translation {
         skipped.push({ name, reason: 'its target is computed when the config runs' });
         return;
       }
-      const target = path.resolve(rootDir, value);
-      const relative = insideRoot(rootDir, target);
-      if (relative === null) {
-        skipped.push({ name, reason: `${value} is outside the migration root` });
-        return;
-      }
-      const stats = statOf(target);
+      const entry = resolveEntry(name, value);
+      if (entry === null) return;
+      const { relative, stats } = entry;
       if (stats === null) {
         skipped.push({ name, reason: `${relative} does not exist` });
         return;
@@ -349,8 +353,20 @@ function translate(rootDir: string, resolves: WebpackResolve[]): Translation {
   return { moduleDirectories, paths, skipped };
 }
 
-function sortPaths(paths: Record<string, string[]>): Record<string, string[]> {
-  return Object.fromEntries(Object.entries(paths).sort(([a], [b]) => a.localeCompare(b)));
+/**
+ * What a reader returns: the mapping it established, or what it could not
+ * translate on its own, or nothing at all when it found neither.
+ */
+function aliasResult(
+  paths: Record<string, string[]>,
+  source: string,
+  skipped: SkippedAlias[],
+): PathAliases | null {
+  if (Object.keys(paths).length === 0) {
+    return skipped.length > 0 ? { source, skipped } : null;
+  }
+  const sorted = Object.fromEntries(Object.entries(paths).sort(([a], [b]) => a.localeCompare(b)));
+  return { paths: sorted, source, skipped };
 }
 
 /**
@@ -382,10 +398,7 @@ function webpackAliases(rootDir: string): PathAliases | null {
   if (moduleDirectories.length > 0) {
     paths['*'] = moduleDirectories.map((directory) => configValue(directory, '*'));
   }
-  if (Object.keys(paths).length === 0) {
-    return skipped.length > 0 ? { source, skipped } : null;
-  }
-  return { paths: sortPaths(paths), source, skipped };
+  return aliasResult(paths, source, skipped);
 }
 
 /**
@@ -454,10 +467,7 @@ function jsConfigAliases(rootDir: string): PathAliases | null {
   // wildcard the baseUrl becomes goes last.
   if (root !== undefined) kept['*'] = [...(kept['*'] ?? []), root];
 
-  if (Object.keys(kept).length === 0) {
-    return skipped.length > 0 ? { source: 'jsconfig.json', skipped } : null;
-  }
-  return { paths: sortPaths(kept), source: 'jsconfig.json', skipped };
+  return aliasResult(kept, 'jsconfig.json', skipped);
 }
 
 /**

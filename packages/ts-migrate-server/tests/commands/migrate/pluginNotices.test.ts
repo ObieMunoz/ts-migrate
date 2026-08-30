@@ -1,23 +1,18 @@
 import path from 'path';
 import fs from 'fs';
 import log from 'updatable-log';
-import { createDir, copyDir, deleteDir } from '@obiemunoz/ts-migrate-test-utils';
+import { createDir, copyDir, deleteDir, warningsFrom } from '@obiemunoz/ts-migrate-test-utils';
 import migrate, { MigrateConfig } from '../../../src/migrate';
 
-jest.mock('updatable-log', () => ({
-  error: jest.fn(),
-  important: jest.fn(),
-  info: jest.fn(),
-  warn: jest.fn(),
-  update: jest.fn(),
-  clear: jest.fn(),
-  quiet: false,
-}));
+jest.mock('updatable-log', () => {
+  const { spyUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
+  return spyUpdatableLog();
+});
 
 const fixturesDir = path.resolve(__dirname, '../../fixtures');
 
 const mockedLog = jest.mocked(log);
-const warnings = () => mockedLog.warn.mock.calls.map(([message]) => message);
+const warnings = () => warningsFrom(mockedLog);
 
 describe('plugin file notices', () => {
   let rootDir: string;
