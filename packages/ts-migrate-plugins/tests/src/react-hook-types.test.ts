@@ -1,6 +1,6 @@
 import path from 'path';
 import ts from 'typescript';
-import { createTypeChecker, fixturePluginParams } from '../test-utils';
+import { createTypeChecker, fixturePluginParams, reactCompilerOptions } from '../test-utils';
 import reactHookTypesPlugin from '../../src/plugins/react-hook-types';
 
 // A path inside the repo, so `react` and its types resolve the way they do in
@@ -9,10 +9,8 @@ const rootDir = __dirname;
 const fileName = path.join(rootDir, 'react-hook-types-fixture.tsx');
 
 const compilerOptions: ts.CompilerOptions = {
+  ...reactCompilerOptions,
   moduleResolution: ts.ModuleResolutionKind.Node10,
-  jsx: ts.JsxEmit.React,
-  esModuleInterop: true,
-  skipLibCheck: true,
 };
 
 // Shared across the suite: every test pulls in the same react type declarations.
