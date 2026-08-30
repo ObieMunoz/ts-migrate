@@ -1,6 +1,6 @@
 {
   "name": "@obiemunoz/ts-migrate-test-utils",
-  "version": "0.20.0",
+  "version": "0.20.3",
   "private": true,
   "description": "Filesystem and logging helpers shared by the other packages' test suites. Never published.",
   "main": "index.ts",

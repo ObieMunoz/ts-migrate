@@ -3,6 +3,18 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.20.3](https://github.com/ObieMunoz/ts-migrate/compare/v0.20.2...v0.20.3) (2026-08-30)
+
+
+### Bug Fixes
+
+* **ts-migrate:** keep a trailing comment with the member it was written about ([#468](https://github.com/ObieMunoz/ts-migrate/issues/468)) ([fb5a71c](https://github.com/ObieMunoz/ts-migrate/commit/fb5a71cce55aadbb7d81dfd574474af0feb395b4))
+* **ts-migrate:** stop reformatting after ts-ignore writes its suppressions ([#469](https://github.com/ObieMunoz/ts-migrate/issues/469)) ([db93099](https://github.com/ObieMunoz/ts-migrate/commit/db9309987dfc06bf46766850965ecddb4267a283))
+
+
+
+
+
 ## [0.20.2](https://github.com/ObieMunoz/ts-migrate/compare/v0.20.1...v0.20.2) (2026-08-25)
 
 **Note:** Version bump only for package @obiemunoz/ts-migrate
