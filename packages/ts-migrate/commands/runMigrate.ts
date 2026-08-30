@@ -204,11 +204,11 @@ export default async function runMigrate(params: RunMigrateParams): Promise<RunM
       } catch (err) {
         log.warn(`Skipped writing the type definition recommendations: ${errorMessage(err)}`);
       }
-    }
-    if (!params.typesReportFile && !params.holdTypesReport) {
+    } else if (!params.holdTypesReport) {
       log.info(typesReport);
     }
   }
+  const heldTypesReport = params.holdTypesReport ? typesReport : undefined;
   if (suppressionExplainer) {
     printSuppressionReport(suppressionExplainer, rootDir, params.suppressionReportFile);
   }
@@ -226,7 +226,7 @@ export default async function runMigrate(params: RunMigrateParams): Promise<RunM
   }
 
   if (!params.jsonSummary && !params.collectSummary) {
-    return { exitCode: runExitCode, typesReport: params.holdTypesReport ? typesReport : undefined };
+    return { exitCode: runExitCode, typesReport: heldTypesReport };
   }
 
   const summary = buildMigrateRunSummary({
@@ -253,6 +253,6 @@ export default async function runMigrate(params: RunMigrateParams): Promise<RunM
     // A caller that asked for the summary file must not see success without it.
     exitCode: params.jsonSummary ? writeRunSummary(params.jsonSummary, summary) : runExitCode,
     summary,
-    typesReport: params.holdTypesReport ? typesReport : undefined,
+    typesReport: heldTypesReport,
   };
 }
