@@ -1,6 +1,7 @@
 import ts from 'typescript';
 import { getNumComponentsInSourceFile } from './react';
 import { collectIdentifiers } from './identifiers';
+import { anyTypeNode } from './anyTypes';
 import { PropTypesIdentifierMap } from '../react-props';
 
 export type PropsTypeNode = ts.TypeLiteralNode | ts.IntersectionTypeNode;
@@ -253,10 +254,7 @@ function getTypeFromPropTypeExpression(
   params: Params,
 ): ts.TypeNode {
   const { anyAlias, anyFunctionAlias } = params;
-  const anyTypeNode = () =>
-    anyAlias
-      ? ts.factory.createTypeReferenceNode(anyAlias, undefined)
-      : ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
+  const anyType = () => anyTypeNode(anyAlias);
 
   let text = node.getText(sourceFile).replace(/React\.PropTypes\./, '');
   const isDestructuredProptypeImport =
@@ -283,15 +281,15 @@ function getTypeFromPropTypeExpression(
     if (/string/.test(text)) {
       result = ts.factory.createKeywordTypeNode(ts.SyntaxKind.StringKeyword);
     } else if (/any/.test(text)) {
-      result = anyTypeNode();
+      result = anyType();
     } else if (/array/.test(text)) {
-      result = ts.factory.createArrayTypeNode(anyTypeNode());
+      result = ts.factory.createArrayTypeNode(anyType());
     } else if (/bool/.test(text)) {
       result = ts.factory.createKeywordTypeNode(ts.SyntaxKind.BooleanKeyword);
     } else if (/number/.test(text)) {
       result = ts.factory.createKeywordTypeNode(ts.SyntaxKind.NumberKeyword);
     } else if (/object/.test(text)) {
-      result = anyTypeNode();
+      result = anyType();
     } else if (/node/.test(text)) {
       result = ts.factory.createTypeReferenceNode('React.ReactNode', undefined);
     } else if (/elementType/.test(text)) {
@@ -310,11 +308,11 @@ function getTypeFromPropTypeExpression(
               ts.factory.createToken(ts.SyntaxKind.DotDotDotToken),
               'args',
               undefined,
-              ts.factory.createArrayTypeNode(anyTypeNode()),
+              ts.factory.createArrayTypeNode(anyType()),
               undefined,
             ),
           ],
-          anyTypeNode(),
+          anyType(),
         );
       }
     }
@@ -408,7 +406,7 @@ function getTypeFromPropTypeExpression(
    * anything others
    */
   if (!result) {
-    result = anyTypeNode();
+    result = anyType();
 
     // Add comment about what the original proptype was.
     result = ts.addSyntheticTrailingComment(

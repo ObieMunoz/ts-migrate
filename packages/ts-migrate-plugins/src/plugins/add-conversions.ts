@@ -3,6 +3,7 @@ import { Plugin } from '@obiemunoz/ts-migrate-server';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
 import getTokenAtPosition from './utils/token-pos';
 import { jestMockType } from './utils/mockTypes';
+import { anyTypeNode } from './utils/anyTypes';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 import UpdateTracker from './utils/update';
 
@@ -55,9 +56,7 @@ const addConversionsTransformerFactory =
   ) =>
   (context: ts.TransformationContext) => {
     const { factory } = context;
-    const anyType = anyAlias
-      ? factory.createTypeReferenceNode(anyAlias)
-      : factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
+    const anyType = anyTypeNode(anyAlias, factory);
 
     let nodesToConvert: Map<ts.Node, ts.TypeNode>;
     let replaceRegions: ReplaceRegion[];
