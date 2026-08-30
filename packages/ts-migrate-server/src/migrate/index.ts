@@ -274,7 +274,6 @@ export default async function migrate({
     // Files whose outcome can still change this pass; null means all files.
     let dirtyFiles: Set<string> | null = null;
     for (let pass = 0; ; pass += 1) {
-      let changedInPass = false;
       const changedThisPass = new Set<string>();
       const dirtyFilesThisPass = dirtyFiles;
 
@@ -363,7 +362,6 @@ export default async function migrate({
               }
               updatedSourceFiles.add(sourceFile.fileName);
               changedFilesByPlugin[i].add(fileName);
-              changedInPass = true;
               changedThisPass.add(fileName);
             }
           } catch (pluginErr) {
@@ -413,9 +411,7 @@ export default async function migrate({
         );
       }
 
-      if (!pluginGroup.repeatUntilStable || !changedInPass) {
-        break;
-      }
+      if (!pluginGroup.repeatUntilStable || changedThisPass.size === 0) break;
       if (pass + 1 >= maxStablePasses) {
         const names = pluginGroup.pluginIndexes
           .map((i) => config.plugins[i].plugin.name)
