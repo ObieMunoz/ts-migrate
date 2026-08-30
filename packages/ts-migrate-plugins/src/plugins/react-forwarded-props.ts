@@ -3,6 +3,7 @@ import { errorMessage, fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-
 import { updateImports } from './utils/imports';
 import { isNameableJsxTagName, jsxTagNameTypeArgument } from './utils/jsx-tag-names';
 import updateSourceText from '../utils/updateSourceText';
+import { needsIntersectionParentheses } from '../utils/annotationAdditions';
 import {
   applyTextChanges,
   createFileLanguageService,
@@ -113,22 +114,14 @@ function annotationChange(
   const omitted = candidate.consumed.map((name) => `'${name}'`).join(' | ');
   const addition = omitted ? `Omit<${forwarded}, ${omitted}>` : forwarded;
   const declared = candidate.declaredType.getText(source);
-  const existing = needsParentheses(candidate.declaredType) ? `(${declared})` : declared;
+  const existing = needsIntersectionParentheses(candidate.declaredType)
+    ? `(${declared})`
+    : declared;
   return {
     start: candidate.declaredType.getStart(source),
     length: candidate.declaredType.end - candidate.declaredType.getStart(source),
     text: `${existing} & ${addition}`,
   };
-}
-
-function needsParentheses(type: ts.TypeNode): boolean {
-  return (
-    ts.isUnionTypeNode(type) ||
-    ts.isFunctionTypeNode(type) ||
-    ts.isConstructorTypeNode(type) ||
-    ts.isConditionalTypeNode(type) ||
-    ts.isInferTypeNode(type)
-  );
 }
 
 function addComponentPropsImport(fileName: string, candidateText: string): string {

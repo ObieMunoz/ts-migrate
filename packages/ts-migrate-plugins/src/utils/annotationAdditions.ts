@@ -41,7 +41,7 @@ export function annotationGroup(annotation: ts.TypeNode, members: string[]): Ann
   return {
     start,
     length: annotation.end - start,
-    declared: needsParentheses(annotation) ? `(${declared})` : declared,
+    declared: needsIntersectionParentheses(annotation) ? `(${declared})` : declared,
     open: ts.isTypeLiteralNode(annotation) && !declared.includes('\n'),
     members,
   };
@@ -112,7 +112,8 @@ function changeFor(group: AnnotationGroup, members: string[]): TextChange {
   };
 }
 
-function needsParentheses(typeNode: ts.TypeNode): boolean {
+/** Type forms an intersection cannot hold as its left operand unparenthesized. */
+export function needsIntersectionParentheses(typeNode: ts.TypeNode): boolean {
   return (
     ts.isUnionTypeNode(typeNode) ||
     ts.isFunctionTypeNode(typeNode) ||
