@@ -121,6 +121,7 @@ function getTextWithIgnores(
       ws += ' ';
     }
 
+    const conditionalPos = conditionalCommentPos(sourceFile, diagnostic.start);
     if (inNonInsertableText(sourceFile, pos)) {
       const node = findDiagnosticNode(diagnostic, sourceFile);
       if (node) {
@@ -157,10 +158,10 @@ function getTextWithIgnores(
         index: pos,
         text: `${ws}{/* ${tsIgnoreCommentText} */}${ts.sys.newLine}`,
       });
-    } else if (onMultilineConditionalTokenLine(sourceFile, diagnostic.start)) {
+    } else if (conditionalPos !== undefined) {
       updates.push({
         kind: 'insert',
-        index: getConditionalCommentPos(sourceFile, diagnostic.start),
+        index: conditionalPos,
         text: ` // ${tsIgnoreCommentText}${ts.sys.newLine}${ws} `,
       });
     } else {
@@ -274,58 +275,31 @@ function getConditionalExpressionAtPos(sourceFile: ts.SourceFile, pos: number) {
   return ts.forEachChild(sourceFile, visitor);
 }
 
-function visitConditionalExpressionWhen<T>(
-  node: ts.ConditionalExpression | undefined,
-  pos: number,
-  visitor: {
-    whenTrue(node: ts.ConditionalExpression): T;
-    whenFalse(node: ts.ConditionalExpression): T;
-    otherwise(): T;
-  },
-): T {
-  if (!node) return visitor.otherwise();
-
-  const inWhenTrue = node.whenTrue.pos <= pos && pos < node.whenTrue.end;
-  if (inWhenTrue) return visitor.whenTrue(node);
-
-  const inWhenFalse = node.whenFalse.pos <= pos && pos < node.whenFalse.end;
-  if (inWhenFalse) return visitor.whenFalse(node);
-
-  return visitor.otherwise();
-}
-
-function onMultilineConditionalTokenLine(sourceFile: ts.SourceFile, pos: number): boolean {
+/** Get the comment position for a pos on a multiline conditional expression's token line. */
+function conditionalCommentPos(sourceFile: ts.SourceFile, pos: number): number | undefined {
   const conditionalExpression = getConditionalExpressionAtPos(sourceFile, pos);
   // Not in a conditional expression.
-  if (!conditionalExpression) return false;
+  if (!conditionalExpression) return undefined;
 
+  const { questionToken, colonToken, whenTrue, whenFalse } = conditionalExpression;
   const { line: questionTokenLine } = ts.getLineAndCharacterOfPosition(
     sourceFile,
-    conditionalExpression.questionToken.end,
+    questionToken.end,
   );
-  const { line: colonTokenLine } = ts.getLineAndCharacterOfPosition(
-    sourceFile,
-    conditionalExpression.colonToken.end,
-  );
+  const { line: colonTokenLine } = ts.getLineAndCharacterOfPosition(sourceFile, colonToken.end);
   // Single line conditional expression.
-  if (questionTokenLine === colonTokenLine) return false;
+  if (questionTokenLine === colonTokenLine) return undefined;
 
   const { line } = ts.getLineAndCharacterOfPosition(sourceFile, pos);
-  return visitConditionalExpressionWhen(conditionalExpression, pos, {
-    // On question token line of multiline conditional expression.
-    whenTrue: () => line === questionTokenLine,
-    // On colon token line of multiline conditional expression.
-    whenFalse: () => line === colonTokenLine,
-    otherwise: () => false,
-  });
-}
-
-function getConditionalCommentPos(sourceFile: ts.SourceFile, pos: number): number {
-  return visitConditionalExpressionWhen(getConditionalExpressionAtPos(sourceFile, pos), pos, {
-    whenTrue: (node) => node.questionToken.end,
-    whenFalse: (node) => node.colonToken.end,
-    otherwise: () => pos,
-  });
+  // On question token line of multiline conditional expression.
+  if (whenTrue.pos <= pos && pos < whenTrue.end) {
+    return line === questionTokenLine ? questionToken.end : undefined;
+  }
+  // On colon token line of multiline conditional expression.
+  if (whenFalse.pos <= pos && pos < whenFalse.end) {
+    return line === colonTokenLine ? colonToken.end : undefined;
+  }
+  return undefined;
 }
 
 /** Get position at start of zero-indexed line number in the given source file. */
