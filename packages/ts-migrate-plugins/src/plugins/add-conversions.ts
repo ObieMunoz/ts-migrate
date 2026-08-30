@@ -218,16 +218,7 @@ type ReplaceRegion = { owner: ts.Node; pos: number; end: number };
 /** Only the outermost range is kept: a nested text update would duplicate part
  * of the enclosing one, so inner changes bubble up into the owner's. */
 function computeReplaceRegions(conversions: Iterable<ts.Node>): ReplaceRegion[] {
-  const regions: ReplaceRegion[] = [];
-  Array.from(conversions).forEach((conversion) => {
-    const region = findReplaceRegion(conversion);
-    if (
-      region &&
-      !regions.some((r) => r.owner === region.owner && r.pos === region.pos && r.end === region.end)
-    ) {
-      regions.push(region);
-    }
-  });
+  const regions = Array.from(conversions, findReplaceRegion).filter((region) => region !== null);
   return regions.filter(
     (region) =>
       !regions.some(
