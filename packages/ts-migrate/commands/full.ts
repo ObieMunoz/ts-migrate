@@ -406,13 +406,13 @@ ${warning}
 `);
 
     if (fs.existsSync(path.join(rootDir, 'tsconfig.json'))) {
-      this.steps.push({ name: 'init', status: 'skipped', exitCode: null, commit: null });
+      this.skipStep('init');
       return undefined;
     }
 
     if (dryRun) {
       log.info(`Dry run: would create ${folder}/tsconfig.json.`);
-      this.steps.push({ name: 'init', status: 'skipped', exitCode: null, commit: null });
+      this.skipStep('init');
       return undefined;
     }
 
@@ -448,7 +448,7 @@ ${warning}
           `and Step 1 wrote none, so there is no mapping to preview. Run \`ts-migrate init ` +
           `${folder}\` first to preview the rename.`,
       );
-      this.steps.push({ name: 'rename', status: 'skipped', exitCode: null, commit: null });
+      this.skipStep('rename');
       return undefined;
     }
 
@@ -626,14 +626,7 @@ The TypeScript check failed. What these errors mean:
    */
   private stopDryRun(): number {
     const { folder } = this.params;
-    ['migrate', 'check'].forEach((name) => {
-      this.steps.push({
-        name: name as FullRunStep['name'],
-        status: 'skipped',
-        exitCode: null,
-        commit: null,
-      });
-    });
+    (['migrate', 'check'] as const).forEach((name) => this.skipStep(name));
     log.info(`
 ---
 Dry run: the preview stops here. Steps 3 and 4 read the files Step 2 would have
@@ -703,6 +696,11 @@ rename has really happened:
     }
     this.steps.push({ name, status: 'ok', exitCode: 0, commit: commit.sha });
     return undefined;
+  }
+
+  /** Records a step that had nothing to do. */
+  private skipStep(name: FullRunStep['name']): void {
+    this.steps.push({ name, status: 'skipped', exitCode: null, commit: null });
   }
 
   /**
