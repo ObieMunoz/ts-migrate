@@ -4,6 +4,7 @@ import { Plugin } from '@obiemunoz/ts-migrate-server';
 import findEnclosingNode from './enclosingNode';
 import pluralize from './pluralize';
 import { isDiagnosticWithLinePosition } from './type-guards';
+import { getOrCreate } from './maps';
 import typeOnlyImportRepairs from './typeOnlyImportRepair';
 
 /** Type strings are never abbreviated; the report exists to keep what the comment drops. */
@@ -891,11 +892,13 @@ function summarizeSuppressions(
     { count: number; comments: number; files: Set<string>; shapes: Map<string, number>; longest: number }
   >();
   sites.forEach((site) => {
-    let group = byCode.get(site.code);
-    if (!group) {
-      group = { count: 0, comments: 0, files: new Set(), shapes: new Map(), longest: 0 };
-      byCode.set(site.code, group);
-    }
+    const group = getOrCreate(byCode, site.code, () => ({
+      count: 0,
+      comments: 0,
+      files: new Set(),
+      shapes: new Map(),
+      longest: 0,
+    }));
     group.count += 1;
     if (site.commented) group.comments += 1;
     group.files.add(site.location.file);
@@ -940,21 +943,18 @@ function groupUnresolvedTypes(sites: readonly SuppressionSite[]): UnresolvedType
   sites.forEach((site) => {
     const evidence = site.evidence;
     if (!evidence?.unresolvedIsType || !evidence.unresolved) return;
-    let group = byName.get(evidence.unresolved);
-    if (!group) {
-      group = {
-        name: evidence.unresolved,
-        count: 0,
-        fileCount: 0,
-        files: [],
-        documented: 0,
-        declaredAt: evidence.declaredAt,
-        declarationKind: evidence.declarationKind,
-        declaredInProject: evidence.declaredInProject,
-        fileCounts: new Map(),
-      };
-      byName.set(evidence.unresolved, group);
-    }
+    const name = evidence.unresolved;
+    const group = getOrCreate(byName, name, () => ({
+      name,
+      count: 0,
+      fileCount: 0,
+      files: [],
+      documented: 0,
+      declaredAt: evidence.declaredAt,
+      declarationKind: evidence.declarationKind,
+      declaredInProject: evidence.declaredInProject,
+      fileCounts: new Map(),
+    }));
     group.count += 1;
     if (evidence.unresolvedIsDocumented) group.documented += 1;
     const { file } = site.location;
