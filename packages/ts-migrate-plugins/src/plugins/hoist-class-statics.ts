@@ -24,6 +24,31 @@ const hoistClassStaticsPlugin: Plugin<Options> = {
 
 export default hoistClassStaticsPlugin;
 
+const globalWhitelist = [
+  'Array',
+  'Boolean',
+  'Date',
+  'Error',
+  'Function',
+  'Infinity',
+  'JSON',
+  'Map',
+  'Math',
+  'NaN',
+  'Number',
+  'Object',
+  'Promise',
+  'RegExp',
+  'Set',
+  'String',
+  'Symbol',
+  'document',
+  'global',
+  'globalThis',
+  'undefined',
+  'window',
+];
+
 /**
  * Determines whether or not we can hoist this identifier
  * @param identifier
@@ -35,30 +60,6 @@ function canHoistIdentifier(
   hoistToPos: number,
   knownDefinitions: KnownDefinitionMap,
 ): boolean {
-  const globalWhitelist = [
-    'Array',
-    'Boolean',
-    'Date',
-    'Error',
-    'Function',
-    'Infinity',
-    'JSON',
-    'Map',
-    'Math',
-    'NaN',
-    'Number',
-    'Object',
-    'Promise',
-    'RegExp',
-    'Set',
-    'String',
-    'Symbol',
-    'document',
-    'global',
-    'globalThis',
-    'undefined',
-    'window',
-  ];
   const id = identifier.text;
   const isDefined = knownDefinitions[id] && knownDefinitions[id].end <= hoistToPos;
   const isGlobal = globalWhitelist.includes(id);
@@ -156,37 +157,27 @@ function hoistStaticClassProperties(
           directlyFollowsClass = false;
           return;
         }
-        if (
+        // A statement that cannot be hoisted gets a static type annotation instead.
+        const canHoist =
           directlyFollowsClass &&
-          canHoistExpression(statement.expression.right, classDeclaration.pos, knownDefinitions)
-        ) {
-          properties.push(
-            ts.factory.createPropertyDeclaration(
-              [ts.factory.createModifier(ts.SyntaxKind.StaticKeyword)],
-              propertyName,
-              undefined,
-              undefined,
-              statement.expression.right,
-            ),
-          );
-          declaredNames.add(propertyName);
+          canHoistExpression(statement.expression.right, classDeclaration.pos, knownDefinitions);
+        properties.push(
+          ts.factory.createPropertyDeclaration(
+            [ts.factory.createModifier(ts.SyntaxKind.StaticKeyword)],
+            propertyName,
+            undefined,
+            canHoist ? undefined : anyTypeNode(options.anyAlias),
+            canHoist ? statement.expression.right : undefined,
+          ),
+        );
+        declaredNames.add(propertyName);
+        if (canHoist) {
           updates.push({
             kind: 'delete',
             index: statement.pos,
             length: statement.end - statement.pos,
           });
         } else {
-          // otherwise add a static type annotation for this expression
-          properties.push(
-            ts.factory.createPropertyDeclaration(
-              [ts.factory.createModifier(ts.SyntaxKind.StaticKeyword)],
-              propertyName,
-              undefined,
-              anyTypeNode(options.anyAlias),
-              undefined,
-            ),
-          );
-          declaredNames.add(propertyName);
           directlyFollowsClass = false;
         }
       } else {
