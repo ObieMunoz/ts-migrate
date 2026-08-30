@@ -37,9 +37,15 @@ export interface LintConfig {
   tabWidth: number;
 }
 
-export function inferenceFormatSettings(lintConfig?: LintConfig): ts.FormatCodeSettings {
+// `newLine` is the character the code fixes write inside the whole statements
+// they insert, so a caller whose output reaches a file verbatim passes the
+// platform's rather than taking the default.
+export function inferenceFormatSettings(
+  lintConfig?: LintConfig,
+  newLine = '\n',
+): ts.FormatCodeSettings {
   return {
-    ...ts.getDefaultFormatCodeSettings('\n'),
+    ...ts.getDefaultFormatCodeSettings(newLine),
     ...(lintConfig != null
       ? {
           convertTabsToSpaces: !lintConfig.useTabs,
