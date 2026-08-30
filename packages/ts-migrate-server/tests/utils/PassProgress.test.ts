@@ -1,15 +1,10 @@
 import log from 'updatable-log';
 import PassProgress from '../../src/utils/PassProgress';
 
-jest.mock('updatable-log', () => ({
-  error: jest.fn(),
-  important: jest.fn(),
-  info: jest.fn(),
-  warn: jest.fn(),
-  update: jest.fn(),
-  clear: jest.fn(),
-  quiet: false,
-}));
+jest.mock('updatable-log', () => {
+  const { spyUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
+  return spyUpdatableLog();
+});
 
 const mockedLog = jest.mocked(log);
 

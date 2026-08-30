@@ -1,21 +1,17 @@
 import path from 'path';
 import log from 'updatable-log';
+import { warningsFrom } from '@obiemunoz/ts-migrate-test-utils';
 import PassNotices from '../../src/utils/PassNotices';
 
-jest.mock('updatable-log', () => ({
-  error: jest.fn(),
-  important: jest.fn(),
-  info: jest.fn(),
-  warn: jest.fn(),
-  update: jest.fn(),
-  clear: jest.fn(),
-  quiet: false,
-}));
+jest.mock('updatable-log', () => {
+  const { spyUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
+  return spyUpdatableLog();
+});
 
 const mockedLog = jest.mocked(log);
 const rootDir = path.join(path.sep, 'project');
 const file = (name: string) => path.join(rootDir, name);
-const warnings = () => mockedLog.warn.mock.calls.map(([message]) => message);
+const warnings = () => warningsFrom(mockedLog);
 
 describe('PassNotices', () => {
   beforeEach(() => {

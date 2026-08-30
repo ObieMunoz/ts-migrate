@@ -166,3 +166,20 @@ export const noopUpdatableLog: () => typeof log = () => ({
   clear: () => {},
   quiet: false,
 });
+
+export const spyUpdatableLog: () => typeof log = () => ({
+  error: jest.fn(),
+  important: jest.fn(),
+  info: jest.fn(),
+  warn: jest.fn(),
+  update: jest.fn(),
+  clear: jest.fn(),
+  quiet: false,
+});
+
+/**
+ * The messages a spy log was warned with, in order, for a suite that asserts on
+ * the warnings alone rather than on the whole transcript.
+ */
+export const warningsFrom = (mockedLog: jest.MockedObjectDeep<typeof log>) =>
+  mockedLog.warn.mock.calls.map(([message]) => message);
