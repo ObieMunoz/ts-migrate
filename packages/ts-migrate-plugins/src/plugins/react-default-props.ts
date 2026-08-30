@@ -2,6 +2,7 @@ import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import createFollowUpMarkers from '../utils/followUpMarker';
+import { collectBindingNames, collectIdentifiers } from './utils/identifiers';
 import { createValidate, Properties } from '../utils/validateOptions';
 import {
   isReactForwardRefName,
@@ -549,27 +550,6 @@ function collectDeferredBindings(statement: ts.Statement, names: Set<string>) {
   ) {
     names.add(statement.name.text);
   }
-}
-
-function collectBindingNames(name: ts.BindingName, names: Set<string>) {
-  if (ts.isIdentifier(name)) {
-    names.add(name.text);
-    return;
-  }
-
-  name.elements.forEach((element) => {
-    if (ts.isBindingElement(element)) collectBindingNames(element.name, names);
-  });
-}
-
-function collectIdentifiers(sourceFile: ts.SourceFile): Set<string> {
-  const names = new Set<string>();
-  const visit = (node: ts.Node) => {
-    if (ts.isIdentifier(node)) names.add(node.text);
-    ts.forEachChild(node, visit);
-  };
-  ts.forEachChild(sourceFile, visit);
-  return names;
 }
 
 function uniqueName(base: string, taken: Set<string>): string {
