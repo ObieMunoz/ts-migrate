@@ -8,6 +8,7 @@ import {
   isReactForwardRefName,
   isSfcFunctionExpression,
   unwrapReactMemo,
+  replaceHeritageTypeArguments,
 } from './utils/react';
 import isNotNull from '../utils/isNotNull';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
@@ -333,22 +334,16 @@ function updatePropTypes(
           );
         }
 
-        updates.push({
-          kind: 'replace',
-          index: heritageType.pos,
-          length: heritageType.end - heritageType.pos,
-          text: ` ${printer.printNode(
-            ts.EmitHint.Unspecified,
-            ts.factory.updateExpressionWithTypeArguments(
-              heritageType,
-              heritageType.expression,
-              [ts.factory.createTypeReferenceNode(propsTypeName, undefined), stateType].filter(
-                isNotNull,
-              ) as any,
-            ),
+        updates.push(
+          replaceHeritageTypeArguments(
+            heritageType,
+            [ts.factory.createTypeReferenceNode(propsTypeName, undefined), stateType].filter(
+              isNotNull,
+            ) as any,
+            printer,
             sourceFile,
-          )}`,
-        });
+          ),
+        );
 
         if (!options.shouldKeepPropTypes) {
           updates.push(...deleteClassPropTypes(node, sourceFile));

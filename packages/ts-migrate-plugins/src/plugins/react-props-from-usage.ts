@@ -5,6 +5,7 @@ import {
   isReactClassComponent,
   getReactComponentHeritageType,
   getNumComponentsInSourceFile,
+  replaceHeritageTypeArguments,
 } from './utils/react';
 import { collectIdentifiers } from './utils/identifiers';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
@@ -803,20 +804,7 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
         ...existingArgs.slice(1),
       ];
 
-      updates.push({
-        kind: 'replace',
-        index: heritageType.pos,
-        length: heritageType.end - heritageType.pos,
-        text: ` ${printer.printNode(
-          ts.EmitHint.Unspecified,
-          ts.factory.updateExpressionWithTypeArguments(
-            heritageType,
-            heritageType.expression,
-            newArgs,
-          ),
-          sourceFile,
-        )}`,
-      });
+      updates.push(replaceHeritageTypeArguments(heritageType, newArgs, printer, sourceFile));
     }
 
     if (updates.length === 0) return undefined;

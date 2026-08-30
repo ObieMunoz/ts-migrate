@@ -4,6 +4,7 @@ import {
   isReactClassComponent,
   getReactComponentHeritageType,
   getNumComponentsInSourceFile,
+  replaceHeritageTypeArguments,
 } from './utils/react';
 import { collectIdentifiers } from './utils/identifiers';
 import { isStatic } from './utils/modifiers';
@@ -113,21 +114,19 @@ const reactClassStatePlugin: Plugin<Options> = {
         text: `\n\n${printer.printNode(ts.EmitHint.Unspecified, newStateType, sourceFile)}`,
       });
 
-      updates.push({
-        kind: 'replace',
-        index: heritageType.pos,
-        length: heritageType.end - heritageType.pos,
-        text: ` ${printer.printNode(
-          ts.EmitHint.Unspecified,
-          ts.factory.updateExpressionWithTypeArguments(heritageType, heritageType.expression, [
+      updates.push(
+        replaceHeritageTypeArguments(
+          heritageType,
+          [
             // `object` rather than `{}` (no-empty-object-type) or `Record<string, never>`,
             // whose index signature types unknown prop accesses as `never` instead of erroring.
             propsType || ts.factory.createKeywordTypeNode(ts.SyntaxKind.ObjectKeyword),
             ts.factory.createTypeReferenceNode(stateTypeName, undefined),
-          ]),
+          ],
+          printer,
           sourceFile,
-        )}`,
-      });
+        ),
+      );
     });
 
     return updateSourceText(sourceFile.text, updates);

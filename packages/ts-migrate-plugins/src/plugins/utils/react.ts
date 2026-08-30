@@ -1,4 +1,5 @@
 import ts from 'typescript';
+import { SourceTextUpdate } from '../../utils/updateSourceText';
 
 function isReactClassComponentName(name: string): boolean {
   return name === 'Component' || name === 'PureComponent';
@@ -127,6 +128,24 @@ export function getReactComponentHeritageType(
   }
 
   return undefined;
+}
+
+export function replaceHeritageTypeArguments(
+  heritageType: ts.ExpressionWithTypeArguments,
+  typeArgs: readonly ts.TypeNode[],
+  printer: ts.Printer,
+  sourceFile: ts.SourceFile,
+): SourceTextUpdate {
+  return {
+    kind: 'replace',
+    index: heritageType.pos,
+    length: heritageType.end - heritageType.pos,
+    text: ` ${printer.printNode(
+      ts.EmitHint.Unspecified,
+      ts.factory.updateExpressionWithTypeArguments(heritageType, heritageType.expression, typeArgs),
+      sourceFile,
+    )}`,
+  };
 }
 
 export function getNumComponentsInSourceFile(sourceFile: ts.SourceFile): number {
