@@ -1,6 +1,7 @@
 import ts from 'typescript';
 import { fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
 import {
+  acceptGreedily,
   applyTextChanges,
   createChangeValidator,
   getValidationOptions,
@@ -260,20 +261,13 @@ function retriedChanges(
     );
   };
 
-  const removals = candidates.map((candidate) => candidate.change);
-  if (checksClean(removals, [])) {
-    return removals;
-  }
-
-  const accepted: TextChange[] = [];
-  const kept: Candidate[] = [];
-  candidates.forEach((candidate) => {
-    if (checksClean([...accepted, candidate.change], [])) {
-      accepted.push(candidate.change);
-    } else {
-      kept.push(candidate);
-    }
-  });
+  const { accepted: removed, rejected: kept } = acceptGreedily(candidates, (group) =>
+    checksClean(
+      group.map((candidate) => candidate.change),
+      [],
+    ),
+  );
+  const accepted = removed.map((candidate) => candidate.change);
 
   resetBudget();
   const retyped: number[] = [];
