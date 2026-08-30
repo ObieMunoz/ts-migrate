@@ -7,7 +7,7 @@ import {
   TextChange,
   toCandidatePos,
 } from '../utils/candidateValidation';
-import { findNodeEndingAt } from '../utils/enclosingNode';
+import { checkedNodeEndingAt } from '../utils/enclosingNode';
 import firstErrorLine from '../utils/firstErrorLine';
 import { printType } from '../utils/typePrinter';
 import { isAnyOrAliasReference, isAnyType } from './utils/anyTypes';
@@ -297,10 +297,7 @@ function retriedChanges(
  * nothing while introducing no error to fail on.
  */
 function isNarrowed(service: ts.LanguageService, fileName: string, end: number): boolean {
-  const program = service.getProgram();
-  const source = program && program.getSourceFile(fileName);
-  if (!program || !source) return false;
-  const node = findNodeEndingAt(source, end, ts.isAsExpression);
-  if (!node) return false;
-  return (program.getTypeChecker().getTypeAtLocation(node).flags & ts.TypeFlags.Any) === 0;
+  const checked = checkedNodeEndingAt(service, fileName, end, ts.isAsExpression);
+  if (!checked) return false;
+  return (checked.checker.getTypeAtLocation(checked.node).flags & ts.TypeFlags.Any) === 0;
 }

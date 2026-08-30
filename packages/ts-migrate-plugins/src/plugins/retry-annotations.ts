@@ -8,7 +8,7 @@ import {
   TextChange,
   toCandidatePos,
 } from '../utils/candidateValidation';
-import { findNodeEndingAt } from '../utils/enclosingNode';
+import { checkedNodeEndingAt } from '../utils/enclosingNode';
 import firstErrorLine from '../utils/firstErrorLine';
 import {
   getInferenceChanges,
@@ -397,13 +397,10 @@ function anyKeywordCount(annotation: string): number {
  * to fail on.
  */
 function isTyped(service: ts.LanguageService, fileName: string, nameEnd: number): boolean {
-  const program = service.getProgram();
-  const source = program && program.getSourceFile(fileName);
-  if (!program || !source) return false;
-  const name = findNodeEndingAt(source, nameEnd, isRetryableDeclarationName);
-  if (!name) return false;
-  const checker = program.getTypeChecker();
-  return !saysNothing(checker, checker.getTypeAtLocation(name), 0, new Set());
+  const checked = checkedNodeEndingAt(service, fileName, nameEnd, isRetryableDeclarationName);
+  if (!checked) return false;
+  const { node, checker } = checked;
+  return !saysNothing(checker, checker.getTypeAtLocation(node), 0, new Set());
 }
 
 function isRetryableDeclarationName(node: ts.Node): node is ts.Identifier {

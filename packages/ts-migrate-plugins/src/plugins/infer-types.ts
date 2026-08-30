@@ -13,6 +13,7 @@ import {
   TextChange,
   toOriginalPos,
 } from '../utils/candidateValidation';
+import { programSourceAndChecker } from '../utils/enclosingNode';
 import {
   getInferenceChanges,
   inferableDiagnosticCodes,
@@ -336,11 +337,9 @@ function collectBodyConflictDrops(
   annotatedFns: Set<ts.Node | null>,
 ): Set<TextChange> {
   const dropped = new Set<TextChange>();
-  const program = service.getProgram();
-  if (!program) return dropped;
-  const source = program.getSourceFile(fileName);
-  if (!source) return dropped;
-  const checker = program.getTypeChecker();
+  const checked = programSourceAndChecker(service, fileName);
+  if (!checked) return dropped;
+  const { source, checker } = checked;
 
   const dropWithin = (start: number, end: number) => {
     finalChanges.forEach((change) => {
@@ -480,11 +479,9 @@ function attributeErrors(
   annotatedFns: Set<ts.Node | null>,
 ): Set<ts.Node | null> {
   const attributed = new Set<ts.Node | null>();
-  const program = service.getProgram();
-  if (!program) return attributed;
-  const source = program.getSourceFile(fileName);
-  if (!source) return attributed;
-  const checker = program.getTypeChecker();
+  const checked = programSourceAndChecker(service, fileName);
+  if (!checked) return attributed;
+  const { source, checker } = checked;
 
   errors.forEach((error) => {
     if (error.start == null) return;
