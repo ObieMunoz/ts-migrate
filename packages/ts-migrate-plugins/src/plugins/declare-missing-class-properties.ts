@@ -5,6 +5,7 @@ import { isStatic } from './utils/modifiers';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 import { getOrCreate } from '../utils/maps';
+import firstErrorLine from '../utils/firstErrorLine';
 import {
   createChangeValidator,
   getValidationOptions,
@@ -94,7 +95,7 @@ const declareMissingClassPropertiesPlugin: Plugin<Options> = {
       }
     } catch (e) {
       fileNoticeReporter(params, '[declare-missing-class-properties]')({
-        reason: e instanceof Error ? e.message.split('\n')[0].trim() : String(e),
+        reason: firstErrorLine(e),
         hint: `The declared properties are typed ${anyType}.`,
       });
       proven = new Set();

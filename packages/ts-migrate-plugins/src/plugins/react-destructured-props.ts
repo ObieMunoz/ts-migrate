@@ -10,6 +10,7 @@ import {
 import { createPropsTypeNameGetter } from './utils/react-props';
 import { innermostNodeAt } from './utils/token-pos';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
+import firstErrorLine from '../utils/firstErrorLine';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 import {
   applyTextChanges,
@@ -125,7 +126,7 @@ const reactDestructuredPropsPlugin: Plugin<Options> = {
       );
     } catch (e) {
       fileNoticeReporter(params, '[react-destructured-props]')({
-        reason: e instanceof Error ? e.message.split('\n')[0].trim() : String(e),
+        reason: firstErrorLine(e),
         hint: 'The props of the components in this file are left as they were.',
       });
       return undefined;

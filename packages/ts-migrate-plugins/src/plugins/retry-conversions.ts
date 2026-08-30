@@ -8,6 +8,7 @@ import {
   toCandidatePos,
 } from '../utils/candidateValidation';
 import { findNodeEndingAt } from '../utils/enclosingNode';
+import firstErrorLine from '../utils/firstErrorLine';
 import { printType } from '../utils/typePrinter';
 import { isAnyOrAliasReference, isAnyType } from './utils/anyTypes';
 
@@ -83,7 +84,7 @@ const retryConversionsPlugin: Plugin = {
       );
     } catch (e) {
       fileNoticeReporter(params, '[retry-conversions]')({
-        reason: e instanceof Error ? e.message.split('\n')[0].trim() : String(e),
+        reason: firstErrorLine(e),
         hint: 'The assertions in this file are kept.',
       });
       return text;

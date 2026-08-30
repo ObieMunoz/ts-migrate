@@ -1,6 +1,7 @@
 import ts from 'typescript';
 import { fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
+import firstErrorLine from '../utils/firstErrorLine';
 import {
   applyTextChanges,
   createChangeValidator,
@@ -111,7 +112,7 @@ const reactHookTypesPlugin: Plugin<Options> = {
       );
     } catch (e) {
       fileNoticeReporter(params, '[react-hook-types]')({
-        reason: e instanceof Error ? e.message.split('\n')[0].trim() : String(e),
+        reason: firstErrorLine(e),
         hint: `The hook calls take a ${anyType} type argument.`,
       });
     }

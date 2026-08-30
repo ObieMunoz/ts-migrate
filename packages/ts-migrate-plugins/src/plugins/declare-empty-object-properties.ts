@@ -3,6 +3,7 @@ import { fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 import { getOrCreate } from '../utils/maps';
+import firstErrorLine from '../utils/firstErrorLine';
 import {
   createChangeValidator,
   getValidationOptions,
@@ -103,7 +104,7 @@ const declareEmptyObjectPropertiesPlugin: Plugin<Options> = {
       );
     } catch (e) {
       fileNoticeReporter(params, '[declare-empty-object-properties]')({
-        reason: e instanceof Error ? e.message.split('\n')[0].trim() : String(e),
+        reason: firstErrorLine(e),
         hint: 'The empty object literals are left as they are.',
       });
       return sourceFile.text;

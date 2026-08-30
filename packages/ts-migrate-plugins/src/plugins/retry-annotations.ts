@@ -9,6 +9,7 @@ import {
   toCandidatePos,
 } from '../utils/candidateValidation';
 import { findNodeEndingAt } from '../utils/enclosingNode';
+import firstErrorLine from '../utils/firstErrorLine';
 import {
   getInferenceChanges,
   inferenceFormatSettings,
@@ -136,7 +137,7 @@ const retryAnnotationsPlugin: Plugin = {
       );
     } catch (e) {
       fileNoticeReporter(params, '[retry-annotations]')({
-        reason: e instanceof Error ? e.message.split('\n')[0].trim() : String(e),
+        reason: firstErrorLine(e),
         hint: 'The annotations in this file are kept.',
       });
       return text;
