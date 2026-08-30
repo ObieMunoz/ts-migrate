@@ -4,7 +4,6 @@ import {
   createTypeChecker,
   fixturePluginParams,
   reactCompilerOptions as compilerOptions,
-  FileMap,
 } from '../test-utils';
 import reactForwardedPropsPlugin from '../../src/plugins/react-forwarded-props';
 
@@ -25,14 +24,14 @@ export default function Icon({ name, size, className }: IconProps) {
 }
 `;
 
-function run(text: string, extraFiles?: FileMap): string {
+function run(text: string): string {
   const result = reactForwardedPropsPlugin.run(
     fixturePluginParams({
       rootDir,
       fileName: fixtureFile,
       text,
       compilerOptions,
-      extraFiles: { 'react-forwarded-props-target.tsx': target, ...extraFiles },
+      extraFiles: { 'react-forwarded-props-target.tsx': target },
     }),
   );
   return typeof result === 'string' ? result : text;
