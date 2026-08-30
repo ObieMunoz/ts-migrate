@@ -373,6 +373,40 @@ function isEmptyExport(statement: ts.Statement): boolean {
   );
 }
 
+function parseWindowMembers(
+  inner: ts.InterfaceDeclaration,
+  sourceFile: ts.SourceFile,
+): GlobalDeclaration[] | null {
+  const declarations: GlobalDeclaration[] = [];
+  for (const member of inner.members) {
+    if (!ts.isPropertySignature(member) || !ts.isIdentifier(member.name) || !member.type) {
+      return null;
+    }
+    declarations.push({
+      name: member.name.text,
+      target: 'window',
+      type: member.type.getText(sourceFile),
+    });
+  }
+  return declarations;
+}
+
+function parseGlobalVars(
+  inner: ts.VariableStatement,
+  sourceFile: ts.SourceFile,
+): GlobalDeclaration[] | null {
+  const declarations: GlobalDeclaration[] = [];
+  for (const declaration of inner.declarationList.declarations) {
+    if (!ts.isIdentifier(declaration.name) || !declaration.type) return null;
+    declarations.push({
+      name: declaration.name.text,
+      target: 'globalThis',
+      type: declaration.type.getText(sourceFile),
+    });
+  }
+  return declarations;
+}
+
 /**
  * What a previously generated file declares, or null when the file is not one
  * this can rewrite without losing something: no generated marker (the file is
@@ -404,29 +438,16 @@ export function parseGlobalDeclarations(text: string): GlobalDeclaration[] | nul
     seenGlobal = true;
 
     for (const inner of body.statements) {
+      let parsed: GlobalDeclaration[] | null;
       if (ts.isInterfaceDeclaration(inner) && inner.name.text === 'Window') {
-        for (const member of inner.members) {
-          if (!ts.isPropertySignature(member) || !ts.isIdentifier(member.name) || !member.type) {
-            return null;
-          }
-          declarations.push({
-            name: member.name.text,
-            target: 'window',
-            type: member.type.getText(sourceFile),
-          });
-        }
+        parsed = parseWindowMembers(inner, sourceFile);
       } else if (ts.isVariableStatement(inner)) {
-        for (const declaration of inner.declarationList.declarations) {
-          if (!ts.isIdentifier(declaration.name) || !declaration.type) return null;
-          declarations.push({
-            name: declaration.name.text,
-            target: 'globalThis',
-            type: declaration.type.getText(sourceFile),
-          });
-        }
+        parsed = parseGlobalVars(inner, sourceFile);
       } else {
         return null;
       }
+      if (parsed === null) return null;
+      declarations.push(...parsed);
     }
   }
 
