@@ -519,12 +519,9 @@ const jsDocTransformerFactory =
     function declareTypeAliases(scan: JSDocTypeAliasScan): void {
       const byDoc = new Map<ts.JSDoc, JSDocTypeAlias[]>();
       scan.aliases.forEach((alias) => {
-        const group = byDoc.get(alias.doc);
-        if (group) {
-          group.push(alias);
-        } else {
-          byDoc.set(alias.doc, [alias]);
-        }
+        const group = byDoc.get(alias.doc) ?? [];
+        group.push(alias);
+        byDoc.set(alias.doc, group);
       });
 
       byDoc.forEach((aliases, doc) => {
