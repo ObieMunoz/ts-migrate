@@ -3,8 +3,7 @@ import { fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 import {
   applyTextChanges,
-  createFileLanguageService,
-  findNewErrors,
+  createChangeValidator,
   getValidationOptions,
   TextChange,
 } from '../utils/candidateValidation';
@@ -545,23 +544,20 @@ function provenCandidates(
   }
 
   const { text } = source;
-  const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
-  let programsLeft = maxValidationPrograms;
+  const { check } = createChangeValidator(
+    fileName,
+    text,
+    compilerOptions,
+    projectProgram,
+    maxValidationPrograms,
+  );
 
   // The any alias is left out of the candidate text on purpose: it is declared
   // in a file a single-file program does not see, and an `any` type argument
   // can only remove errors, so leaving it out proves the same thing.
   const isClean = (group: Candidate[]): boolean => {
-    if (programsLeft <= 0) return false;
-    programsLeft -= 1;
-    const changes = changesOf(group);
-    const candidate = createFileLanguageService(
-      fileName,
-      applyTextChanges(text, changes),
-      compilerOptions,
-      projectProgram,
-    );
-    return findNewErrors(baseline, candidate, changes, fileName).length === 0;
+    const checked = check(() => changesOf(group));
+    return checked !== undefined && checked.newErrors.length === 0;
   };
 
   if (isClean(withEvidence)) {

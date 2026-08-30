@@ -4,9 +4,7 @@ import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 import { getOrCreate } from '../utils/maps';
 import {
-  applyTextChanges,
-  createFileLanguageService,
-  findNewErrors,
+  createChangeValidator,
   getValidationOptions,
   TextChange,
 } from '../utils/candidateValidation';
@@ -252,20 +250,17 @@ function validateCandidates(
   candidates: Candidate[],
   projectProgram: ts.Program,
 ): Candidate[] {
-  const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
-  let programsLeft = maxValidationPrograms;
+  const { check } = createChangeValidator(
+    fileName,
+    text,
+    compilerOptions,
+    projectProgram,
+    maxValidationPrograms,
+  );
 
   const isClean = (group: Candidate[]): boolean => {
-    if (programsLeft <= 0) return false;
-    programsLeft -= 1;
-    const changes = changesOf(group, 'any');
-    const candidate = createFileLanguageService(
-      fileName,
-      applyTextChanges(text, changes),
-      compilerOptions,
-      projectProgram,
-    );
-    return findNewErrors(baseline, candidate, changes, fileName).length === 0;
+    const checked = check(() => changesOf(group, 'any'));
+    return checked !== undefined && checked.newErrors.length === 0;
   };
 
   if (isClean(candidates)) {

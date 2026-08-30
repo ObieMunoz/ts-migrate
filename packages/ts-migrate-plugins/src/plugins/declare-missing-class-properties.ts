@@ -6,9 +6,7 @@ import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 import { getOrCreate } from '../utils/maps';
 import {
-  applyTextChanges,
-  createFileLanguageService,
-  findNewErrors,
+  createChangeValidator,
   getValidationOptions,
   TextChange,
   toOriginalPos,
@@ -251,26 +249,24 @@ function validateCandidates(
   projectProgram: ts.Program,
 ): Candidate[] {
   const { text } = sourceFile;
-  const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
-  let programsLeft = maxValidationPrograms;
+  const { check: checkChanges } = createChangeValidator(
+    fileName,
+    text,
+    compilerOptions,
+    projectProgram,
+    maxValidationPrograms,
+  );
 
   // A candidate left out of a group stays undeclared, so the accesses that
   // named it keep reporting the error the baseline already has and read as
   // the same any the alias would give them.
   const check = (group: Candidate[]): CheckResult | undefined => {
     if (group.length === 0) return { newErrors: [], inferredAny: new Set() };
-    if (programsLeft <= 0) return undefined;
-    programsLeft -= 1;
-    const changes = changesOf(group);
-    const candidate = createFileLanguageService(
-      fileName,
-      applyTextChanges(text, changes),
-      compilerOptions,
-      projectProgram,
-    );
+    const checked = checkChanges(() => changesOf(group));
+    if (!checked) return undefined;
     return {
-      newErrors: findNewErrors(baseline, candidate, changes, fileName),
-      inferredAny: inferredAnyCandidates(candidate, fileName, group, changes),
+      newErrors: checked.newErrors,
+      inferredAny: inferredAnyCandidates(checked.service, fileName, group, checked.changes),
     };
   };
 
