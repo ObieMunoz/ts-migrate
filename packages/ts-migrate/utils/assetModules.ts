@@ -139,7 +139,7 @@ function recordImportDeclaration(usage: Map<string, AssetUsage>, node: ts.Import
  * How each asset extension is imported across the given source files. Only
  * the import form matters, so the files are parsed but never resolved.
  */
-export function collectAssetImports(files: string[]): Map<string, AssetUsage> {
+function collectAssetImports(files: string[]): Map<string, AssetUsage> {
   const usage = new Map<string, AssetUsage>();
   files.forEach((file) => {
     let text: string;
@@ -239,7 +239,7 @@ function isDeclared(entry: DeclaredExtension | SkippedExtension): entry is Decla
   return 'kind' in entry;
 }
 
-export function renderAssetDeclarations(declared: DeclaredExtension[]): string {
+function renderAssetDeclarations(declared: DeclaredExtension[]): string {
   const blocks = [...declared]
     .sort((a, b) => a.extension.localeCompare(b.extension))
     .map(({ extension, kind }) =>
