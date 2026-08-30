@@ -15,6 +15,12 @@ import {
 import { isMigratableFile } from '../utils/sourceFiles';
 import { DEFAULT_MAX_UNION_MEMBERS, printType } from '../utils/typePrinter';
 import { createValidate, Properties } from '../utils/validateOptions';
+import {
+  addToFile,
+  createWholeProgramPass,
+  Pass,
+  planWholeProgram,
+} from '../utils/wholeProgramPass';
 
 export interface Options {
   maxUnionMembers?: number;
@@ -28,34 +34,18 @@ const attributeDiagnosticCodes = new Set([2322, 2326, 2559, 2769]);
 
 const reactOwnAttributes = new Set(['key', 'ref']);
 
-interface PlannedFile {
-  text: string;
-  groups: AnnotationGroup[];
-}
-
-interface Pass {
-  files: Map<string, PlannedFile>;
-  known: Set<string>;
-  served: Set<string>;
-}
-
-let currentPass: Pass | undefined;
+const pass = createWholeProgramPass<AnnotationGroup>();
 
 const reactPassedPropsPlugin: Plugin<Options> = {
   name: 'react-passed-props',
 
   run({ fileName, text, options, getLanguageService }) {
     const languageService = getLanguageService();
-    if (!currentPass || currentPass.served.has(fileName) || !currentPass.known.has(fileName)) {
-      currentPass = plan(languageService, options.maxUnionMembers ?? DEFAULT_MAX_UNION_MEMBERS);
-    }
-    currentPass.served.add(fileName);
-
-    const planned = currentPass.files.get(fileName);
-    if (!planned || planned.text !== text) {
-      return undefined;
-    }
-    return applyProvenAdditions(fileName, text, planned.groups, languageService);
+    const planned = pass.plannedFor(fileName, text, () =>
+      plan(languageService, options.maxUnionMembers ?? DEFAULT_MAX_UNION_MEMBERS),
+    );
+    if (!planned) return undefined;
+    return applyProvenAdditions(fileName, text, planned.items, languageService);
   },
 
   validate: createValidate<Options>(optionProperties),
@@ -68,51 +58,36 @@ interface Evidence {
   literal: string[];
 }
 
-function plan(languageService: ts.LanguageService, maxUnionMembers: number): Pass {
-  const pass: Pass = { files: new Map(), known: new Set(), served: new Set() };
-  const program = languageService.getProgram();
-  if (!program) return pass;
-  const checker = program.getTypeChecker();
-
-  const byAnnotation = new Map<ts.TypeNode, Map<string, Evidence>>();
-  program.getSourceFiles().forEach((file) => {
-    if (!isMigratableFile(file)) return;
-    pass.known.add(file.fileName);
-    if (!/\.[jt]sx$/.test(file.fileName)) return;
-    languageService.getSemanticDiagnostics(file.fileName).forEach((diagnostic) => {
-      if (!attributeDiagnosticCodes.has(diagnostic.code) || diagnostic.start == null) return;
-      const attribute = attributeAt(file, diagnostic.start);
-      if (!attribute) return;
-      collect(attribute, checker, byAnnotation);
+function plan(
+  languageService: ts.LanguageService,
+  maxUnionMembers: number,
+): Pass<AnnotationGroup> {
+  return planWholeProgram<AnnotationGroup>(languageService, ({ program, checker, known }) => {
+    const byAnnotation = new Map<ts.TypeNode, Map<string, Evidence>>();
+    program.getSourceFiles().forEach((file) => {
+      if (!isMigratableFile(file)) return;
+      known.add(file.fileName);
+      if (!/\.[jt]sx$/.test(file.fileName)) return;
+      languageService.getSemanticDiagnostics(file.fileName).forEach((diagnostic) => {
+        if (!attributeDiagnosticCodes.has(diagnostic.code) || diagnostic.start == null) return;
+        const attribute = attributeAt(file, diagnostic.start);
+        if (!attribute) return;
+        collect(attribute, checker, byAnnotation);
+      });
     });
-  });
 
-  const groupsByFile = new Map<string, AnnotationGroup[]>();
-  byAnnotation.forEach((props, annotation) => {
-    const members: string[] = [];
-    props.forEach((evidence, name) => {
-      members.push(`${name}?: ${memberType(checker, annotation, evidence, maxUnionMembers)}`);
+    const groupsByFile = new Map<string, AnnotationGroup[]>();
+    byAnnotation.forEach((props, annotation) => {
+      const members: string[] = [];
+      props.forEach((evidence, name) => {
+        members.push(`${name}?: ${memberType(checker, annotation, evidence, maxUnionMembers)}`);
+      });
+      if (members.length === 0) return;
+      const { fileName } = annotation.getSourceFile();
+      addToFile(groupsByFile, fileName, [annotationGroup(annotation, members)]);
     });
-    if (members.length === 0) return;
-    const { fileName } = annotation.getSourceFile();
-    const forFile = groupsByFile.get(fileName);
-    const group = annotationGroup(annotation, members);
-    if (forFile) {
-      forFile.push(group);
-    } else {
-      groupsByFile.set(fileName, [group]);
-    }
+    return groupsByFile;
   });
-
-  groupsByFile.forEach((groups, fileName) => {
-    const source = program.getSourceFile(fileName);
-    if (!source) return;
-    pass.files.set(fileName, {
-      text: source.text,
-      groups: groups.sort((a, b) => a.start - b.start),
-    });
-  });
-  return pass;
 }
 
 function attributeAt(file: ts.SourceFile, start: number): ts.JsxAttribute | undefined {
