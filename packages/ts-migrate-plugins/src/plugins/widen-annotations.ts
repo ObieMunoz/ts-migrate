@@ -9,6 +9,7 @@ import {
   TextChange,
   toCandidatePos,
 } from '../utils/candidateValidation';
+import { AnnotationSlice, annotationSlice } from '../utils/annotationAdditions';
 import findEnclosingNode from '../utils/enclosingNode';
 import { DEFAULT_MAX_UNION_MEMBERS, printType } from '../utils/typePrinter';
 import { createValidate, Properties } from '../utils/validateOptions';
@@ -204,11 +205,7 @@ function widenChange(
 }
 
 /** The annotation to replace, as text and as its top level union members. */
-interface Annotation {
-  start: number;
-  length: number;
-  /** Source text, parenthesized where a union cannot hold it as it stands. */
-  text: string;
+interface Annotation extends AnnotationSlice {
   members: string[];
 }
 
@@ -223,18 +220,14 @@ function annotationOf(
 ): Annotation | undefined {
   const typeNode = declaration.type;
   if (!typeNode) return undefined;
-  const start = typeNode.getStart(source);
-  const text = source.text.slice(start, typeNode.end);
   return {
-    start,
-    length: typeNode.end - start,
-    text: needsParentheses(typeNode) ? `(${text})` : text,
+    ...annotationSlice(typeNode, source, needsUnionParentheses),
     members: unionMemberTexts(typeNode, source),
   };
 }
 
 /** Type forms a union cannot hold without parentheses. */
-function needsParentheses(typeNode: ts.TypeNode): boolean {
+function needsUnionParentheses(typeNode: ts.TypeNode): boolean {
   return (
     ts.isFunctionTypeNode(typeNode) ||
     ts.isConstructorTypeNode(typeNode) ||
