@@ -1,5 +1,6 @@
 import ts from 'typescript';
 import updateSourceText, { SourceTextUpdate } from '../../utils/updateSourceText';
+import { spliceKeepingWhitespace } from './text';
 
 /**
  * Tracks updates to a ts.SourceFile as text changes.
@@ -89,9 +90,7 @@ class UpdateTracker {
       if (this.needsLeadingSemicolon(oldNode, printedNextNode)) {
         printedNextNode = `;${printedNextNode}`;
       }
-      const text = oldNode
-        .getFullText(this.sourceFile)
-        .replace(/^(\s*)[^]*?(\s*)$/, (_match, p1, p2) => `${p1}${printedNextNode}${p2}`);
+      const text = spliceKeepingWhitespace(oldNode.getFullText(this.sourceFile), printedNextNode);
       this.updates.push({
         kind: 'replace',
         index: oldNode.pos,
@@ -147,10 +146,7 @@ class UpdateTracker {
       const listFormat = addParens ? ts.ListFormat.Parenthesis : ts.ListFormat.CommaListElements;
       const printedNextNode = this.printer.printList(listFormat, newNodes, this.sourceFile);
       const prevText = this.sourceFile.text.substring(oldNodes.pos, oldNodes.end);
-      const text = prevText.replace(
-        /^(\s*)[^]*?(\s*)$/,
-        (_match, p1, p2) => `${p1}${printedNextNode}${p2}`,
-      );
+      const text = spliceKeepingWhitespace(prevText, printedNextNode);
       this.replace(oldNodes.pos, oldNodes.end - oldNodes.pos, text);
     }
   }
