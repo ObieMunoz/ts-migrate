@@ -703,37 +703,33 @@ function findSfcPropTypesNode(node: ReactSfcNode, sourceFile: ts.SourceFile) {
   return findPropTypesStatement(getComponentName(node), sourceFile);
 }
 
+function propTypesExpression(
+  node: ts.PropertyDeclaration | ts.ExpressionStatement | undefined,
+): ts.Expression | undefined {
+  if (!node) return undefined;
+
+  if (ts.isPropertyDeclaration(node) && node.initializer != null) {
+    return node.initializer;
+  }
+  if (ts.isExpressionStatement(node) && ts.isBinaryExpression(node.expression)) {
+    return node.expression.right;
+  }
+
+  return undefined;
+}
+
 function findPropTypesObjectLiteral(
   node: ts.PropertyDeclaration | ts.ExpressionStatement | undefined,
   sourceFile: ts.SourceFile,
 ): ts.ObjectLiteralExpression | undefined {
-  if (!node) return undefined;
-
-  let expression: ts.Expression | undefined;
-  if (ts.isPropertyDeclaration(node) && node.initializer != null) {
-    expression = node.initializer;
-  } else if (ts.isExpressionStatement(node) && ts.isBinaryExpression(node.expression)) {
-    expression = node.expression.right;
-  }
-
-  return unpackInitializer(expression, sourceFile);
+  return unpackInitializer(propTypesExpression(node), sourceFile);
 }
 
 function findImportedPropTypes(
   propTypesNode: ts.PropertyDeclaration | ts.ExpressionStatement | undefined,
   importedIdentifiers: Set<string>,
 ): ts.EntityName | undefined {
-  if (!propTypesNode) return undefined;
-
-  let expression: ts.Expression | undefined;
-  if (ts.isPropertyDeclaration(propTypesNode) && propTypesNode.initializer != null) {
-    expression = propTypesNode.initializer;
-  } else if (
-    ts.isExpressionStatement(propTypesNode) &&
-    ts.isBinaryExpression(propTypesNode.expression)
-  ) {
-    expression = propTypesNode.expression.right;
-  }
+  let expression = propTypesExpression(propTypesNode);
   if (!expression) return undefined;
 
   if (
