@@ -12,7 +12,7 @@ interface EnsureAliasDeclarationsParams {
   dryRun?: boolean;
 }
 
-const GENERATED_FILE = 'ts-migrate-aliases.d.ts';
+export const GENERATED_FILE = 'ts-migrate-aliases.d.ts';
 
 /**
  * The declaration files the project's tsconfig includes, parsed, where a
