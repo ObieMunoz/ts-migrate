@@ -122,18 +122,23 @@ function assetExtension(specifier: string): string | null {
   return extension;
 }
 
+/** Counts one import specifier under `field`, where it names an asset at all. */
+function countSpecifier(
+  usage: Map<string, AssetUsage>,
+  specifier: ts.StringLiteralLike,
+  field: keyof AssetUsage,
+): void {
+  const extension = assetExtension(specifier.text);
+  if (extension === null) return;
+  usageFor(usage, extension)[field] += 1;
+}
+
 function recordImportDeclaration(usage: Map<string, AssetUsage>, node: ts.ImportDeclaration): void {
   if (!ts.isStringLiteralLike(node.moduleSpecifier)) return;
-  const extension = assetExtension(node.moduleSpecifier.text);
-  if (extension === null) return;
-  const entry = usageFor(usage, extension);
-  if (!node.importClause) {
-    entry.sideEffect += 1;
-  } else if (node.importClause.namedBindings) {
-    entry.named += 1;
-  } else {
-    entry.default += 1;
-  }
+  const { importClause } = node;
+  let field: keyof AssetUsage = 'sideEffect';
+  if (importClause) field = importClause.namedBindings ? 'named' : 'default';
+  countSpecifier(usage, node.moduleSpecifier, field);
 }
 
 /**
@@ -159,8 +164,7 @@ function collectAssetImports(files: string[]): Map<string, AssetUsage> {
       } else if (ts.isExportDeclaration(node)) {
         // `export { x } from './logo.svg'` republishes the loader's exports.
         if (node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) {
-          const extension = assetExtension(node.moduleSpecifier.text);
-          if (extension !== null) usageFor(usage, extension).named += 1;
+          countSpecifier(usage, node.moduleSpecifier, 'named');
         }
       } else if (ts.isCallExpression(node)) {
         const [firstArgument] = node.arguments;
@@ -168,8 +172,7 @@ function collectAssetImports(files: string[]): Map<string, AssetUsage> {
           node.expression.kind === ts.SyntaxKind.ImportKeyword ||
           (ts.isIdentifier(node.expression) && node.expression.text === 'require');
         if (isModuleCall && firstArgument && ts.isStringLiteralLike(firstArgument)) {
-          const extension = assetExtension(firstArgument.text);
-          if (extension !== null) usageFor(usage, extension).default += 1;
+          countSpecifier(usage, firstArgument, 'default');
         }
       }
       ts.forEachChild(node, visit);
