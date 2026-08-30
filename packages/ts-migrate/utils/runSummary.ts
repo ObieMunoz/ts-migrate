@@ -132,13 +132,41 @@ export interface FullRunSummary extends RunSummaryBase {
 
 export type RunSummary = RenameRunSummary | MigrateRunSummary | FullRunSummary;
 
+const byKey =
+  <T>(key: (item: T) => string) =>
+  (a: T, b: T) =>
+    key(a) < key(b) ? -1 : 1;
+
 function summarizeBootstrapFiles(
   rootDir: string,
   skipped: BootstrapFile[] = [],
 ): Array<{ file: string; reason: string }> {
   return skipped
     .map(({ file, reason }) => ({ file: relativeTo(rootDir, file), reason }))
-    .sort((a, b) => (a.file < b.file ? -1 : 1));
+    .sort(byKey((entry) => entry.file));
+}
+
+function summaryBase<C extends RunSummaryBase['command']>(
+  command: C,
+  params: { rootDir: string; exitCode: number; dryRun?: boolean },
+): RunSummaryBase & { command: C } {
+  return {
+    command,
+    tsMigrateVersion: packageVersion(),
+    rootDir: params.rootDir,
+    exitCode: params.exitCode,
+    dryRun: params.dryRun ?? false,
+  };
+}
+
+function summarySkipped(
+  rootDir: string,
+  params: { skippedGitignoredFiles?: number; skippedBootstrapFiles?: BootstrapFile[] },
+): Pick<RenameRunSummary, 'skippedGitignoredFiles' | 'skippedBootstrapFiles'> {
+  return {
+    skippedGitignoredFiles: params.skippedGitignoredFiles ?? 0,
+    skippedBootstrapFiles: summarizeBootstrapFiles(rootDir, params.skippedBootstrapFiles),
+  };
 }
 
 export function buildRenameRunSummary(params: {
@@ -151,28 +179,23 @@ export function buildRenameRunSummary(params: {
   packageJsonRewrites?: PackageJsonRewrite[];
   packageJsonNotices?: PackageJsonNotice[];
 }): RenameRunSummary {
-  const { rootDir, exitCode, renamedFiles } = params;
+  const { rootDir, renamedFiles } = params;
   return {
-    command: 'rename',
-    tsMigrateVersion: packageVersion(),
-    rootDir,
-    exitCode,
-    dryRun: params.dryRun ?? false,
+    ...summaryBase('rename', params),
     renamedFiles: renamedFiles
       .map(({ oldFile, newFile }) => ({
         from: relativeTo(rootDir, oldFile),
         to: relativeTo(rootDir, newFile),
       }))
-      .sort((a, b) => (a.from < b.from ? -1 : 1)),
-    skippedGitignoredFiles: params.skippedGitignoredFiles ?? 0,
-    skippedBootstrapFiles: summarizeBootstrapFiles(rootDir, params.skippedBootstrapFiles),
-    packageJsonRewrites: sortByFileAndKey(params.packageJsonRewrites ?? []),
-    packageJsonNotices: sortByFileAndKey(params.packageJsonNotices ?? []),
+      .sort(byKey((entry) => entry.from)),
+    ...summarySkipped(rootDir, params),
+    packageJsonRewrites: [...(params.packageJsonRewrites ?? [])].sort(
+      byKey((entry: PackageJsonRewrite) => entry.file + entry.key),
+    ),
+    packageJsonNotices: [...(params.packageJsonNotices ?? [])].sort(
+      byKey((entry: PackageJsonNotice) => entry.file + entry.key),
+    ),
   };
-}
-
-function sortByFileAndKey<T extends { file: string; key: string }>(entries: T[]): T[] {
-  return [...entries].sort((a, b) => (a.file + a.key < b.file + b.key ? -1 : 1));
 }
 
 export function buildMigrateRunSummary(params: {
@@ -195,7 +218,9 @@ export function buildMigrateRunSummary(params: {
   skippedGitignoredFiles?: number;
   skippedBootstrapFiles?: BootstrapFile[];
 }): MigrateRunSummary {
-  const { command, rootDir, exitCode, updatedSourceFiles, pluginStats } = params;
+  const { command, rootDir, updatedSourceFiles, pluginStats } = params;
+  const relativeSorted = (files: Iterable<string>) =>
+    [...files].map((fileName) => relativeTo(rootDir, fileName)).sort();
 
   // A summary of a successful run must still be written if this scan throws.
   let changedFilesTypeDebt: MigrateRunSummary['changedFilesTypeDebt'] = null;
@@ -207,25 +232,15 @@ export function buildMigrateRunSummary(params: {
   }
 
   return {
-    command,
-    tsMigrateVersion: packageVersion(),
-    rootDir,
-    exitCode,
-    dryRun: params.dryRun ?? false,
+    ...summaryBase(command, params),
     filesToMigrate: params.filesToMigrate,
-    changedFiles: [...updatedSourceFiles].map((fileName) => relativeTo(rootDir, fileName)).sort(),
-    generatedFiles: [...(params.generatedFiles?.keys() ?? [])]
-      .map((fileName) => relativeTo(rootDir, fileName))
-      .sort(),
+    changedFiles: relativeSorted(updatedSourceFiles),
+    generatedFiles: relativeSorted(params.generatedFiles?.keys() ?? []),
     generatedFileParseErrors: (params.generatedFileParseErrors ?? [])
       .map(({ filePath, message }) => ({ file: relativeTo(rootDir, filePath), message }))
-      .sort((a, b) => (a.file < b.file ? -1 : 1)),
-    migratedFilesWithSyntaxErrors: (params.migratedFilesWithSyntaxErrors ?? [])
-      .map((fileName) => relativeTo(rootDir, fileName))
-      .sort(),
-    nonMigratedFilesWithSyntaxErrors: params.nonMigratedFilesWithSyntaxErrors
-      .map((fileName) => relativeTo(rootDir, fileName))
-      .sort(),
+      .sort(byKey((entry) => entry.file)),
+    migratedFilesWithSyntaxErrors: relativeSorted(params.migratedFilesWithSyntaxErrors ?? []),
+    nonMigratedFilesWithSyntaxErrors: relativeSorted(params.nonMigratedFilesWithSyntaxErrors),
     plugins: pluginStats.map(({ pluginName, changedFileCount }) => ({
       name: pluginName,
       changedFileCount,
@@ -249,13 +264,12 @@ export function buildMigrateRunSummary(params: {
         fileCount,
         files: [...files].sort(),
       }))
-      .sort((a, b) => (a.plugin + a.reason < b.plugin + b.reason ? -1 : 1)),
+      .sort(byKey((entry) => entry.plugin + entry.reason)),
     pluginErrors: (params.pluginErrors ?? [])
       .map(({ pluginName, file, message }) => ({ plugin: pluginName, file, message }))
-      .sort((a, b) => (a.file + a.plugin < b.file + b.plugin ? -1 : 1)),
+      .sort(byKey((entry) => entry.file + entry.plugin)),
     changedFilesTypeDebt,
-    skippedGitignoredFiles: params.skippedGitignoredFiles ?? 0,
-    skippedBootstrapFiles: summarizeBootstrapFiles(rootDir, params.skippedBootstrapFiles),
+    ...summarySkipped(rootDir, params),
   };
 }
 
