@@ -9,9 +9,3 @@ export function isDiagnosticWithLinePosition(
     (diagnostic as ts.DiagnosticWithLocation).length !== undefined
   );
 }
-
-export function isDiagnostic(
-  diagnostic: ts.Diagnostic | ts.DiagnosticWithLocation | undefined,
-): diagnostic is ts.Diagnostic {
-  return diagnostic != null && !isDiagnosticWithLinePosition(diagnostic);
-}
