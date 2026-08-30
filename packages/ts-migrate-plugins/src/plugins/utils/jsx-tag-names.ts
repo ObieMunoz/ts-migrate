@@ -21,3 +21,16 @@ export function jsxTagNameTypeArgument(tagName: ts.JsxTagNameExpression): string
   const text = tagName.getText();
   return ts.isIdentifier(tagName) && /^[a-z]/.test(text) ? `'${text}'` : `typeof ${text}`;
 }
+
+/**
+ * The intrinsic tag the attribute is written on, and nothing when it is written
+ * on a component.
+ */
+export function intrinsicTagOfJsxAttribute(attribute: ts.JsxAttribute): string | undefined {
+  const element = attribute.parent.parent;
+  if (!ts.isJsxOpeningElement(element) && !ts.isJsxSelfClosingElement(element)) {
+    return undefined;
+  }
+  const { tagName } = element;
+  return ts.isIdentifier(tagName) && /^[a-z]/.test(tagName.text) ? tagName.text : undefined;
+}

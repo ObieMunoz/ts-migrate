@@ -19,6 +19,7 @@ import getTypeFromPropTypesObjectLiteral, {
   unpackInitializer,
 } from './utils/react-props';
 import { elementTypesByTag } from './utils/intrinsic-elements';
+import { intrinsicTagOfJsxAttribute } from './utils/jsx-tag-names';
 import { hasParameterParentheses } from './utils/arrow';
 import { getTextPreservingWhitespace } from './utils/text';
 import { isStatic } from './utils/modifiers';
@@ -520,15 +521,6 @@ function isRefAttribute(node: ts.Node, refName: string): node is ts.JsxAttribute
   );
 }
 
-function getRefAttachmentTag(attribute: ts.JsxAttribute): string | undefined {
-  const element = attribute.parent.parent;
-  if (!ts.isJsxOpeningElement(element) && !ts.isJsxSelfClosingElement(element)) {
-    return undefined;
-  }
-  const { tagName } = element;
-  return ts.isIdentifier(tagName) && /^[a-z]/.test(tagName.text) ? tagName.text : undefined;
-}
-
 function isNamePosition(identifier: ts.Identifier) {
   const { parent } = identifier;
   return (
@@ -565,7 +557,7 @@ function getForwardRefElementType(forwardRefCall: ts.CallExpression): string | u
     }
 
     if (isRefAttribute(node, refName)) {
-      const attachmentTag = getRefAttachmentTag(node);
+      const attachmentTag = intrinsicTagOfJsxAttribute(node);
       if (attachmentTag === undefined || (tag !== undefined && tag !== attachmentTag)) {
         unresolved = true;
       } else {

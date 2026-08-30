@@ -8,6 +8,7 @@ import {
   TextChange,
 } from '../utils/candidateValidation';
 import { elementTypesByTag } from './utils/intrinsic-elements';
+import { intrinsicTagOfJsxAttribute } from './utils/jsx-tag-names';
 
 type Options = AnyAliasOptions;
 
@@ -480,10 +481,7 @@ function refAttachmentTag(reference: ts.Identifier): string | undefined {
     return undefined;
   }
 
-  const element = attribute.parent.parent;
-  if (!ts.isJsxOpeningElement(element) && !ts.isJsxSelfClosingElement(element)) return undefined;
-  const { tagName } = element;
-  return ts.isIdentifier(tagName) && /^[a-z]/.test(tagName.text) ? tagName.text : undefined;
+  return intrinsicTagOfJsxAttribute(attribute);
 }
 
 function isCurrentAccess(reference: ts.Identifier): boolean {
