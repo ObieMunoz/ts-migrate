@@ -1,6 +1,7 @@
 import ts, { isJsxFragment } from 'typescript';
 import { fileNoticeReporter, Plugin, PluginFileNotice } from '@obiemunoz/ts-migrate-server';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
+import { innermostNodeAt } from './utils/token-pos';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import createFollowUpMarkers from '../utils/followUpMarker';
 import typeOnlyImportRepairs from '../utils/typeOnlyImportRepair';
@@ -144,7 +145,7 @@ function getTextWithIgnores(
             'comment, so those diagnostics are left unsuppressed';
           const hint =
             'The TypeScript compile check will report them; they need a source change.';
-          const enclosing = innermostNodeAt(diagnostic.start, sourceFile);
+          const enclosing = innermostNodeAt(sourceFile, diagnostic.start) ?? sourceFile;
           const { update, marked } = markers.add(enclosing, { hint, reason });
           if (update) updates.push(update);
           reportNotice({ reason, hint, recovered: true, marked });
@@ -175,23 +176,6 @@ function getTextWithIgnores(
   });
 
   return updateSourceText(text, updates);
-}
-
-/**
- * The innermost node the position falls inside. For a diagnostic no node
- * matches exactly, which is what puts one in a string, template, or comment.
- * A position in trivia belongs to no node, so this returns the source file and
- * the caller ends up with nowhere to mark, which is the honest answer.
- */
-function innermostNodeAt(pos: number, sourceFile: ts.SourceFile): ts.Node {
-  let found: ts.Node = sourceFile;
-  const visit = (node: ts.Node) => {
-    if (pos < node.getStart(sourceFile) || pos >= node.end) return;
-    found = node;
-    ts.forEachChild(node, visit);
-  };
-  ts.forEachChild(sourceFile, visit);
-  return found;
 }
 
 function findDiagnosticNode(

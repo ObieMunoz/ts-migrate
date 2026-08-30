@@ -23,6 +23,7 @@ import {
   LintConfig,
 } from '../utils/inferFromUsage';
 import { importChangesFor, withImportChanges } from './utils/annotationImports';
+import { innermostNodeAt } from './utils/token-pos';
 
 export type { LintConfig };
 
@@ -648,23 +649,11 @@ function ancestorFunctions(source: ts.SourceFile, position: number): ts.Node[] {
   return result;
 }
 
-function nodeAt(source: ts.SourceFile, position: number): ts.Node | undefined {
-  let result: ts.Node | undefined;
-  const visit = (node: ts.Node) => {
-    if (node.getStart() <= position && position < node.end) {
-      result = node;
-      node.forEachChild(visit);
-    }
-  };
-  source.forEachChild(visit);
-  return result;
-}
-
 // Returns the direct argument node that contains `position` within a
 // CallExpression/NewExpression, or undefined if the position is not inside
 // an argument list.
 function argumentNodeAt(source: ts.SourceFile, position: number): ts.Node | undefined {
-  let node = nodeAt(source, position);
+  let node = innermostNodeAt(source, position);
   while (node) {
     const parent = node.parent;
     if (parent && (ts.isCallExpression(parent) || ts.isNewExpression(parent))) {
