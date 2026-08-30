@@ -91,13 +91,9 @@ export default function rename({
     logApplicationEntries(rootDir, partition.applicationEntries);
     if (partition.bootstrap.length > 0) {
       skippedBootstrapFiles = partition.bootstrap;
-      const lines = partition.bootstrap.map(
-        ({ file, reason }) =>
-          `  ${relativeTo(rootDir, file)} (${reason})`,
-      );
       log.info(
         `Keeping ${partition.bootstrap.length} build system file(s) as JavaScript so the ` +
-          `build still boots under plain Node:\n${lines.join('\n')}\n` +
+          `build still boots under plain Node:\n${reasonLines(rootDir, partition.bootstrap)}\n` +
           `Pass --bootstrap=false to rename them too, or add a file to the tsconfig "exclude" ` +
           `to keep it out of every run.`,
       );
@@ -142,13 +138,9 @@ export default function rename({
     .filter((result): result is { oldFile: string; newFile: string } => !!result.newFile);
 
   if (skippedModuleFiles.length > 0) {
-    const lines = skippedModuleFiles.map(
-      ({ file, reason }) =>
-        `  ${relativeTo(rootDir, file)} (${reason})`,
-    );
     log.info(
       `Keeping ${skippedModuleFiles.length} .mjs/.cjs file(s) at their current extension:\n` +
-        `${lines.join('\n')}`,
+        `${reasonLines(rootDir, skippedModuleFiles)}`,
     );
   }
 
@@ -197,6 +189,17 @@ export default function rename({
     packageJsonRewrites: references.rewrites,
     packageJsonNotices: references.notices,
   };
+}
+
+/**
+ * The skipped files as one indented, rootDir-relative line each, joined for a
+ * log message.
+ */
+function reasonLines(
+  rootDir: string,
+  skipped: ReadonlyArray<{ file: string; reason: string }>,
+): string {
+  return skipped.map(({ file, reason }) => `  ${relativeTo(rootDir, file)} (${reason})`).join('\n');
 }
 
 /**
