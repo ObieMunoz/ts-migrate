@@ -18,6 +18,7 @@
  * both.
  */
 import ts from 'typescript';
+import type { LintConfig } from '@obiemunoz/ts-migrate-server';
 import { applyTextChanges, TextChange } from './candidateValidation';
 
 // Diagnostics the `inferFromUsage` code fix acts on: implicit-any errors
@@ -32,10 +33,7 @@ export const inferableDiagnosticCodes = new Set([
 const anyFallbackRegex = /^\s*(this\s*)?:\s*any(\[\])?\s*$/;
 
 /** The lint settings the annotations are formatted with, where a run knows them. */
-export interface LintConfig {
-  useTabs: boolean;
-  tabWidth: number;
-}
+export type { LintConfig };
 
 // `newLine` is the character the code fixes write inside the whole statements
 // they insert, so a caller whose output reaches a file verbatim passes the
