@@ -1,10 +1,9 @@
 import { execFileSync } from 'child_process';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import full, { FullParams, Prompter } from '../../../commands/full';
 import { TypeScriptDecision } from '../../../utils/resolveTypeScript';
-import { deleteDir, hashDir, transcriptLines } from '@obiemunoz/ts-migrate-test-utils';
+import { createTmpDir, deleteDir, hashDir, transcriptLines } from '@obiemunoz/ts-migrate-test-utils';
 
 /**
  * The pipeline driven in process, the way a caller drives it, rather than
@@ -24,7 +23,6 @@ jest.mock('updatable-log', () => {
  * work tree, so the case of a project that is in no repository at all could not
  * be reached from there.
  */
-const createDir = () => fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-full-'));
 
 let rootDir: string;
 /** The typescript package the check step resolves its compiler from. */
@@ -32,9 +30,9 @@ let compilerDir: string;
 
 beforeEach(() => {
   transcriptLines.length = 0;
-  rootDir = createDir();
+  rootDir = createTmpDir('ts-migrate-full-');
   // Outside rootDir, so the migration never sees it as part of the project.
-  compilerDir = createDir();
+  compilerDir = createTmpDir('ts-migrate-full-');
   writeCheckCompiler('process.exit(0);\n');
 });
 

@@ -1,6 +1,5 @@
 import { execFileSync } from 'child_process';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import ts from 'typescript';
 import {
@@ -15,6 +14,7 @@ import {
   typeScriptOverrideFromArgv,
   typeScriptWarning,
 } from '../../utils/resolveTypeScript';
+import { createTmpDir } from '@obiemunoz/ts-migrate-test-utils';
 
 const packageRoot = path.resolve(__dirname, '..', '..');
 
@@ -23,7 +23,7 @@ const packageRoot = path.resolve(__dirname, '..', '..');
 let tmpDir: string;
 
 beforeEach(() => {
-  tmpDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ts-migrate-resolve-'));
+  tmpDir = createTmpDir('ts-migrate-resolve-');
 });
 
 afterEach(() => {
