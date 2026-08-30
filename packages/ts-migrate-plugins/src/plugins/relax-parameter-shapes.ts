@@ -11,6 +11,12 @@ import {
   TextChange,
 } from '../utils/candidateValidation';
 import { isMigratableFile } from '../utils/sourceFiles';
+import {
+  addToFile,
+  createWholeProgramPass,
+  Pass,
+  planWholeProgram,
+} from '../utils/wholeProgramPass';
 
 type Options = AnyAliasOptions;
 
@@ -25,20 +31,7 @@ interface PlannedChange extends TextChange {
   writesAny: boolean;
 }
 
-interface PlannedFile {
-  /** The text the plan was computed against; a file that has since changed is skipped. */
-  text: string;
-  changes: PlannedChange[];
-}
-
-interface Pass {
-  files: Map<string, PlannedFile>;
-  /** Every file the plan was computed over, so a pass over a different set is noticed. */
-  known: Set<string>;
-  served: Set<string>;
-}
-
-let currentPass: Pass | undefined;
+const pass = createWholeProgramPass<PlannedChange>();
 
 /**
  * Relaxes an object type written inline on a parameter to the shape the
@@ -60,16 +53,10 @@ const relaxParameterShapesPlugin: Plugin<Options> = {
 
   run({ fileName, text, sourceFile, getLanguageService, options }) {
     const languageService = getLanguageService();
-    if (!currentPass || currentPass.served.has(fileName) || !currentPass.known.has(fileName)) {
-      currentPass = plan(languageService);
-    }
-    currentPass.served.add(fileName);
+    const planned = pass.plannedFor(fileName, text, () => plan(languageService));
+    if (!planned) return undefined;
 
-    const planned = currentPass.files.get(fileName);
-    if (!planned || planned.text !== text) {
-      return undefined;
-    }
-    const kept = proven(fileName, text, sourceFile, planned.changes, languageService);
+    const kept = proven(fileName, text, sourceFile, planned.items, languageService);
     if (!kept) return undefined;
 
     const anyAlias = options.anyAlias ?? 'any';
@@ -91,46 +78,29 @@ interface Refutation {
   mismatched: Set<string>;
 }
 
-function plan(languageService: ts.LanguageService): Pass {
-  const pass: Pass = { files: new Map(), known: new Set(), served: new Set() };
-  const program = languageService.getProgram();
-  if (!program) return pass;
-  const checker = program.getTypeChecker();
-
-  const refutations = new Map<ts.ParameterDeclaration, Refutation>();
-  program.getSourceFiles().forEach((file) => {
-    if (!isMigratableFile(file)) return;
-    pass.known.add(file.fileName);
-    languageService.getSemanticDiagnostics(file.fileName).forEach((diagnostic) => {
-      if (!argumentDiagnosticCodes.has(diagnostic.code) || diagnostic.start == null) return;
-      const site = argumentAt(file, diagnostic.start, diagnostic.length ?? 0);
-      if (!site) return;
-      refute(site, checker, refutations);
+function plan(languageService: ts.LanguageService): Pass<PlannedChange> {
+  return planWholeProgram<PlannedChange>(languageService, ({ program, checker, known }) => {
+    const refutations = new Map<ts.ParameterDeclaration, Refutation>();
+    program.getSourceFiles().forEach((file) => {
+      if (!isMigratableFile(file)) return;
+      known.add(file.fileName);
+      languageService.getSemanticDiagnostics(file.fileName).forEach((diagnostic) => {
+        if (!argumentDiagnosticCodes.has(diagnostic.code) || diagnostic.start == null) return;
+        const site = argumentAt(file, diagnostic.start, diagnostic.length ?? 0);
+        if (!site) return;
+        refute(site, checker, refutations);
+      });
     });
-  });
 
-  const changesByFile = new Map<string, PlannedChange[]>();
-  refutations.forEach((refutation, parameter) => {
-    const changes = relaxation(refutation, checker);
-    if (changes.length === 0) return;
-    const { fileName } = parameter.getSourceFile();
-    const forFile = changesByFile.get(fileName);
-    if (forFile) {
-      forFile.push(...changes);
-    } else {
-      changesByFile.set(fileName, changes);
-    }
-  });
-
-  changesByFile.forEach((changes, fileName) => {
-    const source = program.getSourceFile(fileName);
-    if (!source) return;
-    pass.files.set(fileName, {
-      text: source.text,
-      changes: changes.sort((a, b) => a.start - b.start),
+    const changesByFile = new Map<string, PlannedChange[]>();
+    refutations.forEach((refutation, parameter) => {
+      const changes = relaxation(refutation, checker);
+      if (changes.length === 0) return;
+      const { fileName } = parameter.getSourceFile();
+      addToFile(changesByFile, fileName, changes);
     });
+    return changesByFile;
   });
-  return pass;
 }
 
 interface ArgumentSite {
