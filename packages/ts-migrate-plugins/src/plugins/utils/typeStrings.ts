@@ -45,6 +45,16 @@ export function isFunctionTypeStr(typeStr: string): boolean {
   return splitTopLevel(typeStr.trim(), ' => ').length > 1;
 }
 
+// Fold a dotted name (e.g. `React.ReactNode`) into an entity name.
+function createEntityName(dotted: string): ts.EntityName {
+  const parts = dotted.split('.');
+  let entityName: ts.EntityName = ts.factory.createIdentifier(parts[0]);
+  for (let i = 1; i < parts.length; i++) {
+    entityName = ts.factory.createQualifiedName(entityName, ts.factory.createIdentifier(parts[i]));
+  }
+  return entityName;
+}
+
 // Convert a type string (as produced by checker.typeToString or our own
 // literal-union builder) to a ts.TypeNode using ts.factory calls only, so
 // the resulting nodes have no source positions and print cleanly.
@@ -60,15 +70,7 @@ export function buildTypeNode(typeStr: string, anyAlias?: string): ts.TypeNode {
   // typeof query: `typeof someValue` (possibly dotted, e.g. `typeof ns.value`).
   const typeofMatch = /^typeof\s+([A-Za-z_$][A-Za-z0-9_$.]*)$/.exec(typeStr);
   if (typeofMatch) {
-    const parts = typeofMatch[1].split('.');
-    let entityName: ts.EntityName = ts.factory.createIdentifier(parts[0]);
-    for (let i = 1; i < parts.length; i++) {
-      entityName = ts.factory.createQualifiedName(
-        entityName,
-        ts.factory.createIdentifier(parts[i]),
-      );
-    }
-    return ts.factory.createTypeQueryNode(entityName);
+    return ts.factory.createTypeQueryNode(createEntityName(typeofMatch[1]));
   }
 
   // Double-quoted string literal
@@ -151,15 +153,7 @@ export function buildTypeNode(typeStr: string, anyAlias?: string): ts.TypeNode {
 
   // Qualified / dotted name (e.g. React.ReactNode, JSX.Element)
   if (/^[A-Za-z_$][A-Za-z0-9_$.]*$/.test(typeStr)) {
-    const parts = typeStr.split('.');
-    let entityName: ts.EntityName = ts.factory.createIdentifier(parts[0]);
-    for (let i = 1; i < parts.length; i++) {
-      entityName = ts.factory.createQualifiedName(
-        entityName,
-        ts.factory.createIdentifier(parts[i]),
-      );
-    }
-    return ts.factory.createTypeReferenceNode(entityName, undefined);
+    return ts.factory.createTypeReferenceNode(createEntityName(typeStr), undefined);
   }
 
   // Fallback: emit anyAlias / any
