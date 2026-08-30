@@ -49,6 +49,9 @@ export function updateImports(
 
     const isModuleSpecifier = (cur: AnyImport) => cur.moduleSpecifier === moduleSpecifierText;
 
+    const pending = <T extends AddImport>(is: (cur: AnyImport) => cur is T): T[] =>
+      toAddActual.filter(is).filter(isModuleSpecifier).filter(isNotAdded);
+
     let { importClause } = importDeclaration;
 
     const shouldRemoveAllUnused = toRemove.filter(isModuleImport).some(isModuleSpecifier);
@@ -76,17 +79,11 @@ export function updateImports(
       );
     }
 
-    toAddActual
-      .filter(isDefaultImport)
-      .filter(isModuleSpecifier)
-      .filter(isNotAdded)
+    pending(isDefaultImport)
       .filter((cur) => importClause.name && cur.defaultImport === importClause.name.text)
       .forEach((cur) => added.add(cur));
 
-    const nameToAdd = toAddActual
-      .filter(isDefaultImport)
-      .filter(isModuleSpecifier)
-      .filter(isNotAdded);
+    const nameToAdd = pending(isDefaultImport);
     if (nameToAdd.length > 0 && importClause.name == null) {
       importClause = ts.factory.updateImportClause(
         importClause,
@@ -126,10 +123,7 @@ export function updateImports(
         return !shouldRemove;
       });
 
-      toAddActual
-        .filter(isNamedImport)
-        .filter(isModuleSpecifier)
-        .filter(isNotAdded)
+      pending(isNamedImport)
         .filter((cur) => elements.some((el) => el.name.text === cur.namedImport))
         .forEach((cur) => added.add(cur));
 
@@ -145,10 +139,7 @@ export function updateImports(
       }
     }
 
-    const namedToAdd = toAddActual
-      .filter(isNamedImport)
-      .filter(isModuleSpecifier)
-      .filter(isNotAdded);
+    const namedToAdd = pending(isNamedImport);
     if (namedToAdd.length > 0) {
       importClause = ts.factory.updateImportClause(
         importClause,
