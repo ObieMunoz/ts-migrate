@@ -1,7 +1,11 @@
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
-import { collectIdentifierNodes, resolvesToDeclaration } from './utils/identifiers';
+import {
+  collectIdentifierNodes,
+  groupByName,
+  resolvesToDeclaration,
+} from './utils/identifiers';
 
 /**
  * Converts arrow functions that are referenced before their declaration into
@@ -49,15 +53,7 @@ function hoistArrowFunctions(
   const candidates = findCandidates(sourceFile);
   if (candidates.length === 0) return sourceText;
 
-  const byName = new Map<string, Candidate[]>();
-  candidates.forEach((candidate) => {
-    const list = byName.get(candidate.name.text);
-    if (list) {
-      list.push(candidate);
-    } else {
-      byName.set(candidate.name.text, [candidate]);
-    }
-  });
+  const byName = groupByName(candidates);
 
   findReferences(sourceFile, byName, checker);
 
