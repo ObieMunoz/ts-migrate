@@ -558,6 +558,17 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
     const resolvedImports: NamedImport[] = [];
     const importSeen = new Set<ts.Symbol>();
 
+    const degradesToAny = (typeStr: string) =>
+      typeStr === 'any' || typeStr === (anyAlias ?? 'any');
+
+    const collectImportsForInfo = (info: PropInfo) => {
+      for (const tsType of info.observedTsTypes) {
+        if (tsType != null) {
+          collectImportSpecs(tsType, checker, fileName, importSeen, resolvedImports);
+        }
+      }
+    };
+
     // A Props alias shared by more than one component in the file is patched
     // once, from the evidence of every component that extends it: two passes
     // over the same member span would collide.
@@ -616,7 +627,7 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
           const info = propMap.get(propName);
           if (!info || info.observedTypes.length === 0) continue;
           const finalTypeStr = widenTypes(info.observedTypes, anyAlias);
-          if (finalTypeStr === 'any' || finalTypeStr === (anyAlias ?? 'any')) continue;
+          if (degradesToAny(finalTypeStr)) continue;
 
           // Reconstruct the type via the factory rather than splicing the raw
           // `typeToString` output as text: for large types `typeToString`
@@ -627,14 +638,10 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
           // which leaves the member as its existing `any`.
           const typeNode = buildTypeNode(finalTypeStr, anyAlias);
           const printedType = printer.printNode(ts.EmitHint.Unspecified, typeNode, sourceFile);
-          if (printedType === 'any' || printedType === (anyAlias ?? 'any')) continue;
+          if (degradesToAny(printedType)) continue;
 
           // Collect imports for surviving non-primitive types.
-          for (const tsType of info.observedTsTypes) {
-            if (tsType != null) {
-              collectImportSpecs(tsType, checker, fileName, importSeen, resolvedImports);
-            }
-          }
+          collectImportsForInfo(info);
 
           updates.push({
             kind: 'replace',
@@ -750,18 +757,12 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
 
         const typeNode = buildTypeNode(finalTypeStr, anyAlias);
         const printedType = printer.printNode(ts.EmitHint.Unspecified, typeNode, sourceFile);
-        const degradesToAny =
-          printedType === 'any' || printedType === (anyAlias ?? 'any');
 
         // Collect imports for the type's referenced symbols — but only when the
         // emitted type actually survives. Emitting `any` while importing the
         // type's symbols would leave dangling, unused imports.
-        if (!degradesToAny) {
-          for (const tsType of info.observedTsTypes) {
-            if (tsType != null) {
-              collectImportSpecs(tsType, checker, fileName, importSeen, resolvedImports);
-            }
-          }
+        if (!degradesToAny(printedType)) {
+          collectImportsForInfo(info);
         }
 
         members.push(
