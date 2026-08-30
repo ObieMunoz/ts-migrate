@@ -34,15 +34,36 @@ interface Addition {
   member: string;
 }
 
-export function annotationGroup(annotation: ts.TypeNode, members: string[]): AnnotationGroup {
-  const source = annotation.getSourceFile();
+/** The span an annotation occupies, and the source text to write back into it. */
+export interface AnnotationSlice {
+  start: number;
+  length: number;
+  /** Source text, parenthesized where the joining type form cannot hold it as it stands. */
+  text: string;
+}
+
+export function annotationSlice(
+  annotation: ts.TypeNode,
+  source: ts.SourceFile,
+  needsParentheses: (typeNode: ts.TypeNode) => boolean,
+): AnnotationSlice {
   const start = annotation.getStart(source);
-  const declared = source.text.slice(start, annotation.end);
+  const text = source.text.slice(start, annotation.end);
   return {
     start,
     length: annotation.end - start,
-    declared: needsIntersectionParentheses(annotation) ? `(${declared})` : declared,
-    open: ts.isTypeLiteralNode(annotation) && !declared.includes('\n'),
+    text: needsParentheses(annotation) ? `(${text})` : text,
+  };
+}
+
+export function annotationGroup(annotation: ts.TypeNode, members: string[]): AnnotationGroup {
+  const source = annotation.getSourceFile();
+  const { start, length, text } = annotationSlice(annotation, source, needsIntersectionParentheses);
+  return {
+    start,
+    length,
+    declared: text,
+    open: ts.isTypeLiteralNode(annotation) && !text.includes('\n'),
     members,
   };
 }
