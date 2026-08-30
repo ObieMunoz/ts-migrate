@@ -9,6 +9,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { readText } from './readText';
 
 /**
  * Commands that compile or run TypeScript with no further configuration.
@@ -164,15 +165,6 @@ interface ProjectManifests {
   dependencies: Set<string>;
   /** Every `eslintConfig` block, as text for the marker scan. */
   eslintConfigs: string[];
-}
-
-function readText(file: string): string | undefined {
-  try {
-    return fs.readFileSync(file, 'utf-8');
-  } catch {
-    // Missing or unreadable: a file nothing can read is no evidence either.
-    return undefined;
-  }
 }
 
 function record(value: unknown): Record<string, unknown> {

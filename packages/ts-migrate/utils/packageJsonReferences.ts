@@ -4,6 +4,7 @@ import log from 'updatable-log';
 import { errorMessage } from '@obiemunoz/ts-migrate-server';
 import { isJsExtension, JS_EXTENSION_REGEX } from './jsExtensions';
 import { relativeTo } from './paths';
+import { readText } from './readText';
 import { hasTypeScriptBuild } from './projectTooling';
 import { JSON5Path, replaceJSON5Strings } from './updateJSON5';
 
@@ -166,12 +167,8 @@ export function updatePackageJsonReferences(
 
   packageJsonFiles(rootDir, renamedFiles).forEach((packageJsonFile) => {
     const dir = path.dirname(packageJsonFile);
-    let sourceText: string;
-    try {
-      sourceText = fs.readFileSync(packageJsonFile, 'utf-8');
-    } catch {
-      return;
-    }
+    const sourceText = readText(packageJsonFile);
+    if (sourceText === undefined) return;
 
     const rewrites: PackageJsonRewrite[] = [];
     const notices: PackageJsonNotice[] = [];

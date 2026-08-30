@@ -7,6 +7,7 @@ import { sampleIgnoredPaths } from './gitignore';
 import { isConfigName } from './configNames';
 import { JS_EXTENSION_REGEX } from './jsExtensions';
 import { isUnder, relativeTo } from './paths';
+import { readText } from './readText';
 
 export interface BootstrapFile {
   file: string;
@@ -116,10 +117,8 @@ function createDependencyReader(candidateSet: Set<string>) {
     const cached = cache.get(file);
     if (cached) return cached;
 
-    let text: string;
-    try {
-      text = fs.readFileSync(file, 'utf-8');
-    } catch {
+    const text = readText(file);
+    if (text === undefined) {
       cache.set(file, []);
       return [];
     }

@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import ts from 'typescript';
 import { relativeTo } from './paths';
+import { readText } from './readText';
 import { appendJSON5ArrayItem } from './updateJSON5';
 
 const canonical = (fileName: string): string =>
@@ -63,12 +64,8 @@ interface ReadConfig {
 /** The project's own tsconfig.json as both source text and parsed object. */
 function readTsConfig(rootDir: string): ReadConfig | null {
   const configFile = path.join(rootDir, 'tsconfig.json');
-  let text: string;
-  try {
-    text = fs.readFileSync(configFile, 'utf-8');
-  } catch {
-    return null;
-  }
+  const text = readText(configFile);
+  if (text === undefined) return null;
   const { config, error } = ts.parseConfigFileTextToJson(configFile, text);
   if (error || !config || typeof config !== 'object') return null;
   return { configFile, text, config, hasOwnInclude: Array.isArray(config.include) };
