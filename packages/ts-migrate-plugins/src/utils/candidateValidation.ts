@@ -379,3 +379,29 @@ export function createChangeValidator(
     },
   };
 }
+
+/**
+ * The candidates a clean check keeps. The whole set is tried first, which is
+ * one program for a file whose candidates are all still good; otherwise each
+ * one is re-checked on top of what is already accepted, so a set is only kept
+ * when the file checks with every member of it applied at once.
+ */
+export function acceptGreedily<T>(
+  items: readonly T[],
+  isClean: (group: T[]) => boolean,
+): { accepted: T[]; rejected: T[] } {
+  if (isClean([...items])) {
+    return { accepted: [...items], rejected: [] };
+  }
+
+  const accepted: T[] = [];
+  const rejected: T[] = [];
+  items.forEach((item) => {
+    if (isClean([...accepted, item])) {
+      accepted.push(item);
+    } else {
+      rejected.push(item);
+    }
+  });
+  return { accepted, rejected };
+}
