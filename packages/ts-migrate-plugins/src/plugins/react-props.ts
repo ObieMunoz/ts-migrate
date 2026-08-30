@@ -258,7 +258,7 @@ function updatePropTypes(
                 [
                   ts.factory.createTypeReferenceNode(refTypeName, undefined),
                   ts.factory.createTypeReferenceNode(propsTypeName, undefined),
-                ].filter(isNotNull) as any,
+                ],
               ),
               sourceFile,
             ),
