@@ -33,6 +33,18 @@ export function collectIdentifiers(sourceFile: ts.SourceFile): Set<string> {
 }
 
 /**
+ * Checks whether an identifier is a property name (`a.b`, `{ b: ... }`) rather
+ * than a free reference.
+ */
+export function isPropertyNamePosition(identifier: ts.Identifier): boolean {
+  const { parent } = identifier;
+  return (
+    (ts.isPropertyAccessExpression(parent) && parent.name === identifier) ||
+    (ts.isPropertyAssignment(parent) && parent.name === identifier)
+  );
+}
+
+/**
  * Adds every name a binding introduces to `out`, descending through nested
  * object and array patterns.
  */

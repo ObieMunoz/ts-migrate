@@ -5,6 +5,7 @@ import {
   findKnownImports,
   findKnownVariables,
   collectIdentifierNodes,
+  isPropertyNamePosition,
   KnownDefinitionMap,
 } from './utils/identifiers';
 import { anyTypeNode } from './utils/anyTypes';
@@ -68,9 +69,8 @@ function canHoistIdentifier(
     isDefined ||
     isGlobal ||
     // e.g. in 'PropTypes.string.isRequired' allow the accessing identifiers 'string' and 'isRequired'
-    (ts.isPropertyAccessExpression(identifier.parent) && identifier.parent.name === identifier) ||
     // e.g. in { foo: 'bar' } allow the assigned identifier key 'foo'
-    (ts.isPropertyAssignment(identifier.parent) && identifier.parent.name === identifier) ||
+    isPropertyNamePosition(identifier) ||
     // e.g. in { foo() {} } allow foo
     (ts.isMethodDeclaration(identifier.parent) && identifier.parent.name === identifier)
   );
