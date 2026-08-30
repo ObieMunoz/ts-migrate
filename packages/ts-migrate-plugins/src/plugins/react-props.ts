@@ -121,15 +121,14 @@ const reactPropsPlugin: Plugin<Options> = {
         { namedImport: 'InferProps', moduleSpecifier: 'prop-types' },
         ...spreadReplacements.map((cur) => cur.typeImport),
       ],
-      !options.shouldKeepPropTypes
-        ? [
+      options.shouldKeepPropTypes
+        ? []
+        : [
             { moduleSpecifier: 'prop-types' },
-            ...(options.shouldUpdateAirbnbImports ? importReplacements : []),
             ...(options.shouldUpdateAirbnbImports
-              ? spreadReplacements.map((cur) => cur.spreadImport)
+              ? [...importReplacements, ...spreadReplacements.map((cur) => cur.spreadImport)]
               : []),
-          ]
-        : [],
+          ],
     );
     return updateSourceText(updatedSourceText, importUpdates);
   },
@@ -363,9 +362,7 @@ function updateClassPropTypes(
   updates.push(
     replaceHeritageTypeArguments(
       heritageType,
-      [ts.factory.createTypeReferenceNode(propsTypeName, undefined), stateType].filter(
-        isNotNull,
-      ) as any,
+      [ts.factory.createTypeReferenceNode(propsTypeName, undefined), stateType].filter(isNotNull),
       ts.createPrinter(),
       sourceFile,
     ),
