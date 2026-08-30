@@ -390,15 +390,35 @@ export default async function migrate({
         // After the counter is cleared, so nothing renders over the report.
         notices.report(pluginLogPrefix);
         const passGroups = notices.groups();
-        mergePluginFailures(
+        mergeFileNotices(
           pluginFailures,
           plugin.name,
           passGroups.filter((group) => !group.recovered),
+          ({ reason, ruleId }, files) => ({
+            pluginName: plugin.name,
+            reason,
+            ruleId,
+            fileCount: files.length,
+            files,
+          }),
         );
-        mergePluginNotices(
+        mergeFileNotices(
           pluginNotices,
           plugin.name,
           passGroups.filter((group) => group.recovered),
+          ({ reason, ruleId, hint, marked }, files) => ({
+            pluginName: plugin.name,
+            reason,
+            hint,
+            ruleId,
+            marked,
+            fileCount: files.length,
+            files,
+          }),
+          (existing, group) => {
+            // A later pass can mark a site an earlier one only reported.
+            existing.marked = existing.marked || group.marked;
+          },
         );
 
         for (const { fileName, text } of deferredWrites) {
@@ -636,47 +656,6 @@ function mergeFileNotices<
       entries.push(build(group, files));
     }
   });
-}
-
-/** Folds one pass's failures into the run's. */
-function mergePluginFailures(
-  failures: MigrateResult['pluginFailures'],
-  pluginName: string,
-  groups: FileNoticeGroup[],
-): void {
-  mergeFileNotices(failures, pluginName, groups, ({ reason, ruleId }, files) => ({
-    pluginName,
-    reason,
-    ruleId,
-    fileCount: files.length,
-    files,
-  }));
-}
-
-/** Folds one pass's recovered notices into the run's. */
-function mergePluginNotices(
-  notices: MigrateResult['pluginNotices'],
-  pluginName: string,
-  groups: FileNoticeGroup[],
-): void {
-  mergeFileNotices(
-    notices,
-    pluginName,
-    groups,
-    ({ reason, ruleId, hint, marked }, files) => ({
-      pluginName,
-      reason,
-      hint,
-      ruleId,
-      marked,
-      fileCount: files.length,
-      files,
-    }),
-    (existing, group) => {
-      // A later pass can mark a site an earlier one only reported.
-      existing.marked = existing.marked || group.marked;
-    },
-  );
 }
 
 /** A declaration file in any of its module formats: .d.ts, .d.mts, .d.cts. */
