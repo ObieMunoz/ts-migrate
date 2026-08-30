@@ -21,7 +21,18 @@ import packageVersion from '../utils/packageVersion';
 
 const ISSUES_URL = 'https://github.com/ObieMunoz/ts-migrate/issues';
 
-const STEP_COUNT = 4;
+/**
+ * The pipeline in order. It is what numbers the steps a run reports, so the
+ * ordering is stated once rather than restated at each message; typing it
+ * against `FullRunStep['name']` turns a step this list forgets into a compile
+ * error.
+ */
+const STEP_NAMES: ReadonlyArray<FullRunStep['name']> = ['init', 'rename', 'migrate', 'check'];
+
+/** How a step names itself in the message that reports it finished or failed. */
+function stepLabel(name: FullRunStep['name']): string {
+  return `Step ${STEP_NAMES.indexOf(name) + 1} of ${STEP_NAMES.length} (${name})`;
+}
 
 /**
  * The declaration files a run can generate. A tsconfig that does not match one
@@ -391,7 +402,7 @@ ${warning}
   private stepInit(): number | undefined {
     const { rootDir, folder, dryRun } = this.params;
     log.info(`
-[Step 1 of ${STEP_COUNT}] Initializing ts-config for the "${folder}"...
+[Step 1 of ${STEP_NAMES.length}] Initializing ts-config for the "${folder}"...
 `);
 
     if (fs.existsSync(path.join(rootDir, 'tsconfig.json'))) {
@@ -417,20 +428,16 @@ ${warning}
       wroteConfig = false;
     }
     if (!wroteConfig || !fs.existsSync(path.join(rootDir, 'tsconfig.json'))) {
-      return this.failStep('init', `Step 1 of ${STEP_COUNT} (init)`, 1);
+      return this.failStep('init', 1);
     }
-    return this.finishStep(
-      'init',
-      `Step 1 of ${STEP_COUNT} (init)`,
-      `[ts-migrate][${path.basename(folder)}] Init tsconfig.json file`,
-    );
+    return this.finishStep('init', `[ts-migrate][${path.basename(folder)}] Init tsconfig.json file`);
   }
 
   private stepRename(): number | undefined {
     const { rootDir, folder, dryRun, renameOptions } = this.params;
 
     log.info(`
-[Step 2 of ${STEP_COUNT}] Renaming files from JS/JSX to TS/TSX and updating project.json...
+[Step 2 of ${STEP_NAMES.length}] Renaming files from JS/JSX to TS/TSX and updating project.json...
 `);
 
     // The rename reads the tsconfig Step 1 would have written, so on a project
@@ -453,13 +460,12 @@ ${warning}
       result = null;
     }
     if (result === null) {
-      return this.failStep('rename', `Step 2 of ${STEP_COUNT} (rename)`, 255);
+      return this.failStep('rename', 255);
     }
 
     this.renameSummary = buildRenameRunSummary({ ...result, rootDir, exitCode: 0, dryRun });
     return this.finishStep(
       'rename',
-      `Step 2 of ${STEP_COUNT} (rename)`,
       `[ts-migrate][${path.basename(folder)}] Rename files from JS/JSX to TS/TSX`,
     );
   }
@@ -467,7 +473,7 @@ ${warning}
   private async stepMigrate(): Promise<number | undefined> {
     const { rootDir, folder, migrateOptions } = this.params;
     log.info(`
-[Step 3 of ${STEP_COUNT}] Fixing TypeScript errors...
+[Step 3 of ${STEP_NAMES.length}] Fixing TypeScript errors...
 `);
 
     let outcome;
@@ -487,27 +493,23 @@ ${warning}
       // definition recommendations are exactly what a crash would swallow.
       log.error(errorMessage(err));
       if (err instanceof Error && err.stack) log.error(err.stack);
-      return this.failStep('migrate', `Step 3 of ${STEP_COUNT} (migrate)`, 255);
+      return this.failStep('migrate', 255);
     }
 
     this.typesReport = outcome.typesReport;
     this.migrateSummary = outcome.summary ?? null;
     if (outcome.exitCode !== 0) {
-      return this.failStep('migrate', `Step 3 of ${STEP_COUNT} (migrate)`, outcome.exitCode);
+      return this.failStep('migrate', outcome.exitCode);
     }
 
-    return this.finishStep(
-      'migrate',
-      `Step 3 of ${STEP_COUNT} (migrate)`,
-      `[ts-migrate][${path.basename(folder)}] Run TS Migrate`,
-    );
+    return this.finishStep('migrate', `[ts-migrate][${path.basename(folder)}] Run TS Migrate`);
   }
 
   /** 0 when the project compiles, 1 when it does not or the compiler is missing. */
   private async stepCheck(): Promise<number> {
     const { rootDir, folder } = this.params;
     log.info(`
-[Step 4 of ${STEP_COUNT}] Checking for TS compilation errors (there shouldn't be any).
+[Step 4 of ${STEP_NAMES.length}] Checking for TS compilation errors (there shouldn't be any).
 `);
 
     const command = this.resolveCheckCommand();
@@ -689,12 +691,13 @@ rename has really happened:
    * Records a finished step, or ends the run when the commit it asked for was
    * refused. Every step that writes goes through here.
    */
-  private finishStep(name: FullRunStep['name'], label: string, subject: string): number | undefined {
+  private finishStep(name: FullRunStep['name'], subject: string): number | undefined {
     const commit = this.maybeCommit(subject);
     if (commit.failed) {
       return this.endRun(
         name,
-        `${label} wrote its changes, but git refused to commit them (git exited ${commit.status})`,
+        `${stepLabel(name)} wrote its changes, but git refused to commit them ` +
+          `(git exited ${commit.status})`,
         commit.status,
       );
     }
@@ -764,12 +767,8 @@ The recommendations above are also in ${reportFile}.`);
    * the working tree holds, and what the migration recommended, none of which
    * the step's own error says.
    */
-  private failStep(name: FullRunStep['name'], label: string, status: number): number {
-    return this.endRun(
-      name,
-      `${label} failed (exit ${reportedExitCode(status)})`,
-      status,
-    );
+  private failStep(name: FullRunStep['name'], status: number): number {
+    return this.endRun(name, `${stepLabel(name)} failed (exit ${reportedExitCode(status)})`, status);
   }
 
   /** `headline` states what went wrong; everything after it is the same either way. */
@@ -891,7 +890,7 @@ ${heading}
   private outcome(exitCode: number): FullOutcome {
     const reached = new Set(this.steps.map((step) => step.name));
     const allSteps: FullRunStep[] = [...this.steps];
-    (['init', 'rename', 'migrate', 'check'] as const).forEach((name) => {
+    STEP_NAMES.forEach((name) => {
       if (!reached.has(name)) {
         allSteps.push({ name, status: 'not-reached', exitCode: null, commit: null });
       }
