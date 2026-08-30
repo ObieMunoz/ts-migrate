@@ -377,9 +377,9 @@ export async function findGeneratedFileParseErrors(
 
 // The exact text eslint-fix last produced for each file. eslint's autofix is
 // idempotent, so a file whose text is unchanged since then is already at a
-// fixed point and re-linting it is a guaranteed no-op. This lets the second
-// eslint-fix pass (which runs after ts-ignore) skip every file ts-ignore left
-// untouched instead of re-linting the whole project.
+// fixed point and re-linting it is a guaranteed no-op. This lets a later pass
+// skip every file untouched since the last one instead of re-linting the whole
+// project.
 const lastFixedText = new Map<string, string>();
 
 type ReportNotice = (notice: PluginFileNotice) => void;

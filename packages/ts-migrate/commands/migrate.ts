@@ -341,8 +341,10 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
     .addPlugin(widenAnnotationsPlugin, optionsFor(widenAnnotationsPlugin), {
       repeatUntilStable: true,
     })
-    // We need to run eslint-fix before ts-ignore because formatting may affect where
-    // the errors are that need to get ignored.
+    // Formatting has to settle before ts-ignore, because a suppression comment
+    // only reaches the line directly below it and reformatting moves the line
+    // the error is on. This is the last pass that rewrites source, so nothing
+    // below it can move a comment off the error it was written for.
     .addPlugin(eslintFixPlugin, optionsFor(eslintFixPlugin))
     // Recommends @types packages from the diagnostics ts-ignore is about
     // to suppress, so it must run before they are hidden.
@@ -361,10 +363,7 @@ export default function buildMigrateConfig(params: BuildMigrateConfigParams): Mi
   if (suppressionExplainer) {
     config.addPlugin(suppressionExplainer.plugin, {});
   }
-  config
-    .addPlugin(tsIgnorePlugin, optionsFor(tsIgnorePlugin))
-    // We need to run eslint-fix again after ts-ignore to fix up formatting.
-    .addPlugin(eslintFixPlugin, optionsFor(eslintFixPlugin));
+  config.addPlugin(tsIgnorePlugin, optionsFor(tsIgnorePlugin));
 
   if (excludePlugins.length > 0) {
     const excluded = new Set(excludePlugins);

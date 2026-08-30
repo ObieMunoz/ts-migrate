@@ -831,6 +831,26 @@ export const args = Args;
     expect(result).toContain('TS(2693)');
   });
 
+  // Nothing reformats after this plugin, so the comment has to arrive indented
+  // the way the line it goes above is indented, whichever whitespace that is.
+  it('indents the comment with the tabs the line below it uses', async () => {
+    const text = [
+      'declare const maybe: { a: string } | undefined;',
+      'function outer() {',
+      '\tfunction inner() {',
+      '\t\treturn maybe.a;',
+      '\t}',
+      '\treturn inner;',
+      '}',
+      'export default outer;',
+      '',
+    ].join('\n');
+
+    const result = (await run(text)) as string;
+
+    expect(result).toContain("\t\t// @ts-expect-error TS(18048): 'maybe' is possibly 'undefined'.\n");
+  });
+
   it('reports the use it leaves suppressed when no repair is offered', async () => {
     const text = `import type { cn } from './cn';
 

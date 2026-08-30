@@ -113,12 +113,13 @@ function getTextWithIgnores(
       pos = prevLinePos;
     }
 
-    // Include leading whitespace
+    // Match the indentation of the line the comment goes above, whichever
+    // whitespace that line indents with.
     let ws = '';
     let i = pos;
-    while (sourceFile.text[i] === ' ') {
+    while (sourceFile.text[i] === ' ' || sourceFile.text[i] === '\t') {
+      ws += sourceFile.text[i];
       i += 1;
-      ws += ' ';
     }
 
     const conditionalPos = conditionalCommentPos(sourceFile, diagnostic.start);
