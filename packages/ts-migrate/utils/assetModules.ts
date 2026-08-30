@@ -287,10 +287,6 @@ export function buildAssetDeclarations(
   };
 }
 
-function describe(extensions: string[]): string {
-  return extensions.map((extension) => `*${extension}`).join(', ');
-}
-
 /**
  * Writes the declarations and reports both halves of the decision. A file at
  * that path ts-migrate did not write is the user's, so it is left alone.
@@ -311,8 +307,9 @@ export function writeAssetDeclarations(declarations: AssetDeclarations): void {
 
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, text);
+  const patterns = declared.map(({ extension }) => `*${extension}`).join(', ');
   log.info(
-    `Declared ${describe(declared.map(({ extension }) => extension))} in ${filePath}, so those ` +
-      'imports type instead of collecting a suppression.',
+    `Declared ${patterns} in ${filePath}, so those imports type instead of collecting a ` +
+      'suppression.',
   );
 }
