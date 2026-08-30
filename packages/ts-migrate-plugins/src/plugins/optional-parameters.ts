@@ -10,24 +10,17 @@ import {
   TextChange,
 } from '../utils/candidateValidation';
 import { isMigratableFile } from '../utils/sourceFiles';
+import {
+  addToFile,
+  createWholeProgramPass,
+  Pass,
+  planWholeProgram,
+} from '../utils/wholeProgramPass';
 
 // Expected {0} arguments, but got {1}.
 const ARGUMENT_ARITY = 2554;
 
-interface PlannedFile {
-  /** The text the plan was computed against; a file that has since changed is skipped. */
-  text: string;
-  changes: TextChange[];
-}
-
-interface Pass {
-  files: Map<string, PlannedFile>;
-  /** Every file the plan was computed over, so a pass over a different set is noticed. */
-  known: Set<string>;
-  served: Set<string>;
-}
-
-let currentPass: Pass | undefined;
+const pass = createWholeProgramPass<TextChange>();
 
 /**
  * Marks a parameter optional where the project already calls the function
@@ -49,68 +42,44 @@ const optionalParametersPlugin: Plugin = {
 
   run({ fileName, text, sourceFile, getLanguageService }) {
     const languageService = getLanguageService();
-    if (!currentPass || currentPass.served.has(fileName) || !currentPass.known.has(fileName)) {
-      currentPass = plan(languageService);
-    }
-    currentPass.served.add(fileName);
-
-    const planned = currentPass.files.get(fileName);
-    if (!planned || planned.text !== text) {
-      return undefined;
-    }
-    return applyProven(fileName, text, sourceFile, planned.changes, languageService);
+    const planned = pass.plannedFor(fileName, text, () => plan(languageService));
+    if (!planned) return undefined;
+    return applyProven(fileName, text, sourceFile, planned.items, languageService);
   },
 };
 
 export default optionalParametersPlugin;
 
-function plan(languageService: ts.LanguageService): Pass {
-  const pass: Pass = { files: new Map(), known: new Set(), served: new Set() };
-  const program = languageService.getProgram();
-  if (!program) return pass;
-  const checker = program.getTypeChecker();
-
-  const fewestArguments = new Map<ts.SignatureDeclaration, number>();
-  program.getSourceFiles().forEach((file) => {
-    if (!isMigratableFile(file)) return;
-    pass.known.add(file.fileName);
-    languageService.getSemanticDiagnostics(file.fileName).forEach((diagnostic) => {
-      if (diagnostic.code !== ARGUMENT_ARITY || diagnostic.start == null) return;
-      const call = callAt(file, diagnostic.start, diagnostic.length ?? 0);
-      if (!call) return;
-      const declaration = relaxableDeclaration(call, checker);
-      if (!declaration) return;
-      const provided = call.arguments?.length ?? 0;
-      if (provided >= declaration.parameters.length) return;
-      const fewest = fewestArguments.get(declaration);
-      if (fewest === undefined || provided < fewest) {
-        fewestArguments.set(declaration, provided);
-      }
+function plan(languageService: ts.LanguageService): Pass<TextChange> {
+  return planWholeProgram<TextChange>(languageService, ({ program, checker, known }) => {
+    const fewestArguments = new Map<ts.SignatureDeclaration, number>();
+    program.getSourceFiles().forEach((file) => {
+      if (!isMigratableFile(file)) return;
+      known.add(file.fileName);
+      languageService.getSemanticDiagnostics(file.fileName).forEach((diagnostic) => {
+        if (diagnostic.code !== ARGUMENT_ARITY || diagnostic.start == null) return;
+        const call = callAt(file, diagnostic.start, diagnostic.length ?? 0);
+        if (!call) return;
+        const declaration = relaxableDeclaration(call, checker);
+        if (!declaration) return;
+        const provided = call.arguments?.length ?? 0;
+        if (provided >= declaration.parameters.length) return;
+        const fewest = fewestArguments.get(declaration);
+        if (fewest === undefined || provided < fewest) {
+          fewestArguments.set(declaration, provided);
+        }
+      });
     });
-  });
 
-  const changesByFile = new Map<string, TextChange[]>();
-  fewestArguments.forEach((provided, declaration) => {
-    const changes = optionalMarkers(declaration, provided);
-    if (changes.length === 0) return;
-    const { fileName } = declaration.getSourceFile();
-    const forFile = changesByFile.get(fileName);
-    if (forFile) {
-      forFile.push(...changes);
-    } else {
-      changesByFile.set(fileName, changes);
-    }
-  });
-
-  changesByFile.forEach((changes, fileName) => {
-    const source = program.getSourceFile(fileName);
-    if (!source) return;
-    pass.files.set(fileName, {
-      text: source.text,
-      changes: changes.sort((a, b) => a.start - b.start),
+    const changesByFile = new Map<string, TextChange[]>();
+    fewestArguments.forEach((provided, declaration) => {
+      const changes = optionalMarkers(declaration, provided);
+      if (changes.length === 0) return;
+      const { fileName } = declaration.getSourceFile();
+      addToFile(changesByFile, fileName, changes);
     });
+    return changesByFile;
   });
-  return pass;
 }
 
 /** The call the arity diagnostic blames: its span covers the callee expression. */

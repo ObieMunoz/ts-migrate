@@ -20,6 +20,12 @@ import {
 import { isMigratableFile } from '../utils/sourceFiles';
 import { DEFAULT_MAX_UNION_MEMBERS, printType } from '../utils/typePrinter';
 import { createValidate, Properties } from '../utils/validateOptions';
+import {
+  addToFile,
+  createWholeProgramPass,
+  Pass,
+  planWholeProgram,
+} from '../utils/wholeProgramPass';
 
 export interface Options {
   maxUnionMembers?: number;
@@ -29,18 +35,7 @@ const optionProperties: Properties = {
   maxUnionMembers: { type: 'integer', minimum: 2 },
 };
 
-interface PlannedFile {
-  text: string;
-  groups: AnnotationGroup[];
-}
-
-interface Pass {
-  files: Map<string, PlannedFile>;
-  known: Set<string>;
-  served: Set<string>;
-}
-
-let currentPass: Pass | undefined;
+const pass = createWholeProgramPass<AnnotationGroup>();
 
 /**
  * Declares the props a component reads but does not say it takes.
@@ -68,16 +63,11 @@ const reactReadPropsPlugin: Plugin<Options> = {
 
   run({ fileName, text, options, getLanguageService }) {
     const languageService = getLanguageService();
-    if (!currentPass || currentPass.served.has(fileName) || !currentPass.known.has(fileName)) {
-      currentPass = plan(languageService, options.maxUnionMembers ?? DEFAULT_MAX_UNION_MEMBERS);
-    }
-    currentPass.served.add(fileName);
-
-    const planned = currentPass.files.get(fileName);
-    if (!planned || planned.text !== text) {
-      return undefined;
-    }
-    return applyProvenAdditions(fileName, text, planned.groups, languageService);
+    const planned = pass.plannedFor(fileName, text, () =>
+      plan(languageService, options.maxUnionMembers ?? DEFAULT_MAX_UNION_MEMBERS),
+    );
+    if (!planned) return undefined;
+    return applyProvenAdditions(fileName, text, planned.items, languageService);
   },
 
   validate: createValidate<Options>(optionProperties),
@@ -87,73 +77,60 @@ export default reactReadPropsPlugin;
 
 const missingPropertyCode = 2339;
 
-function plan(languageService: ts.LanguageService, maxUnionMembers: number): Pass {
-  const pass: Pass = { files: new Map(), known: new Set(), served: new Set() };
-  const program = languageService.getProgram();
-  if (!program) return pass;
-  const checker = program.getTypeChecker();
-
-  const files: ts.SourceFile[] = [];
-  program.getSourceFiles().forEach((file) => {
-    if (!isMigratableFile(file)) return;
-    pass.known.add(file.fileName);
-    files.push(file);
-  });
-
-  const sites = collectCallSites(files, checker);
-  const needed = new Map<ts.TypeNode, Map<string, ts.Node[]>>();
-  files.forEach((file) => {
-    languageService.getSemanticDiagnostics(file.fileName).forEach((diagnostic) => {
-      if (diagnostic.code !== missingPropertyCode || diagnostic.start == null) return;
-      const read = readAt(file, diagnostic.start, checker);
-      if (!read) return;
-      const annotation = propsAnnotationForRead(read, checker);
-      if (!annotation || (!sites.has(annotation) && !isClassProps(annotation))) return;
-      const declared = checker.getTypeFromTypeNode(annotation);
-      if (!isClosedType(checker, declared) || checker.getPropertyOfType(declared, read.name)) return;
-      let props = needed.get(annotation);
-      if (!props) {
-        props = new Map();
-        needed.set(annotation, props);
-      }
-      props.set(read.name, [...(props.get(read.name) ?? []), ...read.uses]);
+function plan(
+  languageService: ts.LanguageService,
+  maxUnionMembers: number,
+): Pass<AnnotationGroup> {
+  return planWholeProgram<AnnotationGroup>(languageService, ({ program, checker, known }) => {
+    const files: ts.SourceFile[] = [];
+    program.getSourceFiles().forEach((file) => {
+      if (!isMigratableFile(file)) return;
+      known.add(file.fileName);
+      files.push(file);
     });
-  });
 
-  const groupsByFile = new Map<string, AnnotationGroup[]>();
-  needed.forEach((props, annotation) => {
-    const members: string[] = [];
-    props.forEach((uses, name) => {
-      const type = memberType(
-        checker,
-        annotation,
-        sites.get(annotation) ?? [],
-        name,
-        uses,
-        maxUnionMembers,
-      );
-      if (type) members.push(`${name}?: ${type}`);
+    const sites = collectCallSites(files, checker);
+    const needed = new Map<ts.TypeNode, Map<string, ts.Node[]>>();
+    files.forEach((file) => {
+      languageService.getSemanticDiagnostics(file.fileName).forEach((diagnostic) => {
+        if (diagnostic.code !== missingPropertyCode || diagnostic.start == null) return;
+        const read = readAt(file, diagnostic.start, checker);
+        if (!read) return;
+        const annotation = propsAnnotationForRead(read, checker);
+        if (!annotation || (!sites.has(annotation) && !isClassProps(annotation))) return;
+        const declared = checker.getTypeFromTypeNode(annotation);
+        if (!isClosedType(checker, declared) || checker.getPropertyOfType(declared, read.name)) {
+          return;
+        }
+        let props = needed.get(annotation);
+        if (!props) {
+          props = new Map();
+          needed.set(annotation, props);
+        }
+        props.set(read.name, [...(props.get(read.name) ?? []), ...read.uses]);
+      });
     });
-    if (members.length === 0) return;
-    const { fileName } = annotation.getSourceFile();
-    const group = annotationGroup(annotation, members);
-    const forFile = groupsByFile.get(fileName);
-    if (forFile) {
-      forFile.push(group);
-    } else {
-      groupsByFile.set(fileName, [group]);
-    }
-  });
 
-  groupsByFile.forEach((groups, fileName) => {
-    const source = program.getSourceFile(fileName);
-    if (!source) return;
-    pass.files.set(fileName, {
-      text: source.text,
-      groups: groups.sort((a, b) => a.start - b.start),
+    const groupsByFile = new Map<string, AnnotationGroup[]>();
+    needed.forEach((props, annotation) => {
+      const members: string[] = [];
+      props.forEach((uses, name) => {
+        const type = memberType(
+          checker,
+          annotation,
+          sites.get(annotation) ?? [],
+          name,
+          uses,
+          maxUnionMembers,
+        );
+        if (type) members.push(`${name}?: ${type}`);
+      });
+      if (members.length === 0) return;
+      const { fileName } = annotation.getSourceFile();
+      addToFile(groupsByFile, fileName, [annotationGroup(annotation, members)]);
     });
+    return groupsByFile;
   });
-  return pass;
 }
 
 type CallSite = ts.JsxOpeningElement | ts.JsxSelfClosingElement;
