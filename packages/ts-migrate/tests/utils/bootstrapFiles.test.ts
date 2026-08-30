@@ -1,20 +1,11 @@
-import fs from 'fs';
 import path from 'path';
 import { partitionBootstrapFiles } from '../../utils/bootstrapFiles';
-import { createDir, deleteDir } from '@obiemunoz/ts-migrate-test-utils';
+import { createDir, deleteDir, writeFiles } from '@obiemunoz/ts-migrate-test-utils';
 
 jest.mock('updatable-log', () => {
   const { mockUpdatableLog } = require('@obiemunoz/ts-migrate-test-utils');
   return mockUpdatableLog();
 });
-
-function writeFiles(rootDir: string, files: Record<string, string>): void {
-  Object.entries(files).forEach(([relPath, text]) => {
-    const filePath = path.resolve(rootDir, relPath);
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, text);
-  });
-}
 
 const abs = (rootDir: string, ...relPaths: string[]) =>
   relPaths.map((relPath) => path.resolve(rootDir, relPath));
