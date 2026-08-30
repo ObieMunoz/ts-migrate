@@ -24,6 +24,7 @@ import {
 } from '../utils/inferFromUsage';
 import { importChangesFor, withImportChanges } from './utils/annotationImports';
 import { innermostNodeAt } from './utils/token-pos';
+import { getOrCreate } from '../utils/maps';
 
 export type { LintConfig };
 
@@ -152,12 +153,7 @@ function withBodyWins(
   const changesByFunction = new Map<ts.Node | null, TextChange[]>();
   annotations.forEach((change) => {
     const fn = enclosingFunctionLike(originalSource, change.start);
-    const group = changesByFunction.get(fn);
-    if (group) {
-      group.push(change);
-    } else {
-      changesByFunction.set(fn, [change]);
-    }
+    getOrCreate(changesByFunction, fn, (): TextChange[] => []).push(change);
   });
 
   const annotatedFns = new Set(changesByFunction.keys());
@@ -470,12 +466,7 @@ function inferBodyOnly(
     if (refused.has(mapped)) return;
     const fn = enclosingFunctionLike(originalSource, mapped.start);
     if (fn == null || !contestedFunctions.includes(fn)) return;
-    const group = bodyOnlyChanges.get(fn);
-    if (group) {
-      group.push(mapped);
-    } else {
-      bodyOnlyChanges.set(fn, [mapped]);
-    }
+    getOrCreate(bodyOnlyChanges, fn, (): TextChange[] => []).push(mapped);
   });
   return { changes: bodyOnlyChanges, imports: decoyImports };
 }

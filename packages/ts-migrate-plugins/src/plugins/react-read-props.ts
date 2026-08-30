@@ -21,6 +21,7 @@ import {
 import { isMigratableFile } from '../utils/sourceFiles';
 import { DEFAULT_MAX_UNION_MEMBERS, printType } from '../utils/typePrinter';
 import { createValidate, Properties } from '../utils/validateOptions';
+import { getOrCreate } from '../utils/maps';
 import {
   addToFile,
   createWholeProgramPass,
@@ -103,12 +104,8 @@ function plan(
         if (!isClosedType(checker, declared) || checker.getPropertyOfType(declared, read.name)) {
           return;
         }
-        let props = needed.get(annotation);
-        if (!props) {
-          props = new Map();
-          needed.set(annotation, props);
-        }
-        props.set(read.name, [...(props.get(read.name) ?? []), ...read.uses]);
+        const props = getOrCreate(needed, annotation, () => new Map<string, ts.Node[]>());
+        getOrCreate(props, read.name, (): ts.Node[] => []).push(...read.uses);
       });
     });
 
@@ -162,12 +159,7 @@ function collectCallSites(
           }
           const annotation = byTagSymbol.get(symbol);
           if (annotation) {
-            const existing = byAnnotation.get(annotation);
-            if (existing) {
-              existing.push(node);
-            } else {
-              byAnnotation.set(annotation, [node]);
-            }
+            getOrCreate(byAnnotation, annotation, (): CallSite[] => []).push(node);
           }
         }
       }
