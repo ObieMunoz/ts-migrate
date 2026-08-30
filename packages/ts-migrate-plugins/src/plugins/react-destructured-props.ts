@@ -11,6 +11,7 @@ import { createPropsTypeNameGetter } from './utils/react-props';
 import { innermostNodeAt } from './utils/token-pos';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
+import { getOrCreate } from '../utils/maps';
 import {
   applyTextChanges,
   createFileLanguageService,
@@ -316,9 +317,7 @@ function callSiteEvidence(
       unprovable.add(key);
       return;
     }
-    const observed = types.get(key) ?? new Set<string>();
-    observed.add(text);
-    types.set(key, observed);
+    getOrCreate(types, key, () => new Set<string>()).add(text);
   };
 
   forEachDescendant(source, (node) => {
@@ -476,8 +475,8 @@ function blameMembers(
   components.forEach((component) =>
     component.members.forEach((member) => {
       all.push(member);
-      push(byKey, member.key, member);
-      if (member.binding) push(byBinding, member.binding, member);
+      getOrCreate(byKey, member.key, (): Member[] => []).push(member);
+      if (member.binding) getOrCreate(byBinding, member.binding, (): Member[] => []).push(member);
     }),
   );
 
@@ -581,15 +580,6 @@ function memberLine(member: Member, anyType: string): string {
 
 function renderKey(key: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? key : JSON.stringify(key);
-}
-
-function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
-  const values = map.get(key);
-  if (values) {
-    values.push(value);
-  } else {
-    map.set(key, [value]);
-  }
 }
 
 function forEachDescendant(node: ts.Node, visitor: (child: ts.Node) => void): void {
