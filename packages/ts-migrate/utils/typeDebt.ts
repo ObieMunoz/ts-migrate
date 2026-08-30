@@ -4,6 +4,7 @@ import ts from 'typescript';
 import isDeclarationFile from './declarationFiles';
 import { partitionGitignored } from './gitignore';
 import { relativeTo } from './paths';
+import { readText } from './readText';
 
 export interface FileDebt {
   tsExpectError: number;
@@ -76,11 +77,7 @@ function readFileText(
 ): string | undefined {
   const inMemory = contents?.get(fileName);
   if (inMemory !== undefined) return inMemory;
-  try {
-    return fs.readFileSync(fileName, 'utf-8');
-  } catch {
-    return undefined;
-  }
+  return readText(fileName);
 }
 
 /**

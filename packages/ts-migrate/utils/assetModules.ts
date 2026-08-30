@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 import ts from 'typescript';
+import { readText } from './readText';
 
 /** Where the generated asset declarations live, relative to the migration root. */
 export const ASSET_DECLARATIONS_FILE = 'types/ts-migrate-assets.d.ts';
@@ -142,12 +143,8 @@ function recordImportDeclaration(usage: Map<string, AssetUsage>, node: ts.Import
 function collectAssetImports(files: string[]): Map<string, AssetUsage> {
   const usage = new Map<string, AssetUsage>();
   files.forEach((file) => {
-    let text: string;
-    try {
-      text = fs.readFileSync(file, 'utf-8');
-    } catch {
-      return;
-    }
+    const text = readText(file);
+    if (text === undefined) return;
     // JSX kind so application files parse cleanly; plain JS parses the same.
     const sourceFile = ts.createSourceFile(
       file,
@@ -302,12 +299,8 @@ export function writeAssetDeclarations(declarations: AssetDeclarations): void {
   });
   if (declared.length === 0) return;
 
-  let existing: string | undefined;
-  try {
-    existing = fs.readFileSync(filePath, 'utf-8');
-  } catch {
-    // No declaration file yet.
-  }
+  // Undefined when there is no declaration file yet.
+  const existing = readText(filePath);
   if (existing !== undefined && !existing.startsWith(GENERATED_MARKER)) {
     log.warn(`${filePath} already exists and ts-migrate did not write it, so it is left alone.`);
     return;

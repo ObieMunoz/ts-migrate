@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
 import isDeclarationFile from './declarationFiles';
+import { readText } from './readText';
 
 interface EnsureAliasDeclarationsParams {
   rootDir: string;
@@ -26,12 +27,8 @@ function declarationSourceFiles(rootDir: string): ts.SourceFile[] {
   ts.parseJsonConfigFileContent(config, ts.sys, rootDir)
     .fileNames.filter(isDeclarationFile)
     .forEach((fileName) => {
-      let text: string;
-      try {
-        text = fs.readFileSync(fileName, 'utf-8');
-      } catch {
-        return;
-      }
+      const text = readText(fileName);
+      if (text === undefined) return;
       sourceFiles.push(ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest));
     });
   return sourceFiles;

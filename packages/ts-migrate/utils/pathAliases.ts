@@ -4,6 +4,7 @@ import log from 'updatable-log';
 import ts from 'typescript';
 import { BundlerDetection } from './bundler';
 import { toPosix } from './paths';
+import { readText } from './readText';
 
 /** A mapping the project declares and this cannot translate. */
 export interface SkippedAlias {
@@ -363,12 +364,8 @@ function webpackAliases(rootDir: string): PathAliases | null {
   const resolves: WebpackResolve[] = [];
   const read: string[] = [];
   files.forEach((file) => {
-    let text: string;
-    try {
-      text = fs.readFileSync(path.join(rootDir, file), 'utf-8');
-    } catch {
-      return;
-    }
+    const text = readText(path.join(rootDir, file));
+    if (text === undefined) return;
     const sourceFile = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
     const objects = collectResolveObjects(sourceFile);
     if (objects.length === 0) return;
@@ -413,12 +410,8 @@ function rebase(baseUrlRelative: string, value: string): string | null {
  */
 function jsConfigAliases(rootDir: string): PathAliases | null {
   const file = path.join(rootDir, 'jsconfig.json');
-  let text: string;
-  try {
-    text = fs.readFileSync(file, 'utf-8');
-  } catch {
-    return null;
-  }
+  const text = readText(file);
+  if (text === undefined) return null;
   const { config, error } = ts.parseConfigFileTextToJson(file, text);
   if (error || typeof config !== 'object' || config === null) return null;
   const compilerOptions = (config as { compilerOptions?: unknown }).compilerOptions;
