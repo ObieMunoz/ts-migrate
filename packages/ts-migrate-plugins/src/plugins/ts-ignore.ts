@@ -79,6 +79,8 @@ function getTextWithIgnores(
 
   diagnostics.forEach((diagnostic) => {
     const { line: diagnosticLine } = ts.getLineAndCharacterOfPosition(sourceFile, diagnostic.start);
+    if (isIgnored[diagnosticLine]) return;
+
     const { code } = diagnostic;
     const messageText =
       typeof diagnostic.messageText === 'string'
@@ -97,82 +99,79 @@ function getTextWithIgnores(
         ? `${message.slice(0, messageLimit)}... Remove this comment to see the full error message`
         : message
     }`;
-    if (!isIgnored[diagnosticLine]) {
-      let commentLine = diagnosticLine;
-      let pos = getStartOfLinePos(commentLine, sourceFile);
-      while (commentLine > 0) {
-        const prevLine = commentLine - 1;
-        const prevLinePos = getStartOfLinePos(prevLine, sourceFile);
-        const prevLineText = text.slice(prevLinePos, pos - 1);
-        const prevLineStartsWithEslintComment = /^ *\/\/ *eslint/.test(prevLineText);
+    let commentLine = diagnosticLine;
+    let pos = getStartOfLinePos(commentLine, sourceFile);
+    while (commentLine > 0) {
+      const prevLine = commentLine - 1;
+      const prevLinePos = getStartOfLinePos(prevLine, sourceFile);
+      const prevLineText = text.slice(prevLinePos, pos - 1);
+      const prevLineStartsWithEslintComment = /^ *\/\/ *eslint/.test(prevLineText);
 
-        if (!prevLineStartsWithEslintComment) break;
+      if (!prevLineStartsWithEslintComment) break;
 
-        commentLine = prevLine;
-        pos = prevLinePos;
-      }
+      commentLine = prevLine;
+      pos = prevLinePos;
+    }
 
-      // Include leading whitespace
-      let ws = '';
-      let i = pos;
-      while (sourceFile.text[i] === ' ') {
-        i += 1;
-        ws += ' ';
-      }
+    // Include leading whitespace
+    let ws = '';
+    let i = pos;
+    while (sourceFile.text[i] === ' ') {
+      i += 1;
+      ws += ' ';
+    }
 
-      if (inNonInsertableText(sourceFile, pos)) {
-        const node = findDiagnosticNode(diagnostic, sourceFile);
-        if (node) {
-          // In JSX children a bare `//` line would become rendered text.
-          const comment = inJsxText(sourceFile, node.pos)
-            ? `{/* ${tsIgnoreCommentText} */}`
-            : `// ${tsIgnoreCommentText}`;
-          updates.push({
-            kind: 'insert',
-            index: node.pos,
-            text: `${ws}${ts.sys.newLine}${comment}${
-              text[node.pos] !== ts.sys.newLine ? ts.sys.newLine : ''
-            }`,
-          });
-        } else {
-          // The directive only reaches the line directly below it, so hoisting
-          // the comment elsewhere cannot suppress this diagnostic; skip it and
-          // leave it for the post-migration compile check. The marker goes on
-          // the statement around the text, which is the nearest place a line
-          // comment is a comment rather than more of the string.
-          const reason =
-            `could not add @${errorExpression} inside a multiline string, template, or ` +
-            'comment, so those diagnostics are left unsuppressed';
-          const hint =
-            'The TypeScript compile check will report them; they need a source change.';
-          const enclosing = innermostNodeAt(sourceFile, diagnostic.start) ?? sourceFile;
-          const { update, marked } = markers.add(enclosing, { hint, reason });
-          if (update) updates.push(update);
-          reportNotice({ reason, hint, recovered: true, marked });
-          return;
-        }
-      } else if (inJsxText(sourceFile, pos)) {
+    if (inNonInsertableText(sourceFile, pos)) {
+      const node = findDiagnosticNode(diagnostic, sourceFile);
+      if (node) {
+        // In JSX children a bare `//` line would become rendered text.
+        const comment = inJsxText(sourceFile, node.pos)
+          ? `{/* ${tsIgnoreCommentText} */}`
+          : `// ${tsIgnoreCommentText}`;
         updates.push({
           kind: 'insert',
-          index: pos,
-          text: `${ws}{/* ${tsIgnoreCommentText} */}${ts.sys.newLine}`,
-        });
-      } else if (onMultilineConditionalTokenLine(sourceFile, diagnostic.start)) {
-        updates.push({
-          kind: 'insert',
-          index: getConditionalCommentPos(sourceFile, diagnostic.start),
-          text: ` // ${tsIgnoreCommentText}${ts.sys.newLine}${ws} `,
+          index: node.pos,
+          text: `${ws}${ts.sys.newLine}${comment}${
+            text[node.pos] !== ts.sys.newLine ? ts.sys.newLine : ''
+          }`,
         });
       } else {
-        updates.push({
-          kind: 'insert',
-          index: pos,
-          text: `${ws}// ${tsIgnoreCommentText}${ts.sys.newLine}`,
-        });
+        // The directive only reaches the line directly below it, so hoisting
+        // the comment elsewhere cannot suppress this diagnostic; skip it and
+        // leave it for the post-migration compile check. The marker goes on
+        // the statement around the text, which is the nearest place a line
+        // comment is a comment rather than more of the string.
+        const reason =
+          `could not add @${errorExpression} inside a multiline string, template, or ` +
+          'comment, so those diagnostics are left unsuppressed';
+        const hint = 'The TypeScript compile check will report them; they need a source change.';
+        const enclosing = innermostNodeAt(sourceFile, diagnostic.start) ?? sourceFile;
+        const { update, marked } = markers.add(enclosing, { hint, reason });
+        if (update) updates.push(update);
+        reportNotice({ reason, hint, recovered: true, marked });
+        return;
       }
-
-      isIgnored[diagnosticLine] = true;
+    } else if (inJsxText(sourceFile, pos)) {
+      updates.push({
+        kind: 'insert',
+        index: pos,
+        text: `${ws}{/* ${tsIgnoreCommentText} */}${ts.sys.newLine}`,
+      });
+    } else if (onMultilineConditionalTokenLine(sourceFile, diagnostic.start)) {
+      updates.push({
+        kind: 'insert',
+        index: getConditionalCommentPos(sourceFile, diagnostic.start),
+        text: ` // ${tsIgnoreCommentText}${ts.sys.newLine}${ws} `,
+      });
+    } else {
+      updates.push({
+        kind: 'insert',
+        index: pos,
+        text: `${ws}// ${tsIgnoreCommentText}${ts.sys.newLine}`,
+      });
     }
+
+    isIgnored[diagnosticLine] = true;
   });
 
   return updateSourceText(text, updates);
