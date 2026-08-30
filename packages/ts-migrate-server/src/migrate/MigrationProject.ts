@@ -136,7 +136,7 @@ export default class MigrationProject {
       getScriptVersion: (fileName) =>
         String(this.overlays.get(normalizeSlashes(fileName))?.version ?? 0),
       getScriptSnapshot: (fileName) => {
-        const text = this.readFile(fileName);
+        const text = this.getFileText(fileName);
         return text !== undefined ? ts.ScriptSnapshot.fromString(text) : undefined;
       },
       getCurrentDirectory: () => currentDirectory,
@@ -144,7 +144,7 @@ export default class MigrationProject {
       fileExists: (fileName) =>
         this.overlays.has(normalizeSlashes(fileName)) ||
         this.moduleResolutionHost.fileExists(fileName),
-      readFile: (fileName) => this.readFile(fileName),
+      readFile: (fileName) => this.getFileText(fileName),
       readDirectory: ts.sys.readDirectory,
       directoryExists: this.moduleResolutionHost.directoryExists,
       getDirectories: this.moduleResolutionHost.getDirectories,
@@ -249,7 +249,10 @@ export default class MigrationProject {
 
   /** The text the project reads for a file: the overlay if it has one, otherwise the disk. */
   getFileText(fileName: string): string | undefined {
-    return this.readFile(fileName);
+    return (
+      this.overlays.get(normalizeSlashes(fileName))?.text ??
+      this.moduleResolutionHost.readFile(fileName)
+    );
   }
 
   hasRootFile(fileName: string): boolean {
@@ -322,12 +325,5 @@ export default class MigrationProject {
     this.overlays.set(normalized, { text, version: previousVersion + 1 });
     this.projectVersion += 1;
     return normalized;
-  }
-
-  private readFile(fileName: string): string | undefined {
-    return (
-      this.overlays.get(normalizeSlashes(fileName))?.text ??
-      this.moduleResolutionHost.readFile(fileName)
-    );
   }
 }
