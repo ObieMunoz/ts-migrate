@@ -1,14 +1,7 @@
 import relaxParameterShapesPlugin from '../../src/plugins/relax-parameter-shapes';
-import { realPluginParams } from '../test-utils';
+import { realPluginRunner } from '../test-utils';
 
-const run = async (
-  text: string,
-  extraFiles: { [fileName: string]: string } = {},
-  options: { anyAlias?: string } = {},
-) =>
-  relaxParameterShapesPlugin.run(
-    await realPluginParams({ fileName: 'declares.ts', text, extraFiles, options }),
-  );
+const run = realPluginRunner(relaxParameterShapesPlugin, { fileName: 'declares.ts' });
 
 describe('relax-parameter-shapes plugin', () => {
   it('makes a member no call supplies optional', async () => {
@@ -17,7 +10,9 @@ describe('relax-parameter-shapes plugin', () => {
 }
 `;
     const result = await run(text, {
-      'calls.ts': `import { route } from './declares';\nroute({ path: '/a' });\n`,
+      extraFiles: {
+        'calls.ts': `import { route } from './declares';\nroute({ path: '/a' });\n`,
+      },
     });
 
     expect(result).toBe(`export function route({ path, locale }: { path: string; locale?: string }) {
@@ -32,8 +27,10 @@ describe('relax-parameter-shapes plugin', () => {
 }
 `;
     const result = await run(text, {
-      'calls.ts':
-        `import { snapshot } from './declares';\nconst props = { id: 1 };\nsnapshot(props);\n`,
+      extraFiles: {
+        'calls.ts':
+          `import { snapshot } from './declares';\nconst props = { id: 1 };\nsnapshot(props);\n`,
+      },
     });
 
     expect(result).toBe(`export function snapshot(next: any) {
@@ -47,14 +44,13 @@ describe('relax-parameter-shapes plugin', () => {
   return next.origin;
 }
 `;
-    const result = await run(
-      text,
-      {
+    const result = await run(text, {
+      extraFiles: {
         'calls.ts':
           `import { snapshot } from './declares';\nconst props = { id: 1 };\nsnapshot(props);\n`,
       },
-      { anyAlias: '$TSFixMe' },
-    );
+      options: { anyAlias: '$TSFixMe' },
+    });
 
     expect(result).toBe(`export function snapshot(next: $TSFixMe) {
   return next.origin;
@@ -68,7 +64,9 @@ describe('relax-parameter-shapes plugin', () => {
 }
 `;
     const result = await run(text, {
-      'calls.ts': `import { validate } from './declares';\nvalidate('abc');\n`,
+      extraFiles: {
+        'calls.ts': `import { validate } from './declares';\nvalidate('abc');\n`,
+      },
     });
 
     expect(result).toBe(`export function validate(value: { trim: any; length: number }) {
@@ -83,7 +81,9 @@ describe('relax-parameter-shapes plugin', () => {
 }
 `;
     const result = await run(text, {
-      'calls.ts': `import { apply } from './declares';\napply({ retries: 'two' });\n`,
+      extraFiles: {
+        'calls.ts': `import { apply } from './declares';\napply({ retries: 'two' });\n`,
+      },
     });
 
     expect(result).toBe(`export function apply(config: { retries?: any; label?: string }) {
@@ -98,7 +98,9 @@ describe('relax-parameter-shapes plugin', () => {
 }
 `;
     const result = await run(text, {
-      'calls.ts': `import { route } from './declares';\nroute({ path: '/a', locale: 'en' });\n`,
+      extraFiles: {
+        'calls.ts': `import { route } from './declares';\nroute({ path: '/a', locale: 'en' });\n`,
+      },
     });
 
     expect(result).toBeUndefined();
@@ -108,7 +110,9 @@ describe('relax-parameter-shapes plugin', () => {
     const text = `export declare function send(payload: { id: string; token: string }): void;
 `;
     const result = await run(text, {
-      'calls.ts': `import { send } from './declares';\nsend({ id: 'a' });\n`,
+      extraFiles: {
+        'calls.ts': `import { send } from './declares';\nsend({ id: 'a' });\n`,
+      },
     });
 
     expect(result).toBeUndefined();
@@ -121,7 +125,9 @@ describe('relax-parameter-shapes plugin', () => {
 }
 `;
     const result = await run(text, {
-      'calls.ts': `import { greet } from './declares';\ngreet({ name: 'a' });\n`,
+      extraFiles: {
+        'calls.ts': `import { greet } from './declares';\ngreet({ name: 'a' });\n`,
+      },
     });
 
     expect(result).toBeUndefined();
@@ -135,11 +141,13 @@ export function route(config: { locale: Locale; retries: number }) {
 }
 `;
     const result = await run(text, {
-      'types.ts': `export type Locale = { key: string; primary: boolean };\n`,
-      'calls.ts':
-        `import { route } from './declares';\n` +
-        `const config = { locale: { key: 'en' }, retries: 1 };\n` +
-        `route(config);\n`,
+      extraFiles: {
+        'types.ts': `export type Locale = { key: string; primary: boolean };\n`,
+        'calls.ts':
+          `import { route } from './declares';\n` +
+          `const config = { locale: { key: 'en' }, retries: 1 };\n` +
+          `route(config);\n`,
+      },
     });
 
     expect(result).toBeUndefined();
@@ -153,9 +161,11 @@ export function pick(config: { locale: Locale }) {
 }
 `;
     const result = await run(text, {
-      'types.ts': `export type Locale = { key: string; primary: boolean };\n`,
-      'calls.ts':
-        `import { pick } from './declares';\nconst config = { id: 1 };\npick(config);\n`,
+      extraFiles: {
+        'types.ts': `export type Locale = { key: string; primary: boolean };\n`,
+        'calls.ts':
+          `import { pick } from './declares';\nconst config = { id: 1 };\npick(config);\n`,
+      },
     });
 
     expect(result).toBeUndefined();
@@ -167,10 +177,12 @@ export function pick(config: { locale: Locale }) {
 }
 `;
     const result = await run(text, {
-      'calls.ts':
-        `import { collect } from './declares';\n` +
-        `const input = { items: ['a'], label: 'x' };\n` +
-        `collect(input);\n`,
+      extraFiles: {
+        'calls.ts':
+          `import { collect } from './declares';\n` +
+          `const input = { items: ['a'], label: 'x' };\n` +
+          `collect(input);\n`,
+      },
     });
 
     expect(result).toBe(`export function collect(input: { items: any; label: string }) {
@@ -185,10 +197,12 @@ export function pick(config: { locale: Locale }) {
 }
 `;
     const result = await run(text, {
-      'calls.ts':
-        `import { open } from './declares';\n` +
-        `open({ href: '/a', id: 'one' });\n` +
-        `open({ href: '/b', title: 'B' });\n`,
+      extraFiles: {
+        'calls.ts':
+          `import { open } from './declares';\n` +
+          `open({ href: '/a', id: 'one' });\n` +
+          `open({ href: '/b', title: 'B' });\n`,
+      },
     });
 
     expect(result)
