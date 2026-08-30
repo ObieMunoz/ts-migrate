@@ -9,6 +9,7 @@ import {
   replaceHeritageTypeArguments,
 } from './utils/react';
 import { collectIdentifiers } from './utils/identifiers';
+import { innermostNodeAt } from './utils/token-pos';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { updateImports, NamedImport } from './utils/imports';
 import { collectImportSpecs, resolveSymbolImport } from './utils/importSpecs';
@@ -232,13 +233,8 @@ function collectThisPropsUsage(
       isThisPropsAccess(node.initializer)
     ) {
       for (const element of node.name.elements) {
-        const propName = element.propertyName
-          ? ts.isIdentifier(element.propertyName)
-            ? element.propertyName.text
-            : undefined
-          : ts.isIdentifier(element.name)
-          ? element.name.text
-          : undefined;
+        const key = element.propertyName ?? element.name;
+        const propName = ts.isIdentifier(key) ? key.text : undefined;
         if (propName) {
           markProp(propName, element.initializer != null);
         }
@@ -284,14 +280,6 @@ function unwrapImmerDraft(type: ts.Type): ts.Type {
     return unwrapImmerDraft(type.aliasTypeArguments[0]);
   }
   return type;
-}
-
-function findNodeAtPosition(sourceFile: ts.SourceFile, pos: number): ts.Node | undefined {
-  function find(node: ts.Node): ts.Node | undefined {
-    if (pos < node.getStart(sourceFile) || pos >= node.getEnd()) return undefined;
-    return ts.forEachChild(node, find) ?? node;
-  }
-  return find(sourceFile);
 }
 
 // When a call-site value's type would degrade to `any` (e.g. an action creator
@@ -379,7 +367,7 @@ function collectCallSiteProps(
       const refSourceFile = program.getSourceFile(ref.fileName);
       if (!refSourceFile) continue;
 
-      const refNode = findNodeAtPosition(refSourceFile, ref.textSpan.start);
+      const refNode = innermostNodeAt(refSourceFile, ref.textSpan.start);
       if (!refNode || !ts.isIdentifier(refNode)) continue;
 
       const parent = refNode.parent;
@@ -558,6 +546,17 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
     const resolvedImports: NamedImport[] = [];
     const importSeen = new Set<ts.Symbol>();
 
+    const degradesToAny = (typeStr: string) =>
+      typeStr === 'any' || typeStr === (anyAlias ?? 'any');
+
+    const collectImportsForInfo = (info: PropInfo) => {
+      for (const tsType of info.observedTsTypes) {
+        if (tsType != null) {
+          collectImportSpecs(tsType, checker, fileName, importSeen, resolvedImports);
+        }
+      }
+    };
+
     // A Props alias shared by more than one component in the file is patched
     // once, from the evidence of every component that extends it: two passes
     // over the same member span would collide.
@@ -616,7 +615,7 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
           const info = propMap.get(propName);
           if (!info || info.observedTypes.length === 0) continue;
           const finalTypeStr = widenTypes(info.observedTypes, anyAlias);
-          if (finalTypeStr === 'any' || finalTypeStr === (anyAlias ?? 'any')) continue;
+          if (degradesToAny(finalTypeStr)) continue;
 
           // Reconstruct the type via the factory rather than splicing the raw
           // `typeToString` output as text: for large types `typeToString`
@@ -627,14 +626,10 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
           // which leaves the member as its existing `any`.
           const typeNode = buildTypeNode(finalTypeStr, anyAlias);
           const printedType = printer.printNode(ts.EmitHint.Unspecified, typeNode, sourceFile);
-          if (printedType === 'any' || printedType === (anyAlias ?? 'any')) continue;
+          if (degradesToAny(printedType)) continue;
 
           // Collect imports for surviving non-primitive types.
-          for (const tsType of info.observedTsTypes) {
-            if (tsType != null) {
-              collectImportSpecs(tsType, checker, fileName, importSeen, resolvedImports);
-            }
-          }
+          collectImportsForInfo(info);
 
           updates.push({
             kind: 'replace',
@@ -750,18 +745,12 @@ const reactPropsFromUsagePlugin: Plugin<Options> = {
 
         const typeNode = buildTypeNode(finalTypeStr, anyAlias);
         const printedType = printer.printNode(ts.EmitHint.Unspecified, typeNode, sourceFile);
-        const degradesToAny =
-          printedType === 'any' || printedType === (anyAlias ?? 'any');
 
         // Collect imports for the type's referenced symbols — but only when the
         // emitted type actually survives. Emitting `any` while importing the
         // type's symbols would leave dangling, unused imports.
-        if (!degradesToAny) {
-          for (const tsType of info.observedTsTypes) {
-            if (tsType != null) {
-              collectImportSpecs(tsType, checker, fileName, importSeen, resolvedImports);
-            }
-          }
+        if (!degradesToAny(printedType)) {
+          collectImportsForInfo(info);
         }
 
         members.push(
