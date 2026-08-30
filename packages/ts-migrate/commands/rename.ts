@@ -19,6 +19,7 @@ import {
   updatePackageJsonReferences,
 } from '../utils/packageJsonReferences';
 import { relativeTo } from '../utils/paths';
+import { parseConfigFileNames } from '../utils/tsConfigIncludes';
 import { replaceJSON5Strings } from '../utils/updateJSON5';
 
 interface RenameParams {
@@ -258,7 +259,7 @@ function findJSFiles(rootDir: string, configFile: string, sources?: string | str
     delete config.files;
   }
 
-  const { fileNames, errors } = ts.parseJsonConfigFileContent(
+  const fileNames = parseConfigFileNames(
     {
       ...config,
       compilerOptions: {
@@ -268,20 +269,9 @@ function findJSFiles(rootDir: string, configFile: string, sources?: string | str
       },
       include,
     },
-    ts.sys,
     rootDir,
+    configFile,
   );
-
-  if (errors.length > 0) {
-    const errorMessage = ts.formatDiagnostics(errors, {
-      getCanonicalFileName: (fileName) => fileName,
-      getCurrentDirectory: () => rootDir,
-      getNewLine: () => ts.sys.newLine,
-    });
-    throw new Error(
-      `Errors parsing TypeScript config file content: ${configFile}\n${errorMessage}`,
-    );
-  }
 
   return fileNames.filter((fileName) => JS_EXTENSION_REGEX.test(fileName));
 }

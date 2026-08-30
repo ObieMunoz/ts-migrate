@@ -5,6 +5,7 @@ import isDeclarationFile from './declarationFiles';
 import { partitionGitignored } from './gitignore';
 import { relativeTo } from './paths';
 import { readText } from './readText';
+import { parseConfigFileNames } from './tsConfigIncludes';
 
 export interface FileDebt {
   tsExpectError: number;
@@ -57,17 +58,7 @@ function projectFileNames(rootDir: string): string[] {
     throw new Error(`Error parsing TypeScript config file: ${configFile}\n${message}`);
   }
 
-  const { fileNames, errors } = ts.parseJsonConfigFileContent(config, ts.sys, rootDir);
-  if (errors.length > 0) {
-    const errorMessage = ts.formatDiagnostics(errors, {
-      getCanonicalFileName: (fileName) => fileName,
-      getCurrentDirectory: () => rootDir,
-      getNewLine: () => ts.sys.newLine,
-    });
-    throw new Error(`Errors parsing TypeScript config file content: ${configFile}\n${errorMessage}`);
-  }
-
-  return fileNames;
+  return parseConfigFileNames(config, rootDir, configFile);
 }
 
 /** Reads from the in-memory contents when present, from disk otherwise. */
