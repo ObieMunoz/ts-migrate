@@ -289,7 +289,7 @@ export function logSharedBootstrapImports(rootDir: string, shared: SharedBootstr
   });
 }
 
-export interface BootstrapMigrationFilter {
+interface BootstrapMigrationFilter {
   filterMigrationFiles: (fileNames: string[]) => string[];
   /** The files dropped so far; complete once the migration is past program setup. */
   skippedFiles: () => BootstrapFile[];
@@ -300,7 +300,7 @@ export interface BootstrapMigrationFilter {
  * they join the program, so they stay JavaScript even under a hand-written
  * tsconfig with allowJs that includes them.
  */
-export function createBootstrapMigrationFilter(rootDir: string): BootstrapMigrationFilter {
+function createBootstrapMigrationFilter(rootDir: string): BootstrapMigrationFilter {
   const skipped: BootstrapFile[] = [];
   return {
     filterMigrationFiles: (fileNames) => {
