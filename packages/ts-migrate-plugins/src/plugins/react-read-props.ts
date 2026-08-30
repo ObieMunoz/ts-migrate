@@ -2,6 +2,7 @@ import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import { collectIdentifiers } from './utils/identifiers';
 import { isNameableJsxTagName, jsxTagNameTypeArgument } from './utils/jsx-tag-names';
+import { isThisPropsAccess } from './utils/react';
 import getTokenAtPosition from './utils/token-pos';
 import {
   AnnotationGroup,
@@ -267,7 +268,7 @@ function annotationOfPropsSource(
       ? undefined
       : annotationOfPropsSource(node.initializer, checker, seen);
   }
-  if (isThisProps(node)) {
+  if (isThisPropsAccess(node)) {
     const owner = enclosingClass(node);
     return owner && propsAnnotationOf(owner, checker, seen);
   }
@@ -276,14 +277,6 @@ function annotationOfPropsSource(
     return declaration && annotationOfPropsSource(declaration, checker, seen);
   }
   return undefined;
-}
-
-function isThisProps(node: ts.Node): boolean {
-  return (
-    ts.isPropertyAccessExpression(node) &&
-    node.expression.kind === ts.SyntaxKind.ThisKeyword &&
-    node.name.text === 'props'
-  );
 }
 
 function enclosingClass(node: ts.Node): ts.ClassLikeDeclaration | undefined {

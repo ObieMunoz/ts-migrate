@@ -5,6 +5,7 @@ import {
   isReactClassComponent,
   getReactComponentHeritageType,
   getNumComponentsInSourceFile,
+  isThisPropsAccess,
   replaceHeritageTypeArguments,
 } from './utils/react';
 import { collectIdentifiers } from './utils/identifiers';
@@ -177,14 +178,6 @@ function dedupeImportsByName(...lists: NamedImport[][]): NamedImport[] {
   return [...byName.values()];
 }
 
-function isThisPropsAccess(node: ts.Node): boolean {
-  return (
-    ts.isPropertyAccessExpression(node) &&
-    node.expression.kind === ts.SyntaxKind.ThisKeyword &&
-    node.name.text === 'props'
-  );
-}
-
 // What marks a prop optional is a `?.` on the access *below* the prop read
 // (`this.props.x?.y`), whose token belongs to the outer node. A `?.` directly
 // after `this.props` says only that props itself may be absent.
@@ -236,9 +229,7 @@ function collectThisPropsUsage(
       ts.isVariableDeclaration(node) &&
       ts.isObjectBindingPattern(node.name) &&
       node.initializer &&
-      ts.isPropertyAccessExpression(node.initializer) &&
-      node.initializer.expression.kind === ts.SyntaxKind.ThisKeyword &&
-      node.initializer.name.text === 'props'
+      isThisPropsAccess(node.initializer)
     ) {
       for (const element of node.name.elements) {
         const propName = element.propertyName
