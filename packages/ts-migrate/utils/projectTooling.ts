@@ -7,9 +7,9 @@
  * redundant instruction costs a line and a missing one costs a broken build
  * nobody was told about.
  */
-import fs from 'fs';
 import path from 'path';
 import { readText } from './readText';
+import { directoriesToRepoRoot } from './repoRoot';
 
 /**
  * Commands that compile or run TypeScript with no further configuration.
@@ -169,20 +169,6 @@ interface ProjectManifests {
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
-}
-
-/**
- * `rootDir` and its ancestors up to the repository root: a monorepo declares
- * the shared toolchain and the orchestrating scripts in either place, and an
- * ESLint config above a folder governs that folder. Above the checkout is this
- * machine, which is the boundary hasViteClientTypes stops at too.
- */
-function directoriesToRepoRoot(rootDir: string): string[] {
-  const dirs: string[] = [];
-  for (let dir = path.resolve(rootDir); ; dir = path.dirname(dir)) {
-    dirs.push(dir);
-    if (fs.existsSync(path.join(dir, '.git')) || path.dirname(dir) === dir) return dirs;
-  }
 }
 
 function readManifests(rootDir: string): ProjectManifests {

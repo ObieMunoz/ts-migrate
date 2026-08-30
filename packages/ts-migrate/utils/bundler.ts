@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { isToolConfigFile } from './configNames';
+import { directoriesToRepoRoot } from './repoRoot';
 
 export type BundlerName = 'vite' | 'webpack';
 
@@ -68,14 +69,12 @@ export function detectBundler(
 }
 
 /**
- * Whether `types: ["vite/client"]` resolves. Mirrors the repository boundary
- * installedTypesPackages stops at: an install found above it exists only on
- * this machine, and a pinned entry that fails to resolve is a hard TS2688
- * everywhere else.
+ * Whether `types: ["vite/client"]` resolves. An install above the repository
+ * boundary exists only on this machine, and a pinned entry that fails to
+ * resolve is a hard TS2688 everywhere else.
  */
 export function hasViteClientTypes(rootDir: string): boolean {
-  for (let dir = path.resolve(rootDir); ; dir = path.dirname(dir)) {
-    if (fs.existsSync(path.join(dir, 'node_modules', 'vite', 'client.d.ts'))) return true;
-    if (fs.existsSync(path.join(dir, '.git')) || path.dirname(dir) === dir) return false;
-  }
+  return directoriesToRepoRoot(rootDir).some((dir) =>
+    fs.existsSync(path.join(dir, 'node_modules', 'vite', 'client.d.ts')),
+  );
 }
