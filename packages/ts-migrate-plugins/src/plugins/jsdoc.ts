@@ -835,44 +835,43 @@ const jsDocTransformerFactory =
     }
 
     function visitJSDocTypeReference(node: ts.TypeReferenceNode) {
-      let name = node.typeName;
-      let args = node.typeArguments;
       if (danglingNames.has(entityNameText(node.typeName))) {
         return anyType;
       }
-      if (ts.isIdentifier(node.typeName)) {
-        if (isJSDocIndexSignature(node)) {
-          return visitJSDocIndexSignature(node);
-        }
-        if (aliasNames.has(node.typeName.text)) {
-          return factory.createTypeReferenceNode(
-            factory.createIdentifier(node.typeName.text),
-            ts.visitNodes(node.typeArguments, visitJSDocType, ts.isTypeNode),
-          );
-        }
-        let { text } = node.typeName;
-        let acceptsTypeParameters = true;
-        if (text in typeMap) {
-          const typeOptions = typeMap[text];
-          if (typeof typeOptions === 'string') {
-            text = typeOptions;
-          } else {
-            if (typeOptions.tsName) {
-              text = typeOptions.tsName;
-            }
-            acceptsTypeParameters = typeOptions.acceptsTypeParameters !== false;
+      if (!ts.isIdentifier(node.typeName)) {
+        return factory.createTypeReferenceNode(node.typeName, node.typeArguments);
+      }
+      if (isJSDocIndexSignature(node)) {
+        return visitJSDocIndexSignature(node);
+      }
+      if (aliasNames.has(node.typeName.text)) {
+        return factory.createTypeReferenceNode(
+          factory.createIdentifier(node.typeName.text),
+          ts.visitNodes(node.typeArguments, visitJSDocType, ts.isTypeNode),
+        );
+      }
+      let { text } = node.typeName;
+      let acceptsTypeParameters = true;
+      if (text in typeMap) {
+        const typeOptions = typeMap[text];
+        if (typeof typeOptions === 'string') {
+          text = typeOptions;
+        } else {
+          if (typeOptions.tsName) {
+            text = typeOptions.tsName;
           }
+          acceptsTypeParameters = typeOptions.acceptsTypeParameters !== false;
         }
+      }
 
-        name = factory.createIdentifier(text);
-        if ((text === 'Array' || text === 'Promise') && !node.typeArguments) {
-          args = factory.createNodeArray([anyType]);
-        } else if (acceptsTypeParameters) {
-          args = ts.visitNodes(node.typeArguments, visitJSDocType, ts.isTypeNode);
-        }
-        if (!acceptsTypeParameters) {
-          args = undefined;
-        }
+      const name = factory.createIdentifier(text);
+      let args: ts.NodeArray<ts.TypeNode> | undefined;
+      if (!acceptsTypeParameters) {
+        args = undefined;
+      } else if ((text === 'Array' || text === 'Promise') && !node.typeArguments) {
+        args = factory.createNodeArray([anyType]);
+      } else {
+        args = ts.visitNodes(node.typeArguments, visitJSDocType, ts.isTypeNode);
       }
       return factory.createTypeReferenceNode(name, args);
     }

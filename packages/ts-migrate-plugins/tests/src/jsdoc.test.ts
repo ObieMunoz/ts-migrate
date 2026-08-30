@@ -214,6 +214,26 @@ function D(d: string[]) {}
 `);
   });
 
+  it('drops the type arguments of a mapped type that does not accept them', () => {
+    const text = `\
+/** @param a {List} */
+function A(a) {}
+/** @param b {List<String>} */
+function B(b) {}
+`;
+
+    expect(
+      run(text, {
+        options: { typeMap: { List: { tsName: 'Array', acceptsTypeParameters: false } } },
+      }),
+    ).toBe(`\
+/** @param a {List} */
+function A(a: Array) {}
+/** @param b {List<String>} */
+function B(b: Array) {}
+`);
+  });
+
   it('annotates object index types', () => {
     const text = `\
 /** @param a {Object<number, any>} */
