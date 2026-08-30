@@ -321,20 +321,6 @@ export function createBootstrapMigrationFilter(rootDir: string): BootstrapMigrat
   };
 }
 
-interface FileFilter {
-  filterMigrationFiles: (fileNames: string[]) => string[];
-}
-
-/** Chains optional migration file filters into the single hook migrate accepts. */
-export function combineFileFilters(
-  filters: Array<FileFilter | undefined>,
-): ((fileNames: string[]) => string[]) | undefined {
-  const active = filters.filter((filter): filter is FileFilter => filter !== undefined);
-  if (active.length === 0) return undefined;
-  return (fileNames) =>
-    active.reduce((names, filter) => filter.filterMigrationFiles(names), fileNames);
-}
-
 export interface MigrationFileFilters {
   filterMigrationFiles: ((fileNames: string[]) => string[]) | undefined;
   /** Read after the migration: the filters fill their lists as it walks the file set. */
@@ -349,8 +335,13 @@ export function createMigrationFileFilters(
 ): MigrationFileFilters {
   const gitignoreFilter = gitignore ? createGitignoreMigrationFilter(rootDir) : undefined;
   const bootstrapFilter = bootstrap ? createBootstrapMigrationFilter(rootDir) : undefined;
+  const active = [gitignoreFilter, bootstrapFilter].filter((filter) => filter !== undefined);
   return {
-    filterMigrationFiles: combineFileFilters([gitignoreFilter, bootstrapFilter]),
+    filterMigrationFiles:
+      active.length === 0
+        ? undefined
+        : (fileNames) =>
+            active.reduce((names, filter) => filter.filterMigrationFiles(names), fileNames),
     skippedGitignoredFiles: () => gitignoreFilter?.skippedFiles().length ?? 0,
     skippedBootstrapFiles: () => bootstrapFilter?.skippedFiles() ?? [],
   };
