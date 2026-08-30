@@ -4,6 +4,7 @@ import { builtinModules } from 'module';
 import ts from 'typescript';
 import { Plugin } from '@obiemunoz/ts-migrate-server';
 import pluralize from './pluralize';
+import { getOrCreate } from './maps';
 import {
   GENERATED_MARKER,
   generatedFilePath,
@@ -98,12 +99,12 @@ function firstMessageLine(diagnostic: TypesDiagnostic): string {
 }
 
 function envEvidence(evidence: TypesEvidence, key: EnvKey): EnvEvidence {
-  let env = evidence.env.get(key);
-  if (!env) {
-    env = { errorCount: 0, weakCount: 0, names: new Set(), files: new Set() };
-    evidence.env.set(key, env);
-  }
-  return env;
+  return getOrCreate(evidence.env, key, () => ({
+    errorCount: 0,
+    weakCount: 0,
+    names: new Set(),
+    files: new Set(),
+  }));
 }
 
 function addEnvError(evidence: TypesEvidence, key: EnvKey, fileName: string, name?: string): void {
@@ -153,11 +154,10 @@ export function collectTypesEvidence(
       // TS2307 without a resolvable implementation is a missing dependency,
       // not a missing @types package.
       if (code !== 7016) return;
-      let module = evidence.untypedModules.get(quoted);
-      if (!module) {
-        module = { errorCount: 0, files: new Set() };
-        evidence.untypedModules.set(quoted, module);
-      }
+      const module = getOrCreate(evidence.untypedModules, quoted, () => ({
+        errorCount: 0,
+        files: new Set(),
+      }));
       module.errorCount += 1;
       module.files.add(fileName);
     }
@@ -707,12 +707,11 @@ function untypedRecommendations(
   const untypedPackages = new Map<string, RecommendationEvidence>();
   confirmedUntypedModules(evidence, rootDir).forEach(({ moduleName, module }) => {
     const packageName = typesPackageFor(moduleName);
-    const entry: RecommendationEvidence = untypedPackages.get(packageName) ?? {
+    const entry = getOrCreate(untypedPackages, packageName, () => ({
       errorCount: 0,
       files: new Set(),
       names: new Set(),
-    };
-    untypedPackages.set(packageName, entry);
+    }));
     entry.errorCount += module.errorCount;
     module.files.forEach((file) => entry.files.add(file));
     entry.names.add(`import '${moduleName}'`);
