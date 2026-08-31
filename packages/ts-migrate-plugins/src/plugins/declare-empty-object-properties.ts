@@ -5,6 +5,7 @@ import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptio
 import { getOrCreate } from '../utils/maps';
 import firstErrorLine from '../utils/firstErrorLine';
 import {
+  acceptProvenCandidates,
   createChangeValidator,
   getValidationOptions,
   TextChange,
@@ -264,17 +265,7 @@ function validateCandidates(
     return checked !== undefined && checked.newErrors.length === 0;
   };
 
-  if (isClean(candidates)) {
-    return candidates;
-  }
-
-  const accepted: Candidate[] = [];
-  candidates.forEach((candidate) => {
-    if (isClean([...accepted, candidate])) {
-      accepted.push(candidate);
-    }
-  });
-  return accepted;
+  return acceptProvenCandidates(candidates, isClean);
 }
 
 function changesOf(candidates: Candidate[], anyType: string): TextChange[] {

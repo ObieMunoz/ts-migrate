@@ -2,6 +2,7 @@ import ts from 'typescript';
 import { errorMessage, fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
 import { isDiagnosticWithLinePosition } from '../utils/type-guards';
 import {
+  acceptProvenCandidates,
   applyTextChanges,
   createFileLanguageService,
   findNewErrors,
@@ -382,14 +383,7 @@ function provenCandidates(
     return absorbed(candidate, fileName, group, changes);
   };
 
-  if (isProven(candidates)) return candidates;
-  if (candidates.length === 1) return [];
-
-  const accepted: Candidate[] = [];
-  candidates.forEach((candidate) => {
-    if (isProven([...accepted, candidate])) accepted.push(candidate);
-  });
-  return accepted;
+  return acceptProvenCandidates(candidates, isProven);
 }
 
 /**

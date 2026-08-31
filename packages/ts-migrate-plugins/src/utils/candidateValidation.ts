@@ -379,3 +379,23 @@ export function createChangeValidator(
     },
   };
 }
+
+/**
+ * The candidates a file still checks with: the whole set first, which is one
+ * program for the common file, and otherwise each candidate on top of what is
+ * already accepted, so that whatever comes back has been proven together.
+ *
+ * A lone candidate is never retried. The set check it has just failed is the
+ * check the accumulating pass would make of it, and one program is all a
+ * caller's budget may have left.
+ */
+export function acceptProvenCandidates<T>(candidates: T[], isProven: (group: T[]) => boolean): T[] {
+  if (isProven(candidates)) return candidates;
+  if (candidates.length <= 1) return [];
+
+  const accepted: T[] = [];
+  candidates.forEach((candidate) => {
+    if (isProven([...accepted, candidate])) accepted.push(candidate);
+  });
+  return accepted;
+}
