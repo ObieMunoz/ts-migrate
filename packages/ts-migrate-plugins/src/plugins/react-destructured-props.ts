@@ -16,14 +16,18 @@ import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptio
 import { getOrCreate } from '../utils/maps';
 import {
   applyTextChanges,
-  createFileLanguageService,
-  findNewErrors,
+  CheckedChanges,
+  createChangeValidator,
   getValidationOptions,
   TextChange,
   toOriginalPos,
 } from '../utils/candidateValidation';
 
 type Options = AnyAliasOptions;
+
+// Validation programs one file may build: the proposal as found, the proposal
+// without the members an error blamed, and the proposal without any of them.
+const maxValidationPrograms = 3;
 
 /**
  * What an untyped props pattern is reported as: TS7031 where the parameter has
@@ -415,38 +419,38 @@ function proveComponents(
   projectProgram: ts.Program,
 ): Component[] | undefined {
   const { text } = source;
-  const baseline = createFileLanguageService(fileName, text, compilerOptions, projectProgram);
+  const { check } = createChangeValidator(
+    fileName,
+    text,
+    compilerOptions,
+    projectProgram,
+    maxValidationPrograms,
+  );
 
   // Checked as plain `any`: a single-file program does not include the
   // declaration file the alias is declared in, so the alias would read as an
   // unresolved name. The two describe the same type by definition.
-  const attempt = (candidates: Component[]) => {
-    const changes = changesFor(candidates, 'any');
-    const service = createFileLanguageService(
-      fileName,
-      applyTextChanges(text, changes),
-      compilerOptions,
-      projectProgram,
-    );
-    return { errors: findNewErrors(baseline, service, changes, fileName), changes };
-  };
+  const attempt = (candidates: Component[]) => check(() => changesFor(candidates, 'any'));
+  const isClean = (checked: CheckedChanges | undefined) =>
+    checked !== undefined && checked.newErrors.length === 0;
 
   const first = attempt(components);
-  if (first.errors.length === 0) return components;
+  if (first === undefined) return undefined;
+  if (first.newErrors.length === 0) return components;
 
   const typed = components.some((component) =>
     component.members.some((member) => member.type != null),
   );
   if (!typed) return undefined;
 
-  const blamed = blameMembers(first.errors, components, source, first.changes);
+  const blamed = blameMembers(first.newErrors, components, source, first.changes);
   if (blamed.size > 0) {
     const relaxed = withoutTypes(components, blamed);
-    if (attempt(relaxed).errors.length === 0) return relaxed;
+    if (isClean(attempt(relaxed))) return relaxed;
   }
 
   const bare = withoutTypes(components);
-  return attempt(bare).errors.length === 0 ? bare : undefined;
+  return isClean(attempt(bare)) ? bare : undefined;
 }
 
 function withoutTypes(components: Component[], blamed?: Set<Member>): Component[] {
