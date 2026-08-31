@@ -7,11 +7,12 @@ import { relativeTo } from './paths';
 import { readText } from './readText';
 import { parseConfigFileNames } from './tsConfigIncludes';
 
-export interface FileDebt {
-  tsExpectError: number;
-  tsIgnore: number;
-  anyAlias: number;
-  any: number;
+/** The debt counters, in the order the reports print them. */
+export const DEBT_KEYS = ['tsExpectError', 'tsIgnore', 'anyAlias', 'any'] as const;
+
+export type DebtKey = (typeof DEBT_KEYS)[number];
+
+export interface FileDebt extends Record<DebtKey, number> {
   /** Error codes embedded in suppression comments, e.g. { TS2304: 3 }. */
   codes: Record<string, number>;
 }
@@ -27,18 +28,20 @@ export interface TypeDebtReport {
 }
 
 function emptyDebt(): FileDebt {
-  return { tsExpectError: 0, tsIgnore: 0, anyAlias: 0, any: 0, codes: {} };
+  const counts = Object.fromEntries(
+    DEBT_KEYS.map((key) => [key, 0] as const),
+  ) as Record<DebtKey, number>;
+  return { ...counts, codes: {} };
 }
 
 export function debtTotal(debt: FileDebt): number {
-  return debt.tsExpectError + debt.tsIgnore + debt.anyAlias + debt.any;
+  return DEBT_KEYS.reduce((total, key) => total + debt[key], 0);
 }
 
 function addDebt(into: FileDebt, debt: FileDebt): void {
-  into.tsExpectError += debt.tsExpectError;
-  into.tsIgnore += debt.tsIgnore;
-  into.anyAlias += debt.anyAlias;
-  into.any += debt.any;
+  DEBT_KEYS.forEach((key) => {
+    into[key] += debt[key];
+  });
   Object.entries(debt.codes).forEach(([code, count]) => {
     into.codes[code] = (into.codes[code] ?? 0) + count;
   });
@@ -283,15 +286,18 @@ export function scanTypeDebtForFiles(
 /** The per-file listing shows only the worst offenders; --json has them all. */
 const MAX_REPORT_FILES = 10;
 
+/** The label of each counter: the row label of a report, and its per-file short form. */
+const DEBT_LABELS: Record<DebtKey, { row: string; short: string }> = {
+  tsExpectError: { row: '@ts-expect-error comments', short: '@ts-expect-error' },
+  tsIgnore: { row: '@ts-ignore comments', short: '@ts-ignore' },
+  anyAlias: { row: 'any-alias annotations', short: 'any-alias' },
+  any: { row: 'explicit any annotations', short: 'any' },
+};
+
 /** The nonzero counts of a file's debt, e.g. "2 @ts-expect-error, 1 any". */
 export function formatFileDebtCounts(debt: FileDebt): string {
-  return [
-    debt.tsExpectError > 0 ? `${debt.tsExpectError} @ts-expect-error` : '',
-    debt.tsIgnore > 0 ? `${debt.tsIgnore} @ts-ignore` : '',
-    debt.anyAlias > 0 ? `${debt.anyAlias} any-alias` : '',
-    debt.any > 0 ? `${debt.any} any` : '',
-  ]
-    .filter(Boolean)
+  return DEBT_KEYS.filter((key) => debt[key] > 0)
+    .map((key) => `${debt[key]} ${DEBT_LABELS[key].short}`)
     .join(', ');
 }
 
@@ -315,10 +321,10 @@ export function formatTypeDebtReport(report: TypeDebtReport, folder: string): st
   }
 
   const aliasLabel = aliasNames.length > 0 ? ` (${aliasNames.join(', ')})` : '';
-  lines.push(`  @ts-expect-error comments: ${totals.tsExpectError}`);
-  lines.push(`  @ts-ignore comments: ${totals.tsIgnore}`);
-  lines.push(`  any-alias annotations${aliasLabel}: ${totals.anyAlias}`);
-  lines.push(`  explicit any annotations: ${totals.any}`);
+  DEBT_KEYS.forEach((key) => {
+    const suffix = key === 'anyAlias' ? aliasLabel : '';
+    lines.push(`  ${DEBT_LABELS[key].row}${suffix}: ${totals[key]}`);
+  });
   if (totals.tsExpectError + totals.tsIgnore > 0) {
     lines.push(`  Suppressed error codes: ${formatCodes(totals)}`);
   }
@@ -338,14 +344,6 @@ export function formatTypeDebtReport(report: TypeDebtReport, folder: string): st
 
   return lines.join('\n');
 }
-
-/** The count labels of a debt report, in the order the reports print them. */
-const DEBT_ROWS: Array<[label: string, of: (debt: FileDebt) => number]> = [
-  ['@ts-expect-error comments', (debt) => debt.tsExpectError],
-  ['@ts-ignore comments', (debt) => debt.tsIgnore],
-  ['any-alias annotations', (debt) => debt.anyAlias],
-  ['explicit any annotations', (debt) => debt.any],
-];
 
 /**
  * What a run took off the type debt, scanned before and after it. A command
@@ -367,8 +365,8 @@ export function formatTypeDebtDelta(
   };
 
   const lines = [`Type debt change for ${folder}:`];
-  DEBT_ROWS.forEach(([label, of]) => {
-    lines.push(`  ${label}: ${change(of(before.totals), of(after.totals))}`);
+  DEBT_KEYS.forEach((key) => {
+    lines.push(`  ${DEBT_LABELS[key].row}: ${change(before.totals[key], after.totals[key])}`);
   });
   lines.push(`  Total: ${change(debtTotal(before.totals), debtTotal(after.totals))}`);
   lines.push(
