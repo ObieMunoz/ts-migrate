@@ -72,6 +72,15 @@ function readPackageVersion(packageDir: string): string | undefined {
   }
 }
 
+/** The first probe result from `start` up through its ancestors to the filesystem root. */
+function walkUp<T>(start: string, probe: (dir: string) => T | undefined): T | undefined {
+  for (let dir = start; ; dir = path.dirname(dir)) {
+    const found = probe(dir);
+    if (found) return found;
+    if (path.dirname(dir) === dir) return undefined;
+  }
+}
+
 /**
  * The compiler the project's own tsc would load: an explicit ancestor walk
  * rather than require.resolve, whose global fallbacks (NODE_PATH, global
@@ -87,12 +96,11 @@ function readPackageVersion(packageDir: string): string | undefined {
 export function findProjectTypeScript(
   rootDir: string,
 ): { packageDir: string; version: string } | undefined {
-  for (let dir = path.resolve(rootDir); ; dir = path.dirname(dir)) {
+  return walkUp(path.resolve(rootDir), (dir) => {
     const packageDir = path.join(dir, 'node_modules', 'typescript');
     const version = readPackageVersion(packageDir);
-    if (version) return { packageDir, version };
-    if (path.dirname(dir) === dir) return undefined;
-  }
+    return version ? { packageDir, version } : undefined;
+  });
 }
 
 /** The compiler installed alongside ts-migrate, used when the project has none. */
@@ -118,16 +126,17 @@ export function readTypeScriptOverride(overridePath: string): {
   version: string;
 } {
   const resolved = path.resolve(overridePath);
-  for (let dir = resolved; ; dir = path.dirname(dir)) {
+  const found = walkUp(resolved, (dir) => {
     const version = readPackageVersion(dir);
-    if (version) return { packageDir: dir, version };
-    if (path.dirname(dir) === dir) {
-      throw new Error(
-        `--typescript ${overridePath} does not point at a typescript package ` +
-          `(no package.json named "typescript" at or above ${resolved}).`,
-      );
-    }
+    return version ? { packageDir: dir, version } : undefined;
+  });
+  if (!found) {
+    throw new Error(
+      `--typescript ${overridePath} does not point at a typescript package ` +
+        `(no package.json named "typescript" at or above ${resolved}).`,
+    );
   }
+  return found;
 }
 
 export function resolveTypeScript({
