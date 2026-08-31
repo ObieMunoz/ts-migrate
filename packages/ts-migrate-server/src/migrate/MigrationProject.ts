@@ -1,5 +1,6 @@
 import ts from 'typescript';
 import path from 'path';
+import normalizeSlashes from '../utils/normalizeSlashes';
 
 interface CreateProjectParams {
   tsConfigFilePath: string;
@@ -14,8 +15,6 @@ interface FileOverlay {
 const hasGlobMagic = (pattern: string): boolean => /[*?{}[\]]/.test(pattern);
 
 const SCRIPT_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'];
-
-const normalizeSlashes = (fileName: string): string => fileName.split(path.sep).join('/');
 
 interface CachedModuleResolutionHost extends ts.ModuleResolutionHost {
   fileExists(fileName: string): boolean;

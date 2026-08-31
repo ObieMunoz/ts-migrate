@@ -1,7 +1,6 @@
 import ts from 'typescript';
 import path from 'path';
-
-const normalizeSlashes = (fileName: string): string => fileName.split(path.sep).join('/');
+import normalizeSlashes from '../utils/normalizeSlashes';
 
 /**
  * Files whose outcome can still change in the next stabilization pass: the
