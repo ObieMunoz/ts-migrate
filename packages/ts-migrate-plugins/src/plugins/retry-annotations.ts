@@ -1,6 +1,7 @@
 import ts from 'typescript';
 import { fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
 import {
+  acceptProvenCandidates,
   applyTextChanges,
   createChangeValidator,
   createFileLanguageService,
@@ -292,14 +293,7 @@ function retriedChanges(
     );
   };
 
-  if (checksClean(proposals)) {
-    return withImports(proposals);
-  }
-
-  const accepted: Proposal[] = [];
-  proposals.forEach((proposal) => {
-    if (checksClean([...accepted, proposal])) accepted.push(proposal);
-  });
+  const accepted = acceptProvenCandidates(proposals, checksClean);
   return accepted.length > 0 ? withImports(accepted) : [];
 }
 
