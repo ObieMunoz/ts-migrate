@@ -7,6 +7,7 @@ import {
   isPropertyNamePosition,
   resolvesToDeclaration,
 } from './utils/identifiers';
+import { hasModifierOtherThan } from './utils/modifiers';
 
 /**
  * Moves a top-level `const`/`let` statement above its first use when the binding
@@ -83,12 +84,7 @@ function findCandidates(sourceFile: ts.SourceFile): Candidate[] {
   const candidates: Candidate[] = [];
   sourceFile.statements.forEach((statement) => {
     if (!ts.isVariableStatement(statement)) return;
-    if (
-      statement.modifiers &&
-      statement.modifiers.some((modifier) => modifier.kind !== ts.SyntaxKind.ExportKeyword)
-    ) {
-      return;
-    }
+    if (hasModifierOtherThan(statement, ts.SyntaxKind.ExportKeyword)) return;
 
     // `var` is function-scoped and hoists on its own; only const/let can be
     // observed before their declaration line, so restrict to those.

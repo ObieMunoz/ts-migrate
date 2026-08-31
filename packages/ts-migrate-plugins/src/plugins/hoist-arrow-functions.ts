@@ -6,6 +6,7 @@ import {
   groupByName,
   resolvesToDeclaration,
 } from './utils/identifiers';
+import { hasModifier, hasModifierOtherThan } from './utils/modifiers';
 
 /**
  * Converts arrow functions that are referenced before their declaration into
@@ -89,12 +90,7 @@ function getCandidate(
   sourceFile: ts.SourceFile,
 ): Candidate | undefined {
   if (!ts.isSourceFile(statement.parent) && !ts.isBlock(statement.parent)) return undefined;
-  if (
-    statement.modifiers &&
-    statement.modifiers.some((modifier) => modifier.kind !== ts.SyntaxKind.ExportKeyword)
-  ) {
-    return undefined;
-  }
+  if (hasModifierOtherThan(statement, ts.SyntaxKind.ExportKeyword)) return undefined;
 
   const { declarations } = statement.declarationList;
   if (declarations.length !== 1) return undefined;
@@ -106,12 +102,7 @@ function getCandidate(
   if (!declaration.initializer || !ts.isArrowFunction(declaration.initializer)) return undefined;
 
   const arrow = declaration.initializer;
-  if (
-    arrow.modifiers &&
-    arrow.modifiers.some((modifier) => modifier.kind !== ts.SyntaxKind.AsyncKeyword)
-  ) {
-    return undefined;
-  }
+  if (hasModifierOtherThan(arrow, ts.SyntaxKind.AsyncKeyword)) return undefined;
   if (!hasOwnBindings(arrow)) return undefined;
 
   const isVar = (statement.declarationList.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let)) === 0;
@@ -194,12 +185,8 @@ function toFunctionDeclarationText(
   sourceFile: ts.SourceFile,
   sourceText: string,
 ): string {
-  const isExport =
-    statement.modifiers != null &&
-    statement.modifiers.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
-  const isAsync =
-    arrow.modifiers != null &&
-    arrow.modifiers.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword);
+  const isExport = hasModifier(statement, ts.SyntaxKind.ExportKeyword);
+  const isAsync = hasModifier(arrow, ts.SyntaxKind.AsyncKeyword);
 
   const lastModifier =
     arrow.modifiers && arrow.modifiers.length > 0
