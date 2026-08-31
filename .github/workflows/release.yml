@@ -89,12 +89,17 @@ jobs:
             if [ -z "${target}" ]; then
               continue
             fi
-            for attempt in 1 2 3; do
-              if npm view "${target}" version > /dev/null; then
+            # The registry read path can trail a publish by over a minute, and
+            # the packument is served with max-age=300, so --prefer-online is
+            # what makes a retry re-query instead of replaying a cached copy.
+            for attempt in $(seq 1 10); do
+              if npm view --prefer-online "${target}" version > /dev/null; then
                 echo "${target} is on the registry"
                 continue 2
               fi
-              sleep 10
+              if [ "${attempt}" -lt 10 ]; then
+                sleep 15
+              fi
             done
             echo "${target} is missing from the registry"
             exit 1
