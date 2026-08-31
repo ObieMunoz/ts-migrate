@@ -107,68 +107,54 @@ const reactShapePlugin: Plugin<Options> = {
     const declaresType = (name: string) =>
       typesAndInterfaces.some((tNode) => tNode.name.text === name);
 
+    const handleVariableStatement = (node: ts.VariableStatement) => {
+      const variableDeclaration = node.declarationList.declarations[0];
+      if (!variableDeclaration) return;
+      const { initializer } = variableDeclaration;
+      if (!initializer || variableDeclaration.type) return;
+
+      const shape = getShapeOfInitializer(initializer);
+      if (!shape) return;
+      const { shapeNode, isArrayShapeType } = shape;
+
+      insertPropTypesRequireableNode();
+      const shapeName = variableDeclaration.name.getText();
+      // we are checking here, if there is existing interface/type with the same name in the file.
+      // an array shape keeps no annotation naming the type, so this check is all that stands
+      // between a rerun and a second declaration of the name
+      if (!declaresType(shapeName)) {
+        insertShapeType(node.pos, shapeNode, shapeName, isArrayShapeType);
+      }
+
+      if (!isArrayShapeType) {
+        const updatedVariableDeclaration = ts.factory.updateVariableDeclaration(
+          variableDeclaration,
+          variableDeclaration.name,
+          undefined,
+          getShapeTypeNode(shapeName),
+          initializer,
+        );
+        const index = variableDeclaration.pos + 1;
+        const length = variableDeclaration.end - index;
+        const text = printer.printNode(
+          ts.EmitHint.Unspecified,
+          updatedVariableDeclaration,
+          sourceFile,
+        );
+        updates.push({ kind: 'replace', index, length, text });
+      }
+
+      const exportModifier = node.modifiers?.find(
+        (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+      );
+      if (exportModifier) {
+        splitVariableExport(node, shapeName, exportModifier);
+      }
+    };
+
     for (const node of sourceFile.statements) {
-      // const shapeName = PropTypes.shape({...})
       if (ts.isVariableStatement(node)) {
-        const variableDeclaration = node.declarationList.declarations[0];
-        if (variableDeclaration && variableDeclaration.initializer && !variableDeclaration.type) {
-          const exportModifier =
-            node.modifiers &&
-            node.modifiers.find((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
-          if (
-            ts.isCallExpression(variableDeclaration.initializer) &&
-            variableDeclaration.initializer.arguments.length > 0 &&
-            ts.isObjectLiteralExpression(variableDeclaration.initializer.arguments[0]) &&
-            isPropTypesShapeCallExpression(variableDeclaration.initializer)
-          ) {
-            insertPropTypesRequireableNode();
-            const shapeNode = variableDeclaration.initializer;
-            const shapeName = variableDeclaration.name.getText();
-            // we are checking here, if there is existing interface/type with the same name in the file
-            if (!declaresType(shapeName)) {
-              insertShapeType(node.pos, shapeNode, shapeName);
-            }
-            const updatedVariableDeclaration = ts.factory.updateVariableDeclaration(
-              variableDeclaration,
-              variableDeclaration.name,
-              undefined,
-              getShapeTypeNode(shapeName),
-              variableDeclaration.initializer,
-            );
-            const index = variableDeclaration.pos + 1;
-            const length = variableDeclaration.end - index;
-            const text = printer.printNode(
-              ts.EmitHint.Unspecified,
-              updatedVariableDeclaration,
-              sourceFile,
-            );
-            updates.push({ kind: 'replace', index, length, text });
-
-            if (exportModifier) {
-              splitVariableExport(node, shapeName, exportModifier);
-            }
-          }
-
-          // const shapeName = Types.arrayOf(Shape(...))
-          if (
-            ts.isCallExpression(variableDeclaration.initializer) &&
-            isPropTypesArrayOfShapes(variableDeclaration.initializer)
-          ) {
-            insertPropTypesRequireableNode();
-            const shapeNode = variableDeclaration.initializer.arguments[0] as ts.CallExpression;
-            const shapeName = variableDeclaration.name.getText();
-
-            // the declaration keeps no annotation naming the type, so this check is
-            // all that stands between a rerun and a second declaration of the name
-            if (!declaresType(shapeName)) {
-              insertShapeType(node.pos, shapeNode, shapeName, true);
-            }
-
-            if (exportModifier) {
-              splitVariableExport(node, shapeName, exportModifier);
-            }
-          }
-        }
+        handleVariableStatement(node);
       }
       // export default PropTypes.shape({...})
       // @TODO: export default PropTypes.arrayOf
@@ -273,6 +259,26 @@ function isPropTypesArrayOfShapes(node: ts.CallExpression) {
     ts.isCallExpression(node.arguments[0]) &&
     isPropTypesShapeCallExpression(node.arguments[0] as ts.CallExpression)
   );
+}
+
+function getShapeOfInitializer(initializer: ts.Expression) {
+  if (!ts.isCallExpression(initializer)) return undefined;
+
+  // const shapeName = PropTypes.shape({...})
+  if (
+    initializer.arguments.length > 0 &&
+    ts.isObjectLiteralExpression(initializer.arguments[0]) &&
+    isPropTypesShapeCallExpression(initializer)
+  ) {
+    return { shapeNode: initializer, isArrayShapeType: false };
+  }
+
+  // const shapeName = Types.arrayOf(Shape(...))
+  if (isPropTypesArrayOfShapes(initializer)) {
+    return { shapeNode: initializer.arguments[0] as ts.CallExpression, isArrayShapeType: true };
+  }
+
+  return undefined;
 }
 
 function getPropTypesImportNode() {
