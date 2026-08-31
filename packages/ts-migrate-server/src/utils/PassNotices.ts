@@ -1,6 +1,7 @@
 import path from 'path';
 import log from 'updatable-log';
 import { PluginFileNotice } from '../../types';
+import normalizeSlashes from './normalizeSlashes';
 
 /** One cause, with the files it happened to. */
 export interface FileNoticeGroup {
@@ -57,7 +58,7 @@ export default class PassNotices {
   }
 
   add(fileName: string, notice: PluginFileNotice): void {
-    const relFile = path.relative(this.rootDir, fileName).split(path.sep).join('/');
+    const relFile = normalizeSlashes(path.relative(this.rootDir, fileName));
     const key = groupKey(notice);
     let group = this.groupsByKey.get(key);
     if (!group) {
