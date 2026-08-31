@@ -93,6 +93,30 @@ function canHoistExpression(
   );
 }
 
+/** `ClassName.prop = value`, the only statement shape this plugin hoists. */
+type StaticAssignment = ts.ExpressionStatement & {
+  expression: ts.BinaryExpression & { left: ts.PropertyAccessExpression };
+};
+
+/**
+ * Determines whether or not this statement assigns a static onto this class
+ * @param statement -- a top-level statement following the class declaration
+ * @param className -- the name of the class to hoist to
+ */
+function isStaticAssignmentTo(
+  statement: ts.Statement,
+  className: ts.Identifier,
+): statement is StaticAssignment {
+  return (
+    ts.isExpressionStatement(statement) &&
+    ts.isBinaryExpression(statement.expression) &&
+    ts.isPropertyAccessExpression(statement.expression.left) &&
+    ts.isIdentifier(statement.expression.left.expression) &&
+    statement.expression.left.expression.text === className.text &&
+    statement.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken
+  );
+}
+
 /**
  * Determines whether or not this assignment was already hoisted to this class
  * @param statment -- a static binary expresison statement
@@ -113,6 +137,70 @@ function isAlreadyHoisted(
   return classDeclaration.members.some(
     (member) => member.name && ts.isIdentifier(member.name) && member.name.text === propertyToHoist,
   );
+}
+
+/**
+ * Emits a class with no members of its own by reprinting the whole declaration:
+ * there is no member to indent against, so the printer supplies the body. The
+ * replaced span starts past the trivia the declaration's `pos` covers, leaving
+ * whatever sits above the class untouched.
+ */
+function replaceEmptyClass(
+  classDeclaration: ts.ClassDeclaration,
+  properties: ts.PropertyDeclaration[],
+  sourceFile: ts.SourceFile,
+  sourceText: string,
+  printer: ts.Printer,
+): SourceTextUpdate {
+  const updatedClassDeclaration = ts.factory.updateClassDeclaration(
+    classDeclaration,
+    classDeclaration.modifiers,
+    classDeclaration.name,
+    classDeclaration.typeParameters,
+    classDeclaration.heritageClauses,
+    ts.factory.createNodeArray(properties),
+  );
+
+  let index = classDeclaration.pos;
+  while (index < sourceText.length && /\s/.test(sourceText[index])) index += 1;
+
+  return {
+    kind: 'replace',
+    index,
+    length: classDeclaration.end - index,
+    text: printer.printNode(ts.EmitHint.Unspecified, updatedClassDeclaration, sourceFile),
+  };
+}
+
+/**
+ * Emits into a class that already has members, keeping their formatting. The
+ * printed properties carry no indentation of their own, so every non-empty line
+ * takes the indent of the first member and the block is inserted at that
+ * member's `pos`, ahead of its leading trivia.
+ */
+function insertBeforeFirstMember(
+  classDeclaration: ts.ClassDeclaration,
+  properties: ts.PropertyDeclaration[],
+  sourceFile: ts.SourceFile,
+  sourceText: string,
+  printer: ts.Printer,
+): SourceTextUpdate {
+  const firstMember = classDeclaration.members[0];
+  const memberStart = firstMember.getStart(sourceFile);
+  const lineStart = memberStart - sourceFile.getLineAndCharacterOfPosition(memberStart).character;
+  const indent = sourceText.slice(lineStart, memberStart);
+
+  const text =
+    ts.sys.newLine +
+    properties
+      .map((property) => printer.printNode(ts.EmitHint.Unspecified, property, sourceFile))
+      .join(ts.sys.newLine + ts.sys.newLine)
+      .split(ts.sys.newLine)
+      .map((line) => (line.length > 0 ? indent + line : line))
+      .join(ts.sys.newLine) +
+    ts.sys.newLine;
+
+  return { kind: 'insert', index: firstMember.pos, text };
 }
 
 function hoistStaticClassProperties(
@@ -144,88 +232,49 @@ function hoistStaticClassProperties(
 
     sourceFile.statements.forEach((statement, statementIndex) => {
       if (statementIndex <= classIndex) return;
-      if (
-        ts.isExpressionStatement(statement) &&
-        ts.isBinaryExpression(statement.expression) &&
-        ts.isPropertyAccessExpression(statement.expression.left) &&
-        ts.isIdentifier(statement.expression.left.expression) &&
-        statement.expression.left.expression.text === className.text &&
-        statement.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken
-      ) {
-        const propertyName = statement.expression.left.name.text;
-        if (isAlreadyHoisted(statement, classDeclaration) || declaredNames.has(propertyName)) {
-          directlyFollowsClass = false;
-          return;
-        }
-        // A statement that cannot be hoisted gets a static type annotation instead.
-        const canHoist =
-          directlyFollowsClass &&
-          canHoistExpression(statement.expression.right, classDeclaration.pos, knownDefinitions);
-        properties.push(
-          ts.factory.createPropertyDeclaration(
-            [ts.factory.createModifier(ts.SyntaxKind.StaticKeyword)],
-            propertyName,
-            undefined,
-            canHoist ? undefined : anyTypeNode(options.anyAlias),
-            canHoist ? statement.expression.right : undefined,
-          ),
-        );
-        declaredNames.add(propertyName);
-        if (canHoist) {
-          updates.push({
-            kind: 'delete',
-            index: statement.pos,
-            length: statement.end - statement.pos,
-          });
-        } else {
-          directlyFollowsClass = false;
-        }
+      if (!isStaticAssignmentTo(statement, className)) {
+        directlyFollowsClass = false;
+        return;
+      }
+
+      const assignment = statement.expression;
+      const propertyName = assignment.left.name.text;
+      if (isAlreadyHoisted(statement, classDeclaration) || declaredNames.has(propertyName)) {
+        directlyFollowsClass = false;
+        return;
+      }
+
+      // A statement that cannot be hoisted gets a static type annotation instead.
+      const canHoist =
+        directlyFollowsClass &&
+        canHoistExpression(assignment.right, classDeclaration.pos, knownDefinitions);
+      properties.push(
+        ts.factory.createPropertyDeclaration(
+          [ts.factory.createModifier(ts.SyntaxKind.StaticKeyword)],
+          propertyName,
+          undefined,
+          canHoist ? undefined : anyTypeNode(options.anyAlias),
+          canHoist ? assignment.right : undefined,
+        ),
+      );
+      declaredNames.add(propertyName);
+      if (canHoist) {
+        updates.push({
+          kind: 'delete',
+          index: statement.pos,
+          length: statement.end - statement.pos,
+        });
       } else {
         directlyFollowsClass = false;
       }
     });
 
     if (properties.length > 0) {
-      if (classDeclaration.members.length === 0) {
-        const updatedClassDeclaration = ts.factory.updateClassDeclaration(
-          classDeclaration,
-          classDeclaration.modifiers,
-          classDeclaration.name,
-          classDeclaration.typeParameters,
-          classDeclaration.heritageClauses,
-          ts.factory.createNodeArray(properties),
-        );
-
-        let index = classDeclaration.pos;
-        while (index < sourceText.length && /\s/.test(sourceText[index])) index += 1;
-        const length = classDeclaration.end - index;
-
-        const text = printer.printNode(
-          ts.EmitHint.Unspecified,
-          updatedClassDeclaration,
-          sourceFile,
-        );
-
-        updates.push({ kind: 'replace', index, length, text });
-      } else {
-        const firstMember = classDeclaration.members[0];
-        const memberStart = firstMember.getStart(sourceFile);
-        const lineStart =
-          memberStart - sourceFile.getLineAndCharacterOfPosition(memberStart).character;
-        const indent = sourceText.slice(lineStart, memberStart);
-
-        const text =
-          ts.sys.newLine +
-          properties
-            .map((property) => printer.printNode(ts.EmitHint.Unspecified, property, sourceFile))
-            .join(ts.sys.newLine + ts.sys.newLine)
-            .split(ts.sys.newLine)
-            .map((line) => (line.length > 0 ? indent + line : line))
-            .join(ts.sys.newLine) +
-          ts.sys.newLine;
-
-        updates.push({ kind: 'insert', index: firstMember.pos, text });
-      }
+      updates.push(
+        classDeclaration.members.length === 0
+          ? replaceEmptyClass(classDeclaration, properties, sourceFile, sourceText, printer)
+          : insertBeforeFirstMember(classDeclaration, properties, sourceFile, sourceText, printer),
+      );
     }
   });
 
