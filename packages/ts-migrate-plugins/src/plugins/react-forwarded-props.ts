@@ -1,5 +1,6 @@
 import ts from 'typescript';
 import { errorMessage, fileNoticeReporter, Plugin } from '@obiemunoz/ts-migrate-server';
+import { collectIdentifiers } from './utils/identifiers';
 import { updateImports } from './utils/imports';
 import { isNameableJsxTagName, jsxTagNameTypeArgument } from './utils/jsx-tag-names';
 import updateSourceText from '../utils/updateSourceText';
@@ -67,8 +68,9 @@ const reactForwardedPropsPlugin: Plugin = {
         return undefined;
       }
 
-      const useNamespace = hasBinding(source, 'React');
-      if (!useNamespace && hasBinding(source, componentPropsName)) {
+      const identifiers = collectIdentifiers(source);
+      const useNamespace = identifiers.has('React');
+      if (!useNamespace && identifiers.has(componentPropsName)) {
         return undefined;
       }
       const propsType = useNamespace ? `React.${componentPropsName}` : componentPropsName;
@@ -138,20 +140,6 @@ function addComponentPropsImport(fileName: string, candidateText: string): strin
     [],
   );
   return updates.length > 0 ? updateSourceText(candidateText, updates) : candidateText;
-}
-
-function hasBinding(source: ts.SourceFile, name: string): boolean {
-  let found = false;
-  const visit = (node: ts.Node) => {
-    if (found) return;
-    if (ts.isIdentifier(node) && node.text === name) {
-      found = true;
-      return;
-    }
-    node.forEachChild(visit);
-  };
-  source.forEachChild(visit);
-  return found;
 }
 
 function collectCandidates(source: ts.SourceFile, checker: ts.TypeChecker): Candidate[] {
