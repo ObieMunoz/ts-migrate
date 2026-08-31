@@ -2,21 +2,20 @@ import fs from 'fs';
 import path from 'path';
 import log from 'updatable-log';
 import { errorMessage } from '@obiemunoz/ts-migrate-server';
-import { debtTotal, scanTypeDebt } from '../utils/typeDebt';
+import { DEBT_KEYS, DebtKey, debtTotal, scanTypeDebt } from '../utils/typeDebt';
 
 export const DEFAULT_BASELINE_FILE = '.ts-migrate-baseline.json';
 
 const BASELINE_VERSION = 1;
 
-const COUNTERS = [
-  { key: 'tsExpectError', label: '@ts-expect-error' },
-  { key: 'tsIgnore', label: '@ts-ignore' },
-  { key: 'anyAlias', label: 'any-alias' },
-  { key: 'any', label: 'explicit any' },
-] as const;
+const COUNTER_LABELS: Record<DebtKey, string> = {
+  tsExpectError: '@ts-expect-error',
+  tsIgnore: '@ts-ignore',
+  anyAlias: 'any-alias',
+  any: 'explicit any',
+};
 
-type CounterKey = (typeof COUNTERS)[number]['key'];
-type BaselineCounts = Record<CounterKey, number>;
+type BaselineCounts = Record<DebtKey, number>;
 
 interface Baseline {
   version: number;
@@ -33,12 +32,7 @@ interface CheckParams {
 }
 
 function toBaselineCounts(counts: BaselineCounts): BaselineCounts {
-  return {
-    tsExpectError: counts.tsExpectError,
-    tsIgnore: counts.tsIgnore,
-    anyAlias: counts.anyAlias,
-    any: counts.any,
-  };
+  return Object.fromEntries(DEBT_KEYS.map((key) => [key, counts[key]] as const)) as BaselineCounts;
 }
 
 function sortedFiles(files: Record<string, BaselineCounts>): Record<string, BaselineCounts> {
@@ -156,10 +150,10 @@ export default function check({
   const regressions: string[] = [];
   Object.entries(current).forEach(([file, counts]) => {
     const base = baseline.files[file];
-    COUNTERS.forEach(({ key, label }) => {
+    DEBT_KEYS.forEach((key) => {
       const allowed = base?.[key] ?? 0;
       if (counts[key] > allowed) {
-        regressions.push(`  ${file}: ${label} ${allowed} -> ${counts[key]}`);
+        regressions.push(`  ${file}: ${COUNTER_LABELS[key]} ${allowed} -> ${counts[key]}`);
       }
     });
   });
