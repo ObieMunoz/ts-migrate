@@ -474,8 +474,13 @@ function resolveType(
   // be spliced into the file as an absolute path rather than refused.
   if (typeStr.includes('import("')) return { kind: 'any' };
   // So that a checker-produced `any[]` dedupes against the `$TSFixMe[]` an
-  // empty array literal derives rather than unioning with it.
-  if (anyAlias != null) typeStr = typeStr.replace(/\bany\b/g, anyAlias);
+  // empty array literal derives rather than unioning with it. A string literal
+  // matches first, so `"any"`, whose text is the keyword, is left as it is.
+  if (anyAlias != null) {
+    typeStr = typeStr.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\bany\b/g, (match) =>
+      match === 'any' ? anyAlias : match,
+    );
+  }
   if (typeStrDegradesToAny(typeStr)) return { kind: 'any' };
   return { kind: 'resolved', typeStr, tsTypes: [type] };
 }

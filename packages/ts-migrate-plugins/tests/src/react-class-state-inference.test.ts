@@ -323,6 +323,28 @@ export default Foo;
     expect(result).toContain('config: typeof defaultConfig;');
   });
 
+  it('keeps a string literal type whose text is the any keyword', async () => {
+    // The keyword is rewritten to the alias so that a checker-produced `any[]`
+    // dedupes against the `$TSFixMe[]` an empty array literal derives. Inside a
+    // literal it is a string the component compares against, not a type.
+    const result = await runPlugin(`import React from 'react';
+
+declare function getModes(): Set<'any' | 'all'>;
+
+class Foo extends React.Component {
+  state = { modes: getModes() };
+
+  render() {
+    return <div>{this.state.modes.size}</div>;
+  }
+}
+
+export default Foo;
+`);
+
+    expect(result).toContain('modes: Set<"any" | "all">;');
+  });
+
   it('leaves a name the state alias cannot see as the any alias', async () => {
     // `local` is a name only the method body has, and the alias is written at
     // the top of the file, so there is nothing to query.
