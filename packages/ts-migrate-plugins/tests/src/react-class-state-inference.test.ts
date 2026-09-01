@@ -168,17 +168,17 @@ export default Foo;
     expect(result).toMatch(/import \{ Timer \} from ["'].*lib["']/);
   });
 
-  it('falls back to the any alias for a type too large to print', async () => {
-    // typeToString truncates a wide union with `...`, which is not syntax. The
-    // member has to read as the alias rather than be spliced in as text.
-    const members = Array.from({ length: 40 }, (_, i) => `  m${i}: '${i}';`).join('\n');
-    const result = await runPlugin(`import React from 'react';
-
-type Wide = {
-${members}
-};
-
-declare function makeWide(): Wide[keyof Wide];
+  it('writes a union too wide for typeToString to print by default', async () => {
+    // Left to its default flags typeToString cuts this off with `... N more ...`,
+    // which is not syntax. The length is a display limit, not a limit on what
+    // the checker can say, so the member is written out in full.
+    const names = Array.from({ length: 30 }, (_, i) => `Member${i}`);
+    const lib = `${names.map((name) => `export type ${name} = { ${name}: number };`).join('\n')}
+export declare function makeWide(): ${names.join(' | ')};
+`;
+    const result = await runPlugin(
+      `import React from 'react';
+import { makeWide } from '/lib';
 
 class Foo extends React.Component {
   state = { value: makeWide() };
@@ -189,9 +189,82 @@ class Foo extends React.Component {
 }
 
 export default Foo;
-`);
+`,
+      {
+        fileName: 'Foo.tsx',
+        compilerOptions: { jsx: 2 },
+        options: { anyAlias: '$TSFixMe' },
+        extraFiles: { 'lib.ts': lib },
+      },
+    );
 
     expect(result).not.toContain('...');
-    expect(result).toContain('value: ');
+    names.forEach((name) => expect(result).toContain(name));
+  });
+
+  it('names a call whose type cannot be written as ReturnType of the callee', async () => {
+    // An anonymous object type is not something buildTypeNode reconstructs at
+    // any length, but the function it came out of is in scope in this file.
+    const result = await runPlugin(`import React from 'react';
+
+declare function makeConfig(): { retries: number; onError: (e: Error) => void };
+
+class Foo extends React.Component {
+  state = { config: makeConfig() };
+
+  render() {
+    return <div>{this.state.config.retries}</div>;
+  }
+}
+
+export default Foo;
+`);
+
+    expect(result).toContain('config: ReturnType<typeof makeConfig>;');
+  });
+
+  it('names a module-scoped binding whose type cannot be written', async () => {
+    const result = await runPlugin(`import React from 'react';
+
+declare const defaultConfig: { retries: number; onError: (e: Error) => void };
+
+class Foo extends React.Component {
+  state = { config: defaultConfig };
+
+  render() {
+    return <div>{this.state.config.retries}</div>;
+  }
+}
+
+export default Foo;
+`);
+
+    expect(result).toContain('config: typeof defaultConfig;');
+  });
+
+  it('leaves a name the state alias cannot see as the any alias', async () => {
+    // `local` is a name only the method body has, and the alias is written at
+    // the top of the file, so there is nothing to query.
+    const result = await runPlugin(`import React from 'react';
+
+declare function makeConfig(): { retries: number; onError: (e: Error) => void };
+
+class Foo extends React.Component {
+  state = { open: false };
+
+  componentDidMount() {
+    const local = makeConfig();
+    this.state.config = local;
+  }
+
+  render() {
+    return <div>{this.state.open}</div>;
+  }
+}
+
+export default Foo;
+`);
+
+    expect(result).toContain('config: $TSFixMe;');
   });
 });

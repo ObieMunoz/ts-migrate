@@ -431,16 +431,23 @@ function typeStrOf(type: DerivedType | undefined, anyAlias: string | undefined):
 
 // What the checker says a type is, in the form the rest of this plugin writes.
 //
-// typeToString truncates a large type with `...`, `... N more ...` and `<...>`
-// markers, none of which are syntax. The string is only ever turned into a node
-// by buildTypeNode, so anything that would not survive that round trip is
-// recorded as the `any` it would have been anyway.
+// NoTruncation because typeToString otherwise cuts a long type off with `...`
+// and `... N more ...`, which are display markers rather than a limit on what
+// it can say: a wide union or a deep generic reference is written in full and
+// reads back. What is left after that is the shapes buildTypeNode does not
+// parse at any length, recorded as the `any` they would have been anyway.
 function resolveType(
   type: ts.Type,
   checker: ts.TypeChecker,
   anyAlias: string | undefined,
 ): DerivedType {
-  let typeStr = checker.typeToString(checker.getBaseTypeOfLiteralType(type));
+  let typeStr = checker.typeToString(
+    checker.getBaseTypeOfLiteralType(type),
+    undefined,
+    ts.TypeFormatFlags.AllowUniqueESSymbolType |
+      ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope |
+      ts.TypeFormatFlags.NoTruncation,
+  );
   // A type declared in another file prints with an `import("…").` prefix that
   // is not writable; the name alone is, once collectStateImports imports it.
   typeStr = typeStr.replace(/^import\("[^"]+"\)\./, '');
@@ -500,7 +507,51 @@ function deriveType(
     };
   }
 
-  return checker ? resolveType(checker.getTypeAtLocation(expression), checker, anyAlias) : undefined;
+  if (!checker) return undefined;
+  const resolved = resolveType(checker.getTypeAtLocation(expression), checker, anyAlias);
+  return resolved.kind === 'any' ? typeQueryType(expression, checker) ?? resolved : resolved;
+}
+
+// A type the checker resolves but cannot write is still nameable when the
+// expression names the thing that has it. The state alias is written at the top
+// of the same file the expression is in, so a binding declared there is already
+// in scope and no import follows the query.
+function typeQueryType(
+  expression: ts.Expression,
+  checker: ts.TypeChecker,
+): DerivedType | undefined {
+  if (ts.isCallExpression(expression)) {
+    const callee = moduleScopedName(expression.expression, checker);
+    if (callee === undefined || expression.typeArguments !== undefined) return undefined;
+    // ReturnType reads the last signature, so it is this call's type only where
+    // there is one signature and it is not generic.
+    const signatures = checker.getTypeAtLocation(expression.expression).getCallSignatures();
+    if (signatures.length !== 1 || (signatures[0].getTypeParameters() ?? []).length > 0) {
+      return undefined;
+    }
+    return { kind: 'resolved', typeStr: `ReturnType<typeof ${callee}>`, tsTypes: [] };
+  }
+
+  const name = moduleScopedName(expression, checker);
+  return name === undefined
+    ? undefined
+    : { kind: 'resolved', typeStr: `typeof ${name}`, tsTypes: [] };
+}
+
+// The name of a binding declared at the top level of its file. A parameter or a
+// local is a name the state alias cannot see, and resolving the symbol rather
+// than reading the text is what tells the two apart when a local shadows an
+// import.
+function moduleScopedName(expression: ts.Expression, checker: ts.TypeChecker): string | undefined {
+  if (!ts.isIdentifier(expression)) return undefined;
+  const declaration = checker.getSymbolAtLocation(expression)?.declarations?.[0];
+  if (declaration === undefined) return undefined;
+
+  for (let node: ts.Node | undefined = declaration.parent; node; node = node.parent) {
+    if (ts.isSourceFile(node)) return expression.text;
+    if (ts.isFunctionLike(node) || ts.isBlock(node) || ts.isClassLike(node)) return undefined;
+  }
+  return undefined;
 }
 
 function mergeTypes(
