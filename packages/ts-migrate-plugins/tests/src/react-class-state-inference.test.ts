@@ -84,8 +84,9 @@ export default Foo;
 `);
 
     expect(result).toContain('mins: string;');
-    // Required, the member would reject the very assignment it was read from.
-    // The `?` says what the checker's `| undefined` says, so only one is written.
+    // Written required, the member would reject the very assignment it was read
+    // from. The `?` says what the checker's `| undefined` says, so only one of
+    // the two is written.
     expect(result).toContain('secs?: string;');
   });
 
@@ -264,10 +265,7 @@ class Foo extends React.Component {
 
 export default Foo;
 `,
-      {
-        options: { anyAlias: '$TSFixMe' },
-        extraFiles: { 'lib.ts': lib },
-      },
+      { extraFiles: { 'lib.ts': lib } },
     );
 
     expect(result).toContain('timer: Timer;');
@@ -296,10 +294,7 @@ class Foo extends React.Component {
 
 export default Foo;
 `,
-      {
-        options: { anyAlias: '$TSFixMe' },
-        extraFiles: { 'lib.ts': lib },
-      },
+      { extraFiles: { 'lib.ts': lib } },
     );
 
     expect(result).not.toContain('...');
