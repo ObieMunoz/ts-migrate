@@ -199,6 +199,36 @@ export default Foo;
     expect(result).toContain('mins: string;');
   });
 
+  it('keeps that initial type when there is no any alias to spell it with', async () => {
+    // The alias is not configured unless the run asks for it, and a member the
+    // checker cannot type is the checker saying nothing either way.
+    const result = await runPlugin(
+      `import React from 'react';
+
+class Foo extends React.Component {
+  state = { mins: '0' };
+
+  updateMins(mins) {
+    this.setState({ mins });
+  }
+
+  render() {
+    return <div>{this.state.mins}</div>;
+  }
+}
+
+export default Foo;
+`,
+      {
+        fileName: 'Foo.tsx',
+        compilerOptions: { jsx: 2, strict: false },
+        options: {},
+      },
+    );
+
+    expect(result).toContain('mins: string;');
+  });
+
   it('resolves a shorthand naming a typed binding', async () => {
     const result = await runPlugin(`import React from 'react';
 

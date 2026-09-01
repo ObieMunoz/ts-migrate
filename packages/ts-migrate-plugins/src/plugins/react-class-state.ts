@@ -473,6 +473,7 @@ function resolveType(
   // buildTypeNode parses an import type, so one left in a nested position would
   // be spliced into the file as an absolute path rather than refused.
   if (typeStr.includes('import("')) return { kind: 'any' };
+  if (typeStrDegradesToAny(typeStr)) return { kind: 'any' };
   // So that a checker-produced `any[]` dedupes against the `$TSFixMe[]` an
   // empty array literal derives rather than unioning with it. A string literal
   // matches first, so `"any"`, whose text is the keyword, is left as it is.
@@ -481,7 +482,6 @@ function resolveType(
       match === 'any' ? anyAlias : match,
     );
   }
-  if (typeStrDegradesToAny(typeStr)) return { kind: 'any' };
   return { kind: 'resolved', typeStr, tsTypes: [type] };
 }
 
@@ -536,7 +536,17 @@ function deriveType(
 
   if (!checker) return undefined;
   const resolved = resolveType(checker.getTypeAtLocation(expression), checker, anyAlias);
-  return resolved.kind === 'any' ? typeQueryType(expression, checker) ?? resolved : resolved;
+  if (resolved.kind !== 'any') return resolved;
+  // An answer of `any` is the checker having nothing to say rather than
+  // evidence that the member holds anything, so it is carried as text for
+  // merging to drop against an observation that does say something.
+  return (
+    typeQueryType(expression, checker) ?? {
+      kind: 'resolved',
+      typeStr: anyAlias ?? 'any',
+      tsTypes: [],
+    }
+  );
 }
 
 // A type the checker resolves but cannot write is still nameable when the
