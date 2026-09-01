@@ -1,3 +1,4 @@
+import ts from 'typescript';
 import { realPluginRunner } from '../test-utils';
 import reactClassStatePlugin from '../../src/plugins/react-class-state';
 
@@ -8,7 +9,7 @@ import reactClassStatePlugin from '../../src/plugins/react-class-state';
  */
 const runPlugin = realPluginRunner(reactClassStatePlugin, {
   fileName: 'Foo.tsx',
-  compilerOptions: { jsx: 2 /* React */ },
+  compilerOptions: { jsx: ts.JsxEmit.React },
   options: { anyAlias: '$TSFixMe' },
 });
 
@@ -84,7 +85,8 @@ export default Foo;
 
     expect(result).toContain('mins: string;');
     // Required, the member would reject the very assignment it was read from.
-    expect(result).toContain('secs?: string | undefined;');
+    // The `?` says what the checker's `| undefined` says, so only one is written.
+    expect(result).toContain('secs?: string;');
   });
 
   it('reads a this.state.key assignment, and marks it optional outside the constructor', async () => {
@@ -189,11 +191,7 @@ class Foo extends React.Component {
 
 export default Foo;
 `,
-      {
-        fileName: 'Foo.tsx',
-        compilerOptions: { jsx: 2, strict: false },
-        options: { anyAlias: '$TSFixMe' },
-      },
+      { compilerOptions: { jsx: ts.JsxEmit.React, strict: false } },
     );
 
     expect(result).toContain('mins: string;');
@@ -220,8 +218,7 @@ class Foo extends React.Component {
 export default Foo;
 `,
       {
-        fileName: 'Foo.tsx',
-        compilerOptions: { jsx: 2, strict: false },
+        compilerOptions: { jsx: ts.JsxEmit.React, strict: false },
         options: {},
       },
     );
@@ -268,8 +265,6 @@ class Foo extends React.Component {
 export default Foo;
 `,
       {
-        fileName: 'Foo.tsx',
-        compilerOptions: { jsx: 2 },
         options: { anyAlias: '$TSFixMe' },
         extraFiles: { 'lib.ts': lib },
       },
@@ -302,8 +297,6 @@ class Foo extends React.Component {
 export default Foo;
 `,
       {
-        fileName: 'Foo.tsx',
-        compilerOptions: { jsx: 2 },
         options: { anyAlias: '$TSFixMe' },
         extraFiles: { 'lib.ts': lib },
       },

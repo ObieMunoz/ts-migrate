@@ -12,7 +12,13 @@ import { isStatic } from './utils/modifiers';
 import { anyTypeNode } from './utils/anyTypes';
 import { updateImports, NamedImport } from './utils/imports';
 import { collectImportSpecs } from './utils/importSpecs';
-import { buildTypeNode, typeStrDegradesToAny, widenTypes } from './utils/typeStrings';
+import {
+  buildTypeNode,
+  isAnyTypeStr,
+  splitTopLevel,
+  typeStrDegradesToAny,
+  widenTypes,
+} from './utils/typeStrings';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 import { getOrCreate } from '../utils/maps';
@@ -145,7 +151,6 @@ const reactClassStatePlugin: Plugin<Options> = {
       fileName,
       updatedText,
       sourceFile.languageVersion,
-      /* setParentNodes */ true,
     );
     const importUpdates = updateImports(updatedSourceFile, neededImports, []);
     return importUpdates.length > 0 ? updateSourceText(updatedText, importUpdates) : updatedText;
@@ -228,12 +233,15 @@ function collectStateEvidence(
     evidence.numInitializers += 1;
     properties.forEach((symbol) => {
       const member = getMember(symbol.getName());
-      observe(
-        member,
-        resolveType(checker.getTypeOfSymbolAtLocation(symbol, expression), checker, anyAlias),
-      );
       // A property the type marks optional is one this initializer may not set.
-      if ((symbol.flags & ts.SymbolFlags.Optional) === 0) {
+      const isOptional = (symbol.flags & ts.SymbolFlags.Optional) !== 0;
+      const type = resolveType(
+        checker.getTypeOfSymbolAtLocation(symbol, expression),
+        checker,
+        anyAlias,
+      );
+      observe(member, isOptional ? withoutUndefined(type) : type);
+      if (!isOptional) {
         member.numInitializers += 1;
       }
     });
@@ -435,8 +443,12 @@ function collectStateImports(
   evidence.members.forEach((member) => visit(member.type));
 }
 
-function isAnyTypeStr(typeStr: string, anyAlias: string | undefined): boolean {
-  return typeStr === 'any' || (anyAlias != null && typeStr === anyAlias);
+// The `?` on the member says what the `| undefined` the checker prints on an
+// optional property says, and the member is written with one or the other.
+function withoutUndefined(type: DerivedType): DerivedType {
+  if (type.kind !== 'resolved') return type;
+  const parts = splitTopLevel(type.typeStr, ' | ').filter((part) => part !== 'undefined');
+  return parts.length === 0 ? type : { ...type, typeStr: parts.join(' | ') };
 }
 
 // The text form of a derived type, for the cases merging has to go through
@@ -462,6 +474,8 @@ function resolveType(
 ): DerivedType {
   let typeStr = checker.typeToString(
     checker.getBaseTypeOfLiteralType(type),
+    // No enclosing declaration, so a nested reference prints as a bare name
+    // rather than qualified against a scope, which is the name to import.
     undefined,
     ts.TypeFormatFlags.AllowUniqueESSymbolType |
       ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope |

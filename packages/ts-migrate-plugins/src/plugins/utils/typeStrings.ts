@@ -161,6 +161,11 @@ export function buildTypeNode(typeStr: string, anyAlias?: string): ts.TypeNode {
   return anyTypeNode(anyAlias);
 }
 
+// True when a type string is `any` however this run spells it.
+export function isAnyTypeStr(typeStr: string, anyAlias?: string): boolean {
+  return typeStr === 'any' || (anyAlias != null && typeStr === anyAlias);
+}
+
 // Reduce a list of observed type strings to a single canonical type string.
 // All literals are widened to their base type.
 //
@@ -179,7 +184,7 @@ export function widenTypes(
   if (observedTypes.length === 0) return anyAlias ?? 'any';
   const anyType = anyAlias ?? 'any';
 
-  const isAny = (t: string) => t === 'any' || (anyAlias != null && t === anyAlias);
+  const isAny = (t: string) => isAnyTypeStr(t, anyAlias);
 
   // Flatten each observation into its top-level union members so that a nested
   // member (e.g. the `null` inside `FieldNotification | null`) dedupes against
