@@ -61,6 +61,32 @@ export default Foo;
     expect(result).not.toContain('?:');
   });
 
+  it('leaves a member optional that the state the initializer returns does not set', async () => {
+    const result = await runPlugin(`import React from 'react';
+
+function getStateFromProps(): { mins: string; secs?: string } {
+  return { mins: '0' };
+}
+
+class Foo extends React.Component {
+  constructor(props: object) {
+    super(props);
+    this.state = getStateFromProps();
+  }
+
+  render() {
+    return <div>{this.state.mins}</div>;
+  }
+}
+
+export default Foo;
+`);
+
+    expect(result).toContain('mins: string;');
+    // Required, the member would reject the very assignment it was read from.
+    expect(result).toContain('secs?: string | undefined;');
+  });
+
   it('reads a this.state.key assignment, and marks it optional outside the constructor', async () => {
     const result = await runPlugin(`import React from 'react';
 

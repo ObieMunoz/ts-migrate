@@ -232,7 +232,10 @@ function collectStateEvidence(
         member,
         resolveType(checker.getTypeOfSymbolAtLocation(symbol, expression), checker, anyAlias),
       );
-      member.numInitializers += 1;
+      // A property the type marks optional is one this initializer may not set.
+      if ((symbol.flags & ts.SymbolFlags.Optional) === 0) {
+        member.numInitializers += 1;
+      }
     });
   };
 
