@@ -32,7 +32,7 @@ type DerivedType =
 type StateMember = {
   type: DerivedType | undefined;
   numInitializers: number;
-  // Written outside any initializer by a statement that always runs, so the
+  // Written outside any initializer by a statement that provably runs, so the
   // member is set whatever the initializers do or do not say.
   alwaysSet: boolean;
 };
@@ -326,11 +326,11 @@ function collectStateEvidence(
       ts.isPropertyAccessExpression(node.left) &&
       isThisState(node.left.expression)
     ) {
-      // `this.state.key = value` sets the key whether or not an initializer
-      // mentioned it, which is what stops it reading as optional.
       const member = getMember(node.left.name.text);
       observe(member, deriveType(node.right, checker, anyAlias));
-      member.alwaysSet = true;
+      if (isUnconditionalConstructorWrite(node, classDeclaration)) {
+        member.alwaysSet = true;
+      }
     } else if (
       ts.isVariableDeclaration(node) &&
       node.initializer &&
@@ -356,6 +356,22 @@ function collectStateEvidence(
   });
 
   return evidence;
+}
+
+// Whether an assignment has run by the time the component is constructed. Only
+// a statement of the constructor's own body qualifies: anywhere else it is a
+// write that may not have happened, or may not happen at all.
+function isUnconditionalConstructorWrite(
+  assignment: ts.BinaryExpression,
+  classDeclaration: ts.ClassDeclaration,
+): boolean {
+  if (!ts.isExpressionStatement(assignment.parent)) return false;
+
+  let node: ts.Node = assignment.parent;
+  while (ts.isBlock(node.parent)) {
+    node = node.parent;
+  }
+  return ts.isConstructorDeclaration(node.parent) && node.parent.parent === classDeclaration;
 }
 
 function createStateTypeNode(evidence: StateEvidence, anyAlias: string | undefined): ts.TypeNode {
@@ -451,6 +467,9 @@ function resolveType(
   // A type declared in another file prints with an `import("…").` prefix that
   // is not writable; the name alone is, once collectStateImports imports it.
   typeStr = typeStr.replace(/^import\("[^"]+"\)\./, '');
+  // buildTypeNode parses an import type, so one left in a nested position would
+  // be spliced into the file as an absolute path rather than refused.
+  if (typeStr.includes('import("')) return { kind: 'any' };
   // So that a checker-produced `any[]` dedupes against the `$TSFixMe[]` an
   // empty array literal derives rather than unioning with it.
   if (anyAlias != null) typeStr = typeStr.replace(/\bany\b/g, anyAlias);

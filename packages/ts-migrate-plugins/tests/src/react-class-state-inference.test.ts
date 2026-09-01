@@ -61,7 +61,7 @@ export default Foo;
     expect(result).not.toContain('?:');
   });
 
-  it('reads a this.state.key assignment, and does not mark it optional', async () => {
+  it('reads a this.state.key assignment, and marks it optional outside the constructor', async () => {
     const result = await runPlugin(`import React from 'react';
 
 function makeTimer(): number {
@@ -72,6 +72,61 @@ class Foo extends React.Component {
   state = { open: false };
 
   componentDidMount() {
+    this.state.timer = makeTimer();
+  }
+
+  render() {
+    return <div>{this.state.open}</div>;
+  }
+}
+
+export default Foo;
+`);
+
+    expect(result).toContain('open: boolean;');
+    // The write is the only evidence of the type, but it has not run yet at the
+    // point the initializer sets everything else.
+    expect(result).toContain('timer?: number;');
+  });
+
+  it('does not mark a conditional constructor write as always set', async () => {
+    const result = await runPlugin(`import React from 'react';
+
+function makeTimer(): number {
+  return 0;
+}
+
+class Foo extends React.Component {
+  constructor(props: { withTimer: boolean }) {
+    super(props);
+    this.state = { open: false };
+    if (props.withTimer) {
+      this.state.timer = makeTimer();
+    }
+  }
+
+  render() {
+    return <div>{this.state.open}</div>;
+  }
+}
+
+export default Foo;
+`);
+
+    expect(result).toContain('timer?: number;');
+  });
+
+  it('marks an unconditional constructor write as always set', async () => {
+    const result = await runPlugin(`import React from 'react';
+
+function makeTimer(): number {
+  return 0;
+}
+
+class Foo extends React.Component {
+  constructor(props: object) {
+    super(props);
+    this.state = { open: false };
     this.state.timer = makeTimer();
   }
 
@@ -265,6 +320,6 @@ class Foo extends React.Component {
 export default Foo;
 `);
 
-    expect(result).toContain('config: $TSFixMe;');
+    expect(result).toContain('config?: $TSFixMe;');
   });
 });
