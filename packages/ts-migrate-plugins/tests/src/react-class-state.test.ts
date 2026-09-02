@@ -1,7 +1,35 @@
+import ts from 'typescript';
+import { PluginResult } from '@obiemunoz/ts-migrate-server';
 import reactClassStatePlugin from '../../src/plugins/react-class-state';
-import { mockPluginParams } from '../test-utils';
+import { pluginRunner, realPluginRunner } from '../test-utils';
 
-describe('react-class-state plugin', () => {
+type Options = { anyAlias?: string };
+type RunCase = (text: string, overrides?: { options?: Options }) => Promise<PluginResult>;
+
+const withoutProgram = pluginRunner<Options>(reactClassStatePlugin, {
+  fileName: 'file.tsx',
+  options: { anyAlias: '$TSFixMe' },
+});
+
+const withChecker = realPluginRunner<Options>(reactClassStatePlugin, {
+  fileName: 'file.tsx',
+  compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2020 },
+  options: { anyAlias: '$TSFixMe' },
+});
+
+/**
+ * Every case here run both ways. The checker is asked only where the syntax
+ * says nothing, so a case the syntax answers has the same answer with a program
+ * behind the plugin and without one, and a change that parts the two fails
+ * here. Production always has a program; the cases the checker alone answers
+ * are in react-class-state-inference.test.ts.
+ */
+const harnesses: [string, RunCase][] = [
+  ['without a program', async (text, overrides) => withoutProgram(text, overrides)],
+  ['with a checker', async (text, overrides) => withChecker(text, overrides)],
+];
+
+describe.each(harnesses)('react-class-state plugin, %s', (_harness, runPlugin) => {
   it('annotates state if used', async () => {
     const text = `import React from 'react';
 
@@ -14,9 +42,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -53,9 +79,7 @@ class Foo extends React.Component<Props, State> {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(text);
   });
@@ -74,9 +98,7 @@ class Foo extends React.Component<Props> {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(text);
   });
@@ -99,9 +121,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -153,9 +173,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -208,9 +226,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -253,9 +269,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -293,9 +307,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -333,9 +345,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -373,9 +383,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -412,9 +420,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -454,9 +460,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 import getInitialState from './getInitialState';
@@ -496,9 +500,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -533,9 +535,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 import Child from './Child';
@@ -564,9 +564,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: {} }),
-    );
+    const result = await runPlugin(text, { options: {} });
 
     expect(result).toBe(`import React from 'react';
 
@@ -600,9 +598,7 @@ class Foo extends React.Component<MyProps> {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -638,9 +634,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 

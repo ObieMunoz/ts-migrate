@@ -59,6 +59,9 @@ function createEntityName(dotted: string): ts.EntityName {
 // Convert a type string (as produced by checker.typeToString or our own
 // literal-union builder) to a ts.TypeNode using ts.factory calls only, so
 // the resulting nodes have no source positions and print cleanly.
+//
+// react-class-state's `withAnyAlias` walks what this returns, so a node kind
+// added here has to be added there too.
 export function buildTypeNode(typeStr: string, anyAlias?: string): ts.TypeNode {
   typeStr = typeStr.trim();
 
@@ -161,6 +164,11 @@ export function buildTypeNode(typeStr: string, anyAlias?: string): ts.TypeNode {
   return anyTypeNode(anyAlias);
 }
 
+// True when a type string is `any` however this run spells it.
+function isAnyTypeStr(typeStr: string, anyAlias?: string): boolean {
+  return typeStr === 'any' || (anyAlias != null && typeStr === anyAlias);
+}
+
 // Reduce a list of observed type strings to a single canonical type string.
 // All literals are widened to their base type.
 //
@@ -179,7 +187,7 @@ export function widenTypes(
   if (observedTypes.length === 0) return anyAlias ?? 'any';
   const anyType = anyAlias ?? 'any';
 
-  const isAny = (t: string) => t === 'any' || (anyAlias != null && t === anyAlias);
+  const isAny = (t: string) => isAnyTypeStr(t, anyAlias);
 
   // Flatten each observation into its top-level union members so that a nested
   // member (e.g. the `null` inside `FieldNotification | null`) dedupes against
