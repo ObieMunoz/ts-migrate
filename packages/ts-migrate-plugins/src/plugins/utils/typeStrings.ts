@@ -59,6 +59,9 @@ function createEntityName(dotted: string): ts.EntityName {
 // Convert a type string (as produced by checker.typeToString or our own
 // literal-union builder) to a ts.TypeNode using ts.factory calls only, so
 // the resulting nodes have no source positions and print cleanly.
+//
+// react-class-state's `withAnyAlias` walks what this returns, so a node kind
+// added here has to be added there too.
 export function buildTypeNode(typeStr: string, anyAlias?: string): ts.TypeNode {
   typeStr = typeStr.trim();
 

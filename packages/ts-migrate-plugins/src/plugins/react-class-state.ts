@@ -31,8 +31,11 @@ type DerivedType =
 
 type Resolution = {
   checker: ts.TypeChecker;
-  // Whether the file can spell the given names, adding what imports it takes.
-  canWrite: (type: ts.Type, names: Set<string>) => boolean;
+  // What run() will add to the file, for a caller that took an answer.
+  imports: NamedImport[];
+  // The imports the file needs to spell the given names, or undefined where one
+  // of them is a name it cannot be given.
+  resolveImports: (type: ts.Type, names: Set<string>) => NamedImport[] | undefined;
 };
 
 type StateMember = {
@@ -53,6 +56,7 @@ type StateEvidence = {
 const printer = ts.createPrinter();
 
 // Somewhere to print a synthesized node into, for comparing one against another.
+// Shared across runs, so nothing per-run belongs here.
 const scratchFile = ts.createSourceFile('scratch.ts', '', ts.ScriptTarget.Latest);
 
 const reactClassStatePlugin: Plugin<Options> = {
@@ -424,47 +428,63 @@ function inferStateMembers(
 // is written: declared in this file, global, or imported. A type declared where
 // nothing can import it from, inside a function or private to a package, would
 // leave the member naming something the file does not have, and is refused.
-//
-// The imports come back with the answer, so a member that merging later drops
-// leaves one updateImports will not add, since it only adds a name the text
-// goes on to use.
 function createResolution(
   checker: ts.TypeChecker,
   sourceFile: ts.SourceFile,
   fileName: string,
   anyAlias: string | undefined,
-  out: NamedImport[],
+  imports: NamedImport[],
 ): Resolution {
   // Every global type there is, so read only once a type has resolved at all.
-  let inScope: Set<string> | undefined;
-  const imported = new Set<string>();
+  let inScope: Map<string, ts.Symbol> | undefined;
+  const namesInScope = () => (inScope ??= collectScope(checker, sourceFile));
 
   return {
     checker,
-    canWrite: (type, names) => {
-      const collected: NamedImport[] = [];
-      collectImportSpecs(type, checker, fileName, new Set(), collected);
-      const collectedNames = new Set(collected.map(({ namedImport }) => namedImport));
-      // Alias as well as Type: whatever an imported name stands for, the symbol
-      // the file has for it is an alias, and importing is how most of these
-      // names are already here.
-      const scope = (inScope ??= new Set(
-        checker
-          .getSymbolsInScope(sourceFile, ts.SymbolFlags.Type | ts.SymbolFlags.Alias)
-          .map((symbol) => symbol.getName()),
-      ));
+    imports,
+    resolveImports: (type, names) => {
+      const resolved: NamedImport[] = [];
+      // Every symbol the walk considered, which is what the names printed for
+      // this type stand for.
+      const seen = new Set<ts.Symbol>();
+      collectImportSpecs(type, checker, fileName, seen, resolved);
+      const importable = new Set(resolved.map(({ namedImport }) => namedImport));
+      const printedAs = new Map([...seen].map((symbol) => [symbol.getName(), symbol] as const));
+      const scope = namesInScope();
 
-      const writable = [...names].every(
-        (name) =>
-          name === anyAlias || imported.has(name) || collectedNames.has(name) || scope.has(name),
-      );
-      if (!writable) return false;
-
-      out.push(...collected);
-      collectedNames.forEach((name) => imported.add(name));
-      return true;
+      const writable = [...names].every((name) => {
+        if (name === anyAlias) return true;
+        const bound = scope.get(name);
+        // A name the file already has has to stand for the thing the checker
+        // printed it for, not for whatever else the file calls by it.
+        if (bound !== undefined) {
+          const symbol = printedAs.get(name);
+          return symbol === undefined || symbol === bound;
+        }
+        return importable.has(name);
+      });
+      return writable ? resolved : undefined;
     },
   };
+}
+
+// What each name the file has stands for, innermost declaration first, with an
+// import read through to what it imports. Alias as well as Type in the meaning:
+// whatever an imported name stands for, the symbol the file has for it is an
+// alias, and importing is how most of these names are already here.
+function collectScope(checker: ts.TypeChecker, sourceFile: ts.SourceFile): Map<string, ts.Symbol> {
+  const scope = new Map<string, ts.Symbol>();
+  checker
+    .getSymbolsInScope(sourceFile, ts.SymbolFlags.Type | ts.SymbolFlags.Alias)
+    .forEach((symbol) => {
+      const name = symbol.getName();
+      if (scope.has(name)) return;
+      scope.set(
+        name,
+        symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol,
+      );
+    });
+  return scope;
 }
 
 // The names a type node spells. A `typeof` query names a binding
@@ -586,7 +606,7 @@ function resolveType(
       ts.TypeFormatFlags.NoTruncation,
   );
   // A type declared in another file prints with an `import("…").` prefix that
-  // is not writable; the name alone is, once canWrite imports it.
+  // is not writable; the name alone is, once the file imports it.
   typeStr = typeStr.replace(/^import\("[^"]+"\)\./, '');
   // buildTypeNode parses an import type, so one left in a nested position would
   // be spliced into the file as an absolute path rather than refused.
@@ -597,7 +617,11 @@ function resolveType(
 
   const names = new Set<string>();
   collectTypeNames(node, names);
-  if (!resolution.canWrite(type, names)) return { kind: 'any' };
+  const imports = resolution.resolveImports(type, names);
+  if (imports === undefined) return { kind: 'any' };
+  // An import for a member that merging later drops costs nothing:
+  // updateImports only adds a name the text goes on to use.
+  resolution.imports.push(...imports);
 
   const members = ts.isUnionTypeNode(node) ? Array.from(node.types) : [node];
   return { kind: 'resolved', members: mergeMembers(members, anyAlias) };

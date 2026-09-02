@@ -21,7 +21,7 @@ const runPlugin = realPluginRunner(reactClassStatePlugin, {
  * of it is what catches a member the input gave no reason to write.
  */
 function stateAlias(result: string | undefined): string {
-  return /^type \w*State = (?:\{[\s\S]*?\n\}|[^\n{]+);$/m.exec(result ?? '')?.[0] ?? '';
+  return /^type \w*State\d* = (?:\{[\s\S]*?\n\}|[^\n{]+);$/m.exec(result ?? '')?.[0] ?? '';
 }
 
 describe('react-class-state plugin, what the checker resolves', () => {
@@ -387,6 +387,74 @@ export default Foo;
     // The default import the file already has is the name, and a named import
     // of it would not be.
     expect(result).not.toContain('{ Notification }');
+  });
+
+  it('refuses a member whose type only shares a name with what the file has', async () => {
+    // Written `Timer`, the member would read as the file's own Timer, and the
+    // import that would make it the other one cannot be added beside it.
+    const lib = `export type Timer = { id: number };
+export declare function makeTimer(): Timer;
+`;
+    const result = await runPlugin(
+      `import React from 'react';
+import { makeTimer } from '/lib';
+
+type Timer = { tag: string };
+
+class Foo extends React.Component {
+  state = { timer: makeTimer() };
+
+  render() {
+    return <div>{this.state.timer.id}</div>;
+  }
+}
+
+export default Foo;
+`,
+      { extraFiles: { 'lib.ts': lib } },
+    );
+
+    expect(stateAlias(result)).toBe(`type State = {
+    timer: ReturnType<typeof makeTimer>;
+};`);
+  });
+
+  it('refuses a member whose type shares a name with one an earlier member imported', async () => {
+    const lib = `export type Timer = { id: number };
+export declare function makeTimer(): Timer;
+`;
+    const other = `export function makeOtherTimer() {
+  interface Timer {
+    tag: string;
+  }
+  const timer: Timer = { tag: '' };
+  return timer;
+}
+`;
+    const result = await runPlugin(
+      `import React from 'react';
+import { makeTimer } from '/lib';
+import { makeOtherTimer } from '/other';
+
+class Foo extends React.Component {
+  state = { timer: makeTimer(), other: makeOtherTimer() };
+
+  render() {
+    return <div>{this.state.timer.id}{this.state.other.tag}</div>;
+  }
+}
+
+export default Foo;
+`,
+      { extraFiles: { 'lib.ts': lib, 'other.ts': other } },
+    );
+
+    // `other` is a different Timer, and the import the first member added is
+    // not a name for it.
+    expect(stateAlias(result)).toBe(`type State = {
+    timer: Timer;
+    other: ReturnType<typeof makeOtherTimer>;
+};`);
   });
 
   it('refuses a member type the file has no way to name', async () => {
