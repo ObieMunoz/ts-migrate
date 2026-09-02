@@ -100,21 +100,21 @@ const reactClassStatePlugin: Plugin<Options> = {
       };
 
       const stateTypeName = getStateTypeName();
-      const stateTypeNode = createStateTypeNode(evidence, anyAlias);
-      if (checker && ts.isTypeLiteralNode(stateTypeNode)) {
+      const inferredMembers = inferStateMembers(evidence, anyAlias);
+      if (checker && inferredMembers) {
         collectStateImports(evidence, checker, fileName, anyAlias, neededImports);
       }
       const newStateType = ts.factory.createTypeAliasDeclaration(
         undefined,
         stateTypeName,
         undefined,
-        stateTypeNode,
+        inferredMembers ?? anyTypeNode(anyAlias),
       );
 
       // The type a `state = {...}` property infers on its own shadows the state
       // type parameter at every this.state read.
       const stateProperty = classDeclaration.members.find(isStateProperty);
-      if (stateProperty && !stateProperty.type && ts.isTypeLiteralNode(stateTypeNode)) {
+      if (stateProperty && !stateProperty.type && inferredMembers) {
         updates.push({
           kind: 'insert',
           index: (stateProperty.exclamationToken || stateProperty.name).end,
@@ -224,8 +224,13 @@ function collectStateEvidence(
     }
 
     // `this.state = getStateFromProps(props)`: the shape is the properties of
-    // whatever the expression resolves to.
-    const properties = checker ? checker.getTypeAtLocation(expression).getProperties() : [];
+    // whatever the expression resolves to. Its methods are not state members.
+    const properties = checker
+      ? checker
+          .getTypeAtLocation(expression)
+          .getProperties()
+          .filter((symbol) => (symbol.flags & ts.SymbolFlags.Property) !== 0)
+      : [];
     if (!checker || properties.length === 0) {
       evidence.unknownMembers = true;
       return;
@@ -386,9 +391,14 @@ function isUnconditionalConstructorWrite(
   return ts.isConstructorDeclaration(node.parent) && node.parent.parent === classDeclaration;
 }
 
-function createStateTypeNode(evidence: StateEvidence, anyAlias: string | undefined): ts.TypeNode {
+// The members the evidence describes, or undefined where it describes no
+// shape at all and the alias is written as `any` instead.
+function inferStateMembers(
+  evidence: StateEvidence,
+  anyAlias: string | undefined,
+): ts.TypeLiteralNode | undefined {
   if (evidence.unknownMembers || evidence.members.size === 0) {
-    return anyTypeNode(anyAlias);
+    return undefined;
   }
 
   return ts.factory.createTypeLiteralNode(

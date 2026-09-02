@@ -84,6 +84,36 @@ export default Foo;
     expect(result).not.toContain('?:');
   });
 
+  it('reads the properties of a non-literal state initializer, not its methods', async () => {
+    const result = await runPlugin(`import React from 'react';
+
+class StateBag {
+  open = false;
+
+  toggle() {
+    this.open = !this.open;
+  }
+}
+
+class Foo extends React.Component {
+  constructor(props: object) {
+    super(props);
+    this.state = new StateBag();
+  }
+
+  render() {
+    return <div>{this.state.open}</div>;
+  }
+}
+
+export default Foo;
+`);
+
+    expect(result).toContain('open: boolean;');
+    // What the component calls, not something it holds.
+    expect(result).not.toContain('toggle:');
+  });
+
   it('leaves a member optional that the state the initializer returns does not set', async () => {
     const result = await runPlugin(`import React from 'react';
 
