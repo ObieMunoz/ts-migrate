@@ -35,6 +35,28 @@ export default Foo;
     expect(result).toContain('tags: string[]');
   });
 
+  it('parenthesizes an array element two observations disagree about', async () => {
+    const result = await runPlugin(`import React from 'react';
+
+declare function makeError(): Error;
+declare function makeDate(): Date;
+
+class Foo extends React.Component {
+  state = { entries: [makeError(), makeDate()] };
+
+  render() {
+    return <div>{this.state.entries.length}</div>;
+  }
+}
+
+export default Foo;
+`);
+
+    // The union is the element type, not the member type: written unparenthesized
+    // the member would be `Error` or an array of `Date`.
+    expect(result).toContain('entries: (Error | Date)[];');
+  });
+
   it('enumerates a state initializer that is not an object literal', async () => {
     const result = await runPlugin(`import React from 'react';
 

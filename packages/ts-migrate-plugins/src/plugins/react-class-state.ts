@@ -12,13 +12,7 @@ import { isStatic } from './utils/modifiers';
 import { anyTypeNode } from './utils/anyTypes';
 import { updateImports, NamedImport } from './utils/imports';
 import { collectImportSpecs } from './utils/importSpecs';
-import {
-  buildTypeNode,
-  isAnyTypeStr,
-  splitTopLevel,
-  typeStrDegradesToAny,
-  widenTypes,
-} from './utils/typeStrings';
+import { buildTypeNode } from './utils/typeStrings';
 import updateSourceText, { SourceTextUpdate } from '../utils/updateSourceText';
 import { AnyAliasOptions, validateAnyAliasOptions } from '../utils/validateOptions';
 import { getOrCreate } from '../utils/maps';
@@ -31,9 +25,11 @@ type DerivedType =
   | { kind: 'any' }
   | { kind: 'keyword'; keyword: ts.KeywordTypeSyntaxKind }
   | { kind: 'array'; element: DerivedType | undefined }
-  // What the checker answered where the syntax alone said nothing, carried as
-  // text plus the types it came from so the names it uses can be imported.
-  | { kind: 'resolved'; typeStr: string; tsTypes: ts.Type[] };
+  // What the checker answered where the syntax alone said nothing, as the
+  // members of a union rather than the text of one, so that merging two
+  // answers is a list operation and nothing is parsed back out of a string.
+  // The types they were printed from come along so their names can be imported.
+  | { kind: 'resolved'; members: ts.TypeNode[]; tsTypes: ts.Type[] };
 
 type StateMember = {
   type: DerivedType | undefined;
@@ -50,6 +46,12 @@ type StateEvidence = {
   unknownMembers: boolean;
 };
 
+const printer = ts.createPrinter();
+
+// Somewhere to print a synthesized type node into, for the two places that
+// compare one against another.
+const scratchFile = ts.createSourceFile('scratch.ts', '', ts.ScriptTarget.Latest);
+
 const reactClassStatePlugin: Plugin<Options> = {
   name: 'react-class-state',
 
@@ -59,7 +61,6 @@ const reactClassStatePlugin: Plugin<Options> = {
     const { anyAlias } = options;
     const updates: SourceTextUpdate[] = [];
     const neededImports: NamedImport[] = [];
-    const printer = ts.createPrinter();
 
     const reactClassDeclarations = sourceFile.statements
       .filter(ts.isClassDeclaration)
@@ -390,18 +391,6 @@ function createStateTypeNode(evidence: StateEvidence, anyAlias: string | undefin
     return anyTypeNode(anyAlias);
   }
 
-  const createTypeNode = (type: DerivedType | undefined): ts.TypeNode => {
-    if (type === undefined || type.kind === 'any') {
-      return anyTypeNode(anyAlias);
-    }
-    if (type.kind === 'resolved') {
-      return buildTypeNode(type.typeStr, anyAlias);
-    }
-    return type.kind === 'array'
-      ? ts.factory.createArrayTypeNode(createTypeNode(type.element))
-      : ts.factory.createKeywordTypeNode(type.keyword);
-  };
-
   return ts.factory.createTypeLiteralNode(
     Array.from(evidence.members, ([name, member]) =>
       ts.factory.createPropertySignature(
@@ -415,7 +404,7 @@ function createStateTypeNode(evidence: StateEvidence, anyAlias: string | undefin
         member.numInitializers < evidence.numInitializers
           ? ts.factory.createToken(ts.SyntaxKind.QuestionToken)
           : undefined,
-        createTypeNode(member.type),
+        typeNodeOf(member.type, anyAlias),
       ),
     ),
   );
@@ -437,7 +426,9 @@ function collectStateImports(
       visit(type.element);
       return;
     }
-    if (type.kind !== 'resolved' || isAnyTypeStr(type.typeStr, anyAlias)) return;
+    if (type.kind !== 'resolved' || type.members.every((node) => isAnyTypeNode(node, anyAlias))) {
+      return;
+    }
     type.tsTypes.forEach((tsType) => collectImportSpecs(tsType, checker, fileName, seen, out));
   };
   evidence.members.forEach((member) => visit(member.type));
@@ -447,17 +438,82 @@ function collectStateImports(
 // optional property says, and the member is written with one or the other.
 function withoutUndefined(type: DerivedType): DerivedType {
   if (type.kind !== 'resolved') return type;
-  const parts = splitTopLevel(type.typeStr, ' | ').filter((part) => part !== 'undefined');
-  return parts.length === 0 ? type : { ...type, typeStr: parts.join(' | ') };
+  const members = type.members.filter((node) => node.kind !== ts.SyntaxKind.UndefinedKeyword);
+  return members.length === 0 ? type : { ...type, members };
 }
 
-// The text form of a derived type, for the cases merging has to go through
-// widenTypes to answer.
-function typeStrOf(type: DerivedType | undefined, anyAlias: string | undefined): string {
-  if (type === undefined || type.kind === 'any') return anyAlias ?? 'any';
-  if (type.kind === 'resolved') return type.typeStr;
-  if (type.kind === 'array') return `${typeStrOf(type.element, anyAlias)}[]`;
-  return ts.tokenToString(type.keyword) ?? anyAlias ?? 'any';
+// The member's type as the one node it is written as.
+function typeNodeOf(type: DerivedType | undefined, anyAlias: string | undefined): ts.TypeNode {
+  const members = typeNodesOf(type, anyAlias);
+  return members.length === 1 ? members[0] : ts.factory.createUnionTypeNode(members);
+}
+
+// A derived type as the members of the union it stands for, which is what the
+// two sides of a merge are compared and concatenated as.
+function typeNodesOf(type: DerivedType | undefined, anyAlias: string | undefined): ts.TypeNode[] {
+  if (type === undefined || type.kind === 'any') return [anyTypeNode(anyAlias)];
+  if (type.kind === 'resolved') return type.members;
+  if (type.kind === 'array') {
+    const element = typeNodesOf(type.element, anyAlias);
+    return [
+      ts.factory.createArrayTypeNode(
+        element.length === 1
+          ? element[0]
+          : ts.factory.createParenthesizedType(ts.factory.createUnionTypeNode(element)),
+      ),
+    ];
+  }
+  return [ts.factory.createKeywordTypeNode(type.keyword)];
+}
+
+function isAnyTypeNode(node: ts.TypeNode, anyAlias: string | undefined): boolean {
+  if (node.kind === ts.SyntaxKind.AnyKeyword) return true;
+  return (
+    anyAlias != null &&
+    ts.isTypeReferenceNode(node) &&
+    ts.isIdentifier(node.typeName) &&
+    node.typeName.text === anyAlias
+  );
+}
+
+// The union members of two observations, as one union. An `any` member says
+// nothing beside one that resolved, so it is dropped unless every member is
+// `any`, which is the whole of what the two observations amount to.
+function mergeMembers(members: ts.TypeNode[], anyAlias: string | undefined): ts.TypeNode[] {
+  const concrete = members.filter((node) => !isAnyTypeNode(node, anyAlias));
+  const kept = concrete.length > 0 ? concrete : [anyTypeNode(anyAlias)];
+  const seen = new Set<string>();
+  return kept.filter((node) => {
+    const text = printer.printNode(ts.EmitHint.Unspecified, node, scratchFile);
+    if (seen.has(text)) return false;
+    seen.add(text);
+    return true;
+  });
+}
+
+// buildTypeNode writes `any` both for the keyword and for a shape it cannot
+// reconstruct, and the alias is how this run spells that. Rewriting the node
+// rather than the text is what keeps a string or template literal whose own
+// text is the keyword out of it.
+function withAnyAlias(node: ts.TypeNode, anyAlias: string | undefined): ts.TypeNode {
+  if (anyAlias == null) return node;
+  if (node.kind === ts.SyntaxKind.AnyKeyword) return anyTypeNode(anyAlias);
+  if (ts.isUnionTypeNode(node)) {
+    return ts.factory.createUnionTypeNode(node.types.map((type) => withAnyAlias(type, anyAlias)));
+  }
+  if (ts.isArrayTypeNode(node)) {
+    return ts.factory.createArrayTypeNode(withAnyAlias(node.elementType, anyAlias));
+  }
+  if (ts.isParenthesizedTypeNode(node)) {
+    return ts.factory.createParenthesizedType(withAnyAlias(node.type, anyAlias));
+  }
+  if (ts.isTypeReferenceNode(node) && node.typeArguments) {
+    return ts.factory.createTypeReferenceNode(
+      node.typeName,
+      node.typeArguments.map((type) => withAnyAlias(type, anyAlias)),
+    );
+  }
+  return node;
 }
 
 // What the checker says a type is, in the form the rest of this plugin writes.
@@ -487,16 +543,11 @@ function resolveType(
   // buildTypeNode parses an import type, so one left in a nested position would
   // be spliced into the file as an absolute path rather than refused.
   if (typeStr.includes('import("')) return { kind: 'any' };
-  if (typeStrDegradesToAny(typeStr)) return { kind: 'any' };
-  // So that a checker-produced `any[]` dedupes against the `$TSFixMe[]` an
-  // empty array literal derives rather than unioning with it. A string literal
-  // matches first, so `"any"`, whose text is the keyword, is left as it is.
-  if (anyAlias != null) {
-    typeStr = typeStr.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\bany\b/g, (match) =>
-      match === 'any' ? anyAlias : match,
-    );
-  }
-  return { kind: 'resolved', typeStr, tsTypes: [type] };
+
+  const node = withAnyAlias(buildTypeNode(typeStr), anyAlias);
+  if (isAnyTypeNode(node, anyAlias)) return { kind: 'any' };
+  const members = ts.isUnionTypeNode(node) ? Array.from(node.types) : [node];
+  return { kind: 'resolved', members: mergeMembers(members, anyAlias), tsTypes: [type] };
 }
 
 function deriveType(
@@ -552,12 +603,12 @@ function deriveType(
   const resolved = resolveType(checker.getTypeAtLocation(expression), checker, anyAlias);
   if (resolved.kind !== 'any') return resolved;
   // An answer of `any` is the checker having nothing to say rather than
-  // evidence that the member holds anything, so it is carried as text for
-  // merging to drop against an observation that does say something.
+  // evidence that the member holds anything, so it is carried as a resolved
+  // member for merging to drop against an observation that does say something.
   return (
     typeQueryType(expression, checker) ?? {
       kind: 'resolved',
-      typeStr: anyAlias ?? 'any',
+      members: [anyTypeNode(anyAlias)],
       tsTypes: [],
     }
   );
@@ -580,13 +631,25 @@ function typeQueryType(
     if (signatures.length !== 1 || (signatures[0].getTypeParameters() ?? []).length > 0) {
       return undefined;
     }
-    return { kind: 'resolved', typeStr: `ReturnType<typeof ${callee}>`, tsTypes: [] };
+    return {
+      kind: 'resolved',
+      members: [
+        ts.factory.createTypeReferenceNode('ReturnType', [
+          ts.factory.createTypeQueryNode(ts.factory.createIdentifier(callee)),
+        ]),
+      ],
+      tsTypes: [],
+    };
   }
 
   const name = moduleScopedName(expression, checker);
   return name === undefined
     ? undefined
-    : { kind: 'resolved', typeStr: `typeof ${name}`, tsTypes: [] };
+    : {
+        kind: 'resolved',
+        members: [ts.factory.createTypeQueryNode(ts.factory.createIdentifier(name))],
+        tsTypes: [],
+      };
 }
 
 // The name of a binding declared at the top level of its file. A parameter or a
@@ -623,11 +686,11 @@ function mergeTypes(
 
   // Two syntactic answers that are not the same answer are `any`; anything the
   // checker resolved is worth unioning, and worth keeping over an `any` the
-  // other side observed, which is what widenTypes' dropAny does.
+  // other side observed, which is what mergeMembers drops.
   if (a.kind === 'resolved' || b.kind === 'resolved') {
     return {
       kind: 'resolved',
-      typeStr: widenTypes([typeStrOf(a, anyAlias), typeStrOf(b, anyAlias)], anyAlias, true),
+      members: mergeMembers([...typeNodesOf(a, anyAlias), ...typeNodesOf(b, anyAlias)], anyAlias),
       tsTypes: [...tsTypesOf(a), ...tsTypesOf(b)],
     };
   }

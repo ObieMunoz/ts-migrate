@@ -162,7 +162,7 @@ export function buildTypeNode(typeStr: string, anyAlias?: string): ts.TypeNode {
 }
 
 // True when a type string is `any` however this run spells it.
-export function isAnyTypeStr(typeStr: string, anyAlias?: string): boolean {
+function isAnyTypeStr(typeStr: string, anyAlias?: string): boolean {
   return typeStr === 'any' || (anyAlias != null && typeStr === anyAlias);
 }
 
