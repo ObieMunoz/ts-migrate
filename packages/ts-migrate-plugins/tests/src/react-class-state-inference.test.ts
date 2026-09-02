@@ -457,6 +457,35 @@ export default Foo;
 };`);
   });
 
+  it('names the alias around an import a member needed', async () => {
+    const lib = `export type State = { id: number };
+export declare function makeState(): State;
+`;
+    const result = await runPlugin(
+      `import React from 'react';
+import { makeState } from '/lib';
+
+class Foo extends React.Component {
+  state = { value: makeState() };
+
+  render() {
+    return <div>{this.state.value.id}</div>;
+  }
+}
+
+export default Foo;
+`,
+      { extraFiles: { 'lib.ts': lib } },
+    );
+
+    // The import is added after the file's identifiers were read, so the alias
+    // has to be named around it or the two collide.
+    expect(stateAlias(result)).toBe(`type State1 = {
+    value: State;
+};`);
+    expect(result).toMatch(/import \{ State \} from ["'].*lib["']/);
+  });
+
   it('refuses a member type the file has no way to name', async () => {
     // A type declared inside a function is not exported from anywhere, so
     // nothing can be imported for it. Written out, the member would spell a

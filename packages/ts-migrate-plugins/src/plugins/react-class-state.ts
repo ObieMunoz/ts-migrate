@@ -93,6 +93,10 @@ const reactClassStatePlugin: Plugin<Options> = {
       const evidence = collectStateEvidence(classDeclaration, resolution, anyAlias);
       if (!evidence.usesState) return;
 
+      // An import a member's type needed can be named `State` too, and it is
+      // not among the identifiers the file had when they were collected.
+      neededImports.forEach(({ namedImport }) => usedIdentifiers.add(namedImport));
+
       const getStateTypeName = () => {
         let name = '';
         if (propsType && ts.isTypeReferenceNode(propsType) && ts.isIdentifier(propsType.typeName)) {
