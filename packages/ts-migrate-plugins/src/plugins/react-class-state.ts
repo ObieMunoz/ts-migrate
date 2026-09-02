@@ -25,12 +25,10 @@ type DerivedType =
   | { kind: 'any' }
   | { kind: 'keyword'; keyword: ts.KeywordTypeSyntaxKind }
   | { kind: 'array'; element: DerivedType | undefined }
-  // What the checker answered where the syntax alone said nothing, as the
-  // members of a union rather than the text of one, so that merging two
-  // answers is a list operation and nothing is parsed back out of a string.
+  // What the checker answered, as the members of a union rather than the text
+  // of one, so that merging is a list operation and nothing is parsed back out.
   | { kind: 'resolved'; members: ts.TypeNode[] };
 
-// The checker, and the question of whether what it says can be written here.
 type Resolution = {
   checker: ts.TypeChecker;
   // Whether the file can spell the given names, adding what imports it takes.
@@ -54,8 +52,7 @@ type StateEvidence = {
 
 const printer = ts.createPrinter();
 
-// Somewhere to print a synthesized type node into, for the two places that
-// compare one against another.
+// Somewhere to print a synthesized node into, for comparing one against another.
 const scratchFile = ts.createSourceFile('scratch.ts', '', ts.ScriptTarget.Latest);
 
 const reactClassStatePlugin: Plugin<Options> = {
@@ -73,8 +70,7 @@ const reactClassStatePlugin: Plugin<Options> = {
       .filter(isReactClassComponent);
     if (reactClassDeclarations.length === 0) return undefined;
 
-    // Asked only where the syntax says nothing, and absent only where the
-    // plugin is run outside a program at all.
+    // Asked only where the syntax says nothing.
     const checker = getLanguageService?.().getProgram?.()?.getTypeChecker();
     const resolution =
       checker && createResolution(checker, sourceFile, fileName, anyAlias, neededImports);
@@ -427,13 +423,11 @@ function inferStateMembers(
 // The names a resolved member type spells have to be in scope where the alias
 // is written: declared in this file, global, or imported. A type declared where
 // nothing can import it from, inside a function or private to a package, would
-// leave the member naming something the file does not have, so it is refused
-// and the member falls back to what it would have been without the checker.
+// leave the member naming something the file does not have, and is refused.
 //
-// The imports come with the answer rather than being collected afterwards, so
-// that whether a name can be written is decided once, where it is decided.
-// A member merging later drops costs an import updateImports will not add,
-// since it only adds a name the text goes on to use.
+// The imports come back with the answer, so a member that merging later drops
+// leaves one updateImports will not add, since it only adds a name the text
+// goes on to use.
 function createResolution(
   checker: ts.TypeChecker,
   sourceFile: ts.SourceFile,
@@ -468,9 +462,8 @@ function createResolution(
   };
 }
 
-// The names a type node spells, so that each can be checked against what the
-// file has. A `typeof` query names a binding moduleScopedName already found at
-// the top level of this file.
+// The names a type node spells. A `typeof` query names a binding
+// moduleScopedName already found at the top level of this file.
 function collectTypeNames(node: ts.TypeNode, out: Set<string>): void {
   if (ts.isTypeReferenceNode(node)) {
     let entityName: ts.EntityName = node.typeName;
@@ -500,8 +493,8 @@ function typeNodeOf(type: DerivedType | undefined, anyAlias: string | undefined)
   return members.length === 1 ? members[0] : ts.factory.createUnionTypeNode(members);
 }
 
-// A derived type as the members of the union it stands for, which is what the
-// two sides of a merge are compared and concatenated as.
+// A derived type as the members of the union it stands for, which is what a
+// merge concatenates.
 function typeNodesOf(type: DerivedType | undefined, anyAlias: string | undefined): ts.TypeNode[] {
   if (type === undefined || type.kind === 'any') return [anyTypeNode(anyAlias)];
   if (type.kind === 'resolved') return type.members;
@@ -528,9 +521,8 @@ function isAnyTypeNode(node: ts.TypeNode, anyAlias: string | undefined): boolean
   );
 }
 
-// The union members of two observations, as one union. An `any` member says
-// nothing beside one that resolved, so it is dropped unless every member is
-// `any`, which is the whole of what the two observations amount to.
+// An `any` member says nothing beside one that resolved, so it is dropped
+// unless every member is `any`, which is all the observations amount to.
 function mergeMembers(members: ts.TypeNode[], anyAlias: string | undefined): ts.TypeNode[] {
   const concrete = members.filter((node) => !isAnyTypeNode(node, anyAlias));
   const kept = concrete.length > 0 ? concrete : [anyTypeNode(anyAlias)];
@@ -545,8 +537,8 @@ function mergeMembers(members: ts.TypeNode[], anyAlias: string | undefined): ts.
 
 // buildTypeNode writes `any` both for the keyword and for a shape it cannot
 // reconstruct, and the alias is how this run spells that. Rewriting the node
-// rather than the text is what keeps a string or template literal whose own
-// text is the keyword out of it.
+// rather than the text is what leaves a literal whose own text is the keyword
+// alone.
 function withAnyAlias(node: ts.TypeNode, anyAlias: string | undefined): ts.TypeNode {
   if (anyAlias == null) return node;
   if (node.kind === ts.SyntaxKind.AnyKeyword) return anyTypeNode(anyAlias);
@@ -571,10 +563,9 @@ function withAnyAlias(node: ts.TypeNode, anyAlias: string | undefined): ts.TypeN
 // What the checker says a type is, in the form the rest of this plugin writes.
 //
 // NoTruncation because typeToString otherwise cuts a long type off with `...`
-// and `... N more ...`, which are display markers rather than a limit on what
-// it can say: a wide union or a deep generic reference is written in full and
-// reads back. What is left after that is the shapes buildTypeNode does not
-// parse at any length, recorded as the `any` they would have been anyway.
+// and `... N more ...`, which is a display default rather than a limit on what
+// it can say. What buildTypeNode cannot parse at any length is the `any` it
+// would have been anyway.
 function resolveType(
   type: ts.Type,
   resolution: Resolution,
@@ -590,7 +581,7 @@ function resolveType(
       ts.TypeFormatFlags.NoTruncation,
   );
   // A type declared in another file prints with an `import("…").` prefix that
-  // is not writable; the name alone is, once collectStateImports imports it.
+  // is not writable; the name alone is, once canWrite imports it.
   typeStr = typeStr.replace(/^import\("[^"]+"\)\./, '');
   // buildTypeNode parses an import type, so one left in a nested position would
   // be spliced into the file as an absolute path rather than refused.
@@ -671,10 +662,9 @@ function deriveType(
   );
 }
 
-// A type the checker resolves but cannot write is still nameable when the
-// expression names the thing that has it. The state alias is written at the top
-// of the same file the expression is in, so a binding declared there is already
-// in scope and no import follows the query.
+// A type the checker cannot write is still named by the expression that has it.
+// The alias is written at the top of that expression's own file, so a binding
+// declared there is in scope already and the query needs no import.
 function typeQueryType(
   expression: ts.Expression,
   checker: ts.TypeChecker,
@@ -707,10 +697,9 @@ function typeQueryType(
       };
 }
 
-// The name of a binding declared at the top level of its file. A parameter or a
-// local is a name the state alias cannot see, and resolving the symbol rather
-// than reading the text is what tells the two apart when a local shadows an
-// import.
+// The name of a binding declared at the top level of its file. Resolving the
+// symbol rather than reading the text is what tells a local that shadows an
+// import from the import.
 function moduleScopedName(expression: ts.Expression, checker: ts.TypeChecker): string | undefined {
   if (!ts.isIdentifier(expression)) return undefined;
   const declaration = checker.getSymbolAtLocation(expression)?.declarations?.[0];
