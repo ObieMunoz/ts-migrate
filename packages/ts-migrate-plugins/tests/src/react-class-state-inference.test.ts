@@ -9,7 +9,9 @@ import reactClassStatePlugin from '../../src/plugins/react-class-state';
  */
 const runPlugin = realPluginRunner(reactClassStatePlugin, {
   fileName: 'Foo.tsx',
-  compilerOptions: { jsx: ts.JsxEmit.React },
+  // A target whose lib declares what a component of this era uses, so that a
+  // name the checker prints is a name the file is entitled to write.
+  compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2020 },
   options: { anyAlias: '$TSFixMe' },
 });
 
@@ -322,6 +324,74 @@ export default Foo;
 
     expect(result).toContain('timer: Timer;');
     expect(result).toMatch(/import \{ Timer \} from ["'].*lib["']/);
+  });
+
+  it('refuses a member type the file has no way to name', async () => {
+    // A type declared inside a function is not exported from anywhere, so
+    // nothing can be imported for it. Written out, the member would spell a
+    // name the file does not have.
+    const lib = `export function makeTimer() {
+  interface Timer {
+    id: number;
+  }
+  const timer: Timer = { id: 0 };
+  return timer;
+}
+`;
+    const result = await runPlugin(
+      `import React from 'react';
+import { makeTimer } from '/lib';
+
+class Foo extends React.Component {
+  state = { timer: makeTimer() };
+
+  render() {
+    return <div>{this.state.timer.id}</div>;
+  }
+}
+
+export default Foo;
+`,
+      { extraFiles: { 'lib.ts': lib } },
+    );
+
+    // The call the type came out of is still a name this file has.
+    expect(result).toContain('timer: ReturnType<typeof makeTimer>;');
+    expect(result).not.toContain('{ Timer }');
+  });
+
+  it('writes any where the type cannot be named and neither can the expression', async () => {
+    const lib = `export function makeTimer() {
+  interface Timer {
+    id: number;
+  }
+  const timer: Timer = { id: 0 };
+  return timer;
+}
+`;
+    const result = await runPlugin(
+      `import React from 'react';
+import { makeTimer } from '/lib';
+
+class Foo extends React.Component {
+  state = { open: false };
+
+  componentDidMount() {
+    const timer = makeTimer();
+    this.state.timer = timer;
+  }
+
+  render() {
+    return <div>{this.state.open}</div>;
+  }
+}
+
+export default Foo;
+`,
+      { extraFiles: { 'lib.ts': lib } },
+    );
+
+    expect(result).toContain('timer?: $TSFixMe;');
   });
 
   it('writes a union too wide for typeToString to print by default', async () => {

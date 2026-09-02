@@ -28,8 +28,14 @@ type DerivedType =
   // What the checker answered where the syntax alone said nothing, as the
   // members of a union rather than the text of one, so that merging two
   // answers is a list operation and nothing is parsed back out of a string.
-  // The types they were printed from come along so their names can be imported.
-  | { kind: 'resolved'; members: ts.TypeNode[]; tsTypes: ts.Type[] };
+  | { kind: 'resolved'; members: ts.TypeNode[] };
+
+// The checker, and the question of whether what it says can be written here.
+type Resolution = {
+  checker: ts.TypeChecker;
+  // Whether the file can spell the given names, adding what imports it takes.
+  canWrite: (type: ts.Type, names: Set<string>) => boolean;
+};
 
 type StateMember = {
   type: DerivedType | undefined;
@@ -67,10 +73,11 @@ const reactClassStatePlugin: Plugin<Options> = {
       .filter(isReactClassComponent);
     if (reactClassDeclarations.length === 0) return undefined;
 
-    // Asked only where the syntax says nothing. A harness that hands the plugin
-    // no program is the case the derivation below was written for, so the
-    // answer without one is the answer this plugin has always given.
+    // Asked only where the syntax says nothing, and absent only where the
+    // plugin is run outside a program at all.
     const checker = getLanguageService?.().getProgram?.()?.getTypeChecker();
+    const resolution =
+      checker && createResolution(checker, sourceFile, fileName, anyAlias, neededImports);
 
     const numComponentsInFile = getNumComponentsInSourceFile(sourceFile);
     const usedIdentifiers = collectIdentifiers(sourceFile);
@@ -83,7 +90,7 @@ const reactClassStatePlugin: Plugin<Options> = {
       const stateType = heritageTypeArgs[1];
       if (stateType) return;
 
-      const evidence = collectStateEvidence(classDeclaration, checker, anyAlias);
+      const evidence = collectStateEvidence(classDeclaration, resolution, anyAlias);
       if (!evidence.usesState) return;
 
       const getStateTypeName = () => {
@@ -101,9 +108,6 @@ const reactClassStatePlugin: Plugin<Options> = {
 
       const stateTypeName = getStateTypeName();
       const inferredMembers = inferStateMembers(evidence, anyAlias);
-      if (checker && inferredMembers) {
-        collectStateImports(evidence, checker, fileName, anyAlias, neededImports);
-      }
       const newStateType = ts.factory.createTypeAliasDeclaration(
         undefined,
         stateTypeName,
@@ -164,7 +168,7 @@ export default reactClassStatePlugin;
 
 function collectStateEvidence(
   classDeclaration: ts.ClassDeclaration,
-  checker: ts.TypeChecker | undefined,
+  resolution: Resolution | undefined,
   anyAlias: string | undefined,
 ): StateEvidence {
   const evidence: StateEvidence = {
@@ -203,10 +207,10 @@ function collectStateEvidence(
 
       let type: DerivedType | undefined;
       if (ts.isPropertyAssignment(property)) {
-        type = deriveType(property.initializer, checker, anyAlias);
+        type = deriveType(property.initializer, resolution, anyAlias);
       } else if (ts.isShorthandPropertyAssignment(property)) {
         // `{ mins }` is worth as much as the binding it names is typed.
-        type = deriveType(property.name, checker, anyAlias);
+        type = deriveType(property.name, resolution, anyAlias);
       }
       const member = getMember(name);
       observe(member, type);
@@ -225,13 +229,13 @@ function collectStateEvidence(
 
     // `this.state = getStateFromProps(props)`: the shape is the properties of
     // whatever the expression resolves to. Its methods are not state members.
-    const properties = checker
-      ? checker
+    const properties = resolution
+      ? resolution.checker
           .getTypeAtLocation(expression)
           .getProperties()
           .filter((symbol) => (symbol.flags & ts.SymbolFlags.Property) !== 0)
       : [];
-    if (!checker || properties.length === 0) {
+    if (!resolution || properties.length === 0) {
       evidence.unknownMembers = true;
       return;
     }
@@ -242,8 +246,8 @@ function collectStateEvidence(
       // A property the type marks optional is one this initializer may not set.
       const isOptional = (symbol.flags & ts.SymbolFlags.Optional) !== 0;
       const type = resolveType(
-        checker.getTypeOfSymbolAtLocation(symbol, expression),
-        checker,
+        resolution.checker.getTypeOfSymbolAtLocation(symbol, expression),
+        resolution,
         anyAlias,
       );
       observe(member, isOptional ? withoutUndefined(type) : type);
@@ -344,7 +348,7 @@ function collectStateEvidence(
       isThisState(node.left.expression)
     ) {
       const member = getMember(node.left.name.text);
-      observe(member, deriveType(node.right, checker, anyAlias));
+      observe(member, deriveType(node.right, resolution, anyAlias));
       if (isUnconditionalConstructorWrite(node, classDeclaration)) {
         member.alwaysSet = true;
       }
@@ -421,27 +425,65 @@ function inferStateMembers(
 }
 
 // The names a resolved member type spells have to be in scope where the alias
-// is written, which for a type from another module means importing them.
-function collectStateImports(
-  evidence: StateEvidence,
+// is written: declared in this file, global, or imported. A type declared where
+// nothing can import it from, inside a function or private to a package, would
+// leave the member naming something the file does not have, so it is refused
+// and the member falls back to what it would have been without the checker.
+//
+// The imports come with the answer rather than being collected afterwards, so
+// that whether a name can be written is decided once, where it is decided.
+// A member merging later drops costs an import updateImports will not add,
+// since it only adds a name the text goes on to use.
+function createResolution(
   checker: ts.TypeChecker,
+  sourceFile: ts.SourceFile,
   fileName: string,
   anyAlias: string | undefined,
   out: NamedImport[],
-): void {
-  const seen = new Set<ts.Symbol>();
-  const visit = (type: DerivedType | undefined) => {
-    if (type === undefined) return;
-    if (type.kind === 'array') {
-      visit(type.element);
-      return;
-    }
-    if (type.kind !== 'resolved' || type.members.every((node) => isAnyTypeNode(node, anyAlias))) {
-      return;
-    }
-    type.tsTypes.forEach((tsType) => collectImportSpecs(tsType, checker, fileName, seen, out));
+): Resolution {
+  // Every global type there is, so read only once a type has resolved at all.
+  let inScope: Set<string> | undefined;
+  const imported = new Set<string>();
+
+  return {
+    checker,
+    canWrite: (type, names) => {
+      const collected: NamedImport[] = [];
+      collectImportSpecs(type, checker, fileName, new Set(), collected);
+      const collectedNames = new Set(collected.map(({ namedImport }) => namedImport));
+      const scope = (inScope ??= new Set(
+        checker.getSymbolsInScope(sourceFile, ts.SymbolFlags.Type).map((symbol) => symbol.getName()),
+      ));
+
+      const writable = [...names].every(
+        (name) =>
+          name === anyAlias || imported.has(name) || collectedNames.has(name) || scope.has(name),
+      );
+      if (!writable) return false;
+
+      out.push(...collected);
+      collectedNames.forEach((name) => imported.add(name));
+      return true;
+    },
   };
-  evidence.members.forEach((member) => visit(member.type));
+}
+
+// The names a type node spells, so that each can be checked against what the
+// file has. A `typeof` query names a binding moduleScopedName already found at
+// the top level of this file.
+function collectTypeNames(node: ts.TypeNode, out: Set<string>): void {
+  if (ts.isTypeReferenceNode(node)) {
+    let entityName: ts.EntityName = node.typeName;
+    while (ts.isQualifiedName(entityName)) entityName = entityName.left;
+    out.add(entityName.text);
+    node.typeArguments?.forEach((argument) => collectTypeNames(argument, out));
+  } else if (ts.isUnionTypeNode(node)) {
+    node.types.forEach((type) => collectTypeNames(type, out));
+  } else if (ts.isArrayTypeNode(node)) {
+    collectTypeNames(node.elementType, out);
+  } else if (ts.isParenthesizedTypeNode(node)) {
+    collectTypeNames(node.type, out);
+  }
 }
 
 // The `?` on the member says what the `| undefined` the checker prints on an
@@ -535,11 +577,11 @@ function withAnyAlias(node: ts.TypeNode, anyAlias: string | undefined): ts.TypeN
 // parse at any length, recorded as the `any` they would have been anyway.
 function resolveType(
   type: ts.Type,
-  checker: ts.TypeChecker,
+  resolution: Resolution,
   anyAlias: string | undefined,
 ): DerivedType {
-  let typeStr = checker.typeToString(
-    checker.getBaseTypeOfLiteralType(type),
+  let typeStr = resolution.checker.typeToString(
+    resolution.checker.getBaseTypeOfLiteralType(type),
     // No enclosing declaration, so a nested reference prints as a bare name
     // rather than qualified against a scope, which is the name to import.
     undefined,
@@ -556,17 +598,22 @@ function resolveType(
 
   const node = withAnyAlias(buildTypeNode(typeStr), anyAlias);
   if (isAnyTypeNode(node, anyAlias)) return { kind: 'any' };
+
+  const names = new Set<string>();
+  collectTypeNames(node, names);
+  if (!resolution.canWrite(type, names)) return { kind: 'any' };
+
   const members = ts.isUnionTypeNode(node) ? Array.from(node.types) : [node];
-  return { kind: 'resolved', members: mergeMembers(members, anyAlias), tsTypes: [type] };
+  return { kind: 'resolved', members: mergeMembers(members, anyAlias) };
 }
 
 function deriveType(
   expression: ts.Expression,
-  checker: ts.TypeChecker | undefined,
+  resolution: Resolution | undefined,
   anyAlias: string | undefined,
 ): DerivedType | undefined {
   if (ts.isParenthesizedExpression(expression)) {
-    return deriveType(expression.expression, checker, anyAlias);
+    return deriveType(expression.expression, resolution, anyAlias);
   }
 
   switch (expression.kind) {
@@ -601,7 +648,7 @@ function deriveType(
   if (ts.isArrayLiteralExpression(expression)) {
     const elements =
       expression.elements.length > 0 && !expression.elements.some(ts.isSpreadElement)
-        ? expression.elements.map((element) => deriveType(element, checker, anyAlias))
+        ? expression.elements.map((element) => deriveType(element, resolution, anyAlias))
         : [undefined];
     return {
       kind: 'array',
@@ -609,8 +656,9 @@ function deriveType(
     };
   }
 
-  if (!checker) return undefined;
-  const resolved = resolveType(checker.getTypeAtLocation(expression), checker, anyAlias);
+  if (!resolution) return undefined;
+  const { checker } = resolution;
+  const resolved = resolveType(checker.getTypeAtLocation(expression), resolution, anyAlias);
   if (resolved.kind !== 'any') return resolved;
   // An answer of `any` is the checker having nothing to say rather than
   // evidence that the member holds anything, so it is carried as a resolved
@@ -619,7 +667,6 @@ function deriveType(
     typeQueryType(expression, checker) ?? {
       kind: 'resolved',
       members: [anyTypeNode(anyAlias)],
-      tsTypes: [],
     }
   );
 }
@@ -648,7 +695,6 @@ function typeQueryType(
           ts.factory.createTypeQueryNode(ts.factory.createIdentifier(callee)),
         ]),
       ],
-      tsTypes: [],
     };
   }
 
@@ -658,7 +704,6 @@ function typeQueryType(
     : {
         kind: 'resolved',
         members: [ts.factory.createTypeQueryNode(ts.factory.createIdentifier(name))],
-        tsTypes: [],
       };
 }
 
@@ -701,15 +746,10 @@ function mergeTypes(
     return {
       kind: 'resolved',
       members: mergeMembers([...typeNodesOf(a, anyAlias), ...typeNodesOf(b, anyAlias)], anyAlias),
-      tsTypes: [...tsTypesOf(a), ...tsTypesOf(b)],
     };
   }
 
   return { kind: 'any' };
-}
-
-function tsTypesOf(type: DerivedType): ts.Type[] {
-  return type.kind === 'resolved' ? type.tsTypes : [];
 }
 
 function forEachReturnedExpression(body: ts.Block, callback: (node: ts.Expression) => void) {
