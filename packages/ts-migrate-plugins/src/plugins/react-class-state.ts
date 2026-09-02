@@ -460,7 +460,12 @@ function createResolution(
         if (name === anyAlias) return true;
         const bound = scope.get(name);
         // A name the file already has has to stand for the thing the checker
-        // printed it for, not for whatever else the file calls by it.
+        // printed it for, not for whatever else the file calls by it. Where the
+        // walk saw no symbol under that name the file's own is taken as it: the
+        // walk visits everything typeToString had a symbol to print a name for,
+        // so what is left is what it printed without one, which is `Array` and
+        // the rest of the globals. Tightening this to a refusal writes `any`
+        // for those.
         if (bound !== undefined) {
           const symbol = printedAs.get(name);
           return symbol === undefined || symbol === bound;
