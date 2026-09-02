@@ -3,9 +3,10 @@ import { realPluginRunner } from '../test-utils';
 import reactClassStatePlugin from '../../src/plugins/react-class-state';
 
 /**
- * The checker-backed half of react-class-state. The syntactic half is covered
- * by react-class-state.test.ts, whose mock params hand the plugin no program:
- * everything here is a case that has nothing but `any` to say without one.
+ * The checker-backed half of react-class-state: every case here is one the
+ * plugin has nothing but `any` to say about from the syntax alone. What the
+ * plugin does with and without a program is covered case for case by
+ * react-class-state.test.ts, which runs each of its inputs through both.
  */
 const runPlugin = realPluginRunner(reactClassStatePlugin, {
   fileName: 'Foo.tsx',
@@ -14,6 +15,14 @@ const runPlugin = realPluginRunner(reactClassStatePlugin, {
   compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2020 },
   options: { anyAlias: '$TSFixMe' },
 });
+
+/**
+ * The state alias out of the file the plugin returned. Asserting on the whole
+ * of it is what catches a member the input gave no reason to write.
+ */
+function stateAlias(result: string | undefined): string {
+  return /^type \w*State = (?:\{[\s\S]*?\n\}|[^\n{]+);$/m.exec(result ?? '')?.[0] ?? '';
+}
 
 describe('react-class-state plugin, what the checker resolves', () => {
   it('resolves a member initialized by a call', async () => {
@@ -34,7 +43,9 @@ class Foo extends React.Component {
 export default Foo;
 `);
 
-    expect(result).toContain('tags: string[]');
+    expect(stateAlias(result)).toBe(`type State = {
+    tags: string[];
+};`);
   });
 
   it('parenthesizes an array element two observations disagree about', async () => {
@@ -56,7 +67,9 @@ export default Foo;
 
     // The union is the element type, not the member type: written unparenthesized
     // the member would be `Error` or an array of `Date`.
-    expect(result).toContain('entries: (Error | Date)[];');
+    expect(stateAlias(result)).toBe(`type State = {
+    entries: (Error | Date)[];
+};`);
   });
 
   it('enumerates a state initializer that is not an object literal', async () => {
@@ -80,10 +93,11 @@ class Foo extends React.Component {
 export default Foo;
 `);
 
-    expect(result).toContain('mins: string;');
-    expect(result).toContain('secs: string;');
     // Everything the initializer sets is set on every path, so nothing is optional.
-    expect(result).not.toContain('?:');
+    expect(stateAlias(result)).toBe(`type State = {
+    mins: string;
+    secs: string;
+};`);
   });
 
   it('reads the properties of a non-literal state initializer, not its methods', async () => {
@@ -111,9 +125,10 @@ class Foo extends React.Component {
 export default Foo;
 `);
 
-    expect(result).toContain('open: boolean;');
-    // What the component calls, not something it holds.
-    expect(result).not.toContain('toggle:');
+    // `toggle` is what the component calls, not something it holds.
+    expect(stateAlias(result)).toBe(`type State = {
+    open: boolean;
+};`);
   });
 
   it('leaves a member optional that the state the initializer returns does not set', async () => {
@@ -137,11 +152,13 @@ class Foo extends React.Component {
 export default Foo;
 `);
 
-    expect(result).toContain('mins: string;');
-    // Written required, the member would reject the very assignment it was read
+    // Written required, `secs` would reject the very assignment it was read
     // from. The `?` says what the checker's `| undefined` says, so only one of
     // the two is written.
-    expect(result).toContain('secs?: string;');
+    expect(stateAlias(result)).toBe(`type State = {
+    mins: string;
+    secs?: string;
+};`);
   });
 
   it('reads a this.state.key assignment, and marks it optional outside the constructor', async () => {
@@ -166,10 +183,12 @@ class Foo extends React.Component {
 export default Foo;
 `);
 
-    expect(result).toContain('open: boolean;');
     // The write is the only evidence of the type, but it has not run yet at the
     // point the initializer sets everything else.
-    expect(result).toContain('timer?: number;');
+    expect(stateAlias(result)).toBe(`type State = {
+    open: boolean;
+    timer?: number;
+};`);
   });
 
   it('does not mark a conditional constructor write as always set', async () => {
@@ -196,7 +215,10 @@ class Foo extends React.Component {
 export default Foo;
 `);
 
-    expect(result).toContain('timer?: number;');
+    expect(stateAlias(result)).toBe(`type State = {
+    open: boolean;
+    timer?: number;
+};`);
   });
 
   it('marks an unconditional constructor write as always set', async () => {
@@ -221,8 +243,10 @@ class Foo extends React.Component {
 export default Foo;
 `);
 
-    expect(result).toContain('open: boolean;');
-    expect(result).toContain('timer: number;');
+    expect(stateAlias(result)).toBe(`type State = {
+    open: boolean;
+    timer: number;
+};`);
   });
 
   it('keeps the initial type of a member a setState shorthand observes as any', async () => {
@@ -249,7 +273,9 @@ export default Foo;
       { compilerOptions: { jsx: ts.JsxEmit.React, strict: false } },
     );
 
-    expect(result).toContain('mins: string;');
+    expect(stateAlias(result)).toBe(`type State = {
+    mins: string;
+};`);
   });
 
   it('keeps that initial type when there is no any alias to spell it with', async () => {
@@ -278,7 +304,9 @@ export default Foo;
       },
     );
 
-    expect(result).toContain('mins: string;');
+    expect(stateAlias(result)).toBe(`type State = {
+    mins: string;
+};`);
   });
 
   it('resolves a shorthand naming a typed binding', async () => {
@@ -297,7 +325,9 @@ class Foo extends React.Component {
 export default Foo;
 `);
 
-    expect(result).toContain('mins: string;');
+    expect(stateAlias(result)).toBe(`type State = {
+    mins: string;
+};`);
   });
 
   it('imports the names a resolved member type spells', async () => {
@@ -322,8 +352,41 @@ export default Foo;
       { extraFiles: { 'lib.ts': lib } },
     );
 
-    expect(result).toContain('timer: Timer;');
+    expect(stateAlias(result)).toBe(`type State = {
+    timer: Timer;
+};`);
     expect(result).toMatch(/import \{ Timer \} from ["'].*lib["']/);
+  });
+
+  it('writes a member type the file already has a name for', async () => {
+    const lib = `export default class Notification {
+  level = 0;
+}
+export declare function makeNotification(): Notification;
+`;
+    const result = await runPlugin(
+      `import React from 'react';
+import Notification, { makeNotification } from '/lib';
+
+class Foo extends React.Component {
+  state = { note: makeNotification() };
+
+  render() {
+    return <div>{this.state.note.level}</div>;
+  }
+}
+
+export default Foo;
+`,
+      { extraFiles: { 'lib.ts': lib } },
+    );
+
+    expect(stateAlias(result)).toBe(`type State = {
+    note: Notification;
+};`);
+    // The default import the file already has is the name, and a named import
+    // of it would not be.
+    expect(result).not.toContain('{ Notification }');
   });
 
   it('refuses a member type the file has no way to name', async () => {
@@ -356,7 +419,9 @@ export default Foo;
     );
 
     // The call the type came out of is still a name this file has.
-    expect(result).toContain('timer: ReturnType<typeof makeTimer>;');
+    expect(stateAlias(result)).toBe(`type State = {
+    timer: ReturnType<typeof makeTimer>;
+};`);
     expect(result).not.toContain('{ Timer }');
   });
 
@@ -391,7 +456,10 @@ export default Foo;
       { extraFiles: { 'lib.ts': lib } },
     );
 
-    expect(result).toContain('timer?: $TSFixMe;');
+    expect(stateAlias(result)).toBe(`type State = {
+    open: boolean;
+    timer?: $TSFixMe;
+};`);
   });
 
   it('writes a union too wide for typeToString to print by default', async () => {
@@ -441,7 +509,9 @@ class Foo extends React.Component {
 export default Foo;
 `);
 
-    expect(result).toContain('config: ReturnType<typeof makeConfig>;');
+    expect(stateAlias(result)).toBe(`type State = {
+    config: ReturnType<typeof makeConfig>;
+};`);
   });
 
   it('names a module-scoped binding whose type cannot be written', async () => {
@@ -460,7 +530,9 @@ class Foo extends React.Component {
 export default Foo;
 `);
 
-    expect(result).toContain('config: typeof defaultConfig;');
+    expect(stateAlias(result)).toBe(`type State = {
+    config: typeof defaultConfig;
+};`);
   });
 
   it('keeps a string literal type whose text is the any keyword', async () => {
@@ -482,7 +554,9 @@ class Foo extends React.Component {
 export default Foo;
 `);
 
-    expect(result).toContain('modes: Set<"any" | "all">;');
+    expect(stateAlias(result)).toBe(`type State = {
+    modes: Set<"any" | "all">;
+};`);
   });
 
   it('leaves a name the state alias cannot see as the any alias', async () => {
@@ -508,6 +582,9 @@ class Foo extends React.Component {
 export default Foo;
 `);
 
-    expect(result).toContain('config?: $TSFixMe;');
+    expect(stateAlias(result)).toBe(`type State = {
+    open: boolean;
+    config?: $TSFixMe;
+};`);
   });
 });

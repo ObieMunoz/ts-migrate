@@ -445,8 +445,13 @@ function createResolution(
       const collected: NamedImport[] = [];
       collectImportSpecs(type, checker, fileName, new Set(), collected);
       const collectedNames = new Set(collected.map(({ namedImport }) => namedImport));
+      // Alias as well as Type: whatever an imported name stands for, the symbol
+      // the file has for it is an alias, and importing is how most of these
+      // names are already here.
       const scope = (inScope ??= new Set(
-        checker.getSymbolsInScope(sourceFile, ts.SymbolFlags.Type).map((symbol) => symbol.getName()),
+        checker
+          .getSymbolsInScope(sourceFile, ts.SymbolFlags.Type | ts.SymbolFlags.Alias)
+          .map((symbol) => symbol.getName()),
       ));
 
       const writable = [...names].every(
