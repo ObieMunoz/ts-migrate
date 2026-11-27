@@ -139,6 +139,49 @@ export default Foo;
 };`);
   });
 
+  it('writes the any alias for a null initializer only a no-evidence write follows', async () => {
+    const result = await runPlugin(`import React from 'react';
+
+class Foo extends React.Component {
+  state = { selected: null };
+
+  select = (item) => {
+    this.setState({ selected: item });
+  };
+
+  render() {
+    return <div>{this.state.selected.name}</div>;
+  }
+}
+
+export default Foo;
+`);
+
+    expect(stateAlias(result)).toBe(`type State = {
+    selected: $TSFixMe;
+};`);
+  });
+
+  it('writes the any alias for a member only ever set to null', async () => {
+    const result = await runPlugin(`import React from 'react';
+
+class Foo extends React.Component {
+  state = { error: null, entries: [null] };
+
+  render() {
+    return <div>{String(this.state.error)}{this.state.entries.length}</div>;
+  }
+}
+
+export default Foo;
+`);
+
+    expect(stateAlias(result)).toBe(`type State = {
+    error: $TSFixMe;
+    entries: $TSFixMe[];
+};`);
+  });
+
   it('keeps conflicting syntactic evidence over a later resolved type', async () => {
     const result = await runPlugin(`import React from 'react';
 

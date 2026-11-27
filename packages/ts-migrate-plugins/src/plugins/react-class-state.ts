@@ -599,7 +599,7 @@ function withoutUndefined(type: DerivedType): DerivedType {
 
 // The member's type as the one node it is written as.
 function typeNodeOf(type: DerivedType | undefined, anyAlias: string | undefined): ts.TypeNode {
-  const members = typeNodesOf(type, anyAlias);
+  const members = typeNodesOf(writtenType(type), anyAlias);
   return members.length === 1 ? members[0] : ts.factory.createUnionTypeNode(members);
 }
 
@@ -609,7 +609,7 @@ function typeNodesOf(type: DerivedType | undefined, anyAlias: string | undefined
   if (type === undefined || type.kind === 'any') return [anyTypeNode(anyAlias)];
   if (type.kind === 'resolved') return type.members;
   if (type.kind === 'array') {
-    const element = typeNodesOf(type.element, anyAlias);
+    const element = typeNodesOf(writtenType(type.element), anyAlias);
     return [
       ts.factory.createArrayTypeNode(
         element.length === 1
@@ -619,6 +619,18 @@ function typeNodesOf(type: DerivedType | undefined, anyAlias: string | undefined
     ];
   }
   return [ts.factory.createKeywordTypeNode(type.keyword)];
+}
+
+// A member only ever seen as `null`, or as `null` and what the checker had
+// nothing to say about, is a placeholder for a value no observation describes.
+// Merging keeps the `null` for a concrete observation to join it.
+function writtenType(type: DerivedType | undefined): DerivedType | undefined {
+  if (type?.kind !== 'resolved') return type;
+  return type.members.every(
+    (node) => ts.isLiteralTypeNode(node) && node.literal.kind === ts.SyntaxKind.NullKeyword,
+  )
+    ? { kind: 'any' }
+    : type;
 }
 
 function isAnyTypeNode(node: ts.TypeNode, anyAlias: string | undefined): boolean {
