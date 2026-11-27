@@ -107,7 +107,14 @@ const reactClassStatePlugin: Plugin<Options> = {
 
       const inferredMembers = inferStateMembers(evidence, anyAlias);
       if (inferredMembers) {
-        neededImports.push(...componentImports);
+        // Only what the alias spells: a member merged down to `any` needs none.
+        const written = new Set<string>();
+        inferredMembers.members.forEach((member) => {
+          if (ts.isPropertySignature(member) && member.type) collectTypeNames(member.type, written);
+        });
+        neededImports.push(
+          ...componentImports.filter(({ namedImport }) => written.has(namedImport)),
+        );
         claimedNames = componentClaims;
       }
 
@@ -171,8 +178,6 @@ const reactClassStatePlugin: Plugin<Options> = {
     const updatedText = updateSourceText(sourceFile.text, updates);
     if (neededImports.length === 0) return updatedText;
 
-    // updateImports only adds a name the text actually uses, so a spec
-    // collected for a member that ended up printed as `any` costs nothing.
     const updatedSourceFile = ts.createSourceFile(
       fileName,
       updatedText,

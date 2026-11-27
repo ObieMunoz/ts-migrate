@@ -802,6 +802,39 @@ export default Foo;
 };`);
   });
 
+  it('does not import a name only a member written as any needed', async () => {
+    const lib = `export class Timer {
+  id = 0;
+}
+export declare function makeTimer(): Timer;
+`;
+    const result = await runPlugin(
+      `import React from 'react';
+import { makeTimer } from '/lib';
+
+class Foo extends React.Component {
+  state = { timer: makeTimer() };
+
+  clear() {
+    this.setState({ timer: undefined });
+  }
+
+  render() {
+    return <div>{this.props.Timer}</div>;
+  }
+}
+
+export default Foo;
+`,
+      { extraFiles: { 'lib.ts': lib } },
+    );
+
+    expect(stateAlias(result)).toBe(`type State = {
+    timer: $TSFixMe;
+};`);
+    expect(result).not.toMatch(/import \{[^}]*\bTimer\b/);
+  });
+
   it('refuses a member whose type only shares a name with what the file has', async () => {
     // Written `Timer`, the member would read as the file's own Timer, and the
     // import that would make it the other one cannot be added beside it.
