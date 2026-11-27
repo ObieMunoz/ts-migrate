@@ -45,6 +45,7 @@ export function resolveSymbolImport(
   if (!sym.declarations?.length) return undefined;
   const namedImport = sym.getName();
   if (!namedImport || namedImport.startsWith('__')) return undefined;
+  if (namedImport === 'default') return undefined;
 
   const decl = sym.declarations[0];
   const fqn = checker.getFullyQualifiedName(sym);
@@ -80,6 +81,14 @@ export function resolveSymbolImport(
   // Bare package name (no leading . or /): use as-is.
   if (!moduleStr.startsWith('.') && !moduleStr.startsWith('/')) {
     return { namedImport, moduleSpecifier: moduleStr };
+  }
+
+  const moduleSymbol = checker.getSymbolAtLocation(decl.getSourceFile());
+  if (
+    moduleSymbol &&
+    !checker.getExportsOfModule(moduleSymbol).some((exp) => exp.getName() === namedImport)
+  ) {
+    return undefined;
   }
 
   // Local file: compute a relative specifier from the component file.

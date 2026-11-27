@@ -14,6 +14,8 @@ describe('readAgentsPlaybook', () => {
     expect(playbook).toContain('.ts-migrate-baseline.json');
     expect(playbook).toContain('--jsonSummary');
     expect(playbook).toContain('--dryRun');
+    expect(playbook).toContain('react-class-state');
+    expect(playbook).toContain('A member no initializer sets stays optional');
     // The playbook is what an agent runs from, so the one spelling it is to
     // write flags in, and the config file, both have to be in it.
     expect(playbook).toContain('camelCase');

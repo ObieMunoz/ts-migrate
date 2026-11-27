@@ -283,6 +283,29 @@ type Props = { one: a0.Shape };
     ).toEqual([]);
   });
 
+  it('adds a named import separately from a namespace import', () => {
+    const sourceText = `import * as React from 'react';
+
+type State = { ref: RefObject<HTMLElement> };
+class Foo extends React.Component {}
+`;
+    expect(
+      updateSourceText(
+        sourceText,
+        updateImports(
+          ts.createSourceFile('file.ts', sourceText, ts.ScriptTarget.Latest),
+          [{ namedImport: 'RefObject', moduleSpecifier: 'react', isTypeOnly: true }],
+          [],
+        ),
+      ),
+    ).toBe(`import * as React from 'react';
+import { type RefObject } from "react";
+
+type State = { ref: RefObject<HTMLElement> };
+class Foo extends React.Component {}
+`);
+  });
+
   it('does not add a name written with leading underscores', () => {
     const sourceText = `import { __a0 } from 'mod1';
 

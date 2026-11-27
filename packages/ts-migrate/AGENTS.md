@@ -494,6 +494,13 @@ instead, since one file cannot see it, and `createContext({})` always does: a
 cannot see. Pass `--excludePlugin react-hook-types` to leave hook calls
 as they are.
 
+The `react-class-state` step declares the state type of a class component from
+its initializers, `setState` calls, reads and direct writes.
+A member no initializer sets stays optional unless an unconditional statement
+in the constructor establishes it. Literals are typed from their syntax; other
+values use the checker where its answer can be named in the file, adding
+type-only imports where needed, and fall back to `any` (`$TSFixMe`) otherwise.
+
 A component that spreads a rest element onto another element accepts that
 element's props too, which propTypes never say: they describe what a component
 reads, not what it passes on. The forwarding step widens such a component's

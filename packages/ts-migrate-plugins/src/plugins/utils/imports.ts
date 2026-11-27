@@ -139,7 +139,10 @@ export function updateImports(
       }
     }
 
-    const namedToAdd = pending(isNamedImport);
+    const namedToAdd =
+      importClause.namedBindings && ts.isNamespaceImport(importClause.namedBindings)
+        ? []
+        : pending(isNamedImport);
     if (namedToAdd.length > 0) {
       importClause = ts.factory.updateImportClause(
         importClause,

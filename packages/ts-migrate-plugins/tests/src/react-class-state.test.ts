@@ -1,7 +1,62 @@
+import ts from 'typescript';
+import { Plugin } from '@obiemunoz/ts-migrate-server';
 import reactClassStatePlugin from '../../src/plugins/react-class-state';
-import { mockPluginParams } from '../test-utils';
+import { pluginRunner, realPluginRunner } from '../test-utils';
 
-describe('react-class-state plugin', () => {
+type Options = { anyAlias?: string };
+
+type RunCase = (
+  text: string,
+  overrides?: { options?: Options },
+) => ReturnType<Plugin<Options>['run']>;
+
+const withoutProgram = pluginRunner<Options>(reactClassStatePlugin, {
+  fileName: 'file.tsx',
+  options: { anyAlias: '$TSFixMe' },
+});
+
+const withChecker = realPluginRunner<Options>(reactClassStatePlugin, {
+  fileName: 'file.tsx',
+  compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2020 },
+  options: { anyAlias: '$TSFixMe' },
+});
+
+/**
+ * Every case here run both ways. The checker is asked only where the syntax
+ * says nothing, so a case the syntax answers has the same answer with a program
+ * behind the plugin and without one, and a change that parts the two fails
+ * here. Production always has a program; the cases the checker alone answers
+ * are in react-class-state-inference.test.ts.
+ */
+const harnesses: [string, RunCase][] = [
+  ['without a program', withoutProgram],
+  ['with a checker', withChecker],
+];
+
+it('keeps null as the any alias without a program when a later type is unresolved', async () => {
+  const result = await withoutProgram(`import React from 'react';
+
+declare function makeTimer(): { id: number };
+
+class Foo extends React.Component {
+  state = { timer: null };
+
+  componentDidMount() {
+    this.setState({ timer: makeTimer() });
+  }
+
+  render() {
+    return <div>{this.state.timer}</div>;
+  }
+}
+`);
+
+  expect(result).toContain(`type State = {
+    timer: $TSFixMe;
+};`);
+});
+
+describe.each(harnesses)('react-class-state plugin, %s', (_harness, runPlugin) => {
   it('annotates state if used', async () => {
     const text = `import React from 'react';
 
@@ -14,14 +69,12 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
 type State = {
-    loading: $TSFixMe;
+    loading?: $TSFixMe;
 };
 
 class Foo extends React.Component<object, State> {
@@ -53,9 +106,7 @@ class Foo extends React.Component<Props, State> {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(text);
   });
@@ -74,9 +125,7 @@ class Foo extends React.Component<Props> {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(text);
   });
@@ -99,14 +148,12 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
 type BarState = {
-    loading: $TSFixMe;
+    loading?: $TSFixMe;
 };
 
 class Bar extends React.Component<object, BarState> {
@@ -116,7 +163,7 @@ class Bar extends React.Component<object, BarState> {
 }
 
 type FooState = {
-    loading: $TSFixMe;
+    loading?: $TSFixMe;
 };
 
 class Foo extends React.Component<object, FooState> {
@@ -141,7 +188,6 @@ class Foo extends React.Component {
       label: '',
       items: [],
       ids: [1, 2],
-      user: null,
     };
   }
 
@@ -153,9 +199,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -165,7 +209,6 @@ type State = {
     label: string;
     items: $TSFixMe[];
     ids: number[];
-    user: $TSFixMe;
 };
 
 class Foo extends React.Component<object, State> {
@@ -177,7 +220,6 @@ class Foo extends React.Component<object, State> {
       label: '',
       items: [],
       ids: [1, 2],
-      user: null,
     };
   }
 
@@ -208,9 +250,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -253,9 +293,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -293,15 +331,13 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
 type State = {
-    loading: $TSFixMe;
-    error: $TSFixMe;
+    loading?: $TSFixMe;
+    error?: $TSFixMe;
 };
 
 class Foo extends React.Component<object, State> {
@@ -333,9 +369,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -373,9 +407,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -412,9 +444,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -454,9 +484,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 import getInitialState from './getInitialState';
@@ -496,9 +524,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
@@ -533,9 +559,7 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 import Child from './Child';
@@ -564,14 +588,12 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: {} }),
-    );
+    const result = await runPlugin(text, { options: {} });
 
     expect(result).toBe(`import React from 'react';
 
 type State = {
-    loading: any;
+    loading?: any;
 };
 
 class Foo extends React.Component<object, State> {
@@ -600,16 +622,14 @@ class Foo extends React.Component<MyProps> {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
 type MyProps = { message: string };
 
 type MyState = {
-    loading: $TSFixMe;
+    loading?: $TSFixMe;
 };
 
 class Foo extends React.Component<MyProps, MyState> {
@@ -638,14 +658,12 @@ class Foo extends React.Component {
 export default Foo;
 `;
 
-    const result = await reactClassStatePlugin.run(
-      mockPluginParams({ text, fileName: 'file.tsx', options: { anyAlias: '$TSFixMe' } }),
-    );
+    const result = await runPlugin(text);
 
     expect(result).toBe(`import React from 'react';
 
 type State = {
-    loading: $TSFixMe;
+    loading?: $TSFixMe;
 };
 
 class Foo extends React.Component<object, State> {
@@ -653,6 +671,69 @@ class Foo extends React.Component<object, State> {
 
   render() {
     return this.state.loading ? <div>Loading...</div> : <div />;
+  }
+}
+
+export default Foo;
+`);
+  });
+
+  it('ignores this.state in nested non-lexical scopes', async () => {
+    const text = `import React from 'react';
+
+class Foo extends React.Component {
+  state = { count: 0 };
+
+  setup() {
+    function helper() {
+      this.state.foreign = 'wrong component';
+    }
+    class Nested {
+      update() {
+        this.state.nested = true;
+      }
+    }
+    const update = () => {
+      this.state.ready = true;
+    };
+  }
+
+  render() {
+    return <div>{this.state.count}</div>;
+  }
+}
+
+export default Foo;
+`;
+
+    const result = await runPlugin(text);
+
+    expect(result).toBe(`import React from 'react';
+
+type State = {
+    count: number;
+    ready?: boolean;
+};
+
+class Foo extends React.Component<object, State> {
+  state: State = { count: 0 };
+
+  setup() {
+    function helper() {
+      this.state.foreign = 'wrong component';
+    }
+    class Nested {
+      update() {
+        this.state.nested = true;
+      }
+    }
+    const update = () => {
+      this.state.ready = true;
+    };
+  }
+
+  render() {
+    return <div>{this.state.count}</div>;
   }
 }
 
