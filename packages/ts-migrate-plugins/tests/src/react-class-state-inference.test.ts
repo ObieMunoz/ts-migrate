@@ -745,6 +745,63 @@ export default Foo;
     expect(result).not.toMatch(/import \{ (?:type )?Notification \}/);
   });
 
+  it('refuses a default-exported type nested in a generic that shares a global name', async () => {
+    const lib = `export default class Comment {
+  body = '';
+}
+export declare function commentsById(): Map<string, Comment>;
+`;
+    const result = await runPlugin(
+      `import React from 'react';
+import { commentsById } from '/lib';
+
+class Foo extends React.Component {
+  state = { comments: commentsById() };
+
+  render() {
+    return <div>{this.state.comments.size}</div>;
+  }
+}
+
+export default Foo;
+`,
+      { extraFiles: { 'lib.ts': lib } },
+    );
+
+    expect(stateAlias(result)).toBe(`type State = {
+    comments: ReturnType<typeof commentsById>;
+};`);
+  });
+
+  it('writes a default-exported type nested in a generic the file already imports', async () => {
+    const lib = `export default class Comment {
+  body = '';
+}
+export declare function commentsById(): Map<string, Comment>;
+`;
+    const result = await runPlugin(
+      `import React from 'react';
+import Comment, { commentsById } from '/lib';
+
+class Foo extends React.Component {
+  state = { comments: commentsById(), draft: new Comment() };
+
+  render() {
+    return <div>{this.state.comments.size}{this.state.draft.body}</div>;
+  }
+}
+
+export default Foo;
+`,
+      { extraFiles: { 'lib.ts': lib } },
+    );
+
+    expect(stateAlias(result)).toBe(`type State = {
+    comments: Map<string, Comment>;
+    draft: Comment;
+};`);
+  });
+
   it('refuses a member whose type only shares a name with what the file has', async () => {
     // Written `Timer`, the member would read as the file's own Timer, and the
     // import that would make it the other one cannot be added beside it.

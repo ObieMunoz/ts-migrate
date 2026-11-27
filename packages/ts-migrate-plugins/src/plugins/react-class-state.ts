@@ -499,15 +499,11 @@ function createResolution(
       const printedAs = new Map<string, ts.Symbol>();
       const ambiguous = new Set<string>();
       seen.forEach((symbol) => {
-        const name = symbol.getName();
+        const name = printedName(symbol);
         const first = printedAs.get(name);
         if (first === undefined) printedAs.set(name, symbol);
         else if (first !== symbol) ambiguous.add(name);
       });
-      if (names.size === 1) {
-        const defaultSymbol = [...seen].find((symbol) => symbol.getName() === 'default');
-        if (defaultSymbol !== undefined) printedAs.set([...names][0], defaultSymbol);
-      }
       const scope = namesInScope();
 
       const writable = [...names].every((name) => {
@@ -564,6 +560,17 @@ function collectScope(checker: ts.TypeChecker, sourceFile: ts.SourceFile): Map<s
       );
     });
   return scope;
+}
+
+// The name typeToString prints a symbol under. A default export's own name is
+// `default`, but it prints under the name its declaration gives it.
+function printedName(symbol: ts.Symbol): string {
+  const name = symbol.getName();
+  if (name !== ts.InternalSymbolName.Default) return name;
+  const declarationName = symbol.declarations
+    ?.map((declaration) => ts.getNameOfDeclaration(declaration))
+    .find((node): node is ts.Identifier => node !== undefined && ts.isIdentifier(node));
+  return declarationName?.text ?? name;
 }
 
 // The names a type node spells, whether it names a type or, in a `typeof`
